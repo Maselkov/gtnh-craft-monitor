@@ -41,3 +41,40 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # Runs on the self-hosted runner, which SSHes to the deployment host. The
+  # deploy key there is locked to a forced command (deploy/gcm-deploy.sh), so
+  # all this job - or anyone holding the key - can do is deploy a released
+  # version. The repo is never checked out on either machine.
+  deploy:
+    name: Deploy
+    needs: publish
+    # Only release tags deploy; a manual dispatch just publishes the image.
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: [self-hosted, gcm-deploy]
+    # Protection rules (allowed tags, reviewers) and the SSH key live here.
+    environment: production
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    permissions:
+      packages: read
+    steps:
+      - name: Deploy over SSH
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ vars.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          dir=$(mktemp -d)
+          trap 'rm -rf "$dir"' EXIT
+          (umask 077 && printf '%s\n' "$SSH_KEY" > "$dir/key")
+          printf '%s\n' "$KNOWN_HOSTS" > "$dir/known_hosts"
+          # The short-lived job token goes over stdin so the deployment host
+          # can pull from GHCR without storing any registry credentials.
+          # Deploys the exact version this run built (v1.2.0 -> 1.2.0).
+          printf '%s\n%s\n' "$GITHUB_ACTOR" "$GHCR_TOKEN" |
+            ssh -i "$dir/key" -o IdentitiesOnly=yes -o BatchMode=yes \
+              -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$dir/known_hosts" \
+              "$DEPLOY_HOST" "deploy ${GITHUB_REF_NAME#v}"
