@@ -1472,6 +1472,8 @@ _BOOTSTRAP_BLOCKED_ENDPOINTS = {
     "admin_token_revoke_post",
     "admin_users_get",
     "admin_user_history_get",
+    "admin_user_delete",
+    "admin_user_token_regenerate",
 }
 
 _SESSION_WRITE_ENDPOINTS = {
@@ -1487,6 +1489,8 @@ _SESSION_WRITE_ENDPOINTS = {
     "network_item_pins_post",
     "network_item_pins_unpin",
     "admin_user_post",
+    "admin_user_delete",
+    "admin_user_token_regenerate",
 }
 
 
@@ -1528,6 +1532,8 @@ def add_browser_security_headers(response):
         "admin_user_post",
         "admin_token_revoke_post",
         "admin_user_history_get",
+        "admin_user_delete",
+        "admin_user_token_regenerate",
     }:
         response.headers["Cache-Control"] = "no-store"
     return response
@@ -1584,8 +1590,9 @@ def admin_users_get():
         rows = conn.execute(
             "SELECT users.id, users.display_name, users.role, users.created_at, "
             "users.disabled_at, access_tokens.id, access_tokens.created_at, "
-            "access_tokens.last_used_at, access_tokens.revoked_at "
-            "FROM users LEFT JOIN access_tokens ON access_tokens.user_id = users.id "
+            "access_tokens.last_used_at "
+            "FROM users LEFT JOIN access_tokens "
+            "ON access_tokens.user_id = users.id AND access_tokens.revoked_at IS NULL "
             "ORDER BY users.display_name COLLATE NOCASE, access_tokens.created_at"
         ).fetchall()
     finally:
@@ -1609,10 +1616,63 @@ def admin_users_get():
                     "id": row[5],
                     "created_at": row[6],
                     "last_used_at": row[7],
-                    "revoked_at": row[8],
                 }
             )
     return jsonify({"users": list(users.values())})
+
+
+@app.route("/api/admin/users/<user_id>", methods=["DELETE"])
+def admin_user_delete(user_id):
+    admin = _session_user()
+    if not _is_admin(admin):
+        return jsonify({"error": "administrator access required"}), 403
+    if user_id == admin["id"]:
+        return jsonify({"error": "cannot delete your own account"}), 400
+
+    conn = _craft_db()
+    try:
+        cursor = conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        if not cursor.rowcount:
+            return jsonify({"error": "unknown user"}), 404
+        # access_tokens/sessions aren't ON DELETE CASCADE (SQLite foreign
+        # keys are declared but not enforced unless PRAGMA foreign_keys is
+        # on for this connection) - removed explicitly so a deleted user's
+        # credentials can never authenticate again.
+        conn.execute("DELETE FROM access_tokens WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/users/<user_id>/tokens", methods=["POST"])
+def admin_user_token_regenerate(user_id):
+    admin = _session_user()
+    if not _is_admin(admin):
+        return jsonify({"error": "administrator access required"}), 403
+
+    conn = _craft_db()
+    try:
+        user = conn.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not user:
+            return jsonify({"error": "unknown user"}), 404
+        now = time.time()
+        conn.execute(
+            "UPDATE access_tokens SET revoked_at = ? "
+            "WHERE user_id = ? AND revoked_at IS NULL",
+            (now, user_id),
+        )
+        conn.execute(
+            "UPDATE sessions SET revoked_at = ? "
+            "WHERE user_id = ? AND revoked_at IS NULL",
+            (now, user_id),
+        )
+        token = _create_access_token(conn, user_id)
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"token": token})
 
 
 @app.route("/api/admin/users/<user_id>/history", methods=["GET"])

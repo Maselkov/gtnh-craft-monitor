@@ -63,8 +63,11 @@ rotated immediately: copy the replacement admin token shown in the modal, then
 confirm that it was saved. Only then is **Manage users** available to create
 viewer and operator accounts. Every generated token is shown once; distribute
 it securely to its owner because the server retains only its hash. The same
-panel lists token IDs and can revoke a lost or compromised token, immediately
-ending sessions created with it.
+panel lists each user's active token IDs (revoked tokens are removed from the
+list, not just hidden) and can revoke one, immediately ending sessions created
+with it. **New token** replaces a user's current token in one step - useful if
+a token was lost before it was copied - and **Delete** permanently removes a
+user along with their tokens and sessions.
 
 The bootstrap token is used only when no users exist. Once you have signed in
 and created another administrator, remove `GCM_BOOTSTRAP_ADMIN_TOKEN` from

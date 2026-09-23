@@ -1258,10 +1258,8 @@
         const tokens = (user.tokens || []).map((token) => `
           <div class="admin-token-row">
             <span class="admin-token-id">${escapeHtml(token.id)}</span>
-            ${token.revoked_at
-              ? '<span>revoked</span>'
-              : `<button class="admin-revoke-btn" onclick="revokeAdminToken('${escapeHtml(token.id)}')">Revoke</button>`}
-          </div>`).join('') || '<div class="admin-token-row">No tokens</div>';
+            <button class="admin-revoke-btn" onclick="revokeAdminToken('${escapeHtml(token.id)}')">Revoke</button>
+          </div>`).join('') || '<div class="admin-token-row">No active tokens</div>';
         return `<div class="admin-user-row">
           <div>
             <div class="admin-user-name">${escapeHtml(user.display_name)}</div>
@@ -1270,6 +1268,8 @@
           <div class="admin-user-actions">
             <span class="admin-user-role">${escapeHtml(user.role)}${user.disabled_at ? ' (disabled)' : ''}</span>
             <button class="admin-history-btn" onclick="openUserHistory('${user.id}')">History</button>
+            <button class="admin-history-btn" onclick="regenerateAdminToken('${user.id}', '${escapeHtml(user.display_name)}')">New token</button>
+            <button class="admin-revoke-btn" onclick="deleteAdminUser('${user.id}', '${escapeHtml(user.display_name)}')">Delete</button>
           </div>
         </div>`;
       }).join('') || '<div class="admin-user-row">No users yet.</div>';
@@ -1346,6 +1346,36 @@
         return;
       }
       showToast('Access token revoked.');
+      await refreshAdminUsers();
+    }
+
+    async function regenerateAdminToken(userId, displayName) {
+      if (!window.confirm(`Replace ${displayName}'s access token? Their current token and sessions stop working immediately.`)) return;
+      const response = await fetch(`/api/admin/users/${encodeURIComponent(userId)}/tokens`, {
+        method: 'POST',
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        showToast(data.error || 'Could not generate a new token.', true);
+        return;
+      }
+      document.getElementById('adminTokenValue').value = data.token;
+      document.getElementById('adminTokenResult').style.display = 'block';
+      showToast(`New token generated for ${displayName}.`);
+      await refreshAdminUsers();
+    }
+
+    async function deleteAdminUser(userId, displayName) {
+      if (!window.confirm(`Delete ${displayName}? This removes their account and tokens permanently.`)) return;
+      const response = await fetch(`/api/admin/users/${encodeURIComponent(userId)}`, {
+        method: 'DELETE',
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        showToast(data.error || 'Could not delete user.', true);
+        return;
+      }
+      showToast(`${displayName} deleted.`);
       await refreshAdminUsers();
     }
 

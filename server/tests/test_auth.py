@@ -397,3 +397,143 @@ def test_admin_can_view_user_action_history(client):
     assert response.status_code == 200
     assert response.headers["Cache-Control"] == "no-store"
     assert response.get_json()["events"][0]["target"] == "Iron Ingot"
+
+
+def test_revoked_tokens_are_not_listed(client):
+    conn = app_module._craft_db()
+    try:
+        conn.execute(
+            "INSERT INTO users (id, display_name, role, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            ("usr_admin", "Admin", "admin", time.time()),
+        )
+        conn.execute(
+            "INSERT INTO users (id, display_name, role, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            ("usr_alice", "Alice", "operator", time.time()),
+        )
+        admin_token = app_module._create_access_token(conn, "usr_admin")
+        alice_token = app_module._create_access_token(conn, "usr_alice")
+        alice_token_id = app_module._find_access_token(conn, alice_token)["id"]
+        conn.commit()
+    finally:
+        conn.close()
+
+    assert (
+        client.post("/api/auth/login", json={"token": admin_token}).status_code == 200
+    )
+    client.post(f"/api/admin/tokens/{alice_token_id}/revoke")
+
+    users = client.get("/api/admin/users").get_json()["users"]
+    alice = next(user for user in users if user["id"] == "usr_alice")
+    assert alice["tokens"] == []
+
+
+def test_admin_can_delete_a_user_and_their_credentials(client):
+    conn = app_module._craft_db()
+    try:
+        conn.execute(
+            "INSERT INTO users (id, display_name, role, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            ("usr_admin", "Admin", "admin", time.time()),
+        )
+        conn.execute(
+            "INSERT INTO users (id, display_name, role, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            ("usr_alice", "Alice", "operator", time.time()),
+        )
+        admin_token = app_module._create_access_token(conn, "usr_admin")
+        alice_token = app_module._create_access_token(conn, "usr_alice")
+        conn.commit()
+    finally:
+        conn.close()
+
+    alice_client = app_module.app.test_client()
+    assert (
+        alice_client.post("/api/auth/login", json={"token": alice_token}).status_code
+        == 200
+    )
+    assert (
+        client.post("/api/auth/login", json={"token": admin_token}).status_code == 200
+    )
+
+    response = client.delete("/api/admin/users/usr_alice")
+    assert response.status_code == 200
+
+    users = client.get("/api/admin/users").get_json()["users"]
+    assert all(user["id"] != "usr_alice" for user in users)
+    assert alice_client.get("/api/auth/session").get_json() == {"authenticated": False}
+    assert (
+        alice_client.post("/api/auth/login", json={"token": alice_token}).status_code
+        == 401
+    )
+
+
+def test_admin_cannot_delete_their_own_account(client):
+    conn = app_module._craft_db()
+    try:
+        conn.execute(
+            "INSERT INTO users (id, display_name, role, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            ("usr_admin", "Admin", "admin", time.time()),
+        )
+        admin_token = app_module._create_access_token(conn, "usr_admin")
+        conn.commit()
+    finally:
+        conn.close()
+
+    assert (
+        client.post("/api/auth/login", json={"token": admin_token}).status_code == 200
+    )
+    response = client.delete("/api/admin/users/usr_admin")
+    assert response.status_code == 400
+
+
+def test_admin_can_regenerate_a_users_token(client):
+    conn = app_module._craft_db()
+    try:
+        conn.execute(
+            "INSERT INTO users (id, display_name, role, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            ("usr_admin", "Admin", "admin", time.time()),
+        )
+        conn.execute(
+            "INSERT INTO users (id, display_name, role, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            ("usr_alice", "Alice", "operator", time.time()),
+        )
+        admin_token = app_module._create_access_token(conn, "usr_admin")
+        old_token = app_module._create_access_token(conn, "usr_alice")
+        conn.commit()
+    finally:
+        conn.close()
+
+    alice_client = app_module.app.test_client()
+    assert (
+        alice_client.post("/api/auth/login", json={"token": old_token}).status_code
+        == 200
+    )
+    assert (
+        client.post("/api/auth/login", json={"token": admin_token}).status_code == 200
+    )
+
+    response = client.post("/api/admin/users/usr_alice/tokens")
+    assert response.status_code == 200
+    new_token = response.get_json()["token"]
+    assert new_token.startswith("gcm_tok-")
+    assert new_token != old_token
+
+    # Old token and its session are dead...
+    assert alice_client.get("/api/auth/session").get_json() == {"authenticated": False}
+    assert (
+        alice_client.post("/api/auth/login", json={"token": old_token}).status_code
+        == 401
+    )
+    # ...but the new one works and only one active token remains.
+    assert (
+        alice_client.post("/api/auth/login", json={"token": new_token}).status_code
+        == 200
+    )
+    users = client.get("/api/admin/users").get_json()["users"]
+    alice = next(user for user in users if user["id"] == "usr_alice")
+    assert len(alice["tokens"]) == 1
