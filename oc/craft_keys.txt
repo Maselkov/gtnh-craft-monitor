@@ -1,0 +1,18 @@
+# One craft-request key per line. Lines starting with # (like this one)
+# and blank lines are ignored.
+#
+# Each key is a personal login of sorts, not just a password - whoever
+# types it into the website gets their pins/completions tied to it, and
+# entering the SAME key on a different device gives them the SAME
+# identity there too (pins sync automatically). Anyone who has someone
+# else's key can act as them, same as any shared secret - this is meant
+# for a small household/friend-group deployment, not a public multi-
+# tenant system.
+#
+# Edit this file, then RESTART craft_monitor.lua for changes to take
+# effect - it reads this once at startup and syncs the list to the
+# server, it doesn't watch the file for live edits.
+#
+# Example (replace with real keys before deploying):
+# alice-a1b2c3d4e5f6
+# bob-f6e5d4c3b2a1

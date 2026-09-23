@@ -1,0 +1,91 @@
+from conftest import user_headers
+
+
+class TestCraftsEndpoint:
+    def test_unauthenticated_post_rejected(self, client):
+        res = client.post("/api/crafts", json={"jobs": []})
+        assert res.status_code == 401
+
+    def test_post_then_get_round_trip(self, client, api_headers):
+        payload = {
+            "source": "me_controller",
+            "jobs": [{"name": "W01", "busy": True, "final_output": "Neutronium Ingot"}],
+        }
+        res = client.post("/api/crafts", json=payload, headers=api_headers)
+        assert res.status_code == 200
+        assert res.get_json()["ok"] is True
+
+        res = client.get("/api/crafts")
+        data = res.get_json()
+        assert data["source"] == "me_controller"
+        assert len(data["jobs"]) == 1
+        assert data["jobs"][0]["name"] == "W01"
+        assert data["stale"] is False
+
+    def test_no_data_yet_is_stale(self, client):
+        res = client.get("/api/crafts")
+        data = res.get_json()
+        assert data["stale"] is True
+        assert data["age_seconds"] is None
+
+    def test_invalid_payload_rejected(self, client, api_headers):
+        res = client.post("/api/crafts", data="not json", content_type="application/json", headers=api_headers)
+        assert res.status_code == 400
+
+    def test_missing_jobs_defaults_to_empty_list(self, client, api_headers):
+        res = client.post("/api/crafts", json={"source": "me_controller"}, headers=api_headers)
+        assert res.status_code == 200
+        assert client.get("/api/crafts").get_json()["jobs"] == []
+
+
+class TestCpuPins:
+    def _post_busy_job(self, client, api_headers, cpu_name="W01", busy=True):
+        client.post(
+            "/api/crafts",
+            json={"source": "me_controller", "jobs": [{"name": cpu_name, "busy": busy}]},
+            headers=api_headers,
+        )
+
+    def test_pin_requires_user_id_header(self, client):
+        res = client.post("/api/pins", json={"cpu_name": "W01"})
+        assert res.status_code == 400
+
+    def test_cannot_pin_unknown_cpu(self, client, api_headers):
+        self._post_busy_job(client, api_headers)
+        res = client.post("/api/pins", json={"cpu_name": "NoSuchCPU"}, headers=user_headers("alice"))
+        assert res.status_code == 404
+
+    def test_cannot_pin_idle_cpu(self, client, api_headers):
+        self._post_busy_job(client, api_headers, busy=False)
+        res = client.post("/api/pins", json={"cpu_name": "W01"}, headers=user_headers("alice"))
+        assert res.status_code == 400
+        assert "not currently busy" in res.get_json()["error"]
+
+    def test_pin_busy_cpu_then_list_it(self, client, api_headers):
+        self._post_busy_job(client, api_headers)
+        res = client.post("/api/pins", json={"cpu_name": "W01"}, headers=user_headers("alice"))
+        assert res.status_code == 200
+
+        res = client.get("/api/pins", headers=user_headers("alice"))
+        assert res.get_json()["pins"] == ["W01"]
+
+    def test_pins_are_per_user(self, client, api_headers):
+        self._post_busy_job(client, api_headers)
+        client.post("/api/pins", json={"cpu_name": "W01"}, headers=user_headers("alice"))
+
+        res = client.get("/api/pins", headers=user_headers("bob"))
+        assert res.get_json()["pins"] == []
+
+    def test_double_pin_does_not_duplicate(self, client, api_headers):
+        self._post_busy_job(client, api_headers)
+        client.post("/api/pins", json={"cpu_name": "W01"}, headers=user_headers("alice"))
+        client.post("/api/pins", json={"cpu_name": "W01"}, headers=user_headers("alice"))
+        res = client.get("/api/pins", headers=user_headers("alice"))
+        assert res.get_json()["pins"] == ["W01"]
+
+    def test_unpin_removes_it(self, client, api_headers):
+        self._post_busy_job(client, api_headers)
+        client.post("/api/pins", json={"cpu_name": "W01"}, headers=user_headers("alice"))
+        res = client.post("/api/pins/unpin", json={"cpu_name": "W01"}, headers=user_headers("alice"))
+        assert res.status_code == 200
+        assert client.get("/api/pins", headers=user_headers("alice")).get_json()["pins"] == []

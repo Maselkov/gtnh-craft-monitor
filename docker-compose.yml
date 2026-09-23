@@ -1,0 +1,19 @@
+services:
+  gtnh-craft-monitor:
+    build: ./server
+    container_name: gtnh-craft-monitor
+    restart: unless-stopped
+    ports:
+      - "8420:8420"
+    environment:
+      - API_KEY=change-me         # match oc/craft_monitor.lua and oc/power_monitor.lua CONFIG.API_KEY
+      - STALE_AFTER_SECONDS=30
+    volumes:
+      # Without this, power.db (written at runtime inside the container)
+      # gets silently wiped on every `docker compose up -d --build` -
+      # rebuilding for anything unrelated (an icon update, say) would
+      # otherwise erase your whole power history. This bind-mounts the
+      # same directory the Dockerfile bakes icons_lookup.json/images.zip
+      # from, so it also means you can update those in place on the host
+      # without a rebuild at all.
+      - ./server/data:/app/data
