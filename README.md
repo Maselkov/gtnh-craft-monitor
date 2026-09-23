@@ -159,8 +159,8 @@ First sign-in:
 1. Enter `GCM_BOOTSTRAP_ADMIN_TOKEN` in the page's **Access token** field.
 2. The page immediately issues a replacement admin token. Copy it, confirm
    that you saved it, and use it from now on.
-3. **Manage users** is now available for creating viewer and operator
-   accounts.
+3. **Manage users** is now available for creating accounts. Consider
+   creating a second admin as a backup.
 4. Once you're signed in with the new token, remove `GCM_BOOTSTRAP_ADMIN_TOKEN`
    from `.env` and restart the service.
 
@@ -174,6 +174,14 @@ Managing users:
 
 If the server starts with no users and no bootstrap token, it exits with a
 setup error rather than running without an administrator.
+
+If you lose a token and no admin can sign in, issue a new one from the
+server. This revokes the user's existing tokens and sessions and prints the
+new token:
+
+```bash
+docker compose exec gtnh-craft-monitor python app.py new-token "Administrator"
+```
 
 ### Item icons
 
