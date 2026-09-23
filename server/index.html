@@ -253,6 +253,58 @@
     border-color: var(--idle);
     color: var(--idle);
   }
+  .settings-wrap {
+    position: relative;
+  }
+  .settings-btn {
+    font-size: 16px;
+    line-height: 1;
+    padding: 5px 9px;
+  }
+  .settings-btn[aria-expanded="true"] {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .settings-menu {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 6px);
+    min-width: 180px;
+    background: var(--card);
+    border: 1px solid rgba(128,128,128,0.3);
+    border-radius: 8px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+    padding: 4px;
+    z-index: 50;
+  }
+  .settings-menu-user {
+    font-size: 11px;
+    color: var(--muted);
+    padding: 6px 10px 8px;
+    border-bottom: 1px solid rgba(128,128,128,0.2);
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .settings-menu-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    font-size: 13px;
+    padding: 7px 10px;
+    border: none;
+    border-radius: 6px;
+    background: none;
+    color: var(--text);
+    cursor: pointer;
+  }
+  .settings-menu-item:hover {
+    background: rgba(128,128,128,0.15);
+  }
+  .settings-menu-item.danger {
+    color: var(--stale);
+  }
   .top-bar {
     display: flex;
     justify-content: space-between;
@@ -991,9 +1043,20 @@
         placeholder="Access token" autocomplete="off"
         title="Enter your personal access token to sign in"
         onkeydown="if (event.key === 'Enter') submitAccessToken()">
-      <button class="notif-btn" id="authBtn" onclick="toggleAuthentication()">Sign in</button>
-      <button class="notif-btn" id="adminBtn" style="display:none;" onclick="openAdminUsersModal()">Manage users</button>
+      <button class="notif-btn" id="authBtn" onclick="submitAccessToken()">Sign in</button>
       <button class="notif-btn" id="notifBtn" onclick="requestNotifPermission()">Enable notifications</button>
+      <div class="settings-wrap" id="settingsWrap" style="display:none;">
+        <button class="notif-btn settings-btn" id="settingsBtn" title="Settings"
+          aria-label="Settings" aria-haspopup="true" aria-expanded="false"
+          onclick="toggleSettingsMenu()">&#9881;</button>
+        <div class="settings-menu" id="settingsMenu" role="menu" style="display:none;">
+          <div class="settings-menu-user" id="settingsUser"></div>
+          <button class="settings-menu-item" id="adminBtn" role="menuitem" style="display:none;"
+            onclick="closeSettingsMenu(); openAdminUsersModal()">Manage users</button>
+          <button class="settings-menu-item danger" role="menuitem"
+            onclick="closeSettingsMenu(); signOut()">Sign out</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1197,7 +1260,10 @@
       const adminButton = document.getElementById('adminBtn');
       input.style.display = AUTH_USER ? 'none' : '';
       input.value = '';
-      button.textContent = AUTH_USER ? `Sign out ${AUTH_USER.display_name}` : 'Sign in';
+      button.style.display = AUTH_USER ? 'none' : '';
+      document.getElementById('settingsWrap').style.display = AUTH_USER ? '' : 'none';
+      document.getElementById('settingsUser').textContent = AUTH_USER ? `Signed in as ${AUTH_USER.display_name}` : '';
+      if (!AUTH_USER) closeSettingsMenu();
       adminButton.style.display = AUTH_USER && AUTH_USER.role === 'admin' && !AUTH_MUST_ROTATE_BOOTSTRAP ? '' : 'none';
     }
 
@@ -1428,11 +1494,27 @@
       }
     }
 
-    async function toggleAuthentication() {
-      if (!AUTH_USER) {
-        await submitAccessToken();
-        return;
+    function toggleSettingsMenu() {
+      const menu = document.getElementById('settingsMenu');
+      if (menu.style.display === 'none') {
+        menu.style.display = '';
+        document.getElementById('settingsBtn').setAttribute('aria-expanded', 'true');
+      } else {
+        closeSettingsMenu();
       }
+    }
+
+    function closeSettingsMenu() {
+      document.getElementById('settingsMenu').style.display = 'none';
+      document.getElementById('settingsBtn').setAttribute('aria-expanded', 'false');
+    }
+
+    // Close the settings dropdown on any click outside it.
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('#settingsWrap')) closeSettingsMenu();
+    });
+
+    async function signOut() {
       await fetch('/api/auth/logout', { method: 'POST' });
       AUTH_USER = null;
       AUTH_MUST_ROTATE_BOOTSTRAP = false;
@@ -2926,7 +3008,9 @@
 
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
-        if (document.getElementById('craftRequestModal').style.display !== 'none') {
+        if (document.getElementById('settingsMenu').style.display !== 'none') {
+          closeSettingsMenu();
+        } else if (document.getElementById('craftRequestModal').style.display !== 'none') {
           closeCraftRequestModal();
         } else if (document.getElementById('cancelConfirmModal').style.display !== 'none') {
           closeCancelConfirmModal();
