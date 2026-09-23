@@ -113,6 +113,8 @@ def reset_state():
     app_module._cancel_request_next_id = 1
     app_module._chart_cache.clear()
     app_module._chart_request_times.clear()
+    app_module._cpu_last_busy.clear()
+    app_module._cpu_last_known.clear()
 
     # SQLite - wiped, not dropped/recreated (CREATE TABLE IF NOT EXISTS
     # already ran once at import; DELETE FROM is enough for a clean slate

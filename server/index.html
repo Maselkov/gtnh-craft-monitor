@@ -1114,6 +1114,7 @@
         <select id="adminUserRole" class="modal-amount-input" style="margin:0;">
           <option value="viewer">Viewer</option>
           <option value="operator">Operator</option>
+          <option value="admin">Admin</option>
         </select>
       </div>
       <div id="adminUsersError" class="modal-error" style="display:none;"></div>
@@ -1258,7 +1259,7 @@
         const tokens = (user.tokens || []).map((token) => `
           <div class="admin-token-row">
             <span class="admin-token-id">${escapeHtml(token.id)}</span>
-            <button class="admin-revoke-btn" onclick="revokeAdminToken('${escapeHtml(token.id)}')">Revoke</button>
+            <button class="admin-revoke-btn" onclick="revokeAdminToken(${jsArg(token.id)})">Revoke</button>
           </div>`).join('') || '<div class="admin-token-row">No active tokens</div>';
         return `<div class="admin-user-row">
           <div>
@@ -1267,9 +1268,9 @@
           </div>
           <div class="admin-user-actions">
             <span class="admin-user-role">${escapeHtml(user.role)}${user.disabled_at ? ' (disabled)' : ''}</span>
-            <button class="admin-history-btn" onclick="openUserHistory('${user.id}')">History</button>
-            <button class="admin-history-btn" onclick="regenerateAdminToken('${user.id}', '${escapeHtml(user.display_name)}')">New token</button>
-            <button class="admin-revoke-btn" onclick="deleteAdminUser('${user.id}', '${escapeHtml(user.display_name)}')">Delete</button>
+            <button class="admin-history-btn" onclick="openUserHistory(${jsArg(user.id)})">History</button>
+            <button class="admin-history-btn" onclick="regenerateAdminToken(${jsArg(user.id)}, ${jsArg(user.display_name)})">New token</button>
+            <button class="admin-revoke-btn" onclick="deleteAdminUser(${jsArg(user.id)}, ${jsArg(user.display_name)})">Delete</button>
           </div>
         </div>`;
       }).join('') || '<div class="admin-user-row">No users yet.</div>';
@@ -1742,7 +1743,6 @@
       const isOpen = openIngredients.has(key);
       const isPinned = pinnedCpus.has(job.name);
       const canPin = job.busy || isPinned;  // pinning only ever makes sense for a busy CPU
-      const nameForJs = String(job.name).replace(/'/g, "\'");
 
       const title = job.busy
         ? (job.final_output
@@ -1751,7 +1751,7 @@
         : `<span style="color:var(--muted); font-weight:500;">Idle</span>`;
 
       const ingredientsBlock = (job.busy && itemCount > 0) ? `
-        <details class="ingredients" ${isOpen ? 'open' : ''} ontoggle="toggleIngredients('${key.replace(/'/g, "\'")}', event)">
+        <details class="ingredients" ${isOpen ? 'open' : ''} ontoggle="toggleIngredients(${jsArg(key)}, event)">
           <summary>Ingredients (${itemCount})</summary>
           <div class="ingredients-body">${body}</div>
         </details>
@@ -1762,7 +1762,7 @@
       const isOperator = AUTH_USER && (AUTH_USER.role === 'operator' || AUTH_USER.role === 'admin');
       const isCancelPending = pendingCancelCpus.has(job.name);
       const cancelBtn = (job.busy && isOperator)
-        ? `<button class="cancel-btn" ${isCancelPending ? 'disabled' : ''} onclick="openCancelConfirmModal('${nameForJs}')" title="${isCancelPending ? 'Cancelling…' : 'Cancel this craft'}">${isCancelPending ? '&#8987;' : '&times;'}</button>`
+        ? `<button class="cancel-btn" ${isCancelPending ? 'disabled' : ''} onclick="openCancelConfirmModal(${jsArg(job.name)})" title="${isCancelPending ? 'Cancelling…' : 'Cancel this craft'}">${isCancelPending ? '&#8987;' : '&times;'}</button>`
         : '';
 
       return `
@@ -1773,7 +1773,7 @@
               <div class="cpu-id">CPU ${escapeHtml(job.name || '?')} &middot; storage ${job.storage ?? '?'} &middot; coprocessors ${job.coprocessors ?? '?'}</div>
             </div>
             <div class="head-right">
-              <button class="pin-btn ${isPinned ? 'pinned' : ''}" ${canPin ? '' : 'disabled'} onclick="togglePin('${nameForJs}')" title="${pinTitle}">&#128204;</button>
+              <button class="pin-btn ${isPinned ? 'pinned' : ''}" ${canPin ? '' : 'disabled'} onclick="togglePin(${jsArg(job.name)})" title="${pinTitle}">&#128204;</button>
               ${cancelBtn}
               <div class="badge ${job.busy ? 'busy' : 'idle'}">${job.busy ? 'BUSY' : 'IDLE'}</div>
             </div>
@@ -1794,7 +1794,6 @@
       const statusBadge = entry.status === 'incomplete'
         ? '<span class="status-badge incomplete">Incomplete</span>'
         : '';
-      const idForJs = String(entry.id).replace(/'/g, "\'");
       return `
         <div class="card completed-card">
           <div class="card-head">
@@ -1802,7 +1801,7 @@
               <div class="craft-title">${icon}<span>${title}</span>${statusBadge}</div>
               <div class="cpu-id">Finished ${formatRelativeTime(entry.finishedAt)}</div>
             </div>
-            <button class="ack-btn" onclick="acknowledgePin('${idForJs}')" title="Acknowledge">&#10003;</button>
+            <button class="ack-btn" onclick="acknowledgePin(${jsArg(entry.id)})" title="Acknowledge">&#10003;</button>
           </div>
         </div>
       `;
@@ -1872,6 +1871,14 @@
 
     function escapeHtml(s) {
       return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    // A JS string literal that's safe inside a double-quoted inline
+    // handler attribute: onclick="fn(${jsArg(value)})". JSON.stringify
+    // escapes quotes/backslashes for the JS parser; escapeHtml then
+    // protects the attribute (the browser decodes it back before JS runs).
+    function jsArg(s) {
+      return escapeHtml(JSON.stringify(String(s)));
     }
 
     // ---------- Tabs ----------

@@ -1,3 +1,4 @@
+import app as app_module
 from conftest import login_as
 
 
@@ -106,3 +107,31 @@ class TestCpuPins:
         res = client.post("/api/pins/unpin", json={"cpu_name": "W01"})
         assert res.status_code == 200
         assert client.get("/api/pins").get_json()["pins"] == []
+
+    def test_pin_on_cpu_first_seen_idle_is_dropped(self, client, api_headers):
+        # Simulates a server restart: the pin survives in SQLite, but the
+        # job finished while the server was down, so the first poll sees
+        # the CPU idle with no remembered busy state.
+        self._post_busy_job(client, api_headers)
+        login_as(client, "alice")
+        client.post("/api/pins", json={"cpu_name": "W01"})
+        app_module._cpu_last_busy.clear()
+
+        self._post_busy_job(client, api_headers, busy=False)
+        assert client.get("/api/pins").get_json()["pins"] == []
+
+        # ...and the CPU's next job finishing doesn't notify alice.
+        self._post_busy_job(client, api_headers)
+        self._post_busy_job(client, api_headers, busy=False)
+        assert client.get("/api/completions").get_json()["completions"] == []
+
+    def test_pin_on_busy_cpu_survives_restart(self, client, api_headers):
+        self._post_busy_job(client, api_headers)
+        login_as(client, "alice")
+        client.post("/api/pins", json={"cpu_name": "W01"})
+        app_module._cpu_last_busy.clear()
+
+        self._post_busy_job(client, api_headers)
+        assert client.get("/api/pins").get_json()["pins"] == ["W01"]
+        self._post_busy_job(client, api_headers, busy=False)
+        assert len(client.get("/api/completions").get_json()["completions"]) == 1

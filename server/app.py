@@ -21,6 +21,7 @@ import ipaddress
 import uuid
 import zipfile
 import sqlite3
+import sys
 import threading
 from collections import OrderedDict, deque
 from datetime import datetime
@@ -1182,11 +1183,11 @@ def _require_initial_admin():
     )
 
 
-# In-memory only, deliberately not persisted: if the server restarts,
-# losing "what was CPU X doing right before I restarted" for the handful
-# of CPUs mid-job at that exact moment is an acceptable gap - the
-# alternative (persisting and reloading this on every restart) adds
-# complexity for a case that self-heals within one poll cycle anyway.
+# In-memory only, deliberately not persisted. After a restart, a CPU
+# whose pinned job finished while the server was down is first seen
+# idle with no prior state; _process_craft_transitions drops its pins
+# then (no completion is recorded, since what happened is unknown),
+# so they don't fire on the next unrelated job.
 _craft_tracking_lock = threading.Lock()
 _cpu_last_busy = {}  # cpu_name -> bool
 _cpu_last_known = (
@@ -1221,6 +1222,9 @@ def _process_craft_transitions(jobs):
                     continue
                 busy = bool(job.get("busy"))
                 was_busy = _cpu_last_busy.get(name)
+
+                if was_busy is None and not busy:
+                    conn.execute("DELETE FROM user_pins WHERE cpu_name = ?", (name,))
 
                 if was_busy is True and busy is False:
                     last_known = _cpu_last_known.get(name, {})
@@ -1424,6 +1428,7 @@ _SESSION_WRITE_ENDPOINTS = {
     "admin_user_post",
     "admin_user_delete",
     "admin_user_token_regenerate",
+    "admin_token_revoke_post",
 }
 
 
@@ -1480,10 +1485,10 @@ def admin_user_post():
     payload = request.get_json(silent=True) or {}
     display_name = (payload.get("display_name") or "").strip()
     role = payload.get("role")
-    if not display_name or role not in ("viewer", "operator"):
+    if not display_name or role not in ("viewer", "operator", "admin"):
         return (
             jsonify(
-                {"error": "display_name and a viewer or operator role are required"}
+                {"error": "display_name and a viewer, operator, or admin role are required"}
             ),
             400,
         )
@@ -2927,7 +2932,36 @@ INDEX_HTML_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "inde
 with open(INDEX_HTML_PATH, "r", encoding="utf-8") as _index_html_file:
     INDEX_HTML = _index_html_file.read()
 
+def _cli_new_token(display_name):
+    """Revokes a user's tokens and sessions and prints a new token - the
+    recovery path when the only admin has lost theirs."""
+    conn = _craft_db()
+    try:
+        row = conn.execute(
+            "SELECT id FROM users WHERE display_name = ?", (display_name,)
+        ).fetchone()
+        if not row:
+            raise SystemExit(f"No user named {display_name!r}")
+        now = time.time()
+        conn.execute(
+            "UPDATE access_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL",
+            (now, row[0]),
+        )
+        conn.execute(
+            "UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL",
+            (now, row[0]),
+        )
+        token = _create_access_token(conn, row[0])
+        conn.commit()
+    finally:
+        conn.close()
+    print(token)
+
+
 if __name__ == "__main__":
+    if len(sys.argv) == 3 and sys.argv[1] == "new-token":
+        _cli_new_token(sys.argv[2])
+        sys.exit(0)
     _require_runtime_secrets()
     _require_initial_admin()
     port = int(os.environ.get("PORT", "8420"))

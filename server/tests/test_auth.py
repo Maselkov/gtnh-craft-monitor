@@ -537,3 +537,59 @@ def test_admin_can_regenerate_a_users_token(client):
     users = client.get("/api/admin/users").get_json()["users"]
     alice = next(user for user in users if user["id"] == "usr_alice")
     assert len(alice["tokens"]) == 1
+
+
+def _login_new_admin(client):
+    conn = app_module._craft_db()
+    try:
+        conn.execute(
+            "INSERT INTO users (id, display_name, role, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            ("usr_admin", "Admin", "admin", time.time()),
+        )
+        token = app_module._create_access_token(conn, "usr_admin")
+        conn.commit()
+    finally:
+        conn.close()
+    assert client.post("/api/auth/login", json={"token": token}).status_code == 200
+
+
+def test_admin_can_create_another_admin(client):
+    _login_new_admin(client)
+    response = client.post(
+        "/api/admin/users", json={"display_name": "Backup", "role": "admin"}
+    )
+    assert response.status_code == 201
+    assert response.get_json()["user"]["role"] == "admin"
+
+
+def test_cross_origin_token_revoke_is_rejected(client):
+    _login_new_admin(client)
+    response = client.post(
+        "/api/admin/tokens/tok-anything/revoke",
+        headers={"Origin": "https://attacker.example"},
+    )
+    assert response.status_code == 403
+    assert response.get_json()["error"] == "cross-origin request rejected"
+
+
+def test_cli_new_token_replaces_a_users_tokens(client, capsys):
+    conn = app_module._craft_db()
+    try:
+        conn.execute(
+            "INSERT INTO users (id, display_name, role, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            ("usr_admin", "Admin", "admin", time.time()),
+        )
+        old_token = app_module._create_access_token(conn, "usr_admin")
+        conn.commit()
+    finally:
+        conn.close()
+
+    app_module._cli_new_token("Admin")
+    new_token = capsys.readouterr().out.strip()
+
+    assert client.post("/api/auth/login", json={"token": old_token}).status_code == 401
+    assert client.post("/api/auth/login", json={"token": new_token}).status_code == 200
+    with pytest.raises(SystemExit):
+        app_module._cli_new_token("Nobody")
