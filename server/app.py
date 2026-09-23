@@ -15,18 +15,24 @@ import os
 import time
 import json
 import secrets
+import hashlib
+import hmac
+import ipaddress
+import uuid
 import zipfile
 import sqlite3
 import threading
+from collections import OrderedDict, deque
 from datetime import datetime
 from html import escape as html_escape
 from io import BytesIO
 from urllib.parse import unquote
 
 import matplotlib
+
 matplotlib.use("Agg")  # no display in a container - must be set before
-                        # importing pyplot, or it tries (and fails) to
-                        # find a GUI backend
+# importing pyplot, or it tries (and fails) to
+# find a GUI backend
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from matplotlib.ticker import FuncFormatter
@@ -35,19 +41,67 @@ from flask import Flask, request, jsonify, Response, abort
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 app = Flask(__name__)
-# Needed for og:image/og:url to come out as real absolute
-# https://your-domain/... URLs rather than whatever Flask sees on its
-# OWN direct (internal, behind-the-proxy) connection - without this,
-# request.url_root reflects the container-internal address, not the
-# public one, regardless of the reverse proxy itself already forwarding
-# the right headers. x_proto/x_host=1 trusts exactly one reverse-proxy
-# hop, matching a typical single-proxy deployment.
-app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
-API_KEY = os.environ.get("API_KEY", "change-me")  # must match oc/craft_monitor.lua and oc/power_monitor.lua
+
+def _parse_trusted_proxies(value):
+    networks = []
+    for entry in value.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        try:
+            networks.append(ipaddress.ip_network(entry, strict=False))
+        except ValueError as error:
+            raise RuntimeError(f"Invalid TRUSTED_PROXIES entry: {entry}") from error
+    return networks
+
+
+TRUSTED_PROXY_NETWORKS = _parse_trusted_proxies(os.environ.get("TRUSTED_PROXIES", ""))
+
+
+def _is_trusted_proxy_address(address):
+    try:
+        ip_address = ipaddress.ip_address(address)
+    except ValueError:
+        return False
+    return any(ip_address in network for network in TRUSTED_PROXY_NETWORKS)
+
+
+_direct_wsgi_app = app.wsgi_app
+_proxy_wsgi_app = ProxyFix(_direct_wsgi_app, x_for=1, x_proto=1, x_host=1)
+
+
+def _trusted_proxy_wsgi_app(environ, start_response):
+    if _is_trusted_proxy_address(environ.get("REMOTE_ADDR", "")):
+        environ["gtnh.trusted_proxy"] = True
+        return _proxy_wsgi_app(environ, start_response)
+    return _direct_wsgi_app(environ, start_response)
+
+
+app.wsgi_app = _trusted_proxy_wsgi_app
+
+API_KEY = os.environ.get("API_KEY", "")
 STALE_AFTER_SECONDS = int(os.environ.get("STALE_AFTER_SECONDS", "30"))
+SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "1") != "0"
+app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024
 
-DATA_DIR = os.environ.get("DATA_DIR") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+
+def _require_api_key():
+    supplied_key = request.headers.get("X-API-Key", "")
+    return bool(API_KEY) and hmac.compare_digest(supplied_key, API_KEY)
+
+
+def _require_runtime_secrets():
+    if len(API_KEY) < 32 or API_KEY == "change-me":
+        raise RuntimeError(
+            "API_KEY must be a unique secret of at least 32 characters. "
+            "Set it in .env before starting the server."
+        )
+
+
+DATA_DIR = os.environ.get("DATA_DIR") or os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "data"
+)
 ICONS_LOOKUP_PATH = os.path.join(DATA_DIR, "icons_lookup.json")
 IMAGES_ZIP_PATH = os.path.join(DATA_DIR, "images.zip")
 POWER_DB_PATH = os.path.join(DATA_DIR, "power.db")
@@ -89,7 +143,9 @@ def _get_images_zip():
             if os.path.exists(IMAGES_ZIP_PATH):
                 _images_zip = zipfile.ZipFile(IMAGES_ZIP_PATH, "r")
             elif not _images_zip_missing_logged:
-                print(f"[icons] {IMAGES_ZIP_PATH} not found - icons will be blank until it's added.")
+                print(
+                    f"[icons] {IMAGES_ZIP_PATH} not found - icons will be blank until it's added."
+                )
                 _images_zip_missing_logged = True
     return _images_zip
 
@@ -123,7 +179,9 @@ def resolve_icon(mod, internal, damage, label):
 
 def _attach_item_icons(items):
     for item in items or []:
-        icon = resolve_icon(item.get("mod"), item.get("internal"), item.get("damage"), item.get("name"))
+        icon = resolve_icon(
+            item.get("mod"), item.get("internal"), item.get("damage"), item.get("name")
+        )
         if icon:
             item["icon"] = icon
     return items
@@ -135,8 +193,11 @@ def _attach_job_icons(jobs):
     # 3s for however many browser tabs happen to be open.
     for job in jobs or []:
         icon = resolve_icon(
-            job.get("final_output_mod"), job.get("final_output_internal"),
-            job.get("final_output_damage"), job.get("final_output"))
+            job.get("final_output_mod"),
+            job.get("final_output_internal"),
+            job.get("final_output_damage"),
+            job.get("final_output"),
+        )
         if icon:
             job["final_output_icon"] = icon
         _attach_item_icons(job.get("active"))
@@ -149,7 +210,7 @@ _lock = threading.Lock()
 _state = {
     "jobs": [],
     "source": None,
-    "received_at": None,   # server-side wall clock, for staleness checks
+    "received_at": None,  # server-side wall clock, for staleness checks
 }
 
 # ---------------------------------------------------------------------
@@ -203,7 +264,7 @@ _network_state = {
 
 @app.route("/api/network/scan/start", methods=["POST"])
 def network_scan_start():
-    if request.headers.get("X-API-Key") != API_KEY:
+    if not _require_api_key():
         return jsonify({"error": "unauthorized"}), 401
     with _network_lock:
         _network_buffer.clear()
@@ -225,7 +286,7 @@ def _check_scan_token(payload):
 
 @app.route("/api/network/scan/batch", methods=["POST"])
 def network_scan_batch():
-    if request.headers.get("X-API-Key") != API_KEY:
+    if not _require_api_key():
         return jsonify({"error": "unauthorized"}), 401
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
@@ -242,23 +303,27 @@ def network_scan_batch():
         # signal has to live in the JSON body itself for Lua to actually
         # see it, not in a status code nothing on that side ever checks.
         if not _check_scan_token(payload):
-            return jsonify({
-                "ok": False,
-                "error": "stale_scan_token",
-                "detail": "This batch doesn't belong to the currently active scan "
-                          "(the server may have restarted, or a newer scan already "
-                          "started) - discarding it rather than accumulating a partial result.",
-            })
+            return jsonify(
+                {
+                    "ok": False,
+                    "error": "stale_scan_token",
+                    "detail": "This batch doesn't belong to the currently active scan "
+                    "(the server may have restarted, or a newer scan already "
+                    "started) - discarding it rather than accumulating a partial result.",
+                }
+            )
         _network_buffer.extend(items)
         _network_state["chunks_received"] += 1
         buffered = len(_network_buffer)
         chunks_received = _network_state["chunks_received"]
-    return jsonify({"ok": True, "buffered": buffered, "chunks_received": chunks_received})
+    return jsonify(
+        {"ok": True, "buffered": buffered, "chunks_received": chunks_received}
+    )
 
 
 @app.route("/api/network/scan/finish", methods=["POST"])
 def network_scan_finish():
-    if request.headers.get("X-API-Key") != API_KEY:
+    if not _require_api_key():
         return jsonify({"error": "unauthorized"}), 401
     payload = request.get_json(silent=True) or {}
     with _network_lock:
@@ -279,12 +344,15 @@ def network_scan_finish():
             app.logger.warning(
                 "Rejected scan/finish: stale or missing scan_token - the server "
                 "likely restarted mid-scan, or a newer scan already started. "
-                "Keeping the previous snapshot.")
-            return jsonify({
-                "ok": False,
-                "error": "stale_scan_token",
-                "item_count": _network_state["item_count"],
-            })
+                "Keeping the previous snapshot."
+            )
+            return jsonify(
+                {
+                    "ok": False,
+                    "error": "stale_scan_token",
+                    "item_count": _network_state["item_count"],
+                }
+            )
 
         # Primary defense #2: did every chunk network_browser.lua
         # attempted to send actually arrive, and did nothing else go
@@ -320,20 +388,31 @@ def network_scan_finish():
         chunks_sent = payload.get("chunks_sent")
         total_errors = payload.get("total_errors")
         chunks_received = _network_state["chunks_received"]
-        if chunks_sent is None or total_errors is None or total_errors != 0 or chunks_received != chunks_sent:
+        if (
+            chunks_sent is None
+            or total_errors is None
+            or total_errors != 0
+            or chunks_received != chunks_sent
+        ):
             _network_state["in_progress"] = False
             _network_state["scan_started_at"] = None
             app.logger.warning(
                 "Rejected a network scan as incomplete: chunks_received=%s chunks_sent=%s "
                 "total_errors=%s - keeping the previous snapshot rather than recording "
-                "every missing item as vanished.", chunks_received, chunks_sent, total_errors)
-            return jsonify({
-                "ok": True,
-                "item_count": _network_state["item_count"],
-                "rejected": True,
-                "reason": f"incomplete scan (received {chunks_received}/{chunks_sent} chunks, "
-                          f"{total_errors} errors) - discarded",
-            })
+                "every missing item as vanished.",
+                chunks_received,
+                chunks_sent,
+                total_errors,
+            )
+            return jsonify(
+                {
+                    "ok": True,
+                    "item_count": _network_state["item_count"],
+                    "rejected": True,
+                    "reason": f"incomplete scan (received {chunks_received}/{chunks_sent} chunks, "
+                    f"{total_errors} errors) - discarded",
+                }
+            )
 
         old_items = _network_state["items"]
         new_items = list(_network_buffer)
@@ -354,11 +433,15 @@ def network_scan_finish():
     try:
         _record_item_history_changes(old_items, new_items)
     except Exception as e:
-        app.logger.exception("item history recording failed (scan itself still succeeded): %s", e)
+        app.logger.exception(
+            "item history recording failed (scan itself still succeeded): %s", e
+        )
     try:
         _persist_network_snapshot(new_items)
     except Exception as e:
-        app.logger.exception("network snapshot persistence failed (scan itself still succeeded): %s", e)
+        app.logger.exception(
+            "network snapshot persistence failed (scan itself still succeeded): %s", e
+        )
 
     return jsonify({"ok": True, "item_count": item_count})
 
@@ -366,14 +449,17 @@ def network_scan_finish():
 @app.route("/api/network", methods=["GET"])
 def network_get():
     with _network_lock:
-        return jsonify({
-            "items": _network_state["items"],
-            "item_count": _network_state["item_count"],
-            "updated_at": _network_state["updated_at"],
-            "in_progress": _network_state["in_progress"],
-            "scan_started_at": _network_state["scan_started_at"],
-            "is_reconstructed": _network_state["is_reconstructed"],
-        })
+        return jsonify(
+            {
+                "items": _network_state["items"],
+                "item_count": _network_state["item_count"],
+                "updated_at": _network_state["updated_at"],
+                "in_progress": _network_state["in_progress"],
+                "scan_started_at": _network_state["scan_started_at"],
+                "is_reconstructed": _network_state["is_reconstructed"],
+            }
+        )
+
 
 # ---------------------------------------------------------------------
 # Craft requests (in-memory, ephemeral - not SQLite, same reasoning as
@@ -402,7 +488,7 @@ _craft_request_next_id = 1
 @app.route("/api/craft/keys", methods=["POST"])
 def craft_keys_post():
     # Lua syncing its craft_keys.txt contents - not the browser.
-    if request.headers.get("X-API-Key") != API_KEY:
+    if not _require_api_key():
         return jsonify({"error": "unauthorized"}), 401
     payload = request.get_json(silent=True) or {}
     keys = payload.get("keys", [])
@@ -423,7 +509,8 @@ def craft_keys_post():
             conn.execute("DELETE FROM craft_keys")
             conn.executemany(
                 "INSERT INTO craft_keys (key, synced_at) VALUES (?, ?)",
-                [(k, time.time()) for k in clean_keys])
+                [(k, time.time()) for k in clean_keys],
+            )
             conn.commit()
         finally:
             conn.close()
@@ -444,13 +531,9 @@ def craft_request_post():
     global _craft_request_next_id
     user_id = _require_user_id()
     if not user_id:
-        return jsonify({"error": "missing X-User-Id header"}), 400
-    if not _is_valid_craft_key(user_id):
-        # Deliberately checked here, immediately, rather than queuing the
-        # request and letting Lua discover it's invalid several seconds
-        # later - a wrong/mistyped key should fail instantly, not after
-        # a round trip through the poll cycle.
-        return jsonify({"error": "invalid or unrecognized key"}), 403
+        return jsonify({"error": "authentication required"}), 401
+    if not _is_operator(_session_user()):
+        return jsonify({"error": "operator access required"}), 403
 
     payload = request.get_json(silent=True) or {}
     label = payload.get("label")
@@ -468,6 +551,7 @@ def craft_request_post():
         return jsonify({"error": "kind must be item or fluid"}), 400
 
     icon = resolve_icon(mod, internal, damage, label)
+    created_at = time.time()
 
     with _craft_requests_lock:
         req_id = _craft_request_next_id
@@ -481,17 +565,20 @@ def craft_request_post():
             "damage": damage,
             "amount": amount,
             "kind": kind,  # "item" or "fluid" - craft_monitor.lua's request
-                            # loop needs this to pick the right getCraftables()
-                            # filter shape (confirmed via a real successful
-                            # fluid request: items filter by name+damage,
-                            # fluids only matched when filtered by label)
+            # loop needs this to pick the right getCraftables()
+            # filter shape (confirmed via a real successful
+            # fluid request: items filter by name+damage,
+            # fluids only matched when filtered by label)
             "icon": icon,
             "status": "pending",  # pending -> accepted (removed from list, real
-                                   # pin takes over) | failed (stays until dismissed)
+            # pin takes over) | failed (stays until dismissed)
             "reason": None,
             "cpu_name": None,
-            "created_at": time.time(),
+            "created_at": created_at,
         }
+    _record_craft_request_history(
+        req_id, user_id, label, mod, internal, damage, amount, kind, created_at
+    )
     return jsonify({"ok": True, "id": req_id})
 
 
@@ -505,8 +592,11 @@ def craft_requests_get():
         # one is accepted, a real pin is created and it's the pin
         # (existing infrastructure) that represents it from then on, not
         # this ephemeral request record.
-        mine = [r for r in _craft_requests.values()
-                if r["user_id"] == user_id and r["status"] in ("pending", "failed")]
+        mine = [
+            r
+            for r in _craft_requests.values()
+            if r["user_id"] == user_id and r["status"] in ("pending", "failed")
+        ]
         mine.sort(key=lambda r: r["created_at"], reverse=True)
     return jsonify({"requests": mine})
 
@@ -526,7 +616,7 @@ def craft_request_dismiss(req_id):
 @app.route("/api/craft/requests/pending", methods=["GET"])
 def craft_requests_pending():
     # Lua polling for work - every user's pending requests at once.
-    if request.headers.get("X-API-Key") != API_KEY:
+    if not _require_api_key():
         return jsonify({"error": "unauthorized"}), 401
     with _craft_requests_lock:
         pending = [r for r in _craft_requests.values() if r["status"] == "pending"]
@@ -545,7 +635,8 @@ def _create_pin_bypassing_busy_check(user_id, cpu_name):
     try:
         conn.execute(
             "INSERT OR IGNORE INTO user_pins (user_id, cpu_name, pinned_at) VALUES (?, ?, ?)",
-            (user_id, cpu_name, time.time()))
+            (user_id, cpu_name, time.time()),
+        )
         conn.commit()
     finally:
         conn.close()
@@ -553,7 +644,7 @@ def _create_pin_bypassing_busy_check(user_id, cpu_name):
 
 @app.route("/api/craft/requests/<int:req_id>/result", methods=["POST"])
 def craft_request_result(req_id):
-    if request.headers.get("X-API-Key") != API_KEY:
+    if not _require_api_key():
         return jsonify({"error": "unauthorized"}), 401
     payload = request.get_json(silent=True) or {}
     status = payload.get("status")
@@ -591,13 +682,19 @@ def craft_request_result(req_id):
         # now correctly reads as "finished" for exactly this reason.
         with _craft_tracking_lock:
             _cpu_last_busy[cpu_name] = True
-            entry = _cpu_last_known.setdefault(cpu_name, {"label": None, "icon": None, "progress": None})
+            entry = _cpu_last_known.setdefault(
+                cpu_name, {"label": None, "icon": None, "progress": None}
+            )
             req_label = req.get("label")
             req_icon = req.get("icon")
             if req_label:
                 entry["label"] = req_label
             if req_icon:
                 entry["icon"] = req_icon
+
+    _update_craft_request_history(
+        req_id, status, payload.get("reason"), payload.get("cpu_name")
+    )
 
     return jsonify({"ok": True})
 
@@ -611,7 +708,9 @@ def craft_request_result(req_id):
 # a lighter-weight mirror of the craft-request pattern, not a full copy
 # of it.
 _cancel_requests_lock = threading.Lock()
-_cancel_requests = {}  # id -> {id, user_id, cpu_name, status, success, reason, created_at}
+_cancel_requests = (
+    {}
+)  # id -> {id, user_id, cpu_name, status, success, reason, created_at}
 _cancel_request_next_id = 1
 
 
@@ -620,11 +719,9 @@ def craft_cancel_post():
     global _cancel_request_next_id
     user_id = _require_user_id()
     if not user_id:
-        return jsonify({"error": "missing X-User-Id header"}), 400
-    if not _is_valid_craft_key(user_id):
-        # Same as craft requests - checked immediately, not queued and
-        # discovered invalid several seconds later by Lua.
-        return jsonify({"error": "invalid or unrecognized key"}), 403
+        return jsonify({"error": "authentication required"}), 401
+    if not _is_operator(_session_user()):
+        return jsonify({"error": "operator access required"}), 403
 
     payload = request.get_json(silent=True) or {}
     cpu_name = payload.get("cpu_name")
@@ -643,6 +740,7 @@ def craft_cancel_post():
     if not job.get("busy"):
         return jsonify({"error": "CPU is not currently busy - nothing to cancel"}), 400
 
+    created_at = time.time()
     with _cancel_requests_lock:
         req_id = _cancel_request_next_id
         _cancel_request_next_id += 1
@@ -653,8 +751,9 @@ def craft_cancel_post():
             "status": "pending",  # pending -> resolved
             "success": None,
             "reason": None,
-            "created_at": time.time(),
+            "created_at": created_at,
         }
+    _record_craft_cancel_history(req_id, user_id, cpu_name, created_at)
     return jsonify({"ok": True, "id": req_id})
 
 
@@ -672,7 +771,7 @@ def craft_cancel_get(req_id):
 
 @app.route("/api/craft/cancel/pending", methods=["GET"])
 def craft_cancel_pending():
-    if request.headers.get("X-API-Key") != API_KEY:
+    if not _require_api_key():
         return jsonify({"error": "unauthorized"}), 401
     with _cancel_requests_lock:
         pending = [r for r in _cancel_requests.values() if r["status"] == "pending"]
@@ -681,7 +780,7 @@ def craft_cancel_pending():
 
 @app.route("/api/craft/cancel/<int:req_id>/result", methods=["POST"])
 def craft_cancel_result(req_id):
-    if request.headers.get("X-API-Key") != API_KEY:
+    if not _require_api_key():
         return jsonify({"error": "unauthorized"}), 401
     payload = request.get_json(silent=True) or {}
     success = bool(payload.get("success"))
@@ -695,7 +794,10 @@ def craft_cancel_result(req_id):
         req["success"] = success
         req["reason"] = reason
 
+    _update_craft_cancel_history(req_id, success, reason)
+
     return jsonify({"ok": True})
+
 
 # busy-state transitions in the browser) for two reasons that design
 # couldn't fix:
@@ -721,16 +823,282 @@ def craft_cancel_result(req_id):
 # an acceptable tradeoff behind your own network/auth but not a real
 # security boundary).
 CRAFT_EVENT_FINISHED_THRESHOLD = 99  # progress_percent >= this counts as "finished"
-COMPLETIONS_MAX_AGE_SECONDS = 30 * 86400  # user_completions rows older than this get pruned
+COMPLETIONS_MAX_AGE_SECONDS = (
+    30 * 86400
+)  # user_completions rows older than this get pruned
+SESSION_LIFETIME_SECONDS = int(
+    os.environ.get("SESSION_LIFETIME_SECONDS", str(7 * 86400))
+)
 
 
 def _craft_db():
     return sqlite3.connect(CRAFT_HISTORY_DB_PATH, timeout=10)
 
 
+def _record_craft_request_history(
+    request_id, user_id, label, mod, internal, damage, amount, kind, created_at
+):
+    conn = _craft_db()
+    try:
+        conn.execute(
+            "INSERT INTO craft_request_history "
+            "(request_id, user_id, label, mod, internal, damage, amount, kind, status, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)",
+            (
+                request_id,
+                user_id,
+                label,
+                mod,
+                internal,
+                damage,
+                amount,
+                kind,
+                created_at,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _update_craft_request_history(request_id, status, reason, cpu_name):
+    conn = _craft_db()
+    try:
+        conn.execute(
+            "UPDATE craft_request_history "
+            "SET status = ?, reason = ?, cpu_name = ?, resolved_at = ? "
+            "WHERE request_id = ? AND resolved_at IS NULL",
+            (status, reason, cpu_name, time.time(), request_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _record_craft_cancel_history(request_id, user_id, cpu_name, created_at):
+    conn = _craft_db()
+    try:
+        conn.execute(
+            "INSERT INTO craft_cancel_history "
+            "(request_id, user_id, cpu_name, status, created_at) "
+            "VALUES (?, ?, ?, 'pending', ?)",
+            (request_id, user_id, cpu_name, created_at),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _update_craft_cancel_history(request_id, success, reason):
+    conn = _craft_db()
+    try:
+        conn.execute(
+            "UPDATE craft_cancel_history "
+            "SET status = 'resolved', success = ?, reason = ?, resolved_at = ? "
+            "WHERE request_id = ? AND resolved_at IS NULL",
+            (int(success), reason, time.time(), request_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _hash_secret(secret):
+    return hashlib.sha256(secret.encode("utf-8")).hexdigest()
+
+
+def _parse_access_token(token):
+    try:
+        prefix, token_id, secret = token.split("_", 2)
+    except ValueError:
+        return None
+    if prefix != "gcm" or not token_id or not secret:
+        return None
+    return token_id, secret
+
+
+def _create_access_token(conn, user_id, is_bootstrap=False):
+    token_id = f"tok-{secrets.token_hex(12)}"
+    secret = secrets.token_urlsafe(32)
+    conn.execute(
+        "INSERT INTO access_tokens "
+        "(id, user_id, secret_hash, created_at, is_bootstrap) VALUES (?, ?, ?, ?, ?)",
+        (token_id, user_id, _hash_secret(secret), time.time(), int(is_bootstrap)),
+    )
+    return f"gcm_{token_id}_{secret}"
+
+
+def _find_access_token(conn, token):
+    parsed = _parse_access_token(token)
+    if not parsed:
+        return None
+    token_id, secret = parsed
+    row = conn.execute(
+        "SELECT id, user_id, secret_hash, revoked_at, is_bootstrap "
+        "FROM access_tokens WHERE id = ?",
+        (token_id,),
+    ).fetchone()
+    if (
+        not row
+        or row[3] is not None
+        or not hmac.compare_digest(row[2], _hash_secret(secret))
+    ):
+        return None
+    return {"id": row[0], "user_id": row[1], "is_bootstrap": bool(row[4])}
+
+
+def _create_session(conn, access_token):
+    session_token = secrets.token_urlsafe(32)
+    now = time.time()
+    conn.execute(
+        "INSERT INTO sessions "
+        "(id, user_id, token_hash, access_token_id, must_rotate_bootstrap, created_at, expires_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            f"ses_{uuid.uuid4().hex}",
+            access_token["user_id"],
+            _hash_secret(session_token),
+            access_token["id"],
+            int(access_token["is_bootstrap"]),
+            now,
+            now + SESSION_LIFETIME_SECONDS,
+        ),
+    )
+    return session_token
+
+
+def _session_user():
+    session_token = request.cookies.get("gcm_session")
+    if not session_token:
+        return None
+    conn = _craft_db()
+    try:
+        row = conn.execute(
+            "SELECT users.id, users.display_name, users.role, sessions.id, "
+            "sessions.access_token_id, sessions.must_rotate_bootstrap FROM sessions "
+            "JOIN users ON users.id = sessions.user_id "
+            "WHERE sessions.token_hash = ? AND sessions.revoked_at IS NULL "
+            "AND sessions.expires_at > ? AND users.disabled_at IS NULL",
+            (_hash_secret(session_token), time.time()),
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return None
+    return {
+        "id": row[0],
+        "display_name": row[1],
+        "role": row[2],
+        "session_id": row[3],
+        "access_token_id": row[4],
+        "must_rotate_bootstrap": bool(row[5]),
+    }
+
+
+def _is_admin(user):
+    return user is not None and user["role"] == "admin"
+
+
+def _is_operator(user):
+    return user is not None and user["role"] in ("operator", "admin")
+
+
 def _init_craft_db():
     conn = _craft_db()
     try:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id TEXT PRIMARY KEY,
+                display_name TEXT NOT NULL UNIQUE,
+                role TEXT NOT NULL CHECK (role IN ('viewer', 'operator', 'admin')),
+                created_at REAL NOT NULL,
+                disabled_at REAL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS access_tokens (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL REFERENCES users(id),
+                secret_hash TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                last_used_at REAL,
+                revoked_at REAL,
+                is_bootstrap INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_access_tokens_user ON access_tokens (user_id)"
+        )
+        token_columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(access_tokens)")
+        }
+        if "is_bootstrap" not in token_columns:
+            conn.execute(
+                "ALTER TABLE access_tokens ADD COLUMN is_bootstrap INTEGER NOT NULL DEFAULT 0"
+            )
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS sessions (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL REFERENCES users(id),
+                token_hash TEXT NOT NULL UNIQUE,
+                access_token_id TEXT,
+                must_rotate_bootstrap INTEGER NOT NULL DEFAULT 0,
+                created_at REAL NOT NULL,
+                expires_at REAL NOT NULL,
+                revoked_at REAL
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions (user_id)"
+        )
+        session_columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(sessions)")
+        }
+        if "access_token_id" not in session_columns:
+            conn.execute("ALTER TABLE sessions ADD COLUMN access_token_id TEXT")
+        if "must_rotate_bootstrap" not in session_columns:
+            conn.execute(
+                "ALTER TABLE sessions ADD COLUMN must_rotate_bootstrap INTEGER NOT NULL DEFAULT 0"
+            )
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS craft_request_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                request_id INTEGER NOT NULL,
+                user_id TEXT NOT NULL,
+                label TEXT NOT NULL,
+                mod TEXT,
+                internal TEXT NOT NULL,
+                damage INTEGER,
+                amount REAL NOT NULL,
+                kind TEXT NOT NULL,
+                status TEXT NOT NULL,
+                reason TEXT,
+                cpu_name TEXT,
+                created_at REAL NOT NULL,
+                resolved_at REAL
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_craft_request_history_user "
+            "ON craft_request_history (user_id, created_at DESC)"
+        )
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS craft_cancel_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                request_id INTEGER NOT NULL,
+                user_id TEXT NOT NULL,
+                cpu_name TEXT NOT NULL,
+                status TEXT NOT NULL,
+                success INTEGER,
+                reason TEXT,
+                created_at REAL NOT NULL,
+                resolved_at REAL
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_craft_cancel_history_user "
+            "ON craft_cancel_history (user_id, created_at DESC)"
+        )
         conn.execute("""
             CREATE TABLE IF NOT EXISTS craft_events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -742,7 +1110,9 @@ def _init_craft_db():
                 occurred_at REAL NOT NULL
             )
         """)
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_craft_events_cpu ON craft_events (cpu_name)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_craft_events_cpu ON craft_events (cpu_name)"
+        )
         conn.execute("""
             CREATE TABLE IF NOT EXISTS user_pins (
                 user_id TEXT NOT NULL,
@@ -759,7 +1129,9 @@ def _init_craft_db():
                 created_at REAL NOT NULL
             )
         """)
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_user_completions_user ON user_completions (user_id)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_user_completions_user ON user_completions (user_id)"
+        )
         conn.execute("""
             CREATE TABLE IF NOT EXISTS craft_keys (
                 key TEXT PRIMARY KEY,
@@ -811,14 +1183,82 @@ def _load_valid_craft_keys():
 _init_craft_db()
 _load_valid_craft_keys()
 
+
+def _bootstrap_admin():
+    token = os.environ.get("GCM_BOOTSTRAP_ADMIN_TOKEN", "").strip()
+    if not token:
+        return
+    parsed = _parse_access_token(token)
+    if not parsed:
+        raise RuntimeError(
+            "GCM_BOOTSTRAP_ADMIN_TOKEN must use the gcm_<token-id>_<secret> format"
+        )
+
+    conn = _craft_db()
+    try:
+        token_id, secret = parsed
+        user_count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        if user_count:
+            row = conn.execute(
+                "SELECT user_id FROM access_tokens "
+                "WHERE id = ? AND secret_hash = ? AND revoked_at IS NULL",
+                (token_id, _hash_secret(secret)),
+            ).fetchone()
+            if row:
+                conn.execute(
+                    "UPDATE access_tokens SET is_bootstrap = 1 WHERE id = ?",
+                    (token_id,),
+                )
+                conn.execute(
+                    "UPDATE sessions SET revoked_at = ? "
+                    "WHERE user_id = ? AND revoked_at IS NULL",
+                    (time.time(), row[0]),
+                )
+            conn.commit()
+            return
+        user_id = f"usr_{uuid.uuid4().hex}"
+        now = time.time()
+        conn.execute(
+            "INSERT INTO users (id, display_name, role, created_at) VALUES (?, ?, 'admin', ?)",
+            (user_id, os.environ.get("GCM_BOOTSTRAP_ADMIN_NAME", "Administrator"), now),
+        )
+        conn.execute(
+            "INSERT INTO access_tokens "
+            "(id, user_id, secret_hash, created_at, is_bootstrap) VALUES (?, ?, ?, ?, 1)",
+            (token_id, user_id, _hash_secret(secret), now),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+_bootstrap_admin()
+
+
+def _require_initial_admin():
+    conn = _craft_db()
+    try:
+        user_count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    finally:
+        conn.close()
+    if user_count:
+        return
+    raise RuntimeError(
+        "No users exist. Create .env from .env.example, set "
+        "GCM_BOOTSTRAP_ADMIN_TOKEN, then restart the server."
+    )
+
+
 # In-memory only, deliberately not persisted: if the server restarts,
 # losing "what was CPU X doing right before I restarted" for the handful
 # of CPUs mid-job at that exact moment is an acceptable gap - the
 # alternative (persisting and reloading this on every restart) adds
 # complexity for a case that self-heals within one poll cycle anyway.
 _craft_tracking_lock = threading.Lock()
-_cpu_last_busy = {}    # cpu_name -> bool
-_cpu_last_known = {}   # cpu_name -> {"label":..., "icon":..., "progress":...}, only while busy
+_cpu_last_busy = {}  # cpu_name -> bool
+_cpu_last_known = (
+    {}
+)  # cpu_name -> {"label":..., "icon":..., "progress":...}, only while busy
 
 
 def _classify_status(progress):
@@ -860,21 +1300,29 @@ def _process_craft_transitions(jobs):
                     cur = conn.execute(
                         "INSERT INTO craft_events (cpu_name, item_label, item_icon, status, progress_at_end, occurred_at) "
                         "VALUES (?, ?, ?, ?, ?, ?)",
-                        (name, label, icon, status, progress, occurred_at))
+                        (name, label, icon, status, progress, occurred_at),
+                    )
                     event_id = cur.lastrowid
 
-                    pinned_users = [r[0] for r in conn.execute(
-                        "SELECT user_id FROM user_pins WHERE cpu_name = ?", (name,)).fetchall()]
+                    pinned_users = [
+                        r[0]
+                        for r in conn.execute(
+                            "SELECT user_id FROM user_pins WHERE cpu_name = ?", (name,)
+                        ).fetchall()
+                    ]
                     for user_id in pinned_users:
                         conn.execute(
                             "INSERT INTO user_completions (user_id, craft_event_id, created_at) VALUES (?, ?, ?)",
-                            (user_id, event_id, occurred_at))
+                            (user_id, event_id, occurred_at),
+                        )
                     conn.execute("DELETE FROM user_pins WHERE cpu_name = ?", (name,))
 
                     _cpu_last_known.pop(name, None)
 
                 if busy:
-                    entry = _cpu_last_known.setdefault(name, {"label": None, "icon": None, "progress": None})
+                    entry = _cpu_last_known.setdefault(
+                        name, {"label": None, "icon": None, "progress": None}
+                    )
                     if job.get("final_output"):
                         entry["label"] = job.get("final_output")
                         entry["icon"] = job.get("final_output_icon")
@@ -894,8 +1342,348 @@ def _prune_old_completions(conn):
 
 
 def _require_user_id():
-    user_id = (request.headers.get("X-User-Id") or "").strip()
-    return user_id or None
+    user = _session_user()
+    return user["id"] if user else None
+
+
+@app.route("/api/auth/session", methods=["GET"])
+def auth_session_get():
+    user = _session_user()
+    if not user:
+        return jsonify({"authenticated": False})
+    return jsonify(
+        {
+            "authenticated": True,
+            "user": {key: user[key] for key in ("id", "display_name", "role")},
+            "must_rotate_bootstrap": user["must_rotate_bootstrap"],
+        }
+    )
+
+
+@app.route("/api/auth/login", methods=["POST"])
+def auth_login_post():
+    payload = request.get_json(silent=True) or {}
+    token = payload.get("token")
+    if not isinstance(token, str):
+        return jsonify({"error": "invalid credentials"}), 401
+
+    conn = _craft_db()
+    try:
+        access_token = _find_access_token(conn, token.strip())
+        if not access_token:
+            return jsonify({"error": "invalid credentials"}), 401
+        user = conn.execute(
+            "SELECT id, display_name, role, disabled_at FROM users WHERE id = ?",
+            (access_token["user_id"],),
+        ).fetchone()
+        if not user or user[3] is not None:
+            return jsonify({"error": "invalid credentials"}), 401
+        conn.execute(
+            "UPDATE access_tokens SET last_used_at = ? WHERE id = ?",
+            (time.time(), access_token["id"]),
+        )
+        session_token = _create_session(conn, access_token)
+        conn.commit()
+    finally:
+        conn.close()
+
+    response = jsonify(
+        {
+            "authenticated": True,
+            "user": {"id": user[0], "display_name": user[1], "role": user[2]},
+            "must_rotate_bootstrap": access_token["is_bootstrap"],
+        }
+    )
+    response.set_cookie(
+        "gcm_session",
+        session_token,
+        max_age=SESSION_LIFETIME_SECONDS,
+        secure=SESSION_COOKIE_SECURE,
+        httponly=True,
+        samesite="Lax",
+        path="/",
+    )
+    return response
+
+
+@app.route("/api/auth/logout", methods=["POST"])
+def auth_logout_post():
+    session_token = request.cookies.get("gcm_session")
+    if session_token:
+        conn = _craft_db()
+        try:
+            conn.execute(
+                "UPDATE sessions SET revoked_at = ? WHERE token_hash = ?",
+                (time.time(), _hash_secret(session_token)),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    response = jsonify({"ok": True})
+    response.delete_cookie("gcm_session", path="/")
+    return response
+
+
+@app.route("/api/auth/rotate-bootstrap", methods=["POST"])
+def auth_rotate_bootstrap_post():
+    user = _session_user()
+    if not user or not user["must_rotate_bootstrap"] or not _is_admin(user):
+        return jsonify({"error": "bootstrap rotation is not available"}), 403
+
+    conn = _craft_db()
+    try:
+        replacement_token = _create_access_token(conn, user["id"])
+        replacement_token_id, _ = _parse_access_token(replacement_token)
+        now = time.time()
+        conn.execute(
+            "UPDATE access_tokens SET revoked_at = ? WHERE id = ? AND is_bootstrap = 1",
+            (now, user["access_token_id"]),
+        )
+        conn.execute(
+            "UPDATE sessions SET revoked_at = ? WHERE access_token_id = ? AND id != ?",
+            (now, user["access_token_id"], user["session_id"]),
+        )
+        conn.execute(
+            "UPDATE sessions SET access_token_id = ?, must_rotate_bootstrap = 0 WHERE id = ?",
+            (replacement_token_id, user["session_id"]),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"token": replacement_token})
+
+
+_BOOTSTRAP_BLOCKED_ENDPOINTS = {
+    "craft_request_post",
+    "craft_requests_get",
+    "craft_request_dismiss",
+    "craft_cancel_post",
+    "craft_cancel_get",
+    "pins_get",
+    "pins_post",
+    "pins_unpin",
+    "completions_get",
+    "completions_ack",
+    "completions_ack_all",
+    "network_item_pins_get",
+    "network_item_pins_post",
+    "network_item_pins_unpin",
+    "admin_user_post",
+    "admin_token_revoke_post",
+    "admin_users_get",
+    "admin_user_history_get",
+}
+
+_SESSION_WRITE_ENDPOINTS = {
+    "auth_logout_post",
+    "auth_rotate_bootstrap_post",
+    "craft_request_post",
+    "craft_request_dismiss",
+    "craft_cancel_post",
+    "pins_post",
+    "pins_unpin",
+    "completions_ack",
+    "completions_ack_all",
+    "network_item_pins_post",
+    "network_item_pins_unpin",
+    "admin_user_post",
+}
+
+
+@app.before_request
+def block_unrotated_bootstrap_sessions():
+    if request.endpoint not in _BOOTSTRAP_BLOCKED_ENDPOINTS:
+        return None
+    user = _session_user()
+    if user and user["must_rotate_bootstrap"]:
+        return jsonify({"error": "rotate the bootstrap token before continuing"}), 403
+    return None
+
+
+@app.before_request
+def reject_cross_origin_session_writes():
+    if request.endpoint not in _SESSION_WRITE_ENDPOINTS:
+        return None
+    if not _session_user():
+        return None
+    origin = request.headers.get("Origin")
+    if origin and origin != request.host_url.rstrip("/"):
+        return jsonify({"error": "cross-origin request rejected"}), 403
+    return None
+
+
+@app.after_request
+def add_browser_security_headers(response):
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "same-origin")
+    response.headers.setdefault(
+        "Permissions-Policy", "camera=(), microphone=(), geolocation=()"
+    )
+    if request.endpoint in {
+        "auth_session_get",
+        "auth_login_post",
+        "auth_logout_post",
+        "auth_rotate_bootstrap_post",
+        "admin_user_post",
+        "admin_token_revoke_post",
+        "admin_user_history_get",
+    }:
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.route("/api/admin/users", methods=["POST"])
+def admin_user_post():
+    admin = _session_user()
+    if not _is_admin(admin):
+        return jsonify({"error": "administrator access required"}), 403
+    payload = request.get_json(silent=True) or {}
+    display_name = (payload.get("display_name") or "").strip()
+    role = payload.get("role")
+    if not display_name or role not in ("viewer", "operator"):
+        return (
+            jsonify(
+                {"error": "display_name and a viewer or operator role are required"}
+            ),
+            400,
+        )
+
+    conn = _craft_db()
+    try:
+        user_id = f"usr_{uuid.uuid4().hex}"
+        conn.execute(
+            "INSERT INTO users (id, display_name, role, created_at) VALUES (?, ?, ?, ?)",
+            (user_id, display_name, role, time.time()),
+        )
+        token = _create_access_token(conn, user_id)
+        conn.commit()
+    except sqlite3.IntegrityError:
+        return jsonify({"error": "display name already exists"}), 409
+    finally:
+        conn.close()
+    return (
+        jsonify(
+            {
+                "user": {"id": user_id, "display_name": display_name, "role": role},
+                "token": token,
+            }
+        ),
+        201,
+    )
+
+
+@app.route("/api/admin/users", methods=["GET"])
+def admin_users_get():
+    admin = _session_user()
+    if not _is_admin(admin):
+        return jsonify({"error": "administrator access required"}), 403
+
+    conn = _craft_db()
+    try:
+        rows = conn.execute(
+            "SELECT users.id, users.display_name, users.role, users.created_at, "
+            "users.disabled_at, access_tokens.id, access_tokens.created_at, "
+            "access_tokens.last_used_at, access_tokens.revoked_at "
+            "FROM users LEFT JOIN access_tokens ON access_tokens.user_id = users.id "
+            "ORDER BY users.display_name COLLATE NOCASE, access_tokens.created_at"
+        ).fetchall()
+    finally:
+        conn.close()
+    users = {}
+    for row in rows:
+        user = users.setdefault(
+            row[0],
+            {
+                "id": row[0],
+                "display_name": row[1],
+                "role": row[2],
+                "created_at": row[3],
+                "disabled_at": row[4],
+                "tokens": [],
+            },
+        )
+        if row[5]:
+            user["tokens"].append(
+                {
+                    "id": row[5],
+                    "created_at": row[6],
+                    "last_used_at": row[7],
+                    "revoked_at": row[8],
+                }
+            )
+    return jsonify({"users": list(users.values())})
+
+
+@app.route("/api/admin/users/<user_id>/history", methods=["GET"])
+def admin_user_history_get(user_id):
+    admin = _session_user()
+    if not _is_admin(admin):
+        return jsonify({"error": "administrator access required"}), 403
+
+    conn = _craft_db()
+    try:
+        user = conn.execute(
+            "SELECT id, display_name FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+        if not user:
+            return jsonify({"error": "unknown user"}), 404
+        rows = conn.execute(
+            "SELECT 'request', label, status, reason, cpu_name, created_at, resolved_at "
+            "FROM craft_request_history WHERE user_id = ? "
+            "UNION ALL "
+            "SELECT 'cancel', cpu_name, status, reason, cpu_name, created_at, resolved_at "
+            "FROM craft_cancel_history WHERE user_id = ? "
+            "ORDER BY created_at DESC LIMIT 100",
+            (user_id, user_id),
+        ).fetchall()
+    finally:
+        conn.close()
+    return jsonify(
+        {
+            "user": {"id": user[0], "display_name": user[1]},
+            "events": [
+                {
+                    "type": row[0],
+                    "target": row[1],
+                    "status": row[2],
+                    "reason": row[3],
+                    "cpu_name": row[4],
+                    "created_at": row[5],
+                    "resolved_at": row[6],
+                }
+                for row in rows
+            ],
+        }
+    )
+
+
+@app.route("/api/admin/tokens/<token_id>/revoke", methods=["POST"])
+def admin_token_revoke_post(token_id):
+    admin = _session_user()
+    if not _is_admin(admin):
+        return jsonify({"error": "administrator access required"}), 403
+
+    conn = _craft_db()
+    try:
+        now = time.time()
+        cursor = conn.execute(
+            "UPDATE access_tokens SET revoked_at = ? "
+            "WHERE id = ? AND revoked_at IS NULL",
+            (now, token_id),
+        )
+        if not cursor.rowcount:
+            return jsonify({"error": "active token not found"}), 404
+        conn.execute(
+            "UPDATE sessions SET revoked_at = ? "
+            "WHERE access_token_id = ? AND revoked_at IS NULL",
+            (now, token_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"ok": True})
+
 
 # Small ad-hoc debugging channel: the Lua side can POST a raw dump here
 # instead of printing to the OC terminal (which has essentially no
@@ -907,24 +1695,25 @@ _DEBUG_DUMPS_KEEP = 10
 
 @app.route("/api/debug", methods=["POST"])
 def debug_post():
-    if request.headers.get("X-API-Key") != API_KEY:
+    if not _require_api_key():
         return jsonify({"error": "unauthorized"}), 401
     payload = request.get_json(silent=True) or {}
     with _lock:
-        _debug_dumps.append({
-            "tag": payload.get("tag", "?"),
-            "dump": payload.get("dump", ""),
-            "received_at": time.time(),
-        })
+        _debug_dumps.append(
+            {
+                "tag": payload.get("tag", "?"),
+                "dump": payload.get("dump", ""),
+                "received_at": time.time(),
+            }
+        )
         del _debug_dumps[:-_DEBUG_DUMPS_KEEP]
     return jsonify({"ok": True})
 
 
 @app.route("/api/debug", methods=["GET"])
 def debug_get():
-    # No auth on the read side - this is a homelab convenience endpoint,
-    # open it straight in a browser. Remove/guard this if that ever stops
-    # being an acceptable tradeoff for your setup.
+    if not _is_operator(_session_user()):
+        return jsonify({"error": "operator access required"}), 403
     with _lock:
         if not _debug_dumps:
             return Response("(no debug dumps received yet)", mimetype="text/plain")
@@ -937,7 +1726,7 @@ def debug_get():
 
 @app.route("/api/crafts", methods=["POST"])
 def crafts_post():
-    if request.headers.get("X-API-Key") != API_KEY:
+    if not _require_api_key():
         return jsonify({"error": "unauthorized"}), 401
 
     payload = request.get_json(silent=True)
@@ -963,12 +1752,14 @@ def crafts_get():
     with _lock:
         received_at = _state["received_at"]
         age = (time.time() - received_at) if received_at else None
-        return jsonify({
-            "jobs": _state["jobs"],
-            "source": _state["source"],
-            "age_seconds": age,
-            "stale": age is None or age > STALE_AFTER_SECONDS,
-        })
+        return jsonify(
+            {
+                "jobs": _state["jobs"],
+                "source": _state["source"],
+                "age_seconds": age,
+                "stale": age is None or age > STALE_AFTER_SECONDS,
+            }
+        )
 
 
 @app.route("/api/pins", methods=["GET"])
@@ -978,7 +1769,9 @@ def pins_get():
         return jsonify({"error": "missing X-User-Id header"}), 400
     conn = _craft_db()
     try:
-        rows = conn.execute("SELECT cpu_name FROM user_pins WHERE user_id = ?", (user_id,)).fetchall()
+        rows = conn.execute(
+            "SELECT cpu_name FROM user_pins WHERE user_id = ?", (user_id,)
+        ).fetchall()
     finally:
         conn.close()
     return jsonify({"pins": [r[0] for r in rows]})
@@ -1011,7 +1804,8 @@ def pins_post():
     try:
         conn.execute(
             "INSERT OR IGNORE INTO user_pins (user_id, cpu_name, pinned_at) VALUES (?, ?, ?)",
-            (user_id, cpu_name, time.time()))
+            (user_id, cpu_name, time.time()),
+        )
         conn.commit()
     finally:
         conn.close()
@@ -1031,7 +1825,10 @@ def pins_unpin():
 
     conn = _craft_db()
     try:
-        conn.execute("DELETE FROM user_pins WHERE user_id = ? AND cpu_name = ?", (user_id, cpu_name))
+        conn.execute(
+            "DELETE FROM user_pins WHERE user_id = ? AND cpu_name = ?",
+            (user_id, cpu_name),
+        )
         conn.commit()
     finally:
         conn.close()
@@ -1048,22 +1845,33 @@ def completions_get():
     try:
         _prune_old_completions(conn)
         conn.commit()
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT uc.id, ce.item_label, ce.item_icon, ce.status, ce.occurred_at
             FROM user_completions uc
             JOIN craft_events ce ON ce.id = uc.craft_event_id
             WHERE uc.user_id = ?
             ORDER BY ce.occurred_at DESC
-        """, (user_id,)).fetchall()
+        """,
+            (user_id,),
+        ).fetchall()
     finally:
         conn.close()
 
-    return jsonify({
-        "completions": [
-            {"id": r[0], "itemName": r[1], "icon": r[2], "status": r[3], "finishedAt": r[4]}
-            for r in rows
-        ]
-    })
+    return jsonify(
+        {
+            "completions": [
+                {
+                    "id": r[0],
+                    "itemName": r[1],
+                    "icon": r[2],
+                    "status": r[3],
+                    "finishedAt": r[4],
+                }
+                for r in rows
+            ]
+        }
+    )
 
 
 @app.route("/api/completions/<int:completion_id>/ack", methods=["POST"])
@@ -1073,7 +1881,10 @@ def completions_ack(completion_id):
         return jsonify({"error": "missing X-User-Id header"}), 400
     conn = _craft_db()
     try:
-        conn.execute("DELETE FROM user_completions WHERE id = ? AND user_id = ?", (completion_id, user_id))
+        conn.execute(
+            "DELETE FROM user_completions WHERE id = ? AND user_id = ?",
+            (completion_id, user_id),
+        )
         conn.commit()
     finally:
         conn.close()
@@ -1113,16 +1924,21 @@ def icon():
             data = zf.read(img_path)
         except KeyError:
             abort(404)
-    return Response(data, mimetype="image/png", headers={
-        # Icons for a given item never change, safe to cache hard.
-        "Cache-Control": "public, max-age=604800, immutable",
-    })
+    return Response(
+        data,
+        mimetype="image/png",
+        headers={
+            # Icons for a given item never change, safe to cache hard.
+            "Cache-Control": "public, max-age=604800, immutable",
+        },
+    )
 
 
 # ---------------------------------------------------------------------
 # Power monitor (SQLite-backed time series of GT machine energy level,
 # fed by oc/power_monitor.lua)
 # ---------------------------------------------------------------------
+
 
 def _power_db():
     # A fresh connection per call rather than one shared connection -
@@ -1144,7 +1960,9 @@ def _init_power_db():
                 capacity REAL NOT NULL
             )
         """)
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_power_readings_ts ON power_readings (ts)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_power_readings_ts ON power_readings (ts)"
+        )
         # Migration for existing installs - these columns didn't exist
         # before this feature (avg EU in/out over a few windows, plus a
         # time-to-empty estimate - all confirmed available for free from
@@ -1155,16 +1973,23 @@ def _init_power_db():
         # and swallowing a "duplicate column" error - more explicit
         # about what's actually happening, and safe to run on every
         # startup either way (only adds what's genuinely missing).
-        existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(power_readings)")}
+        existing_cols = {
+            row[1] for row in conn.execute("PRAGMA table_info(power_readings)")
+        }
         new_cols = [
-            ("avg_eu_in_5s", "REAL"), ("avg_eu_out_5s", "REAL"),
-            ("avg_eu_in_5m", "REAL"), ("avg_eu_out_5m", "REAL"),
-            ("avg_eu_in_1h", "REAL"), ("avg_eu_out_1h", "REAL"),
+            ("avg_eu_in_5s", "REAL"),
+            ("avg_eu_out_5s", "REAL"),
+            ("avg_eu_in_5m", "REAL"),
+            ("avg_eu_out_5m", "REAL"),
+            ("avg_eu_in_1h", "REAL"),
+            ("avg_eu_out_1h", "REAL"),
             ("time_to_empty_minutes", "REAL"),
         ]
         for col_name, col_type in new_cols:
             if col_name not in existing_cols:
-                conn.execute(f"ALTER TABLE power_readings ADD COLUMN {col_name} {col_type}")
+                conn.execute(
+                    f"ALTER TABLE power_readings ADD COLUMN {col_name} {col_type}"
+                )
         conn.commit()
     finally:
         conn.close()
@@ -1180,8 +2005,8 @@ POWER_RANGE_SECONDS = {
     "lifetime": None,
 }
 POWER_MAX_POINTS = 800  # cap returned points regardless of range, so the
-                         # chart stays fast and the payload stays small
-                         # even after months of 1-minute-ish polling
+# chart stays fast and the payload stays small
+# even after months of 1-minute-ish polling
 
 
 def _downsample(rows, max_points=POWER_MAX_POINTS):
@@ -1207,7 +2032,7 @@ def _downsample(rows, max_points=POWER_MAX_POINTS):
 
 @app.route("/api/power", methods=["POST"])
 def power_post():
-    if request.headers.get("X-API-Key") != API_KEY:
+    if not _require_api_key():
         return jsonify({"error": "unauthorized"}), 401
 
     payload = request.get_json(silent=True)
@@ -1236,11 +2061,19 @@ def power_post():
             "(ts, stored, capacity, avg_eu_in_5s, avg_eu_out_5s, avg_eu_in_5m, avg_eu_out_5m, "
             "avg_eu_in_1h, avg_eu_out_1h, time_to_empty_minutes) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (float(ts), float(stored), float(capacity),
-             _f("avg_eu_in_5s"), _f("avg_eu_out_5s"),
-             _f("avg_eu_in_5m"), _f("avg_eu_out_5m"),
-             _f("avg_eu_in_1h"), _f("avg_eu_out_1h"),
-             _f("time_to_empty_minutes")))
+            (
+                float(ts),
+                float(stored),
+                float(capacity),
+                _f("avg_eu_in_5s"),
+                _f("avg_eu_out_5s"),
+                _f("avg_eu_in_5m"),
+                _f("avg_eu_out_5m"),
+                _f("avg_eu_in_1h"),
+                _f("avg_eu_out_1h"),
+                _f("time_to_empty_minutes"),
+            ),
+        )
         conn.commit()
     finally:
         conn.close()
@@ -1256,12 +2089,15 @@ def _fetch_power_rows(range_key):
     conn = _power_db()
     try:
         if seconds is None:
-            cur = conn.execute("SELECT ts, stored, capacity FROM power_readings ORDER BY ts ASC")
+            cur = conn.execute(
+                "SELECT ts, stored, capacity FROM power_readings ORDER BY ts ASC"
+            )
         else:
             since = time.time() - seconds
             cur = conn.execute(
                 "SELECT ts, stored, capacity FROM power_readings WHERE ts >= ? ORDER BY ts ASC",
-                (since,))
+                (since,),
+            )
         rows = cur.fetchall()
     finally:
         conn.close()
@@ -1304,15 +2140,23 @@ def power_get():
     range_key, rows = _fetch_power_rows(request.args.get("range", "day"))
     latest = _fetch_latest_power_reading()
 
-    return jsonify({
-        "range": range_key,
-        "points": [{"t": r[0], "stored": r[1], "capacity": r[2]} for r in rows],
-        "latest": {
-            "t": latest[0], "stored": latest[1], "capacity": latest[2],
-            "avg_eu_in_5s": latest[3], "avg_eu_out_5s": latest[4],
-        } if latest else None,
-    })
-
+    return jsonify(
+        {
+            "range": range_key,
+            "points": [{"t": r[0], "stored": r[1], "capacity": r[2]} for r in rows],
+            "latest": (
+                {
+                    "t": latest[0],
+                    "stored": latest[1],
+                    "capacity": latest[2],
+                    "avg_eu_in_5s": latest[3],
+                    "avg_eu_out_5s": latest[4],
+                }
+                if latest
+                else None
+            ),
+        }
+    )
 
 
 # ---------------------------------------------------------------------
@@ -1354,7 +2198,9 @@ def _init_item_history_db():
                 recorded_at REAL NOT NULL
             )
         """)
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_item_history_key_time ON item_history (item_key, recorded_at)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_item_history_key_time ON item_history (item_key, recorded_at)"
+        )
         # A true MIRROR of the live network snapshot (unlike item_history
         # above, which is change-only) - wiped and fully rewritten on
         # every scan/finish, so it always reflects exactly what the last
@@ -1400,11 +2246,22 @@ def _persist_network_snapshot(items):
     now = time.time()
     rows = []
     for it in items:
-        key = _item_key(it.get("mod"), it.get("internal"), it.get("damage"), it.get("kind"))
-        rows.append((
-            key, it.get("mod"), it.get("internal"), it.get("damage"), it.get("kind") or "item",
-            it.get("name"), it.get("size", 0) or 0, 1 if it.get("isCraftable") else 0, now,
-        ))
+        key = _item_key(
+            it.get("mod"), it.get("internal"), it.get("damage"), it.get("kind")
+        )
+        rows.append(
+            (
+                key,
+                it.get("mod"),
+                it.get("internal"),
+                it.get("damage"),
+                it.get("kind") or "item",
+                it.get("name"),
+                it.get("size", 0) or 0,
+                1 if it.get("isCraftable") else 0,
+                now,
+            )
+        )
     conn = _item_history_db()
     try:
         conn.execute("DELETE FROM network_snapshot")
@@ -1413,7 +2270,8 @@ def _persist_network_snapshot(items):
                 "INSERT OR REPLACE INTO network_snapshot "
                 "(item_key, mod, internal, damage, kind, name, size, is_craftable, updated_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                rows)
+                rows,
+            )
         conn.commit()
     finally:
         conn.close()
@@ -1438,10 +2296,17 @@ def _load_network_snapshot():
     items = []
     max_updated = 0.0
     for r in rows:
-        items.append({
-            "mod": r[0], "internal": r[1], "damage": r[2], "kind": r[3],
-            "name": r[4], "size": r[5], "isCraftable": bool(r[6]),
-        })
+        items.append(
+            {
+                "mod": r[0],
+                "internal": r[1],
+                "damage": r[2],
+                "kind": r[3],
+                "name": r[4],
+                "size": r[5],
+                "isCraftable": bool(r[6]),
+            }
+        )
         max_updated = max(max_updated, r[7])
 
     # network_snapshot deliberately doesn't store an icon path - it's a
@@ -1476,14 +2341,18 @@ def _record_item_history_changes(old_items, new_items):
     present)."""
     old_by_key = {}
     for it in old_items or []:
-        key = _item_key(it.get("mod"), it.get("internal"), it.get("damage"), it.get("kind"))
+        key = _item_key(
+            it.get("mod"), it.get("internal"), it.get("damage"), it.get("kind")
+        )
         old_by_key[key] = it.get("size", 0)
 
     now = time.time()
     changes = []
     seen_keys = set()
     for it in new_items or []:
-        key = _item_key(it.get("mod"), it.get("internal"), it.get("damage"), it.get("kind"))
+        key = _item_key(
+            it.get("mod"), it.get("internal"), it.get("damage"), it.get("kind")
+        )
         seen_keys.add(key)
         new_size = it.get("size", 0)
         if old_by_key.get(key) != new_size:
@@ -1500,7 +2369,8 @@ def _record_item_history_changes(old_items, new_items):
     try:
         conn.executemany(
             "INSERT INTO item_history (item_key, label, size, recorded_at) VALUES (?, ?, ?, ?)",
-            changes)
+            changes,
+        )
         conn.commit()
     finally:
         conn.close()
@@ -1548,11 +2418,64 @@ _CHART_LINE = "#5fb3ff"
 _CHART_MUTED = "#8a8f98"
 _CHART_WIDTH_PX = 800
 _CHART_HEIGHT_PX = 400  # 2:1 - landscape, which matters: Discord reads
-                          # og:image:width/height as one of its signals
-                          # for picking the large-image embed layout
-                          # over a small thumbnail, alongside twitter:card
-                          # below - a portrait/near-square image would
-                          # work against that signal instead of for it.
+# og:image:width/height as one of its signals
+# for picking the large-image embed layout
+# over a small thumbnail, alongside twitter:card
+# below - a portrait/near-square image would
+# work against that signal instead of for it.
+CHART_CACHE_TTL_SECONDS = int(os.environ.get("CHART_CACHE_TTL_SECONDS", "60"))
+CHART_CACHE_MAX_ENTRIES = int(os.environ.get("CHART_CACHE_MAX_ENTRIES", "64"))
+CHART_RATE_LIMIT_PER_MINUTE = int(os.environ.get("CHART_RATE_LIMIT_PER_MINUTE", "30"))
+CHART_MAX_TRACKED_CLIENTS = int(os.environ.get("CHART_MAX_TRACKED_CLIENTS", "4096"))
+_chart_cache = OrderedDict()
+_chart_cache_lock = threading.Lock()
+_chart_request_times = OrderedDict()
+_chart_rate_lock = threading.Lock()
+
+
+def _chart_client_id():
+    return request.remote_addr or "unknown"
+
+
+def _chart_rate_limit_response():
+    now = time.time()
+    client_id = _chart_client_id()
+    with _chart_rate_lock:
+        timestamps = _chart_request_times.get(client_id)
+        if timestamps is None:
+            if len(_chart_request_times) >= CHART_MAX_TRACKED_CLIENTS:
+                _chart_request_times.popitem(last=False)
+            timestamps = deque()
+            _chart_request_times[client_id] = timestamps
+        _chart_request_times.move_to_end(client_id)
+        while timestamps and timestamps[0] <= now - 60:
+            timestamps.popleft()
+        if len(timestamps) >= CHART_RATE_LIMIT_PER_MINUTE:
+            retry_after = max(1, int(timestamps[0] + 60 - now) + 1)
+            response = jsonify({"error": "chart rate limit exceeded"})
+            response.headers["Retry-After"] = str(retry_after)
+            return response, 429
+        timestamps.append(now)
+    return None
+
+
+def _cached_chart_png(cache_key, render):
+    now = time.time()
+    with _chart_cache_lock:
+        cached = _chart_cache.get(cache_key)
+        if cached and cached[0] > now:
+            _chart_cache.move_to_end(cache_key)
+            return cached[1]
+        if cached:
+            del _chart_cache[cache_key]
+
+    png_bytes = render()
+    with _chart_cache_lock:
+        _chart_cache[cache_key] = (now + CHART_CACHE_TTL_SECONDS, png_bytes)
+        _chart_cache.move_to_end(cache_key)
+        while len(_chart_cache) > CHART_CACHE_MAX_ENTRIES:
+            _chart_cache.popitem(last=False)
+    return png_bytes
 
 
 def _format_qty_py(n):
@@ -1574,7 +2497,9 @@ def _format_qty_py(n):
     return f"{n:.0f}"
 
 
-def _render_chart_png(rows, stepped, width_px=_CHART_WIDTH_PX, height_px=_CHART_HEIGHT_PX):
+def _render_chart_png(
+    rows, stepped, width_px=_CHART_WIDTH_PX, height_px=_CHART_HEIGHT_PX
+):
     """rows: list of (unix_ts, value). stepped=True draws a step line
     (item quantity - a step function, matching the 'stepped: after'
     Chart.js config already used in the browser); stepped=False draws a
@@ -1595,8 +2520,16 @@ def _render_chart_png(rows, stepped, width_px=_CHART_WIDTH_PX, height_px=_CHART_
             ax.fill_between(times, values, color=_CHART_LINE, alpha=0.15)
         ax.set_ylim(bottom=0)
     else:
-        ax.text(0.5, 0.5, "No data yet", ha="center", va="center",
-                 color=_CHART_MUTED, fontsize=12, transform=ax.transAxes)
+        ax.text(
+            0.5,
+            0.5,
+            "No data yet",
+            ha="center",
+            va="center",
+            color=_CHART_MUTED,
+            fontsize=12,
+            transform=ax.transAxes,
+        )
         ax.set_xticks([])
         ax.set_yticks([])
 
@@ -1628,15 +2561,26 @@ def _render_chart_png(rows, stepped, width_px=_CHART_WIDTH_PX, height_px=_CHART_
 
 @app.route("/api/power/chart.png", methods=["GET"])
 def power_chart_png():
-    _, rows = _fetch_power_rows(request.args.get("range", "day"))
-    buf = _render_chart_png([(r[0], r[1]) for r in rows], stepped=False)
-    resp = Response(buf.getvalue(), mimetype="image/png")
+    rate_limited = _chart_rate_limit_response()
+    if rate_limited:
+        return rate_limited
+    range_key, rows = _fetch_power_rows(request.args.get("range", "day"))
+    png_bytes = _cached_chart_png(
+        ("power", range_key),
+        lambda: _render_chart_png(
+            [(r[0], r[1]) for r in rows], stepped=False
+        ).getvalue(),
+    )
+    resp = Response(png_bytes, mimetype="image/png")
     resp.headers["Cache-Control"] = "public, max-age=60"
     return resp
 
 
 @app.route("/api/network/history/chart.png", methods=["GET"])
 def network_history_chart_png():
+    rate_limited = _chart_rate_limit_response()
+    if rate_limited:
+        return rate_limited
     mod = request.args.get("mod") or None
     internal = request.args.get("internal") or None
     damage_raw = request.args.get("damage")
@@ -1650,9 +2594,14 @@ def network_history_chart_png():
     if not internal:
         abort(400)
 
-    _, rows = _fetch_item_history_rows(mod, internal, damage, kind, request.args.get("range", "day"))
-    buf = _render_chart_png(rows, stepped=True)
-    resp = Response(buf.getvalue(), mimetype="image/png")
+    range_key, rows = _fetch_item_history_rows(
+        mod, internal, damage, kind, request.args.get("range", "day")
+    )
+    png_bytes = _cached_chart_png(
+        ("network", mod, internal, damage, kind, range_key),
+        lambda: _render_chart_png(rows, stepped=True).getvalue(),
+    )
+    resp = Response(png_bytes, mimetype="image/png")
     resp.headers["Cache-Control"] = "public, max-age=60"
     return resp
 
@@ -1668,13 +2617,15 @@ def _fetch_item_history_rows(mod, internal, damage, kind, range_key):
         if seconds is None:
             cur = conn.execute(
                 "SELECT recorded_at, size FROM item_history WHERE item_key = ? ORDER BY recorded_at ASC",
-                (key,))
+                (key,),
+            )
             rows = cur.fetchall()
         else:
             since = time.time() - seconds
             cur = conn.execute(
                 "SELECT recorded_at, size FROM item_history WHERE item_key = ? AND recorded_at >= ? ORDER BY recorded_at ASC",
-                (key, since))
+                (key, since),
+            )
             rows = cur.fetchall()
 
             # A step chart starting mid-air (no point until the first
@@ -1685,7 +2636,8 @@ def _fetch_item_history_rows(mod, internal, damage, kind, range_key):
             lead = conn.execute(
                 "SELECT recorded_at, size FROM item_history WHERE item_key = ? AND recorded_at < ? "
                 "ORDER BY recorded_at DESC LIMIT 1",
-                (key, since)).fetchone()
+                (key, since),
+            ).fetchone()
             if lead:
                 rows = [(since, lead[1])] + rows
     finally:
@@ -1710,15 +2662,18 @@ def network_history_get():
     if not internal:
         return jsonify({"error": "missing internal"}), 400
 
-    range_key, rows = _fetch_item_history_rows(mod, internal, damage, kind, request.args.get("range", "day"))
+    range_key, rows = _fetch_item_history_rows(
+        mod, internal, damage, kind, request.args.get("range", "day")
+    )
     latest = rows[-1] if rows else None
 
-    return jsonify({
-        "range": range_key,
-        "points": [{"t": r[0], "size": r[1]} for r in rows],
-        "latest": {"t": latest[0], "size": latest[1]} if latest else None,
-    })
-
+    return jsonify(
+        {
+            "range": range_key,
+            "points": [{"t": r[0], "size": r[1]} for r in rows],
+            "latest": {"t": latest[0], "size": latest[1]} if latest else None,
+        }
+    )
 
 
 # ---------------------------------------------------------------------
@@ -1735,10 +2690,18 @@ def network_item_pins_get():
     try:
         rows = conn.execute(
             "SELECT mod, internal, damage, kind FROM user_item_pins WHERE user_id = ?",
-            (user_id,)).fetchall()
+            (user_id,),
+        ).fetchall()
     finally:
         conn.close()
-    return jsonify({"pins": [{"mod": r[0], "internal": r[1], "damage": r[2], "kind": r[3]} for r in rows]})
+    return jsonify(
+        {
+            "pins": [
+                {"mod": r[0], "internal": r[1], "damage": r[2], "kind": r[3]}
+                for r in rows
+            ]
+        }
+    )
 
 
 @app.route("/api/network/pins", methods=["POST"])
@@ -1760,7 +2723,8 @@ def network_item_pins_post():
         conn.execute(
             "INSERT OR IGNORE INTO user_item_pins (user_id, item_key, mod, internal, damage, kind, pinned_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (user_id, key, mod, internal, damage, kind, time.time()))
+            (user_id, key, mod, internal, damage, kind, time.time()),
+        )
         conn.commit()
     finally:
         conn.close()
@@ -1783,7 +2747,10 @@ def network_item_pins_unpin():
     key = _item_key(mod, internal, damage, kind)
     conn = _craft_db()
     try:
-        conn.execute("DELETE FROM user_item_pins WHERE user_id = ? AND item_key = ?", (user_id, key))
+        conn.execute(
+            "DELETE FROM user_item_pins WHERE user_id = ? AND item_key = ?",
+            (user_id, key),
+        )
         conn.commit()
     finally:
         conn.close()
@@ -1799,9 +2766,13 @@ def _lookup_item_display_info(mod, internal, damage, kind):
     popup already relies on, just done server-side here."""
     with _network_lock:
         for it in _network_state["items"]:
-            if (it.get("mod") or None) == (mod or None) and it.get("internal") == internal \
-               and (it.get("damage") if it.get("damage") is not None else None) == (damage if damage is not None else None) \
-               and (it.get("kind") or "item") == (kind or "item"):
+            if (
+                (it.get("mod") or None) == (mod or None)
+                and it.get("internal") == internal
+                and (it.get("damage") if it.get("damage") is not None else None)
+                == (damage if damage is not None else None)
+                and (it.get("kind") or "item") == (kind or "item")
+            ):
                 return it.get("name"), it.get("size")
 
     key = _item_key(mod, internal, damage, kind)
@@ -1810,7 +2781,8 @@ def _lookup_item_display_info(mod, internal, damage, kind):
         row = conn.execute(
             "SELECT label, size FROM item_history WHERE item_key = ? AND label IS NOT NULL "
             "ORDER BY recorded_at DESC LIMIT 1",
-            (key,)).fetchone()
+            (key,),
+        ).fetchone()
     finally:
         conn.close()
     if row:
@@ -1843,7 +2815,9 @@ def _build_og_tags(path, args):
     # string at all (a known Flask quirk) - only include it when there's
     # an actual query to preserve, or a plain /crafts link would render
     # as ".../crafts?" for no reason.
-    full_path = path + ("?" + request.query_string.decode("utf-8") if request.query_string else "")
+    full_path = path + (
+        "?" + request.query_string.decode("utf-8") if request.query_string else ""
+    )
     title = "GTNH Monitor"
     desc = "GTNH crafting, power, and network monitor"
     image = None
@@ -1854,10 +2828,14 @@ def _build_og_tags(path, args):
         total = len(jobs)
         busy = sum(1 for j in jobs if j.get("busy"))
         title = "Crafts"
-        desc = f"{busy} of {total} crafting CPUs busy" if total else "No crafting data yet"
+        desc = (
+            f"{busy} of {total} crafting CPUs busy" if total else "No crafting data yet"
+        )
 
     elif path == "/power":
-        _, rows = _fetch_power_rows("hour")  # just need the latest reading, not a full day
+        _, rows = _fetch_power_rows(
+            "hour"
+        )  # just need the latest reading, not a full day
         title = "Power"
         if rows:
             stored, capacity = rows[-1][1], rows[-1][2]
@@ -1868,7 +2846,7 @@ def _build_og_tags(path, args):
             desc = "No power data yet"
 
     elif path.startswith(NETWORK_ITEM_PATH_PREFIX):
-        identifier = path[len(NETWORK_ITEM_PATH_PREFIX):]
+        identifier = path[len(NETWORK_ITEM_PATH_PREFIX) :]
         parsed = _parse_item_url_path(identifier) if identifier else {}
         mod = parsed.get("mod")
         internal = parsed.get("internal")
@@ -1878,7 +2856,11 @@ def _build_og_tags(path, args):
             label, size = _lookup_item_display_info(mod, internal, damage, kind)
             title = label if label else "Item"
             unit = " mB" if kind == "fluid" else ""
-            desc = f"Currently stored: {size:,.0f}{unit}" if size is not None else "No data yet"
+            desc = (
+                f"Currently stored: {size:,.0f}{unit}"
+                if size is not None
+                else "No data yet"
+            )
             q = f"mod={mod or ''}&internal={internal}&damage={damage if damage is not None else ''}&kind={kind}"
             image = f"{base}/api/network/history/chart.png?{q}&range=day"
         else:
@@ -1890,7 +2872,11 @@ def _build_og_tags(path, args):
         item_count = sum(1 for it in items if (it.get("kind") or "item") == "item")
         fluid_count = sum(1 for it in items if it.get("kind") == "fluid")
         title = "Network"
-        desc = f"{item_count} items, {fluid_count} fluids tracked" if items else "No network scan yet"
+        desc = (
+            f"{item_count} items, {fluid_count} fluids tracked"
+            if items
+            else "No network scan yet"
+        )
 
     tags = (
         f'<meta property="og:site_name" content="GTNH Monitor">\n'
@@ -1930,7 +2916,9 @@ def _build_og_tags(path, args):
 @app.route("/network", methods=["GET"])
 @app.route("/network/item/<identifier>", methods=["GET"])
 def index(identifier=None):
-    html = INDEX_HTML.replace("<!--OG_TAGS-->", _build_og_tags(request.path, request.args))
+    html = INDEX_HTML.replace(
+        "<!--OG_TAGS-->", _build_og_tags(request.path, request.args)
+    )
     return Response(html, mimetype="text/html")
 
 
@@ -1947,5 +2935,7 @@ with open(INDEX_HTML_PATH, "r", encoding="utf-8") as _index_html_file:
     INDEX_HTML = _index_html_file.read()
 
 if __name__ == "__main__":
+    _require_runtime_secrets()
+    _require_initial_admin()
     port = int(os.environ.get("PORT", "8420"))
     app.run(host="0.0.0.0", port=port)

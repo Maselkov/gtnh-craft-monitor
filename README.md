@@ -27,6 +27,18 @@ somewhere other than `/home/`.
 
 ## 1. Server setup
 
+Before the first startup, create the service and administrator secrets file:
+
+```bash
+printf 'API_KEY=%s\n' "$(openssl rand -hex 32)" > .env
+printf 'GCM_BOOTSTRAP_ADMIN_TOKEN=gcm_tok-%s_%s\n' \
+  "$(openssl rand -hex 12)" "$(openssl rand -hex 32)" >> .env
+printf 'GCM_BOOTSTRAP_ADMIN_NAME=Administrator\n' >> .env
+chmod 600 .env
+```
+
+Then start the service:
+
 ```bash
 docker compose up -d --build
 ```
@@ -34,15 +46,52 @@ docker compose up -d --build
 This starts the server on port 8420. Open `http://<your-host>:8420/` in a
 browser — it'll say "waiting for data" until the game side is running.
 
-Change `API_KEY` in `docker-compose.yml` to something private; it has to
-match the value in `oc/config.lua`.
+The generated `API_KEY` must match the value in `oc/config.lua`. Copy it to
+the OpenComputers configuration before starting any game-side monitor scripts.
+
+### Browser accounts
+
+Browser access uses personal bearer tokens that are exchanged for an
+`HttpOnly` session cookie. A token is not used as a user ID: the server
+stores an immutable user ID, role, and only a SHA-256 hash of each token.
+Pins, completions, and requests belong to that user ID, so a token can be
+revoked or replaced without losing the user's data.
+
+Keep the generated token private. Start the stack and enter it once in the
+page's **Access token** field. The page requires the bootstrap token to be
+rotated immediately: copy the replacement admin token shown in the modal, then
+confirm that it was saved. Only then is **Manage users** available to create
+viewer and operator accounts. Every generated token is shown once; distribute
+it securely to its owner because the server retains only its hash. The same
+panel lists token IDs and can revoke a lost or compromised token, immediately
+ending sessions created with it.
+
+The bootstrap token is used only when no users exist. Once you have signed in
+and created another administrator, remove `GCM_BOOTSTRAP_ADMIN_TOKEN` from
+`.env` and restart the service. If a new installation starts with no users and
+no bootstrap token, the server stops with an explicit setup error instead of
+running without an administrator.
+
+The supplied Compose setup is intentionally convenient for a trusted LAN and
+sets `SESSION_COOKIE_SECURE=0` because it exposes plain HTTP directly. It is
+not suitable for internet exposure: place the service behind a TLS reverse
+proxy, stop publishing port `8420` publicly, and set
+`SESSION_COOKIE_SECURE=1`. Use an `https://` `SERVER_URL` in `oc/config.lua`
+as well so the OpenComputers service API key is not sent in cleartext.
+
+Chart PNG endpoints use a 60-second in-process cache and allow 30 requests per
+minute per client by default. Set `TRUSTED_PROXIES` to Caddy's private IP or
+CIDR (for example, `TRUSTED_PROXIES=10.0.1.20/32`) so forwarded client IP,
+host, and HTTPS headers are honored only from Caddy. Firewall port 8420 so only
+that proxy can reach it; direct callers cannot supply trusted forwarded headers.
+For a Caddy deployment, also set `SESSION_COOKIE_SECURE=1` in `.env`.
 
 Without Docker:
 
 ```bash
 cd server
 pip install flask
-API_KEY=change-me python app.py
+API_KEY="$(openssl rand -hex 32)" python app.py
 ```
 
 ## 2. In-game setup
@@ -340,18 +389,10 @@ nothing to configure.
 
 ### Setup
 
-1. Edit `oc/craft_keys.txt` — one key per person who should be able to
-   submit requests (see the comments in that file). `craft_monitor.lua`
-   reads it once at startup and syncs the list to the server; editing
-   the file needs a script restart to take effect, it isn't watched live.
-2. Each person enters their own key in the small field at the top of the
-   page (next to "Enable notifications"). That key becomes their
-   identity from then on — it replaces the random per-browser ID
-   pins/completions otherwise use, so entering the *same* key on another
-   device gives the same pins there too. It's a personal login, not a
-   site-wide password — anyone who has someone's key can act as them,
-   same as any shared secret; this is meant for a small trusted group,
-   not public multi-tenant access.
+Sign in with an access token. Viewer accounts can keep their own pins and
+completion history; operator and administrator accounts may also submit or
+cancel crafts. The game-side OpenComputers API key remains separate from
+browser accounts and authorizes only game-to-server reporting and polling.
 
 ### Interaction, matching the real AE2 terminal
 

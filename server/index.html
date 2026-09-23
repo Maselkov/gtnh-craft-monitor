@@ -620,6 +620,42 @@
   .history-box {
     width: min(700px, 92vw);
   }
+  .admin-box {
+    width: min(560px, 92vw);
+  }
+  .admin-users {
+    max-height: 220px;
+    overflow-y: auto;
+    border: 1px solid rgba(128,128,128,0.2);
+    border-radius: 8px;
+    margin: 12px 0 16px;
+  }
+  .admin-user-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 9px 11px;
+    border-bottom: 1px solid rgba(128,128,128,0.15);
+    font-size: 13px;
+  }
+  .admin-user-row:last-child { border-bottom: none; }
+  .admin-user-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .admin-user-role { color: var(--muted); font-size: 12px; text-transform: capitalize; flex-shrink: 0; }
+  .admin-user-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .admin-history-btn { border: 1px solid rgba(128,128,128,0.3); border-radius: 5px; background: none; color: var(--text); cursor: pointer; font-size: 11px; padding: 3px 6px; }
+  .admin-token-list { margin-top: 6px; }
+  .admin-token-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; color: var(--muted); font-size: 11px; }
+  .admin-token-id { font-family: monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .admin-revoke-btn { margin-left: auto; border: 1px solid rgba(128,128,128,0.3); border-radius: 5px; background: none; color: var(--stale); cursor: pointer; font-size: 11px; padding: 3px 6px; }
+  .admin-form-grid { display: grid; grid-template-columns: minmax(0, 1fr) 120px; gap: 8px; }
+  .admin-token-result { margin-top: 14px; }
+  .admin-token-value { width: 100%; min-height: 70px; resize: vertical; font-family: monospace; font-size: 12px; }
+  .user-history-list { max-height: 360px; overflow-y: auto; border: 1px solid rgba(128,128,128,0.2); border-radius: 8px; }
+  .user-history-row { padding: 10px 11px; border-bottom: 1px solid rgba(128,128,128,0.15); }
+  .user-history-row:last-child { border-bottom: none; }
+  .user-history-target { font-size: 13px; font-weight: 600; }
+  .user-history-meta { margin-top: 3px; color: var(--muted); font-size: 11px; }
   .history-name-wrap {
     flex: 1;
     min-width: 0;
@@ -951,10 +987,12 @@
       <h1>GTNH Monitor</h1>
     </div>
     <div class="top-bar-right">
-      <input type="password" id="craftKeyInput" class="craft-key-input"
-        placeholder="Craft key" autocomplete="off"
-        title="Your personal key - required to submit craft requests, also syncs your pins across devices when entered the same way on each"
-        onchange="setCraftKey(this.value)">
+      <input type="password" id="accessTokenInput" class="craft-key-input"
+        placeholder="Access token" autocomplete="off"
+        title="Enter your personal access token to sign in"
+        onkeydown="if (event.key === 'Enter') submitAccessToken()">
+      <button class="notif-btn" id="authBtn" onclick="toggleAuthentication()">Sign in</button>
+      <button class="notif-btn" id="adminBtn" style="display:none;" onclick="openAdminUsersModal()">Manage users</button>
       <button class="notif-btn" id="notifBtn" onclick="requestNotifPermission()">Enable notifications</button>
     </div>
   </div>
@@ -1064,6 +1102,63 @@
     </div>
   </div>
 
+  <div id="adminUsersModal" class="modal-overlay" style="display:none;" onclick="if(event.target===this) closeAdminUsersModal()">
+    <div class="modal-box admin-box">
+      <div class="modal-header">
+        <div class="modal-item-name">User management</div>
+        <button class="history-close-btn" onclick="closeAdminUsersModal()" title="Close">&times;</button>
+      </div>
+      <div class="modal-note">Create a user and share the generated access token securely. It is shown only once.</div>
+      <div class="admin-form-grid">
+        <input id="adminUserName" class="modal-amount-input" style="margin:0;" maxlength="100" placeholder="Display name" autocomplete="off">
+        <select id="adminUserRole" class="modal-amount-input" style="margin:0;">
+          <option value="viewer">Viewer</option>
+          <option value="operator">Operator</option>
+        </select>
+      </div>
+      <div id="adminUsersError" class="modal-error" style="display:none;"></div>
+      <div class="modal-buttons" style="margin-top:12px;">
+        <button class="modal-btn primary" id="adminCreateUserBtn" onclick="createAdminUser()">Create user</button>
+      </div>
+      <div id="adminTokenResult" class="admin-token-result" style="display:none;">
+        <label class="modal-label">New access token</label>
+        <textarea id="adminTokenValue" class="modal-amount-input admin-token-value" readonly></textarea>
+        <div class="modal-buttons">
+          <button class="modal-btn secondary" onclick="copyAdminToken()">Copy token</button>
+        </div>
+      </div>
+      <div id="adminUsersList" class="admin-users"></div>
+    </div>
+  </div>
+
+  <div id="bootstrapRotationModal" class="modal-overlay" style="display:none;">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-item-name">Secure your admin account</div>
+      </div>
+      <div id="bootstrapRotationIntro" class="modal-note">The first administrator token is for setup only. Create and save your replacement token before continuing.</div>
+      <div id="bootstrapRotationError" class="modal-error" style="display:none;"></div>
+      <div id="bootstrapRotationResult" style="display:none;">
+        <label class="modal-label">Replacement admin token</label>
+        <textarea id="bootstrapRotationToken" class="modal-amount-input admin-token-value" readonly></textarea>
+        <div class="modal-note">Store this token securely. It is shown only once.</div>
+      </div>
+      <div class="modal-buttons">
+        <button class="modal-btn primary" id="bootstrapRotationBtn" onclick="rotateBootstrapToken()">Create replacement token</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="userHistoryModal" class="modal-overlay" style="display:none;" onclick="if(event.target===this) closeUserHistoryModal()">
+    <div class="modal-box admin-box">
+      <div class="modal-header">
+        <div id="userHistoryTitle" class="modal-item-name">User history</div>
+        <button class="history-close-btn" onclick="closeUserHistoryModal()" title="Close">&times;</button>
+      </div>
+      <div id="userHistoryList" class="user-history-list"></div>
+    </div>
+  </div>
+
   <script>
     // Toggle-open state survives across the 3s auto-refresh (which
     // rebuilds the DOM from scratch), keyed by CPU name for ingredient
@@ -1073,22 +1168,13 @@
 
     // localStorage helpers - wrapped defensively since some browsers/modes
     // (private browsing, storage disabled) throw on access rather than
-    // just returning null. The ONLY thing this page still keeps in
-    // localStorage is the user's own identity - pins and completions now
-    // live server-side (SQLite), keyed by that identity, specifically so
-    // a completion that happens while every browser tab is closed still
-    // gets caught (the server is always running; a closed tab isn't),
-    // and so multiple people can each have their own independent pins on
-    // a shared install rather than one global list.
+    // just returning null.
     function lsGet(key) {
       try { return localStorage.getItem(key); } catch (e) { return null; }
     }
     function lsSet(key, value) {
       try { localStorage.setItem(key, value); } catch (e) { /* ignore */ }
     }
-
-    const LS_USER_ID_KEY = 'gtnhCraftMonitor.userId';
-    const LS_CRAFT_KEY = 'gtnhCraftMonitor.craftKey';
 
     // One-time cleanup of the old all-client-side pin/completion keys
     // this page used before pins moved server-side - harmless to leave,
@@ -1097,56 +1183,233 @@
      'gtnhCraftMonitor.lastBusyByName', 'gtnhCraftMonitor.lastFinalOutputByName']
       .forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
 
-    function getUserId() {
-      // A craft key, once entered, IS the identity directly - not
-      // hashed, used as-is. This is deliberately different from a
-      // single shared site password: each key in oc/craft_keys.txt is
-      // personal to one person, so using it directly as identity here
-      // doesn't have a "sharing site access also shares your identity"
-      // problem the way one universal key would.
-      const craftKey = lsGet(LS_CRAFT_KEY);
-      if (craftKey) return craftKey;
-
-      // No key entered - same random-per-browser UUID as before,
-      // completely unaffected for anyone not using craft requests.
-      let id = lsGet(LS_USER_ID_KEY);
-      if (!id) {
-        // This is identity, not authentication - anyone with this string
-        // could act as this user. Fine behind your own network/auth,
-        // not a real security boundary.
-        id = (window.crypto && crypto.randomUUID)
-          ? crypto.randomUUID()
-          : (Date.now() + '-' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2));
-        lsSet(LS_USER_ID_KEY, id);
-      }
-      return id;
-    }
-    let USER_ID = getUserId();
+    let AUTH_USER = null;
+    let AUTH_MUST_ROTATE_BOOTSTRAP = false;
 
     function userHeaders(extra) {
-      return Object.assign({ 'X-User-Id': USER_ID }, extra || {});
+      return Object.assign({}, extra || {});
     }
 
-    function setCraftKey(key) {
-      key = (key || '').trim();
-      if (key) {
-        lsSet(LS_CRAFT_KEY, key);
-      } else {
-        try { localStorage.removeItem(LS_CRAFT_KEY); } catch (e) { /* ignore */ }
+    function updateAuthenticationControl() {
+      const input = document.getElementById('accessTokenInput');
+      const button = document.getElementById('authBtn');
+      const adminButton = document.getElementById('adminBtn');
+      input.style.display = AUTH_USER ? 'none' : '';
+      input.value = '';
+      button.textContent = AUTH_USER ? `Sign out ${AUTH_USER.display_name}` : 'Sign in';
+      adminButton.style.display = AUTH_USER && AUTH_USER.role === 'admin' && !AUTH_MUST_ROTATE_BOOTSTRAP ? '' : 'none';
+    }
+
+    async function loadAuthentication() {
+      const response = await fetch('/api/auth/session');
+      const data = await response.json();
+      AUTH_USER = data.authenticated ? data.user : null;
+      AUTH_MUST_ROTATE_BOOTSTRAP = Boolean(data.must_rotate_bootstrap);
+      updateAuthenticationControl();
+      if (AUTH_MUST_ROTATE_BOOTSTRAP) showBootstrapRotationModal();
+    }
+
+    async function submitAccessToken() {
+      const input = document.getElementById('accessTokenInput');
+      const token = input.value.trim();
+      if (!token) return;
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        input.value = '';
+        input.placeholder = data.error || 'Sign-in failed';
+        return;
       }
-      USER_ID = getUserId();
-      // Whatever was pinned under the previous identity will look like
-      // it vanished (it hasn't - it's just a different bucket now) -
-      // refresh right away so that's visible immediately, not confusing
-      // on the next silent poll.
-      refreshPinsAndCompletions().then(() => { if (lastData) render(lastData); });
+      AUTH_USER = data.user;
+      AUTH_MUST_ROTATE_BOOTSTRAP = Boolean(data.must_rotate_bootstrap);
+      updateAuthenticationControl();
+      if (AUTH_MUST_ROTATE_BOOTSTRAP) showBootstrapRotationModal();
+      await refreshPinsAndCompletions();
+      if (lastData) render(lastData);
     }
 
-    (function initCraftKeyInput() {
-      const el = document.getElementById('craftKeyInput');
-      const saved = lsGet(LS_CRAFT_KEY);
-      if (saved) el.value = saved;
-    })();
+    async function openAdminUsersModal() {
+      if (!AUTH_USER || AUTH_USER.role !== 'admin') return;
+      document.getElementById('adminUsersModal').style.display = 'flex';
+      document.getElementById('adminUsersError').style.display = 'none';
+      document.getElementById('adminTokenResult').style.display = 'none';
+      await refreshAdminUsers();
+      document.getElementById('adminUserName').focus();
+    }
+
+    function closeAdminUsersModal() {
+      document.getElementById('adminUsersModal').style.display = 'none';
+    }
+
+    async function refreshAdminUsers() {
+      const list = document.getElementById('adminUsersList');
+      list.textContent = 'Loading users...';
+      const response = await fetch('/api/admin/users');
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        list.textContent = data.error || 'Could not load users.';
+        return;
+      }
+      list.innerHTML = data.users.map((user) => {
+        const tokens = (user.tokens || []).map((token) => `
+          <div class="admin-token-row">
+            <span class="admin-token-id">${escapeHtml(token.id)}</span>
+            ${token.revoked_at
+              ? '<span>revoked</span>'
+              : `<button class="admin-revoke-btn" onclick="revokeAdminToken('${escapeHtml(token.id)}')">Revoke</button>`}
+          </div>`).join('') || '<div class="admin-token-row">No tokens</div>';
+        return `<div class="admin-user-row">
+          <div>
+            <div class="admin-user-name">${escapeHtml(user.display_name)}</div>
+            <div class="admin-token-list">${tokens}</div>
+          </div>
+          <div class="admin-user-actions">
+            <span class="admin-user-role">${escapeHtml(user.role)}${user.disabled_at ? ' (disabled)' : ''}</span>
+            <button class="admin-history-btn" onclick="openUserHistory('${user.id}')">History</button>
+          </div>
+        </div>`;
+      }).join('') || '<div class="admin-user-row">No users yet.</div>';
+    }
+
+    function closeUserHistoryModal() {
+      document.getElementById('userHistoryModal').style.display = 'none';
+    }
+
+    function formatHistoryTime(timestamp) {
+      return timestamp ? new Date(timestamp * 1000).toLocaleString() : 'Pending';
+    }
+
+    async function openUserHistory(userId) {
+      const list = document.getElementById('userHistoryList');
+      document.getElementById('userHistoryModal').style.display = 'flex';
+      document.getElementById('userHistoryTitle').textContent = 'User history';
+      list.textContent = 'Loading history...';
+      const response = await fetch(`/api/admin/users/${encodeURIComponent(userId)}/history`);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        list.textContent = data.error || 'Could not load history.';
+        return;
+      }
+      document.getElementById('userHistoryTitle').textContent = `${data.user.display_name} history`;
+      list.innerHTML = data.events.map((event) => `
+        <div class="user-history-row">
+          <div class="user-history-target">${event.type === 'request' ? 'Request' : 'Cancel'}: ${escapeHtml(event.target || '?')}</div>
+          <div class="user-history-meta">${escapeHtml(event.status)} · ${formatHistoryTime(event.created_at)}${event.reason ? ` · ${escapeHtml(event.reason)}` : ''}</div>
+        </div>`).join('') || '<div class="user-history-row">No craft actions recorded.</div>';
+    }
+
+    async function createAdminUser() {
+      const name = document.getElementById('adminUserName').value.trim();
+      const role = document.getElementById('adminUserRole').value;
+      const error = document.getElementById('adminUsersError');
+      const button = document.getElementById('adminCreateUserBtn');
+      error.style.display = 'none';
+      if (!name) {
+        error.textContent = 'Enter a display name.';
+        error.style.display = 'block';
+        return;
+      }
+      button.disabled = true;
+      try {
+        const response = await fetch('/api/admin/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ display_name: name, role }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          error.textContent = data.error || 'Could not create user.';
+          error.style.display = 'block';
+          return;
+        }
+        document.getElementById('adminUserName').value = '';
+        document.getElementById('adminTokenValue').value = data.token;
+        document.getElementById('adminTokenResult').style.display = 'block';
+        await refreshAdminUsers();
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    async function revokeAdminToken(tokenId) {
+      if (!window.confirm(`Revoke ${tokenId}? Any sessions created with it will end immediately.`)) return;
+      const response = await fetch(`/api/admin/tokens/${encodeURIComponent(tokenId)}/revoke`, {
+        method: 'POST',
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        showToast(data.error || 'Could not revoke token.', true);
+        return;
+      }
+      showToast('Access token revoked.');
+      await refreshAdminUsers();
+    }
+
+    async function copyAdminToken() {
+      const field = document.getElementById('adminTokenValue');
+      try {
+        await navigator.clipboard.writeText(field.value);
+        showToast('Access token copied.');
+      } catch (e) {
+        field.focus();
+        field.select();
+      }
+    }
+
+    function showBootstrapRotationModal() {
+      document.getElementById('bootstrapRotationModal').style.display = 'flex';
+      document.getElementById('bootstrapRotationError').style.display = 'none';
+      document.getElementById('bootstrapRotationResult').style.display = 'none';
+      document.getElementById('bootstrapRotationBtn').textContent = 'Create replacement token';
+      document.getElementById('bootstrapRotationBtn').disabled = false;
+    }
+
+    async function rotateBootstrapToken() {
+      const button = document.getElementById('bootstrapRotationBtn');
+      const error = document.getElementById('bootstrapRotationError');
+      if (document.getElementById('bootstrapRotationResult').style.display !== 'none') {
+        AUTH_MUST_ROTATE_BOOTSTRAP = false;
+        document.getElementById('bootstrapRotationModal').style.display = 'none';
+        updateAuthenticationControl();
+        showToast('Bootstrap token revoked. Remove it from .env and restart the service.');
+        return;
+      }
+      button.disabled = true;
+      error.style.display = 'none';
+      try {
+        const response = await fetch('/api/auth/rotate-bootstrap', { method: 'POST' });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          error.textContent = data.error || 'Could not rotate the bootstrap token.';
+          error.style.display = 'block';
+          return;
+        }
+        document.getElementById('bootstrapRotationToken').value = data.token;
+        document.getElementById('bootstrapRotationIntro').textContent = 'Copy and securely store the replacement token before continuing.';
+        document.getElementById('bootstrapRotationResult').style.display = 'block';
+        button.textContent = 'I saved the replacement token';
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    async function toggleAuthentication() {
+      if (!AUTH_USER) {
+        await submitAccessToken();
+        return;
+      }
+      await fetch('/api/auth/logout', { method: 'POST' });
+      AUTH_USER = null;
+      AUTH_MUST_ROTATE_BOOTSTRAP = false;
+      pinnedCpus = new Set();
+      completedPins = [];
+      updateAuthenticationControl();
+      if (lastData) render(lastData);
+    }
 
     // pinnedCpus and completedPins are now just local caches of what the
     // server told us on the last poll - reassigned wholesale each refresh
@@ -1258,6 +1521,11 @@
     }
 
     async function refreshPinsAndCompletions() {
+      if (!AUTH_USER) {
+        pinnedCpus = new Set();
+        completedPins = [];
+        return;
+      }
       try {
         const [pinsRes, completionsRes] = await Promise.all([
           fetch('/api/pins', { headers: userHeaders() }),
@@ -1461,13 +1729,9 @@
 
       const pinTitle = isPinned ? 'Unpin' : (canPin ? 'Pin - notify me when this finishes' : 'Only a busy CPU can be pinned');
 
-      // Only shown for a busy CPU (nothing to cancel otherwise) AND only
-      // if a craft key is set - same authorization gate as requesting a
-      // craft, checked again server-side regardless of what this button
-      // shows, since the client can't be trusted to enforce it alone.
-      const hasCraftKey = !!lsGet(LS_CRAFT_KEY);
+      const isOperator = AUTH_USER && (AUTH_USER.role === 'operator' || AUTH_USER.role === 'admin');
       const isCancelPending = pendingCancelCpus.has(job.name);
-      const cancelBtn = (job.busy && hasCraftKey)
+      const cancelBtn = (job.busy && isOperator)
         ? `<button class="cancel-btn" ${isCancelPending ? 'disabled' : ''} onclick="openCancelConfirmModal('${nameForJs}')" title="${isCancelPending ? 'Cancelling…' : 'Cancel this craft'}">${isCancelPending ? '&#8987;' : '&times;'}</button>`
         : '';
 
@@ -2540,9 +2804,8 @@
       const errorEl = document.getElementById('cancelConfirmError');
       errorEl.style.display = 'none';
 
-      const craftKey = lsGet(LS_CRAFT_KEY);
-      if (!craftKey) {
-        errorEl.textContent = 'Enter your craft key at the top of the page first.';
+      if (!AUTH_USER) {
+        errorEl.textContent = 'Sign in before cancelling a craft.';
         errorEl.style.display = 'block';
         return;
       }
@@ -2632,6 +2895,8 @@
           closeCancelConfirmModal();
         } else if (document.getElementById('itemHistoryModal').style.display !== 'none') {
           closeItemHistory();
+        } else if (document.getElementById('adminUsersModal').style.display !== 'none') {
+          closeAdminUsersModal();
         }
       } else if (e.key === 'Enter') {
         // Only the craft-request modal - cancelConfirm's primary action
@@ -2811,9 +3076,8 @@
         return;
       }
 
-      const craftKey = lsGet(LS_CRAFT_KEY);
-      if (!craftKey) {
-        errorEl.textContent = 'Enter your craft key at the top of the page first.';
+      if (!AUTH_USER) {
+        errorEl.textContent = 'Sign in before requesting a craft.';
         errorEl.style.display = 'block';
         return;
       }
@@ -3376,7 +3640,7 @@
     // piggyback on oninput.
     document.getElementById('networkSearch').addEventListener('scroll', updateNetworkSearchHighlight);
     updateNetworkSearchHighlight();
-    refresh();
+    loadAuthentication().catch(() => {}).finally(() => refresh());
     setInterval(refresh, 3000);
     setInterval(tickSourceLine, 1000);
   </script>
