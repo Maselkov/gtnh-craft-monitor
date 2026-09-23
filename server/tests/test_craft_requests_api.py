@@ -2,10 +2,6 @@ import app as app_module
 from conftest import login_as
 
 
-def sync_keys(client, api_headers, keys):
-    return client.post("/api/craft/keys", json={"keys": keys}, headers=api_headers)
-
-
 def valid_request_payload(**overrides):
     payload = {
         "label": "Neutronium Ingot",
@@ -17,18 +13,6 @@ def valid_request_payload(**overrides):
     }
     payload.update(overrides)
     return payload
-
-
-class TestCraftKeySync:
-    def test_unauthenticated_sync_rejected(self, client):
-        res = client.post("/api/craft/keys", json={"keys": ["alice-key"]})
-        assert res.status_code == 401
-
-    def test_sync_does_not_authorize_a_viewer(self, client, api_headers):
-        sync_keys(client, api_headers, ["alice-key"])
-        login_as(client, "usr_alice", role="viewer")
-        response = client.post("/api/craft/request", json=valid_request_payload())
-        assert response.status_code == 403
 
 
 class TestCraftRequestCreation:

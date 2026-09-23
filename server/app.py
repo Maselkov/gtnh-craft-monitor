@@ -466,64 +466,15 @@ def network_get():
 # the network browser: a request's lifetime is minutes at most, nothing
 # here needs to survive a server restart)
 #
-# Two-sided auth, both reusing existing mechanisms rather than inventing
-# new ones:
-#   - Lua-facing endpoints (sync keys, poll pending, report results) use
-#     the same API_KEY every other Lua<->server call already uses.
-#   - Browser-facing endpoints use X-User-Id, exactly like pins/completions
-#     already do - the only new check is that submitting an actual
-#     request additionally requires that X-User-Id value to be one of
-#     the keys craft_monitor.lua synced from oc/craft_keys.txt. Reading
-#     your own pending/failed requests doesn't require this - same as
-#     how viewing pins was never gated, only creating a NEW pin's
-#     validity is checked.
-_craft_keys_lock = threading.Lock()
-_valid_craft_keys = set()
-
+# Two-sided auth:
+#   - Lua-facing endpoints (poll pending, report results) use the same
+#     API_KEY every other Lua<->server call already uses.
+#   - Browser-facing endpoints use the signed-in user's session;
+#     submitting or cancelling a craft additionally requires the
+#     operator or admin role.
 _craft_requests_lock = threading.Lock()
 _craft_requests = {}  # id -> dict, see craft_request_post() for shape
 _craft_request_next_id = 1
-
-
-@app.route("/api/craft/keys", methods=["POST"])
-def craft_keys_post():
-    # Lua syncing its craft_keys.txt contents - not the browser.
-    if not _require_api_key():
-        return jsonify({"error": "unauthorized"}), 401
-    payload = request.get_json(silent=True) or {}
-    keys = payload.get("keys", [])
-    if not isinstance(keys, list):
-        return jsonify({"error": "invalid payload"}), 400
-    clean_keys = [str(k) for k in keys if k]
-
-    with _craft_keys_lock:
-        # Persisted, not just held in memory - a server restart used to
-        # silently wipe this (in-memory only, nothing wrote it anywhere),
-        # meaning EVERY craft request would fail with "invalid key" until
-        # craft_monitor.lua also happened to restart and re-sync. Written
-        # to the same craft_history.db already used for pins/completions,
-        # replaced wholesale each sync since Lua always sends the full
-        # current list, not a diff.
-        conn = _craft_db()
-        try:
-            conn.execute("DELETE FROM craft_keys")
-            conn.executemany(
-                "INSERT INTO craft_keys (key, synced_at) VALUES (?, ?)",
-                [(k, time.time()) for k in clean_keys],
-            )
-            conn.commit()
-        finally:
-            conn.close()
-
-        _valid_craft_keys.clear()
-        _valid_craft_keys.update(clean_keys)
-        count = len(_valid_craft_keys)
-    return jsonify({"ok": True, "key_count": count})
-
-
-def _is_valid_craft_key(user_id):
-    with _craft_keys_lock:
-        return user_id in _valid_craft_keys
 
 
 @app.route("/api/craft/request", methods=["POST"])
@@ -1132,12 +1083,9 @@ def _init_craft_db():
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_user_completions_user ON user_completions (user_id)"
         )
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS craft_keys (
-                key TEXT PRIMARY KEY,
-                synced_at REAL NOT NULL
-            )
-        """)
+        # Leftover from the retired craft_keys.txt sync; request access is
+        # now decided by account roles.
+        conn.execute("DROP TABLE IF EXISTS craft_keys")
         # Item pins (Network tab "favorite this item" feature) - a
         # genuinely different concept from user_pins above (which tracks
         # CPUs being watched for craft completion), so kept as its own
@@ -1166,22 +1114,7 @@ def _init_craft_db():
         conn.close()
 
 
-def _load_valid_craft_keys():
-    # Seeds the in-memory set from whatever was last persisted, so a
-    # server restart has the correct key list immediately - not just
-    # after craft_monitor.lua happens to also restart and re-sync.
-    conn = _craft_db()
-    try:
-        rows = conn.execute("SELECT key FROM craft_keys").fetchall()
-    finally:
-        conn.close()
-    with _craft_keys_lock:
-        _valid_craft_keys.clear()
-        _valid_craft_keys.update(r[0] for r in rows)
-
-
 _init_craft_db()
-_load_valid_craft_keys()
 
 
 def _bootstrap_admin():
@@ -2739,8 +2672,8 @@ def network_history_get():
 # ---------------------------------------------------------------------
 # Item pins (Network tab "favorite this item" feature) - purely a
 # personal browse preference, no in-game consequence, so unlike craft
-# requests/cancellation this doesn't require a valid craft key - just
-# the same X-User-Id identity pins/completions already use.
+# requests/cancellation this doesn't require the operator role - any
+# signed-in user can pin items.
 @app.route("/api/network/pins", methods=["GET"])
 def network_item_pins_get():
     user_id = _require_user_id()

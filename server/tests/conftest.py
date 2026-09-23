@@ -107,7 +107,6 @@ def reset_state():
     app_module._network_state["scan_started_at"] = None
     app_module._network_state["is_reconstructed"] = False
 
-    app_module._valid_craft_keys.clear()
     app_module._craft_requests.clear()
     app_module._craft_request_next_id = 1
     app_module._cancel_requests.clear()
@@ -126,7 +125,6 @@ def reset_state():
             "craft_events",
             "user_pins",
             "user_completions",
-            "craft_keys",
             "user_item_pins",
             "craft_request_history",
             "craft_cancel_history",

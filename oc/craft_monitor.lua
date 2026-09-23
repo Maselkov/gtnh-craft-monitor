@@ -131,12 +131,8 @@ local CONFIG = {
                                      -- real, confirmed-from-a-live-hang
                                      -- stall happens mid-response
 
-  CRAFT_API_URL = config.SERVER_URL .. "/api/craft",  -- base for /keys,
+  CRAFT_API_URL = config.SERVER_URL .. "/api/craft",  -- base for
                                      -- /requests/pending, /requests/<id>/result
-  CRAFT_KEYS_PATH = "/home/craft_keys.txt",  -- absolute path - see the
-                                              -- header comment on why
-                                              -- this isn't relative
-                                              -- anymore
   CRAFT_REQUEST_POLL_SECONDS = 1.5,  -- separate, much faster loop than the
                                       -- main status poll above - request()
                                       -- itself returns near-instantly, the
@@ -346,24 +342,6 @@ local function craft_post_json(path, payload)
     ["Content-Type"] = "application/json",
     ["X-API-Key"] = CONFIG.API_KEY,
   }, CONFIG.HTTP_TIMEOUT_SECONDS)
-end
-
-local function load_craft_keys()
-  local f = io.open(CONFIG.CRAFT_KEYS_PATH, "r")
-  if not f then
-    print("[craft_monitor] Could not open " .. CONFIG.CRAFT_KEYS_PATH ..
-      " - craft requests will be rejected until this file exists.")
-    return {}
-  end
-  local keys = {}
-  for line in f:lines() do
-    local trimmed = line:match("^%s*(.-)%s*$")
-    if trimmed ~= "" and trimmed:sub(1, 1) ~= "#" then
-      keys[#keys + 1] = trimmed
-    end
-  end
-  f:close()
-  return keys
 end
 
 local function build_craftable_filter(mod, internal, damage)
@@ -646,11 +624,6 @@ local function service_loop()
   end
 
   if me.getCraftables then
-    local keys = load_craft_keys()
-    print("[craft_monitor] Loaded " .. #keys .. " craft-request key(s) from " .. CONFIG.CRAFT_KEYS_PATH)
-    local syncOk, syncErr = craft_post_json("/keys", { keys = keys })
-    print("[craft_monitor] Synced craft keys to server: " .. (syncOk and "OK" or ("FAILED - " .. tostring(syncErr))))
-
     thread.create(function()
       run_craft_request_loop(me)
     end):detach()

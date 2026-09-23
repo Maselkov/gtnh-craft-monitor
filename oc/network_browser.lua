@@ -44,7 +44,7 @@
       script) roughly doubled that margin to ~1.9MB in testing - real
       headroom, not just "happened not to crash."
 
-  config.lua, item_catalog.txt, and craft_keys.txt are NOT loaded
+  config.lua and item_catalog.txt are NOT loaded
   relative to this script anymore - this script now lives in /etc/rc.d/,
   and whether OpenOS's require() directory search still finds files
   alongside a script loaded through rc's own sandboxed loader (rather
