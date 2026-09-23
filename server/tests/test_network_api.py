@@ -1,24 +1,43 @@
 import sqlite3
 
 import app as app_module
-from conftest import user_headers
+from conftest import login_as
 
 
 def run_scan(client, api_headers, batches):
     start_res = client.post("/api/network/scan/start", headers=api_headers)
     token = start_res.get_json()["scan_token"]
     for batch in batches:
-        client.post("/api/network/scan/batch", json={"items": batch, "scan_token": token}, headers=api_headers)
+        client.post(
+            "/api/network/scan/batch",
+            json={"items": batch, "scan_token": token},
+            headers=api_headers,
+        )
     return client.post(
         "/api/network/scan/finish",
         json={"scan_token": token, "chunks_sent": len(batches), "total_errors": 0},
-        headers=api_headers)
+        headers=api_headers,
+    )
 
 
-ITEM = {"name": "Iron Ingot", "size": 500, "mod": "minecraft", "internal": "iron_ingot", "damage": 0,
-        "kind": "item", "isCraftable": False}
-FLUID = {"name": "Molten Silicone", "size": 9500, "mod": None, "internal": "molten.silicone", "damage": None,
-         "kind": "fluid", "isCraftable": False}
+ITEM = {
+    "name": "Iron Ingot",
+    "size": 500,
+    "mod": "minecraft",
+    "internal": "iron_ingot",
+    "damage": 0,
+    "kind": "item",
+    "isCraftable": False,
+}
+FLUID = {
+    "name": "Molten Silicone",
+    "size": 9500,
+    "mod": None,
+    "internal": "molten.silicone",
+    "damage": None,
+    "kind": "fluid",
+    "isCraftable": False,
+}
 
 
 class TestScanLifecycle:
@@ -60,7 +79,9 @@ class TestDuplicateItemKeyRegression:
 
     def test_duplicate_item_key_does_not_crash_scan_finish(self, client, api_headers):
         duplicate_a = dict(ITEM, size=100)
-        duplicate_b = dict(ITEM, size=250)  # same mod/internal/damage/kind - same item_key
+        duplicate_b = dict(
+            ITEM, size=250
+        )  # same mod/internal/damage/kind - same item_key
         res = run_scan(client, api_headers, [[duplicate_a], [duplicate_b]])
         assert res.status_code == 200  # NOT 500
 
@@ -79,8 +100,14 @@ class TestDuplicateItemKeyRegression:
 
 
 class TestSnapshotRestartRecovery:
-    def test_reload_after_simulated_restart_restores_items_with_icons(self, client, api_headers, monkeypatch):
-        monkeypatch.setattr(app_module, "_icons_by_key", {"minecraft:iron_ingot:0": "item/minecraft/iron_ingot.png"})
+    def test_reload_after_simulated_restart_restores_items_with_icons(
+        self, client, api_headers, monkeypatch
+    ):
+        monkeypatch.setattr(
+            app_module,
+            "_icons_by_key",
+            {"minecraft:iron_ingot:0": "item/minecraft/iron_ingot.png"},
+        )
         monkeypatch.setattr(app_module, "_fluids_by_key", {})
         monkeypatch.setattr(app_module, "_icons_by_label", {})
 
@@ -108,9 +135,13 @@ class TestSnapshotRestartRecovery:
         # _attach_item_icons() itself, or this comes back None.
         assert restored["icon"] == "item/minecraft/iron_ingot.png"
 
-    def test_is_reconstructed_clears_once_a_real_scan_completes(self, client, api_headers):
+    def test_is_reconstructed_clears_once_a_real_scan_completes(
+        self, client, api_headers
+    ):
         run_scan(client, api_headers, [[ITEM]])
-        app_module._network_state["is_reconstructed"] = True  # simulate the post-restart state directly
+        app_module._network_state["is_reconstructed"] = (
+            True  # simulate the post-restart state directly
+        )
 
         run_scan(client, api_headers, [[ITEM]])
         assert client.get("/api/network").get_json()["is_reconstructed"] is False
@@ -118,53 +149,87 @@ class TestSnapshotRestartRecovery:
 
 class TestNetworkItemPins:
     def test_pin_requires_user_id(self, client):
-        res = client.post("/api/network/pins", json={"internal": "iron_ingot", "mod": "minecraft"})
+        res = client.post(
+            "/api/network/pins", json={"internal": "iron_ingot", "mod": "minecraft"}
+        )
         assert res.status_code == 400
 
     def test_pin_then_list_it(self, client):
+        login_as(client, "usr_alice")
         res = client.post(
             "/api/network/pins",
-            json={"mod": "minecraft", "internal": "iron_ingot", "damage": 0, "kind": "item"},
-            headers=user_headers("alice"))
+            json={
+                "mod": "minecraft",
+                "internal": "iron_ingot",
+                "damage": 0,
+                "kind": "item",
+            },
+        )
         assert res.status_code == 200
 
-        res = client.get("/api/network/pins", headers=user_headers("alice"))
+        res = client.get("/api/network/pins")
         pins = res.get_json()["pins"]
         assert len(pins) == 1
         assert pins[0]["internal"] == "iron_ingot"
 
     def test_pin_a_fluid_with_null_mod_and_damage(self, client):
+        login_as(client, "usr_alice")
         # The tricky nullable-field case that motivated using a joined
         # item_key as the primary key instead of a composite key over
         # individually-nullable columns.
         res = client.post(
             "/api/network/pins",
-            json={"mod": None, "internal": "cryotheum", "damage": None, "kind": "fluid"},
-            headers=user_headers("alice"))
+            json={
+                "mod": None,
+                "internal": "cryotheum",
+                "damage": None,
+                "kind": "fluid",
+            },
+        )
         assert res.status_code == 200
-        pins = client.get("/api/network/pins", headers=user_headers("alice")).get_json()["pins"]
+        pins = client.get("/api/network/pins").get_json()["pins"]
         assert pins[0]["kind"] == "fluid"
 
     def test_pins_are_per_user(self, client):
+        login_as(client, "usr_alice")
         client.post(
             "/api/network/pins",
-            json={"mod": "minecraft", "internal": "iron_ingot", "damage": 0, "kind": "item"},
-            headers=user_headers("alice"))
-        res = client.get("/api/network/pins", headers=user_headers("bob"))
+            json={
+                "mod": "minecraft",
+                "internal": "iron_ingot",
+                "damage": 0,
+                "kind": "item",
+            },
+        )
+        login_as(client, "usr_bob")
+        res = client.get("/api/network/pins")
         assert res.get_json()["pins"] == []
 
     def test_pin_twice_does_not_duplicate(self, client):
-        payload = {"mod": "minecraft", "internal": "iron_ingot", "damage": 0, "kind": "item"}
-        client.post("/api/network/pins", json=payload, headers=user_headers("alice"))
-        client.post("/api/network/pins", json=payload, headers=user_headers("alice"))
-        pins = client.get("/api/network/pins", headers=user_headers("alice")).get_json()["pins"]
+        payload = {
+            "mod": "minecraft",
+            "internal": "iron_ingot",
+            "damage": 0,
+            "kind": "item",
+        }
+        login_as(client, "usr_alice")
+        client.post("/api/network/pins", json=payload)
+        client.post("/api/network/pins", json=payload)
+        pins = client.get("/api/network/pins").get_json()["pins"]
         assert len(pins) == 1
 
     def test_unpin_removes_it(self, client):
-        payload = {"mod": "minecraft", "internal": "iron_ingot", "damage": 0, "kind": "item"}
-        client.post("/api/network/pins", json=payload, headers=user_headers("alice"))
-        client.post("/api/network/pins/unpin", json=payload, headers=user_headers("alice"))
-        assert client.get("/api/network/pins", headers=user_headers("alice")).get_json()["pins"] == []
+        payload = {
+            "mod": "minecraft",
+            "internal": "iron_ingot",
+            "damage": 0,
+            "kind": "item",
+        }
+        login_as(client, "usr_alice")
+        client.post("/api/network/pins", json=payload)
+        client.post("/api/network/pins/unpin", json=payload)
+        assert client.get("/api/network/pins").get_json()["pins"] == []
+
 
 class TestScanCompletenessVerification:
     """Direct regression test for a real reported bug: the item history
@@ -203,46 +268,86 @@ class TestScanCompletenessVerification:
         # only actually received 2 of them.
         run_scan(client, api_headers, [[ITEM]])  # known-good baseline
 
-        token = client.post("/api/network/scan/start", headers=api_headers).get_json()["scan_token"]
-        client.post("/api/network/scan/batch", json={"items": [ITEM], "scan_token": token}, headers=api_headers)
-        client.post("/api/network/scan/batch", json={"items": [FLUID], "scan_token": token}, headers=api_headers)
+        token = client.post("/api/network/scan/start", headers=api_headers).get_json()[
+            "scan_token"
+        ]
+        client.post(
+            "/api/network/scan/batch",
+            json={"items": [ITEM], "scan_token": token},
+            headers=api_headers,
+        )
+        client.post(
+            "/api/network/scan/batch",
+            json={"items": [FLUID], "scan_token": token},
+            headers=api_headers,
+        )
         res = client.post(
             "/api/network/scan/finish",
-            json={"scan_token": token, "chunks_sent": 3, "total_errors": 0},  # claims 3, only 2 actually arrived
-            headers=api_headers)
+            json={
+                "scan_token": token,
+                "chunks_sent": 3,
+                "total_errors": 0,
+            },  # claims 3, only 2 actually arrived
+            headers=api_headers,
+        )
         body = res.get_json()
         assert body["rejected"] is True
         # The original baseline is untouched, not replaced by the incomplete data.
         assert client.get("/api/network").get_json()["item_count"] == 1
 
-    def test_nonzero_errors_rejected_even_if_chunk_counts_match(self, client, api_headers):
+    def test_nonzero_errors_rejected_even_if_chunk_counts_match(
+        self, client, api_headers
+    ):
         # A getItemsInNetworkById() call failing outright never produces
         # a chunk to send in the first place, so chunk counts alone
         # could match perfectly while data is still silently missing -
         # this is exactly the gap total_errors closes.
         run_scan(client, api_headers, [[ITEM]])
 
-        token = client.post("/api/network/scan/start", headers=api_headers).get_json()["scan_token"]
-        client.post("/api/network/scan/batch", json={"items": [ITEM], "scan_token": token}, headers=api_headers)
+        token = client.post("/api/network/scan/start", headers=api_headers).get_json()[
+            "scan_token"
+        ]
+        client.post(
+            "/api/network/scan/batch",
+            json={"items": [ITEM], "scan_token": token},
+            headers=api_headers,
+        )
         res = client.post(
             "/api/network/scan/finish",
-            json={"scan_token": token, "chunks_sent": 1, "total_errors": 1},  # counts match, but 1 error occurred
-            headers=api_headers)
+            json={
+                "scan_token": token,
+                "chunks_sent": 1,
+                "total_errors": 1,
+            },  # counts match, but 1 error occurred
+            headers=api_headers,
+        )
         assert res.get_json()["rejected"] is True
         assert client.get("/api/network").get_json()["item_count"] == 1
 
-    def test_missing_chunks_sent_or_total_errors_fails_closed(self, client, api_headers):
+    def test_missing_chunks_sent_or_total_errors_fails_closed(
+        self, client, api_headers
+    ):
         # An older Lua deployment without these fields, or a malformed
         # payload - either way, nothing to verify completeness against,
         # so this must not silently fall back to trusting the data.
         run_scan(client, api_headers, [[ITEM]])
 
-        token = client.post("/api/network/scan/start", headers=api_headers).get_json()["scan_token"]
-        client.post("/api/network/scan/batch", json={"items": [ITEM], "scan_token": token}, headers=api_headers)
-        res = client.post("/api/network/scan/finish", json={"scan_token": token}, headers=api_headers)
+        token = client.post("/api/network/scan/start", headers=api_headers).get_json()[
+            "scan_token"
+        ]
+        client.post(
+            "/api/network/scan/batch",
+            json={"items": [ITEM], "scan_token": token},
+            headers=api_headers,
+        )
+        res = client.post(
+            "/api/network/scan/finish", json={"scan_token": token}, headers=api_headers
+        )
         assert res.get_json()["rejected"] is True
 
-    def test_genuine_mass_removal_with_zero_errors_is_correctly_accepted(self, client, api_headers):
+    def test_genuine_mass_removal_with_zero_errors_is_correctly_accepted(
+        self, client, api_headers
+    ):
         # THE key case the old percentage-threshold approach could never
         # get right: a real, deliberate, dramatic size drop (voiding
         # most of a network in one go) with every query and POST
@@ -250,8 +355,14 @@ class TestScanCompletenessVerification:
         # truth, not guessed at as "probably incomplete" just because
         # it's much smaller than before.
         full_batch = [
-            {"name": f"Item {i}", "size": 100, "mod": "minecraft", "internal": f"item_{i}",
-             "damage": 0, "kind": "item"}
+            {
+                "name": f"Item {i}",
+                "size": 100,
+                "mod": "minecraft",
+                "internal": f"item_{i}",
+                "damage": 0,
+                "kind": "item",
+            }
             for i in range(100)
         ]
         run_scan(client, api_headers, [full_batch])
@@ -262,21 +373,40 @@ class TestScanCompletenessVerification:
         assert "rejected" not in res.get_json()
         assert client.get("/api/network").get_json()["item_count"] == 5
 
-    def test_rejected_scan_does_not_record_false_vanish_history(self, client, api_headers):
+    def test_rejected_scan_does_not_record_false_vanish_history(
+        self, client, api_headers
+    ):
         # The actual user-visible symptom this whole mechanism exists to
         # prevent: items missing from a rejected incomplete scan must
         # NOT get a size=0 history point recorded, since they never
         # really vanished.
-        item = {"name": "Neutronium Ingot", "size": 500, "mod": "gregtech",
-                 "internal": "gt.metaitem.01", "damage": 11129, "kind": "item"}
+        item = {
+            "name": "Neutronium Ingot",
+            "size": 500,
+            "mod": "gregtech",
+            "internal": "gt.metaitem.01",
+            "damage": 11129,
+            "kind": "item",
+        }
         run_scan(client, api_headers, [[item]])
 
-        token = client.post("/api/network/scan/start", headers=api_headers).get_json()["scan_token"]
-        client.post("/api/network/scan/batch", json={"items": [], "scan_token": token}, headers=api_headers)
+        token = client.post("/api/network/scan/start", headers=api_headers).get_json()[
+            "scan_token"
+        ]
+        client.post(
+            "/api/network/scan/batch",
+            json={"items": [], "scan_token": token},
+            headers=api_headers,
+        )
         client.post(
             "/api/network/scan/finish",
-            json={"scan_token": token, "chunks_sent": 2, "total_errors": 0},  # claims 2, only 1 arrived
-            headers=api_headers)
+            json={
+                "scan_token": token,
+                "chunks_sent": 2,
+                "total_errors": 0,
+            },  # claims 2, only 1 arrived
+            headers=api_headers,
+        )
 
         history = client.get(
             "/api/network/history?mod=gregtech&internal=gt.metaitem.01&damage=11129&kind=item&range=lifetime"
@@ -307,26 +437,37 @@ class TestScanTokenMechanism:
         assert isinstance(token, str)
 
     def test_batch_with_correct_token_is_accepted(self, client, api_headers):
-        token = client.post("/api/network/scan/start", headers=api_headers).get_json()["scan_token"]
+        token = client.post("/api/network/scan/start", headers=api_headers).get_json()[
+            "scan_token"
+        ]
         res = client.post(
-            "/api/network/scan/batch", json={"items": [ITEM], "scan_token": token}, headers=api_headers)
+            "/api/network/scan/batch",
+            json={"items": [ITEM], "scan_token": token},
+            headers=api_headers,
+        )
         assert res.get_json()["ok"] is True
 
     def test_batch_with_wrong_token_is_rejected(self, client, api_headers):
         client.post("/api/network/scan/start", headers=api_headers)
         res = client.post(
-            "/api/network/scan/batch", json={"items": [ITEM], "scan_token": "totally-wrong-token"},
-            headers=api_headers)
+            "/api/network/scan/batch",
+            json={"items": [ITEM], "scan_token": "totally-wrong-token"},
+            headers=api_headers,
+        )
         body = res.get_json()
         assert body["ok"] is False
         assert body["error"] == "stale_scan_token"
 
     def test_batch_with_missing_token_is_rejected(self, client, api_headers):
         client.post("/api/network/scan/start", headers=api_headers)
-        res = client.post("/api/network/scan/batch", json={"items": [ITEM]}, headers=api_headers)
+        res = client.post(
+            "/api/network/scan/batch", json={"items": [ITEM]}, headers=api_headers
+        )
         assert res.get_json()["ok"] is False
 
-    def test_finish_with_wrong_token_does_not_commit_and_keeps_previous_snapshot(self, client, api_headers):
+    def test_finish_with_wrong_token_does_not_commit_and_keeps_previous_snapshot(
+        self, client, api_headers
+    ):
         # A full, valid scan first - the known-good snapshot to protect.
         run_scan(client, api_headers, [[ITEM]])
         assert client.get("/api/network").get_json()["item_count"] == 1
@@ -337,11 +478,19 @@ class TestScanTokenMechanism:
         # scan would look like from the server's point of view: data in
         # the buffer, but no valid proof it belongs to a real, current,
         # complete scan cycle.
-        token = client.post("/api/network/scan/start", headers=api_headers).get_json()["scan_token"]
+        token = client.post("/api/network/scan/start", headers=api_headers).get_json()[
+            "scan_token"
+        ]
         client.post(
-            "/api/network/scan/batch", json={"items": [FLUID], "scan_token": token}, headers=api_headers)
+            "/api/network/scan/batch",
+            json={"items": [FLUID], "scan_token": token},
+            headers=api_headers,
+        )
         res = client.post(
-            "/api/network/scan/finish", json={"scan_token": "wrong-token"}, headers=api_headers)
+            "/api/network/scan/finish",
+            json={"scan_token": "wrong-token"},
+            headers=api_headers,
+        )
         assert res.get_json()["ok"] is False
 
         # The original snapshot is completely untouched.
@@ -350,43 +499,64 @@ class TestScanTokenMechanism:
         assert data["items"][0]["name"] == "Iron Ingot"
         assert data["in_progress"] is False  # doesn't get stuck "in progress" forever
 
-    def test_simulated_restart_invalidates_the_old_scan_token(self, client, api_headers):
+    def test_simulated_restart_invalidates_the_old_scan_token(
+        self, client, api_headers
+    ):
         # A full scan establishes a known-good snapshot.
         run_scan(client, api_headers, [[ITEM]])
 
         # Start a scan, get its token - this represents the token
         # network_browser.lua would have stored locally.
-        old_token = client.post("/api/network/scan/start", headers=api_headers).get_json()["scan_token"]
+        old_token = client.post(
+            "/api/network/scan/start", headers=api_headers
+        ).get_json()["scan_token"]
 
         # Simulate a server restart: directly reset the in-memory scan
         # token the way a fresh process would start with (nil), exactly
         # like _load_network_snapshot() is the real equivalent for the
         # item snapshot itself after a real restart.
-        app_module._network_state["current_scan_token"] = "some-other-token-a-fresh-process-would-never-know-about"
+        app_module._network_state["current_scan_token"] = (
+            "some-other-token-a-fresh-process-would-never-know-about"
+        )
 
         # Lua, unaware anything happened, keeps using its OLD (now
         # stale) token for the rest of this scan cycle.
         res = client.post(
-            "/api/network/scan/batch", json={"items": [FLUID], "scan_token": old_token}, headers=api_headers)
+            "/api/network/scan/batch",
+            json={"items": [FLUID], "scan_token": old_token},
+            headers=api_headers,
+        )
         assert res.get_json()["ok"] is False
         assert res.get_json()["error"] == "stale_scan_token"
 
-    def test_overlapping_scan_without_any_restart_still_gets_invalidated(self, client, api_headers):
+    def test_overlapping_scan_without_any_restart_still_gets_invalidated(
+        self, client, api_headers
+    ):
         # No restart at all here - just two scans starting back to back
         # on the SAME process, which scan/start's fresh-token-every-time
         # behavior should still correctly separate.
-        token_a = client.post("/api/network/scan/start", headers=api_headers).get_json()["scan_token"]
-        token_b = client.post("/api/network/scan/start", headers=api_headers).get_json()["scan_token"]
+        token_a = client.post(
+            "/api/network/scan/start", headers=api_headers
+        ).get_json()["scan_token"]
+        token_b = client.post(
+            "/api/network/scan/start", headers=api_headers
+        ).get_json()["scan_token"]
         assert token_a != token_b
 
         # A straggling batch from scan A arriving after scan B has
         # already started must be rejected - it doesn't belong to the
         # scan the server now considers active.
         res = client.post(
-            "/api/network/scan/batch", json={"items": [ITEM], "scan_token": token_a}, headers=api_headers)
+            "/api/network/scan/batch",
+            json={"items": [ITEM], "scan_token": token_a},
+            headers=api_headers,
+        )
         assert res.get_json()["ok"] is False
 
         # But scan B's own token still works normally.
         res = client.post(
-            "/api/network/scan/batch", json={"items": [ITEM], "scan_token": token_b}, headers=api_headers)
+            "/api/network/scan/batch",
+            json={"items": [ITEM], "scan_token": token_b},
+            headers=api_headers,
+        )
         assert res.get_json()["ok"] is True

@@ -28,11 +28,13 @@ Isolation strategy, and why it looks the way it does:
   module-level state or a new table, this fixture needs a matching
   update, the same way it would for any hand-maintained test harness.
 """
+
 import os
 import shutil
 import sqlite3
 import sys
 import tempfile
+import time
 
 import pytest
 
@@ -73,11 +75,21 @@ def api_headers(api_key):
     return {"X-API-Key": api_key}
 
 
-def user_headers(user_id, extra=None):
-    headers = {"X-User-Id": user_id}
-    if extra:
-        headers.update(extra)
-    return headers
+def login_as(client, user_id, role="viewer"):
+    conn = app_module._craft_db()
+    try:
+        conn.execute(
+            "INSERT OR IGNORE INTO users (id, display_name, role, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (user_id, user_id, role, time.time()),
+        )
+        token = app_module._create_access_token(conn, user_id)
+        conn.commit()
+    finally:
+        conn.close()
+    response = client.post("/api/auth/login", json={"token": token})
+    assert response.status_code == 200
+    return client
 
 
 @pytest.fixture(autouse=True)
@@ -100,13 +112,24 @@ def reset_state():
     app_module._craft_request_next_id = 1
     app_module._cancel_requests.clear()
     app_module._cancel_request_next_id = 1
+    app_module._chart_cache.clear()
+    app_module._chart_request_times.clear()
 
     # SQLite - wiped, not dropped/recreated (CREATE TABLE IF NOT EXISTS
     # already ran once at import; DELETE FROM is enough for a clean slate
     # and avoids re-running migration logic per test).
     db_tables = {
         app_module.CRAFT_HISTORY_DB_PATH: [
-            "craft_events", "user_pins", "user_completions", "craft_keys", "user_item_pins",
+            "users",
+            "access_tokens",
+            "sessions",
+            "craft_events",
+            "user_pins",
+            "user_completions",
+            "craft_keys",
+            "user_item_pins",
+            "craft_request_history",
+            "craft_cancel_history",
         ],
         app_module.POWER_DB_PATH: ["power_readings"],
         app_module.ITEM_HISTORY_DB_PATH: ["item_history", "network_snapshot"],

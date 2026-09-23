@@ -1,8 +1,4 @@
-from conftest import user_headers
-
-
-def sync_keys(client, api_headers, keys):
-    client.post("/api/craft/keys", json={"keys": keys}, headers=api_headers)
+from conftest import login_as
 
 
 def post_busy_job(client, api_headers, cpu_name="W01", busy=True):
@@ -14,41 +10,42 @@ def post_busy_job(client, api_headers, cpu_name="W01", busy=True):
 
 
 class TestCreateCancelRequest:
-    def test_requires_user_id(self, client):
+    def test_requires_authentication(self, client):
         res = client.post("/api/craft/cancel", json={"cpu_name": "W01"})
-        assert res.status_code == 400
+        assert res.status_code == 401
 
-    def test_requires_valid_craft_key(self, client, api_headers):
+    def test_requires_operator_role(self, client, api_headers):
         post_busy_job(client, api_headers)
-        res = client.post("/api/craft/cancel", json={"cpu_name": "W01"}, headers=user_headers("not-a-real-key"))
+        login_as(client, "usr_viewer")
+        res = client.post("/api/craft/cancel", json={"cpu_name": "W01"})
         assert res.status_code == 403
 
     def test_unknown_cpu_rejected(self, client, api_headers):
-        sync_keys(client, api_headers, ["alice"])
         post_busy_job(client, api_headers)
-        res = client.post("/api/craft/cancel", json={"cpu_name": "NoSuchCPU"}, headers=user_headers("alice"))
+        login_as(client, "usr_alice", role="operator")
+        res = client.post("/api/craft/cancel", json={"cpu_name": "NoSuchCPU"})
         assert res.status_code == 404
 
     def test_idle_cpu_rejected(self, client, api_headers):
-        sync_keys(client, api_headers, ["alice"])
         post_busy_job(client, api_headers, busy=False)
-        res = client.post("/api/craft/cancel", json={"cpu_name": "W01"}, headers=user_headers("alice"))
+        login_as(client, "usr_alice", role="operator")
+        res = client.post("/api/craft/cancel", json={"cpu_name": "W01"})
         assert res.status_code == 400
         assert "not currently busy" in res.get_json()["error"]
 
     def test_busy_cpu_creates_pending_request(self, client, api_headers):
-        sync_keys(client, api_headers, ["alice"])
         post_busy_job(client, api_headers)
-        res = client.post("/api/craft/cancel", json={"cpu_name": "W01"}, headers=user_headers("alice"))
+        login_as(client, "usr_alice", role="operator")
+        res = client.post("/api/craft/cancel", json={"cpu_name": "W01"})
         assert res.status_code == 200
         assert "id" in res.get_json()
 
 
 class TestCancelLifecycle:
-    def _create_pending(self, client, api_headers, user_id="alice", cpu_name="W01"):
-        sync_keys(client, api_headers, [user_id])
+    def _create_pending(self, client, api_headers, user_id="usr_alice", cpu_name="W01"):
         post_busy_job(client, api_headers, cpu_name=cpu_name)
-        res = client.post("/api/craft/cancel", json={"cpu_name": cpu_name}, headers=user_headers(user_id))
+        login_as(client, user_id, role="operator")
+        res = client.post("/api/craft/cancel", json={"cpu_name": cpu_name})
         return res.get_json()["id"]
 
     def test_appears_in_lua_pending_poll(self, client, api_headers):
@@ -58,26 +55,31 @@ class TestCancelLifecycle:
         assert req_id in ids
 
     def test_owner_can_poll_its_status(self, client, api_headers):
-        req_id = self._create_pending(client, api_headers, user_id="alice")
-        res = client.get(f"/api/craft/cancel/{req_id}", headers=user_headers("alice"))
+        req_id = self._create_pending(client, api_headers)
+        res = client.get(f"/api/craft/cancel/{req_id}")
         assert res.status_code == 200
         assert res.get_json()["status"] == "pending"
 
     def test_a_different_user_cannot_read_it(self, client, api_headers):
-        req_id = self._create_pending(client, api_headers, user_id="alice")
-        sync_keys(client, api_headers, ["alice", "bob"])
-        res = client.get(f"/api/craft/cancel/{req_id}", headers=user_headers("bob"))
+        req_id = self._create_pending(client, api_headers)
+        login_as(client, "usr_bob")
+        res = client.get(f"/api/craft/cancel/{req_id}")
         # 404, not 403/200 with someone else's data - existence itself
         # isn't confirmed to a non-owner.
         assert res.status_code == 404
 
-    def test_success_result_resolves_it_and_leaves_pending_poll(self, client, api_headers):
+    def test_success_result_resolves_it_and_leaves_pending_poll(
+        self, client, api_headers
+    ):
         req_id = self._create_pending(client, api_headers)
         res = client.post(
-            f"/api/craft/cancel/{req_id}/result", json={"success": True}, headers=api_headers)
+            f"/api/craft/cancel/{req_id}/result",
+            json={"success": True},
+            headers=api_headers,
+        )
         assert res.status_code == 200
 
-        res = client.get(f"/api/craft/cancel/{req_id}", headers=user_headers("alice"))
+        res = client.get(f"/api/craft/cancel/{req_id}")
         data = res.get_json()
         assert data["status"] == "resolved"
         assert data["success"] is True
@@ -91,12 +93,35 @@ class TestCancelLifecycle:
         client.post(
             f"/api/craft/cancel/{req_id}/result",
             json={"success": False, "reason": "CPU was not busy - nothing to cancel"},
-            headers=api_headers)
-        res = client.get(f"/api/craft/cancel/{req_id}", headers=user_headers("alice"))
+            headers=api_headers,
+        )
+        res = client.get(f"/api/craft/cancel/{req_id}")
         data = res.get_json()
         assert data["success"] is False
         assert data["reason"] == "CPU was not busy - nothing to cancel"
 
+    def test_cancellation_history_records_lua_result(self, client, api_headers):
+        req_id = self._create_pending(client, api_headers)
+        client.post(
+            f"/api/craft/cancel/{req_id}/result",
+            json={"success": False, "reason": "already finished"},
+            headers=api_headers,
+        )
+        conn = __import__("app")._craft_db()
+        try:
+            row = conn.execute(
+                "SELECT status, success, reason FROM craft_cancel_history "
+                "WHERE request_id = ?",
+                (req_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+        assert row == ("resolved", 0, "already finished")
+
     def test_result_for_unknown_id_is_404(self, client, api_headers):
-        res = client.post("/api/craft/cancel/99999/result", json={"success": True}, headers=api_headers)
+        res = client.post(
+            "/api/craft/cancel/99999/result",
+            json={"success": True},
+            headers=api_headers,
+        )
         assert res.status_code == 404
