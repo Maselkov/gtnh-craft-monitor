@@ -187,15 +187,22 @@ back to showing "Crafting job (no monitor tile)" instead of guessing.
 
 Icons are matched against a lookup table (`server/data/icons_lookup.json`,
 already bundled) built from a NESQL export
-(https://github.com/ShadowTheAge/nesql-exporter) — see the chat history
-this project came from for exact steps, short version:
+(https://github.com/ShadowTheAge/nesql-exporter). If you ever need to
+regenerate it (a modpack update, a different pack entirely):
 
 1. Export in-game with the exporter mod (`/nesql`), producing
    `.minecraft/nesql/<repo>/nesql-db.*` and `.minecraft/nesql/<repo>/image.zip`.
-2. Dump the `Item` and `Fluid` tables to CSV (two small standalone Java
-   programs handle this — connect read-only over JDBC, `SELECT * FROM
-   Item` / `SELECT * FROM Fluid`, write a CSV each).
-3. Those CSVs get turned into `icons_lookup.json`, with three lookup tables:
+2. Run the whole rest of the pipeline in one command:
+   ```bash
+   python3 tools/generate_icons_lookup.py --nesql-db "/path/to/nesql-repository/nesql-db"
+   ```
+   (that's the path to your `nesql-db.*` files WITHOUT any extension).
+   This compiles and runs `tools/ExportItems.java`/`tools/ExportFluids.java`
+   (small, standalone, read-only JDBC dumps of the `Item`/`Fluid` tables
+   to CSV) and builds `server/data/icons_lookup.json` directly from the
+   result — needs a JDK on PATH (`javac`/`java`), nothing else; it'll
+   locate or download the `hsqldb` jar itself. `icons_lookup.json` ends
+   up with three lookup tables:
    - `by_key`: `modid:internalname:damage` → icon, for ordinary items.
      AE2 reports `name` as `"modid:internalname"` for these (colon present).
    - `fluids_by_key`: bare Forge fluid registry name → icon. GT/GTNH's
@@ -213,8 +220,14 @@ this project came from for exact steps, short version:
      when neither of the above matched (labels collide across mods ~8%
      of the time, so this alone isn't reliable).
 
-**You still need to add the actual images.** Drop NESQL's `image.zip`
-*unmodified* into `server/data/images.zip`, then rebuild:
+   When multiple NESQL rows share the same key (an item with several
+   NBT-tagged variants, say), the script prefers whichever row has no
+   NBT at all as the representative icon — this project's own OC-side
+   data never carries NBT to disambiguate by anyway, so a plain variant
+   is the best available default.
+
+**You still need to add the actual images separately.** Drop NESQL's
+`image.zip` *unmodified* into `server/data/images.zip`, then rebuild:
 ```bash
 docker compose up -d --build
 ```
