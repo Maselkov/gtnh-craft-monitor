@@ -1,6 +1,5 @@
 // Network tab: item grid, tooltip, pins, infinite scroll.
 
-import { userHeaders } from './auth.js';
 import { openCraftRequestModal } from './craft-actions.js';
 import { openItemHistory, tryOpenItemFromUrl, updateItemHistoryPinButton } from './history.js';
 import { buildSearchHighlightHtml, itemMatchesSearch, parseSearchQuery } from './search.js';
@@ -32,7 +31,7 @@ export function networkItemKey(mod, internal, damage, kind) {
 
 export async function fetchNetworkPins() {
   try {
-    const res = await fetch('/api/network/pins', { headers: userHeaders() });
+    const res = await fetch('/api/network/pins');
     const data = await res.json();
     pinnedItemKeys = new Set((data.pins || []).map(p => networkItemKey(p.mod, p.internal, p.damage, p.kind)));
     // Whichever of fetchNetwork()/fetchNetworkPins() resolves second
@@ -52,7 +51,7 @@ export async function toggleNetworkItemPin(it) {
   try {
     await fetch(path, {
       method: 'POST',
-      headers: userHeaders({ 'Content-Type': 'application/json' }),
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mod: it.mod, internal: it.internal, damage: it.damage, kind: it.kind || 'item' }),
     });
   } catch (e) {

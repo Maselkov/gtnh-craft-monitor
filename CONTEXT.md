@@ -96,7 +96,7 @@ for admin recovery). The server itself is the `server/gcm/` package:
 
 ```
 gcm/__init__.py     create_app() - the ONLY place startup work happens
-gcm/config.py       env settings + data paths (read as config.X at call time)
+gcm/config.py       every env setting + data paths (read as config.X at call time)
 gcm/db.py           SQLite connections, transaction(), schemas + migrations
 gcm/store/*.py      ALL other SQL, one module per domain: power, items,
                     crafts, requests, users
@@ -104,7 +104,7 @@ gcm/auth.py         API key, signed-in user, roles, bootstrap, route decorators
 gcm/security.py     trusted-proxy wrapper, bootstrap/cross-origin hooks, headers
 gcm/state.py        ALL in-memory live state (crafts, network scan, request
                     queues, CPU transition tracking) + reset()
-gcm/tracking.py     busy->idle CPU transitions -> craft events + completions
+gcm/tracking.py     CPU job ends -> craft events + completions
 gcm/icons.py        icon lookup + images.zip access
 gcm/charts.py       matplotlib PNGs for OpenGraph, with cache + rate limit
 gcm/routes/*.py     one Flask Blueprint per area: crafts, craft_requests,
@@ -122,9 +122,12 @@ Four rules keep this layout honest:
   connection, return plain tuples/dicts, and make each change that must
   be atomic a single function. `tests/test_store_boundary.py` fails on
   a query or connection anywhere else.
-- **Other modules read settings as `config.NAME` at call time**, never
-  `from gcm.config import NAME` - otherwise `configure()` (and tests'
-  monkeypatching) would silently not reach them.
+- **Settings live in `config.py`, and other modules read them as
+  `config.NAME` at call time**, never `from gcm.config import NAME` and
+  never `os.environ` themselves - otherwise `configure()` (and tests'
+  monkeypatching) would silently not reach them. The one exception is
+  the bootstrap admin token/name, which `auth.bootstrap_admin()` reads
+  from the environment when it runs, since nothing else uses them.
 - **Security hooks never list routes by name.** The bootstrap-rotation
   block covers every route whose auth decorator is `login_required`,
   `operator_required` or `admin_required`, and the cross-origin check
@@ -155,6 +158,15 @@ in their numbers and messages. Two guarantees matter to the game side:
   craft_monitor.lua reports results by id and may still hold one from
   before a restart; with a reused id, that late result landed on an
   unrelated new request.
+
+Every change to a queued record goes through a `CommandQueue` method
+(`add`, `claim_pending`, `resolve`, `dismiss`, `select`); routes only
+ever see copies. The game's result wins over an expiry: a result that
+arrives after the server gave up waiting still updates both the
+in-memory record and its history row, since it's what actually
+happened in-game. An expiry, in turn, only closes a history row that
+nothing has resolved yet (`only_if_open` in `store/requests.py`). A
+pending request can't be dismissed - the game may still report on it.
 
 **File organization, frontend**: `server/index.html` is a small shell;
 styles are `server/static/app.css` and the code is ES modules split per
@@ -236,7 +248,9 @@ versioning and has to stay idempotent: every older install reports
 version 0 whatever state its tables are in (a real one still had the
 retired `craft_keys` table and none of the request-history tables). A
 file at a higher version than the server knows stops startup rather
-than being run by older code.
+than being run by older code. Foreign keys are enforced on
+craft_history.db (`PRAGMA foreign_keys`, set per connection in
+`db.craft_db()`), so parent rows are deleted last.
 
 ## Network scan integrity (why scan/finish looks the way it does)
 
@@ -484,7 +498,7 @@ invisible to the old design; (2) "was busy, now isn't" looked identical
 for a finished vs. a cancelled craft with no way to distinguish them
 client-side. `craft_events` (permanent, unpruned - also intended as raw
 material for future historical/analytics views) logs every CPU
-transition unconditionally, regardless of whether anyone has it pinned.
+job end unconditionally, regardless of whether anyone has it pinned.
 `user_pins` / `user_completions` are per-user.
 
 **Notification dedup is baseline-on-load, not a persisted "seen" list.**
@@ -505,16 +519,24 @@ with a `localStorage`-based claim (shared across tabs, unlike
 there before actually firing the Notification, so a second tab sees it
 already claimed and skips.
 
-**User identity is a self-issued UUID in localStorage, sent as
-`X-User-Id`.** This is identity, not authentication - anyone with the
-UUID could act as that user. Acceptable behind your own network/auth,
-explicitly not a real security boundary. "Light login later" was
-discussed as a future possibility; if that happens, `user_id` should stay
-an opaque string everywhere (never assume UUID format) so swapping what
-populates it doesn't require a schema change.
+**User identity comes from the session cookie**, set by signing in
+with a personal access token (see `gcm/auth.py` and the README's "User
+accounts"). It replaced an earlier self-issued UUID sent as
+`X-User-Id`, which was identity without authentication. `user_id` is
+an opaque string everywhere (`usr_<hex>` today); nothing should assume
+its format. Deleting a user removes their tokens, sessions, CPU pins,
+item pins and pending completions; their craft request/cancel history
+stays as the audit trail.
 
 **A pin can only ever exist for a currently-busy CPU**, and is always
-auto-removed the instant that CPU's job ends (finished or not). This is
+auto-removed the instant that CPU's job ends (finished or not). A job
+ends when its CPU goes busy->idle, or when a busy CPU reports a
+different final output than it did last poll - a CPU that finishes and
+starts its next job between two polls is never seen idle. The same
+reasoning applies when the game accepts a browser craft request: it
+only starts one on a CPU it saw idle, so a job the server still tracks
+there from before the request was made is closed first
+(`tracking.start_requested_job()`). This is
 deliberate: "which CPU" is incidental (AE2 gives no other handle on a
 job), "which item" is what the user actually cares about, and a CPU
 immediately starting a new job after finishing shouldn't silently
@@ -555,7 +577,7 @@ touch-primary device" is decided elsewhere in this project too.
 
 ## Test suite (server/tests/)
 
-176 pytest tests across 15 files, covering every endpoint - crafts, CPU
+201 pytest tests across 17 files, covering every endpoint - crafts, CPU
 pins, craft requests, cancellation, network scanning (including the
 scan-integrity mechanism above), item history, network item pins,
 power readings (including the DB migration), auth/admin, OpenGraph
@@ -563,7 +585,7 @@ tags - plus the pure helpers, the security endpoint lists and the
 frontend asset wiring. Plus 15 node:test tests (`server/tests/js/`)
 for the frontend's pure functions: the NEI-style search tokenizer and
 matcher, the craft amount evaluator and `formatQty`. They load
-by importing the real `static/js/` modules directly. Run with:
+by importing the real `static/js/` modules directly.
 And a browser test (`server/tests/e2e/run.mjs`, no dependencies - it
 drives headless Chrome over the DevTools protocol with Node's built-in
 WebSocket): it starts the real server on seeded data and clicks through
@@ -621,6 +643,10 @@ browser notifications (headless Chrome denies the permission).
 
 ## Known limitations
 
+- Job-end detection can't see a CPU that finishes and immediately
+  starts another job making the same item between two polls, or any
+  job switch on a CPU without an AE2 Crafting Monitor (no final output
+  is reported at all). A pin there carries over to the next job.
 - Fluid icon matching only covers items/fluids that actually appear in
   NESQL's static export - anything created dynamically with no NEI-visible
   registration (rare, but the Fluid Discretizer pattern is an example of

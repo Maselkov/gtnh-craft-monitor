@@ -77,3 +77,35 @@ def test_app_databases_are_at_their_latest_version(flask_app):
         (config.ITEM_HISTORY_DB_PATH, db.ITEM_HISTORY_MIGRATIONS),
     ):
         assert version(lambda: sqlite3.connect(path)) == len(steps), path
+
+
+def test_rows_left_by_deleted_users_are_dropped(flask_app):
+    conn = db.craft_db()
+    try:
+        conn.execute(
+            "INSERT INTO users (id, display_name, role, created_at) "
+            "VALUES ('usr_alice', 'Alice', 'viewer', 0)"
+        )
+        for user_id in ("usr_alice", "usr_gone"):
+            conn.execute(
+                "INSERT INTO user_pins (user_id, cpu_name, pinned_at) VALUES (?, 'W01', 0)",
+                (user_id,),
+            )
+        conn.commit()
+        db._craft_drop_orphaned_user_rows(conn)
+        pins = conn.execute("SELECT user_id FROM user_pins").fetchall()
+    finally:
+        conn.close()
+    assert pins == [("usr_alice",)]
+
+
+def test_craft_db_enforces_foreign_keys(flask_app):
+    conn = db.craft_db()
+    try:
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO access_tokens (id, user_id, secret_hash, created_at) "
+                "VALUES ('tok', 'usr_nobody', 'x', 0)"
+            )
+    finally:
+        conn.close()

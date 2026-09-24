@@ -4,11 +4,35 @@ filesystem at import time. Other modules read these as config.NAME at
 call time (never `from config import NAME`), so configure() and test
 monkeypatching take effect everywhere."""
 
+import ipaddress
 import os
+
+
+def _parse_trusted_proxies(value):
+    networks = []
+    for entry in value.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        try:
+            networks.append(ipaddress.ip_network(entry, strict=False))
+        except ValueError as error:
+            raise RuntimeError(f"Invalid TRUSTED_PROXIES entry: {entry}") from error
+    return networks
+
 
 API_KEY = os.environ.get("API_KEY", "")
 STALE_AFTER_SECONDS = int(os.environ.get("STALE_AFTER_SECONDS", "30"))
 SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "1") != "0"
+SESSION_LIFETIME_SECONDS = int(os.environ.get("SESSION_LIFETIME_SECONDS", str(7 * 86400)))
+# Proxies allowed to set X-Forwarded-* headers (see gcm/security.py).
+TRUSTED_PROXY_NETWORKS = _parse_trusted_proxies(os.environ.get("TRUSTED_PROXIES", ""))
+
+# OpenGraph chart PNGs (gcm/charts.py).
+CHART_CACHE_TTL_SECONDS = int(os.environ.get("CHART_CACHE_TTL_SECONDS", "60"))
+CHART_CACHE_MAX_ENTRIES = int(os.environ.get("CHART_CACHE_MAX_ENTRIES", "64"))
+CHART_RATE_LIMIT_PER_MINUTE = int(os.environ.get("CHART_RATE_LIMIT_PER_MINUTE", "30"))
+CHART_MAX_TRACKED_CLIENTS = int(os.environ.get("CHART_MAX_TRACKED_CLIENTS", "4096"))
 
 DATA_DIR = None
 ICONS_LOOKUP_PATH = None

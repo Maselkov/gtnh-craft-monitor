@@ -84,9 +84,8 @@ class TestCraftRequestLifecycle:
         self, client, api_headers
     ):
         req_id = self._create_pending_request(client)
-        # The CPU doesn't need to show busy in _state["jobs"] for this to
-        # work - that's the whole point of _create_pin_bypassing_busy_check,
-        # confirmed directly here rather than just trusting the comment.
+        # The CPU doesn't need to show busy in state.crafts["jobs"] for
+        # this to work - tracking.start_requested_job() bypasses that check.
         res = client.post(
             f"/api/craft/requests/{req_id}/result",
             json={"status": "accepted", "cpu_name": "W01"},
@@ -181,3 +180,10 @@ class TestCraftRequestLifecycle:
         login_as(client, "usr_operator", role="operator")
         res = client.get("/api/craft/requests")
         assert len(res.get_json()["requests"]) == 1
+
+    def test_dismiss_leaves_a_pending_request_alone(self, client, api_headers):
+        # The game may still report on it; its result needs a record.
+        req_id = self._create_pending_request(client)
+        client.post(f"/api/craft/requests/{req_id}/dismiss")
+        res = client.get("/api/craft/requests")
+        assert [r["id"] for r in res.get_json()["requests"]] == [req_id]

@@ -135,3 +135,90 @@ class TestCpuPins:
         assert client.get("/api/pins").get_json()["pins"] == ["W01"]
         self._post_busy_job(client, api_headers, busy=False)
         assert len(client.get("/api/completions").get_json()["completions"]) == 1
+
+
+def post_job(client, api_headers, output=None, busy=True, progress=None, cpu_name="W01"):
+    job = {"name": cpu_name, "busy": busy, "progress_percent": progress}
+    if output:
+        job.update(final_output=output, final_output_mod="gregtech", final_output_internal=output)
+    client.post(
+        "/api/crafts",
+        json={"source": "me_controller", "jobs": [job]},
+        headers=api_headers,
+    )
+
+
+def completion_names(client):
+    return [c["itemName"] for c in client.get("/api/completions").get_json()["completions"]]
+
+
+class TestBackToBackJobs:
+    # A CPU that finishes and starts its next job between two polls is
+    # never seen idle.
+    def test_new_output_on_a_busy_cpu_ends_the_old_job(self, client, api_headers):
+        post_job(client, api_headers, "Iron Ingot", progress=98)
+        login_as(client, "alice")
+        client.post("/api/pins", json={"cpu_name": "W01"})
+
+        post_job(client, api_headers, "Gold Ingot", progress=5)
+
+        assert completion_names(client) == ["Iron Ingot"]
+        assert client.get("/api/pins").get_json()["pins"] == []
+        post_job(client, api_headers, busy=False)
+        assert completion_names(client) == ["Iron Ingot"]
+
+    def test_unknown_output_is_not_a_new_job(self, client, api_headers):
+        # No Crafting Monitor on the CPU: final_output is simply absent.
+        post_job(client, api_headers, "Iron Ingot")
+        login_as(client, "alice")
+        client.post("/api/pins", json={"cpu_name": "W01"})
+
+        post_job(client, api_headers, None)
+        post_job(client, api_headers, "Iron Ingot")
+
+        assert completion_names(client) == []
+        assert client.get("/api/pins").get_json()["pins"] == ["W01"]
+
+
+class TestAcceptedRequestTracking:
+    def _accept(self, client, api_headers, poll_sees_job_first=False):
+        login_as(client, "bob", role="operator")
+        req_id = client.post(
+            "/api/craft/request",
+            json={"label": "Gold Ingot", "internal": "gold", "amount": 1},
+        ).get_json()["id"]
+        state.craft_requests.requests[req_id]["created_at"] -= 10
+        client.get("/api/craft/requests/pending", headers=api_headers)
+        if poll_sees_job_first:
+            post_job(client, api_headers, "Gold Ingot", progress=10)
+        client.post(
+            f"/api/craft/requests/{req_id}/result",
+            json={"status": "accepted", "cpu_name": "W01"},
+            headers=api_headers,
+        )
+
+    def test_job_tracked_from_before_the_request_is_closed(self, client, api_headers):
+        # The game only starts a request on an idle CPU, so a job we
+        # still think runs there ended between polls.
+        post_job(client, api_headers, "Iron Ingot", progress=99)
+        state.cpu_last_known["W01"]["started_at"] -= 60
+        login_as(client, "alice")
+        client.post("/api/pins", json={"cpu_name": "W01"})
+
+        self._accept(client, api_headers)
+
+        login_as(client, "alice")
+        assert completion_names(client) == ["Iron Ingot"]
+        assert client.get("/api/pins").get_json()["pins"] == []
+        login_as(client, "bob", role="operator")
+        assert client.get("/api/pins").get_json()["pins"] == ["W01"]
+
+    def test_job_already_seen_after_the_request_is_kept(self, client, api_headers):
+        # The status poll can see the requested job before the game
+        # reports the result; that job is the request's own.
+        self._accept(client, api_headers, poll_sees_job_first=True)
+        assert completion_names(client) == []
+        assert client.get("/api/pins").get_json()["pins"] == ["W01"]
+
+        post_job(client, api_headers, busy=False)
+        assert completion_names(client) == ["Gold Ingot"]

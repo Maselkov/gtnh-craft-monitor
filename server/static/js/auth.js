@@ -7,10 +7,6 @@ import { delegateActions, escapeHtml, onBackdropClick } from './util.js';
 export let AUTH_USER = null;
 let AUTH_MUST_ROTATE_BOOTSTRAP = false;
 
-export function userHeaders(extra) {
-  return Object.assign({}, extra || {});
-}
-
 function updateAuthenticationControl() {
   const input = document.getElementById('accessTokenInput');
   const button = document.getElementById('authBtn');

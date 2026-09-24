@@ -4,7 +4,7 @@ import time
 import pytest
 
 import app as app_module
-from gcm import auth, config, db, security, store
+from gcm import auth, config, db, store
 
 
 def test_access_token_resolves_stable_user_id():
@@ -201,7 +201,7 @@ def test_existing_bootstrap_session_is_revoked_during_startup_recognition(monkey
         )
         bootstrap_token = store.users.create_access_token(conn, "usr_admin")
         access_token = store.users.find_access_token(conn, bootstrap_token)
-        store.users.create_session(conn, access_token, auth.SESSION_LIFETIME_SECONDS)
+        store.users.create_session(conn, access_token, config.SESSION_LIFETIME_SECONDS)
         conn.commit()
     finally:
         conn.close()
@@ -298,7 +298,7 @@ def test_untrusted_peer_cannot_spoof_forwarded_host(client):
 
 def test_trusted_proxy_can_supply_forwarded_host(client, monkeypatch):
     monkeypatch.setattr(
-        security,
+        config,
         "TRUSTED_PROXY_NETWORKS",
         [ipaddress.ip_network("10.0.0.0/8")],
     )
@@ -446,6 +446,21 @@ def test_admin_can_delete_a_user_and_their_credentials(client, flask_app):
         )
         admin_token = store.users.create_access_token(conn, "usr_admin")
         alice_token = store.users.create_access_token(conn, "usr_alice")
+        conn.execute(
+            "INSERT INTO user_pins (user_id, cpu_name, pinned_at) VALUES ('usr_alice', 'W01', 0)"
+        )
+        conn.execute(
+            "INSERT INTO user_item_pins (user_id, item_key, internal, kind, pinned_at) "
+            "VALUES ('usr_alice', '|x||item', 'x', 'item', 0)"
+        )
+        event_id = conn.execute(
+            "INSERT INTO craft_events (cpu_name, status, occurred_at) VALUES ('W01', 'finished', 0)"
+        ).lastrowid
+        conn.execute(
+            "INSERT INTO user_completions (user_id, craft_event_id, created_at) "
+            "VALUES ('usr_alice', ?, 0)",
+            (event_id,),
+        )
         conn.commit()
     finally:
         conn.close()
@@ -469,6 +484,14 @@ def test_admin_can_delete_a_user_and_their_credentials(client, flask_app):
         alice_client.post("/api/auth/login", json={"token": alice_token}).status_code
         == 401
     )
+    conn = db.craft_db()
+    try:
+        for table in ("user_pins", "user_item_pins", "user_completions"):
+            assert conn.execute(
+                f"SELECT COUNT(*) FROM {table} WHERE user_id = 'usr_alice'"
+            ).fetchone() == (0,), table
+    finally:
+        conn.close()
 
 
 def test_admin_cannot_delete_their_own_account(client):

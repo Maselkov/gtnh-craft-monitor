@@ -87,11 +87,7 @@ def craft_requests_get():
 @bp.route("/api/craft/requests/<int:req_id>/dismiss", methods=["POST"])
 @auth.login_required
 def craft_request_dismiss(req_id):
-    user_id = g.user["id"]
-    with state.craft_requests.lock:
-        req = state.craft_requests.requests.get(req_id)
-        if req and req["user_id"] == user_id:
-            del state.craft_requests.requests[req_id]
+    state.craft_requests.dismiss(req_id, g.user["id"])
     return jsonify({"ok": True})
 
 
@@ -110,35 +106,23 @@ def craft_request_result(req_id):
     if status not in ("accepted", "failed"):
         return jsonify({"error": "status must be accepted or failed"}), 400
 
-    with state.craft_requests.lock:
-        req = state.craft_requests.requests.get(req_id)
-        if not req:
-            return jsonify({"error": "unknown request id"}), 404
-        if status == "accepted":
-            req["cpu_name"] = payload.get("cpu_name")
-            user_id = req["user_id"]
-            cpu_name = req["cpu_name"]
-            del state.craft_requests.requests[req_id]  # existing pin infra takes over now
-        else:
-            req["status"] = "failed"
-            req["reason"] = payload.get("reason") or "request failed"
-            req["failed_at"] = time.time()
-            user_id = None
-            cpu_name = None
+    cpu_name = payload.get("cpu_name")
+    if status == "accepted":
+        # Accepted requests leave the queue: the CPU pin takes over.
+        req = state.craft_requests.resolve(req_id, status, remove=True, cpu_name=cpu_name)
+        reason = None
+    else:
+        reason = payload.get("reason") or "request failed"
+        req = state.craft_requests.resolve(req_id, status, reason=reason)
+    if req is None:
+        return jsonify({"error": "unknown request id"}), 404
 
-    if status == "accepted" and user_id and cpu_name:
-        # Pinned directly rather than through /api/pins, which requires
-        # the CPU to already show busy in the last status report - that
-        # only updates on craft_monitor.lua's regular 5s poll, and the
-        # game can report "accepted, CPU X" before then. The trust here
-        # comes from the game's own confirmation that it just watched
-        # this CPU get assigned, not from a possibly-stale cache.
-        store.crafts.pin_cpu(user_id, cpu_name)
-        tracking.note_job_started(cpu_name, req.get("label"), req.get("icon"))
+    if status == "accepted" and cpu_name:
+        tracking.start_requested_job(
+            req["user_id"], cpu_name, req.get("label"), req.get("icon"), req["created_at"]
+        )
 
-    store.requests.resolve_request(
-        req_id, status, payload.get("reason"), payload.get("cpu_name")
-    )
+    store.requests.resolve_request(req_id, status, reason, cpu_name)
 
     return jsonify({"ok": True})
 
@@ -206,14 +190,9 @@ def craft_cancel_result(req_id):
     success = bool(payload.get("success"))
     reason = payload.get("reason")
 
-    with state.cancel_requests.lock:
-        req = state.cancel_requests.requests.get(req_id)
-        if not req:
-            return jsonify({"error": "unknown request id"}), 404
-        req["status"] = "resolved"
-        req["success"] = success
-        req["reason"] = reason
-        req["resolved_at"] = time.time()
+    req = state.cancel_requests.resolve(req_id, "resolved", success=success, reason=reason)
+    if req is None:
+        return jsonify({"error": "unknown request id"}), 404
 
     store.requests.resolve_cancel(req_id, success, reason)
 

@@ -196,3 +196,38 @@ class TestIdsAcrossRestarts:
         assert res.status_code == 404
         mine = client.get("/api/craft/requests").get_json()["requests"]
         assert [(r["id"], r["status"]) for r in mine] == [(new_id, "pending")]
+
+
+class TestLateResults:
+    # The game's result can arrive after the server gave up waiting;
+    # it's what actually happened in-game, so it wins over the expiry.
+    def test_late_accept_overrides_expiry(self, client, api_headers):
+        req_id = submit_craft_request(client)
+        client.get("/api/craft/requests/pending", headers=api_headers)
+        age(state.craft_requests.requests[req_id], 3601, "created_at", "picked_up_at")
+        client.get("/api/craft/requests")
+        assert history_status("craft_request_history", req_id)[0] == "failed"
+
+        res = client.post(
+            f"/api/craft/requests/{req_id}/result",
+            json={"status": "accepted", "cpu_name": "W01"},
+            headers=api_headers,
+        )
+        assert res.status_code == 200
+        assert history_status("craft_request_history", req_id) == ("accepted", None)
+        assert client.get("/api/craft/requests").get_json()["requests"] == []
+        assert client.get("/api/pins").get_json()["pins"] == ["W01"]
+
+    def test_late_cancel_result_overrides_expiry(self, client, api_headers):
+        req_id = submit_cancel(client, api_headers)
+        client.get("/api/craft/cancel/pending", headers=api_headers)
+        age(state.cancel_requests.requests[req_id], 301, "created_at", "picked_up_at")
+        assert client.get(f"/api/craft/cancel/{req_id}").get_json()["success"] is False
+
+        client.post(
+            f"/api/craft/cancel/{req_id}/result",
+            json={"success": True},
+            headers=api_headers,
+        )
+        assert client.get(f"/api/craft/cancel/{req_id}").get_json()["success"] is True
+        assert history_status("craft_cancel_history", req_id) == ("resolved", None)

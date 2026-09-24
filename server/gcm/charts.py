@@ -5,7 +5,6 @@ runs JS, so the in-app Chart.js rendering is invisible to it entirely.
 This renders an actual PNG server-side, independent of the browser,
 with a small TTL cache and a per-client rate limit in front of it."""
 
-import os
 import threading
 import time
 from collections import OrderedDict, deque
@@ -21,6 +20,8 @@ from matplotlib.ticker import FuncFormatter
 
 from flask import jsonify, request
 
+from gcm import config
+
 _BG = "#0f1115"
 _PANEL = "#1a1d24"
 _LINE = "#5fb3ff"
@@ -32,10 +33,6 @@ WIDTH_PX = 800
 # would work against that signal instead of for it.
 HEIGHT_PX = 400
 
-CHART_CACHE_TTL_SECONDS = int(os.environ.get("CHART_CACHE_TTL_SECONDS", "60"))
-CHART_CACHE_MAX_ENTRIES = int(os.environ.get("CHART_CACHE_MAX_ENTRIES", "64"))
-CHART_RATE_LIMIT_PER_MINUTE = int(os.environ.get("CHART_RATE_LIMIT_PER_MINUTE", "30"))
-CHART_MAX_TRACKED_CLIENTS = int(os.environ.get("CHART_MAX_TRACKED_CLIENTS", "4096"))
 _chart_cache = OrderedDict()
 _chart_cache_lock = threading.Lock()
 _chart_request_times = OrderedDict()
@@ -52,14 +49,14 @@ def rate_limit_response():
     with _chart_rate_lock:
         timestamps = _chart_request_times.get(client_id)
         if timestamps is None:
-            if len(_chart_request_times) >= CHART_MAX_TRACKED_CLIENTS:
+            if len(_chart_request_times) >= config.CHART_MAX_TRACKED_CLIENTS:
                 _chart_request_times.popitem(last=False)
             timestamps = deque()
             _chart_request_times[client_id] = timestamps
         _chart_request_times.move_to_end(client_id)
         while timestamps and timestamps[0] <= now - 60:
             timestamps.popleft()
-        if len(timestamps) >= CHART_RATE_LIMIT_PER_MINUTE:
+        if len(timestamps) >= config.CHART_RATE_LIMIT_PER_MINUTE:
             retry_after = max(1, int(timestamps[0] + 60 - now) + 1)
             response = jsonify({"error": "chart rate limit exceeded"})
             response.headers["Retry-After"] = str(retry_after)
@@ -80,9 +77,9 @@ def cached_png(cache_key, render):
 
     png_bytes = render()
     with _chart_cache_lock:
-        _chart_cache[cache_key] = (now + CHART_CACHE_TTL_SECONDS, png_bytes)
+        _chart_cache[cache_key] = (now + config.CHART_CACHE_TTL_SECONDS, png_bytes)
         _chart_cache.move_to_end(cache_key)
-        while len(_chart_cache) > CHART_CACHE_MAX_ENTRIES:
+        while len(_chart_cache) > config.CHART_CACHE_MAX_ENTRIES:
             _chart_cache.popitem(last=False)
     return png_bytes
 

@@ -1,6 +1,6 @@
 from io import BytesIO
 
-from gcm import charts
+from gcm import charts, config
 
 
 def test_power_chart_reuses_cached_png(client, monkeypatch):
@@ -23,7 +23,7 @@ def test_power_chart_reuses_cached_png(client, monkeypatch):
 
 
 def test_chart_rate_limit_rejects_excess_requests(client, monkeypatch):
-    monkeypatch.setattr(charts, "CHART_RATE_LIMIT_PER_MINUTE", 1)
+    monkeypatch.setattr(config, "CHART_RATE_LIMIT_PER_MINUTE", 1)
 
     assert client.get("/api/power/chart.png").status_code == 200
     response = client.get("/api/power/chart.png")
@@ -33,7 +33,7 @@ def test_chart_rate_limit_rejects_excess_requests(client, monkeypatch):
 
 
 def test_chart_rate_limiter_caps_tracked_clients(client, monkeypatch):
-    monkeypatch.setattr(charts, "CHART_MAX_TRACKED_CLIENTS", 2)
+    monkeypatch.setattr(config, "CHART_MAX_TRACKED_CLIENTS", 2)
 
     for address in ("198.51.100.1", "198.51.100.2", "198.51.100.3"):
         response = client.get(

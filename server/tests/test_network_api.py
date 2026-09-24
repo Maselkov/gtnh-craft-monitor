@@ -560,3 +560,22 @@ class TestScanTokenMechanism:
             headers=api_headers,
         )
         assert res.get_json()["ok"] is True
+
+
+class TestNetworkRevalidation:
+    def test_unchanged_snapshot_answers_304(self, client, api_headers):
+        first = client.get("/api/network")
+        etag = first.headers["ETag"]
+        assert first.headers["Cache-Control"] == "no-cache"
+
+        again = client.get("/api/network", headers={"If-None-Match": etag})
+        assert again.status_code == 304
+        assert again.get_data() == b""
+
+    def test_new_scan_changes_the_etag(self, client, api_headers):
+        etag = client.get("/api/network").headers["ETag"]
+        client.post("/api/network/scan/start", headers=api_headers)
+
+        res = client.get("/api/network", headers={"If-None-Match": etag})
+        assert res.status_code == 200
+        assert res.get_json()["in_progress"] is True

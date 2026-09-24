@@ -91,8 +91,10 @@ class CommandQueue:
     reports results by id, and may still be holding an id from before a
     restart that must not match a new request.
 
-    `requests` (id -> dict) and `lock` are public: endpoints read and
-    update records directly while holding the lock."""
+    Every change to a record goes through a method here, so the whole
+    lifecycle (pending -> picked up -> finished -> dropped after
+    retention) lives in this class. Endpoints get copies, never the
+    stored records."""
 
     def __init__(
         self,
@@ -192,6 +194,34 @@ class CommandQueue:
         self._record_expired(expired)
         return pending
 
+    def resolve(self, req_id, status, remove=False, **fields):
+        """Records the game's result for a request: sets status, the
+        finished-at field and `fields`, and with remove=True drops the
+        record. Returns a copy of the record, or None for an unknown id.
+
+        A record that already expired is still updated: the expiry only
+        meant the game was slow to answer, and its answer is what really
+        happened in-game."""
+        with self.lock:
+            req = self.requests.get(req_id)
+            if req is None:
+                return None
+            req.update(fields)
+            req["status"] = status
+            req[self.finished_at_field] = time.time()
+            if remove:
+                del self.requests[req_id]
+            return dict(req)
+
+    def dismiss(self, req_id, user_id):
+        """Drops a finished record the user owns, once they've seen its
+        outcome. A pending one stays: the game may still report on it,
+        and that result must land somewhere."""
+        with self.lock:
+            req = self.requests.get(req_id)
+            if req and req["user_id"] == user_id and req["status"] != "pending":
+                del self.requests[req_id]
+
 
 # A picked-up craft request stays pending while AE2 plans the craft
 # (minutes for a big job), so it gets a much longer result timeout than
@@ -204,7 +234,7 @@ craft_requests = CommandQueue(
     finished_status="failed",
     finished_at_field="failed_at",
     on_expire=lambda req_id, reason: store.requests.resolve_request(
-        req_id, "failed", reason, None
+        req_id, "failed", reason, None, only_if_open=True
     ),
 )
 
@@ -230,7 +260,9 @@ cancel_requests = CommandQueue(
     finished_status="resolved",
     finished_at_field="resolved_at",
     expired_fields={"success": False},
-    on_expire=lambda req_id, reason: store.requests.resolve_cancel(req_id, False, reason),
+    on_expire=lambda req_id, reason: store.requests.resolve_cancel(
+        req_id, False, reason, only_if_open=True
+    ),
 )
 
 
@@ -241,9 +273,9 @@ cancel_requests = CommandQueue(
 # so they don't fire on the next unrelated job.
 tracking_lock = threading.Lock()
 cpu_last_busy = {}  # cpu_name -> bool
-cpu_last_known = (
-    {}
-)  # cpu_name -> {"label":..., "icon":..., "progress":...}, only while busy
+# cpu_name -> the current job's {label, icon, progress, output,
+# started_at}, only while busy (see _new_job_entry() in tracking.py)
+cpu_last_known = {}
 
 
 # Small ad-hoc debugging channel: the Lua side can POST a raw dump here

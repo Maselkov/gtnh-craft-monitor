@@ -29,11 +29,6 @@ def _api_key_valid():
     return bool(config.API_KEY) and hmac.compare_digest(supplied_key, config.API_KEY)
 
 
-SESSION_LIFETIME_SECONDS = int(
-    os.environ.get("SESSION_LIFETIME_SECONDS", str(7 * 86400))
-)
-
-
 def session_user():
     """The signed-in user for this request, or None. Looked up once per
     request - the security hooks and the route decorators all ask."""
