@@ -6,6 +6,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app.py .
 COPY gcm ./gcm
 COPY index.html .
+COPY static ./static
 COPY data ./data
 
 ENV PORT=8420

@@ -1,6 +1,7 @@
 """The single-page frontend (with per-path OpenGraph tags for link
 unfurling) and icon images."""
 
+import hashlib
 import os
 from html import escape as html_escape
 from urllib.parse import unquote
@@ -176,10 +177,26 @@ def index(identifier=None):
 
 
 INDEX_HTML_PATH = os.path.join(config.SERVER_DIR, "index.html")
+STATIC_DIR = os.path.join(config.SERVER_DIR, "static")
 INDEX_HTML = None
+
+
+def _asset_version():
+    """Short hash of everything under static/, appended to asset URLs as
+    ?v=... so a deploy with changed CSS/JS is never served from a stale
+    browser cache."""
+    digest = hashlib.sha256()
+    for dirpath, dirnames, filenames in sorted(os.walk(STATIC_DIR)):
+        dirnames.sort()
+        for name in sorted(filenames):
+            path = os.path.join(dirpath, name)
+            digest.update(os.path.relpath(path, STATIC_DIR).encode("utf-8"))
+            with open(path, "rb") as f:
+                digest.update(f.read())
+    return digest.hexdigest()[:12]
 
 
 def load_index_html():
     global INDEX_HTML
     with open(INDEX_HTML_PATH, "r", encoding="utf-8") as f:
-        INDEX_HTML = f.read()
+        INDEX_HTML = f.read().replace("__ASSET_VERSION__", _asset_version())
