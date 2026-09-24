@@ -8,7 +8,7 @@ from urllib.parse import unquote
 
 from flask import abort, Blueprint, request, Response
 
-from gcm import charts, config, icons, state
+from gcm import auth, charts, config, icons, state
 from gcm.routes import network, power
 
 
@@ -16,6 +16,7 @@ bp = Blueprint("pages", __name__)
 
 
 @bp.route("/icons")
+@auth.public
 def icon():
     # Deliberately a query param, not /icons/<path:...> - an encoded
     # slash (%2F) inside a URL *path segment* gets mangled or rejected by
@@ -169,6 +170,7 @@ def _build_og_tags(path, args):
 @bp.route("/power", methods=["GET"])
 @bp.route("/network", methods=["GET"])
 @bp.route("/network/item/<identifier>", methods=["GET"])
+@auth.public
 def index(identifier=None):
     html = INDEX_HTML.replace(
         "<!--OG_TAGS-->", _build_og_tags(request.path, request.args)

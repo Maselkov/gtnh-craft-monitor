@@ -5,7 +5,7 @@ import time
 import uuid
 import sqlite3
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, g, jsonify, request
 
 from gcm import auth, config, db
 
@@ -14,6 +14,7 @@ bp = Blueprint("users", __name__)
 
 
 @bp.route("/api/auth/session", methods=["GET"])
+@auth.public
 def auth_session_get():
     user = auth.session_user()
     if not user:
@@ -28,6 +29,7 @@ def auth_session_get():
 
 
 @bp.route("/api/auth/login", methods=["POST"])
+@auth.public
 def auth_login_post():
     payload = request.get_json(silent=True) or {}
     token = payload.get("token")
@@ -75,6 +77,7 @@ def auth_login_post():
 
 
 @bp.route("/api/auth/logout", methods=["POST"])
+@auth.public
 def auth_logout_post():
     session_token = request.cookies.get("gcm_session")
     if session_token:
@@ -93,7 +96,11 @@ def auth_logout_post():
 
 
 @bp.route("/api/auth/rotate-bootstrap", methods=["POST"])
+@auth.custom_check
 def auth_rotate_bootstrap_post():
+    # Only the admin session that signed in with the bootstrap token may
+    # rotate it - one combined check with one deliberately uninformative
+    # message, rather than admin_required's.
     user = auth.session_user()
     if not user or not user["must_rotate_bootstrap"] or not auth.is_admin(user):
         return jsonify({"error": "bootstrap rotation is not available"}), 403
@@ -122,10 +129,8 @@ def auth_rotate_bootstrap_post():
 
 
 @bp.route("/api/admin/users", methods=["POST"])
+@auth.admin_required
 def admin_user_post():
-    admin = auth.session_user()
-    if not auth.is_admin(admin):
-        return jsonify({"error": "administrator access required"}), 403
     payload = request.get_json(silent=True) or {}
     display_name = (payload.get("display_name") or "").strip()
     role = payload.get("role")
@@ -162,11 +167,8 @@ def admin_user_post():
 
 
 @bp.route("/api/admin/users", methods=["GET"])
+@auth.admin_required
 def admin_users_get():
-    admin = auth.session_user()
-    if not auth.is_admin(admin):
-        return jsonify({"error": "administrator access required"}), 403
-
     conn = db.craft_db()
     try:
         rows = conn.execute(
@@ -204,10 +206,9 @@ def admin_users_get():
 
 
 @bp.route("/api/admin/users/<user_id>", methods=["DELETE"])
+@auth.admin_required
 def admin_user_delete(user_id):
-    admin = auth.session_user()
-    if not auth.is_admin(admin):
-        return jsonify({"error": "administrator access required"}), 403
+    admin = g.user
     if user_id == admin["id"]:
         return jsonify({"error": "cannot delete your own account"}), 400
 
@@ -229,11 +230,8 @@ def admin_user_delete(user_id):
 
 
 @bp.route("/api/admin/users/<user_id>/tokens", methods=["POST"])
+@auth.admin_required
 def admin_user_token_regenerate(user_id):
-    admin = auth.session_user()
-    if not auth.is_admin(admin):
-        return jsonify({"error": "administrator access required"}), 403
-
     conn = db.craft_db()
     try:
         user = conn.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
@@ -258,11 +256,8 @@ def admin_user_token_regenerate(user_id):
 
 
 @bp.route("/api/admin/users/<user_id>/history", methods=["GET"])
+@auth.admin_required
 def admin_user_history_get(user_id):
-    admin = auth.session_user()
-    if not auth.is_admin(admin):
-        return jsonify({"error": "administrator access required"}), 403
-
     conn = db.craft_db()
     try:
         user = conn.execute(
@@ -301,11 +296,8 @@ def admin_user_history_get(user_id):
 
 
 @bp.route("/api/admin/tokens/<token_id>/revoke", methods=["POST"])
+@auth.admin_required
 def admin_token_revoke_post(token_id):
-    admin = auth.session_user()
-    if not auth.is_admin(admin):
-        return jsonify({"error": "administrator access required"}), 403
-
     conn = db.craft_db()
     try:
         now = time.time()

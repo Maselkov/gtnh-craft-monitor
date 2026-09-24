@@ -3,7 +3,7 @@ completion notifications, and the Lua debug-dump channel."""
 
 import time
 
-from flask import Blueprint, jsonify, request, Response
+from flask import Blueprint, g, jsonify, request, Response
 
 from gcm import auth, config, db, icons, state
 
@@ -125,9 +125,8 @@ _DEBUG_DUMPS_KEEP = 10
 
 
 @bp.route("/api/debug", methods=["POST"])
+@auth.api_key_required
 def debug_post():
-    if not auth.require_api_key():
-        return jsonify({"error": "unauthorized"}), 401
     payload = request.get_json(silent=True) or {}
     with state.crafts_lock:
         state.debug_dumps.append(
@@ -142,9 +141,8 @@ def debug_post():
 
 
 @bp.route("/api/debug", methods=["GET"])
+@auth.operator_required
 def debug_get():
-    if not auth.is_operator(auth.session_user()):
-        return jsonify({"error": "operator access required"}), 403
     with state.crafts_lock:
         if not state.debug_dumps:
             return Response("(no debug dumps received yet)", mimetype="text/plain")
@@ -156,10 +154,8 @@ def debug_get():
 
 
 @bp.route("/api/crafts", methods=["POST"])
+@auth.api_key_required
 def crafts_post():
-    if not auth.require_api_key():
-        return jsonify({"error": "unauthorized"}), 401
-
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
         return jsonify({"error": "invalid payload"}), 400
@@ -179,6 +175,7 @@ def crafts_post():
 
 
 @bp.route("/api/crafts", methods=["GET"])
+@auth.public
 def crafts_get():
     with state.crafts_lock:
         received_at = state.crafts["received_at"]
@@ -194,10 +191,9 @@ def crafts_get():
 
 
 @bp.route("/api/pins", methods=["GET"])
+@auth.login_required
 def pins_get():
-    user_id = auth.require_user_id()
-    if not user_id:
-        return jsonify({"error": "authentication required"}), 401
+    user_id = g.user["id"]
     conn = db.craft_db()
     try:
         rows = conn.execute(
@@ -209,10 +205,9 @@ def pins_get():
 
 
 @bp.route("/api/pins", methods=["POST"])
+@auth.login_required
 def pins_post():
-    user_id = auth.require_user_id()
-    if not user_id:
-        return jsonify({"error": "authentication required"}), 401
+    user_id = g.user["id"]
 
     payload = request.get_json(silent=True) or {}
     cpu_name = payload.get("cpu_name")
@@ -244,10 +239,9 @@ def pins_post():
 
 
 @bp.route("/api/pins/unpin", methods=["POST"])
+@auth.login_required
 def pins_unpin():
-    user_id = auth.require_user_id()
-    if not user_id:
-        return jsonify({"error": "authentication required"}), 401
+    user_id = g.user["id"]
 
     payload = request.get_json(silent=True) or {}
     cpu_name = payload.get("cpu_name")
@@ -267,10 +261,9 @@ def pins_unpin():
 
 
 @bp.route("/api/completions", methods=["GET"])
+@auth.login_required
 def completions_get():
-    user_id = auth.require_user_id()
-    if not user_id:
-        return jsonify({"error": "authentication required"}), 401
+    user_id = g.user["id"]
 
     conn = db.craft_db()
     try:
@@ -306,10 +299,9 @@ def completions_get():
 
 
 @bp.route("/api/completions/<int:completion_id>/ack", methods=["POST"])
+@auth.login_required
 def completions_ack(completion_id):
-    user_id = auth.require_user_id()
-    if not user_id:
-        return jsonify({"error": "authentication required"}), 401
+    user_id = g.user["id"]
     conn = db.craft_db()
     try:
         conn.execute(
@@ -323,10 +315,9 @@ def completions_ack(completion_id):
 
 
 @bp.route("/api/completions/ack-all", methods=["POST"])
+@auth.login_required
 def completions_ack_all():
-    user_id = auth.require_user_id()
-    if not user_id:
-        return jsonify({"error": "authentication required"}), 401
+    user_id = g.user["id"]
     conn = db.craft_db()
     try:
         conn.execute("DELETE FROM user_completions WHERE user_id = ?", (user_id,))

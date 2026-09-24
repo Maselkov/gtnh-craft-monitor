@@ -47,10 +47,8 @@ def downsample(rows, max_points=POWER_MAX_POINTS):
 
 
 @bp.route("/api/power", methods=["POST"])
+@auth.api_key_required
 def power_post():
-    if not auth.require_api_key():
-        return jsonify({"error": "unauthorized"}), 401
-
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
         return jsonify({"error": "invalid payload"}), 400
@@ -152,6 +150,7 @@ def _fetch_latest_power_reading():
 
 
 @bp.route("/api/power", methods=["GET"])
+@auth.public
 def power_get():
     range_key, rows = fetch_power_rows(request.args.get("range", "day"))
     latest = _fetch_latest_power_reading()
@@ -176,6 +175,7 @@ def power_get():
 
 
 @bp.route("/api/power/chart.png", methods=["GET"])
+@auth.public
 def power_chart_png():
     rate_limited = charts.rate_limit_response()
     if rate_limited:

@@ -1,6 +1,21 @@
 """Authentication: the Lua-side API key, user access tokens, browser
-sessions and roles, and first-run admin bootstrap."""
+sessions and roles, first-run admin bootstrap, and the route decorators
+that enforce them.
 
+Every route declares its policy with exactly one decorator below
+(tests/test_route_auth.py enforces this), placed under @bp.route:
+
+    @auth.api_key_required   the in-game scripts (X-API-Key header)
+    @auth.login_required     any signed-in user; g.user is the user
+    @auth.operator_required  operator or admin role; g.user is the user
+    @auth.admin_required     admin role; g.user is the user
+    @auth.public             no check, deliberately
+    @auth.custom_check       checked inside the view - say why there
+
+login_required can be stacked on top of operator_required to answer an
+anonymous request with 401 before the role check's 403."""
+
+import functools
 import hashlib
 import hmac
 import os
@@ -8,12 +23,12 @@ import secrets
 import time
 import uuid
 
-from flask import request
+from flask import g, jsonify, request
 
 from gcm import config, db
 
 
-def require_api_key():
+def _api_key_valid():
     supplied_key = request.headers.get("X-API-Key", "")
     return bool(config.API_KEY) and hmac.compare_digest(supplied_key, config.API_KEY)
 
@@ -193,6 +208,60 @@ def require_initial_admin():
     )
 
 
-def require_user_id():
-    user = session_user()
-    return user["id"] if user else None
+def _policy(name, check=None):
+    """Builds a decorator that tags the view with its auth policy and, if
+    check is given, runs it first: check() returns an error response to
+    send instead of the view, or None to let the request through."""
+
+    def decorator(view):
+        if check is None:
+            wrapped = view
+        else:
+
+            @functools.wraps(view)
+            def wrapped(*args, **kwargs):
+                refusal = check()
+                if refusal is not None:
+                    return refusal
+                return view(*args, **kwargs)
+
+        policies = getattr(view, "auth_policies", ())
+        wrapped.auth_policies = policies + (name,)
+        return wrapped
+
+    return decorator
+
+
+def _check_api_key():
+    if not _api_key_valid():
+        return jsonify({"error": "unauthorized"}), 401
+    return None
+
+
+def _check_login():
+    g.user = session_user()
+    if not g.user:
+        return jsonify({"error": "authentication required"}), 401
+    return None
+
+
+def _check_operator():
+    g.user = session_user()
+    if not is_operator(g.user):
+        return jsonify({"error": "operator access required"}), 403
+    return None
+
+
+def _check_admin():
+    g.user = session_user()
+    if not is_admin(g.user):
+        return jsonify({"error": "administrator access required"}), 403
+    return None
+
+
+api_key_required = _policy("api_key", _check_api_key)
+login_required = _policy("login", _check_login)
+operator_required = _policy("operator", _check_operator)
+admin_required = _policy("admin", _check_admin)
+public = _policy("public")
+custom_check = _policy("custom")

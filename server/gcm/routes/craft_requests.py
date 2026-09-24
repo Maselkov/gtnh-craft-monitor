@@ -10,7 +10,7 @@ Two-sided auth:
 
 import time
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, g, jsonify, request
 
 from gcm import auth, db, history, icons, state
 
@@ -19,12 +19,10 @@ bp = Blueprint("craft_requests", __name__)
 
 
 @bp.route("/api/craft/request", methods=["POST"])
+@auth.login_required
+@auth.operator_required
 def craft_request_post():
-    user_id = auth.require_user_id()
-    if not user_id:
-        return jsonify({"error": "authentication required"}), 401
-    if not auth.is_operator(auth.session_user()):
-        return jsonify({"error": "operator access required"}), 403
+    user_id = g.user["id"]
 
     payload = request.get_json(silent=True) or {}
     label = payload.get("label")
@@ -72,10 +70,9 @@ def craft_request_post():
 
 
 @bp.route("/api/craft/requests", methods=["GET"])
+@auth.login_required
 def craft_requests_get():
-    user_id = auth.require_user_id()
-    if not user_id:
-        return jsonify({"error": "authentication required"}), 401
+    user_id = g.user["id"]
     # "accepted" requests aren't returned here at all - the moment one
     # is accepted, a real pin is created and it's the pin (existing
     # infrastructure) that represents it from then on, not this
@@ -88,10 +85,9 @@ def craft_requests_get():
 
 
 @bp.route("/api/craft/requests/<int:req_id>/dismiss", methods=["POST"])
+@auth.login_required
 def craft_request_dismiss(req_id):
-    user_id = auth.require_user_id()
-    if not user_id:
-        return jsonify({"error": "authentication required"}), 401
+    user_id = g.user["id"]
     with state.craft_requests.lock:
         req = state.craft_requests.requests.get(req_id)
         if req and req["user_id"] == user_id:
@@ -100,10 +96,9 @@ def craft_request_dismiss(req_id):
 
 
 @bp.route("/api/craft/requests/pending", methods=["GET"])
+@auth.api_key_required
 def craft_requests_pending():
     # Lua polling for work - every user's pending requests at once.
-    if not auth.require_api_key():
-        return jsonify({"error": "unauthorized"}), 401
     return jsonify({"requests": state.craft_requests.claim_pending()})
 
 
@@ -127,9 +122,8 @@ def _create_pin_bypassing_busy_check(user_id, cpu_name):
 
 
 @bp.route("/api/craft/requests/<int:req_id>/result", methods=["POST"])
+@auth.api_key_required
 def craft_request_result(req_id):
-    if not auth.require_api_key():
-        return jsonify({"error": "unauthorized"}), 401
     payload = request.get_json(silent=True) or {}
     status = payload.get("status")
     if status not in ("accepted", "failed"):
@@ -185,12 +179,10 @@ def craft_request_result(req_id):
 
 
 @bp.route("/api/craft/cancel", methods=["POST"])
+@auth.login_required
+@auth.operator_required
 def craft_cancel_post():
-    user_id = auth.require_user_id()
-    if not user_id:
-        return jsonify({"error": "authentication required"}), 401
-    if not auth.is_operator(auth.session_user()):
-        return jsonify({"error": "operator access required"}), 403
+    user_id = g.user["id"]
 
     payload = request.get_json(silent=True) or {}
     cpu_name = payload.get("cpu_name")
@@ -225,10 +217,9 @@ def craft_cancel_post():
 
 
 @bp.route("/api/craft/cancel/<int:req_id>", methods=["GET"])
+@auth.login_required
 def craft_cancel_get(req_id):
-    user_id = auth.require_user_id()
-    if not user_id:
-        return jsonify({"error": "authentication required"}), 401
+    user_id = g.user["id"]
     found = state.cancel_requests.select(
         lambda r: r["id"] == req_id and r["user_id"] == user_id
     )
@@ -238,16 +229,14 @@ def craft_cancel_get(req_id):
 
 
 @bp.route("/api/craft/cancel/pending", methods=["GET"])
+@auth.api_key_required
 def craft_cancel_pending():
-    if not auth.require_api_key():
-        return jsonify({"error": "unauthorized"}), 401
     return jsonify({"requests": state.cancel_requests.claim_pending()})
 
 
 @bp.route("/api/craft/cancel/<int:req_id>/result", methods=["POST"])
+@auth.api_key_required
 def craft_cancel_result(req_id):
-    if not auth.require_api_key():
-        return jsonify({"error": "unauthorized"}), 401
     payload = request.get_json(silent=True) or {}
     success = bool(payload.get("success"))
     reason = payload.get("reason")
