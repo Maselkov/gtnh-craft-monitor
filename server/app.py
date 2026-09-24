@@ -100,14 +100,32 @@ def _require_runtime_secrets():
         )
 
 
-DATA_DIR = os.environ.get("DATA_DIR") or os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "data"
-)
-ICONS_LOOKUP_PATH = os.path.join(DATA_DIR, "icons_lookup.json")
-IMAGES_ZIP_PATH = os.path.join(DATA_DIR, "images.zip")
-POWER_DB_PATH = os.path.join(DATA_DIR, "power.db")
-ITEM_HISTORY_DB_PATH = os.path.join(DATA_DIR, "item_history.db")
-CRAFT_HISTORY_DB_PATH = os.path.join(DATA_DIR, "craft_history.db")
+# Set by _configure(), called from create_app(). Nothing here touches
+# the filesystem at import time.
+DATA_DIR = None
+ICONS_LOOKUP_PATH = None
+IMAGES_ZIP_PATH = None
+POWER_DB_PATH = None
+ITEM_HISTORY_DB_PATH = None
+CRAFT_HISTORY_DB_PATH = None
+
+
+def _configure(data_dir=None, api_key=None):
+    global API_KEY, DATA_DIR, ICONS_LOOKUP_PATH, IMAGES_ZIP_PATH
+    global POWER_DB_PATH, ITEM_HISTORY_DB_PATH, CRAFT_HISTORY_DB_PATH
+    global _images_zip, _images_zip_missing_logged
+    if api_key is not None:
+        API_KEY = api_key
+    DATA_DIR = data_dir or os.environ.get("DATA_DIR") or os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "data"
+    )
+    ICONS_LOOKUP_PATH = os.path.join(DATA_DIR, "icons_lookup.json")
+    IMAGES_ZIP_PATH = os.path.join(DATA_DIR, "images.zip")
+    POWER_DB_PATH = os.path.join(DATA_DIR, "power.db")
+    ITEM_HISTORY_DB_PATH = os.path.join(DATA_DIR, "item_history.db")
+    CRAFT_HISTORY_DB_PATH = os.path.join(DATA_DIR, "craft_history.db")
+    _images_zip = None
+    _images_zip_missing_logged = False
 
 # Built from a NESQL export (see oc/README notes). Two separate keyspaces:
 # - by_key: "modid:internalname:damage" -> image path, for ordinary items.
@@ -123,12 +141,17 @@ CRAFT_HISTORY_DB_PATH = os.path.join(DATA_DIR, "craft_history.db")
 _icons_by_key = {}
 _icons_by_label = {}
 _fluids_by_key = {}
-if os.path.exists(ICONS_LOOKUP_PATH):
-    with open(ICONS_LOOKUP_PATH, "r", encoding="utf-8") as f:
-        _icon_data = json.load(f)
-    _icons_by_key = _icon_data.get("by_key", {})
-    _icons_by_label = _icon_data.get("by_label", {})
-    _fluids_by_key = _icon_data.get("fluids_by_key", {})
+
+
+def _load_icon_lookup():
+    global _icons_by_key, _icons_by_label, _fluids_by_key
+    icon_data = {}
+    if os.path.exists(ICONS_LOOKUP_PATH):
+        with open(ICONS_LOOKUP_PATH, "r", encoding="utf-8") as f:
+            icon_data = json.load(f)
+    _icons_by_key = icon_data.get("by_key", {})
+    _icons_by_label = icon_data.get("by_label", {})
+    _fluids_by_key = icon_data.get("fluids_by_key", {})
 
 _images_zip = None
 _images_zip_missing_logged = False
@@ -1211,8 +1234,6 @@ def _init_craft_db():
         conn.close()
 
 
-_init_craft_db()
-
 
 def _prune_sessions(conn):
     # Expired and revoked sessions can never authenticate again.
@@ -1243,8 +1264,6 @@ def _close_orphaned_request_history():
     finally:
         conn.close()
 
-
-_close_orphaned_request_history()
 
 
 def _bootstrap_admin():
@@ -1294,8 +1313,6 @@ def _bootstrap_admin():
     finally:
         conn.close()
 
-
-_bootstrap_admin()
 
 
 def _require_initial_admin():
@@ -2123,8 +2140,6 @@ def _init_power_db():
         conn.close()
 
 
-_init_power_db()
-
 POWER_RANGE_SECONDS = {
     "hour": 3600,
     "day": 86400,
@@ -2454,9 +2469,6 @@ def _load_network_snapshot():
         _network_state["updated_at"] = max_updated
         _network_state["is_reconstructed"] = True
 
-
-_init_item_history_db()
-_load_network_snapshot()
 
 
 def _record_item_history_changes(old_items, new_items):
@@ -3050,17 +3062,29 @@ def index(identifier=None):
     return Response(html, mimetype="text/html")
 
 
-# The frontend used to live here as a multi-thousand-line embedded
-# Python string - moved out to a real index.html file specifically so
-# it gets real syntax highlighting, real diffs, and no longer needs a
-# regex extraction of the <script> block just to run a JS syntax
-# checker on it (all real, repeated friction paid throughout this
-# project's own development, not a hypothetical concern). The ONLY
-# change is where this string comes from - every route below still
-# just calls INDEX_HTML.replace(...) exactly as before.
 INDEX_HTML_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
-with open(INDEX_HTML_PATH, "r", encoding="utf-8") as _index_html_file:
-    INDEX_HTML = _index_html_file.read()
+INDEX_HTML = None
+
+
+def create_app(data_dir=None, api_key=None):
+    """Points the app at its data directory and runs every startup step
+    (schema creation/migration, restart cleanup, admin bootstrap, network
+    snapshot reload). Importing this module has no side effects; this is
+    the one place startup happens. data_dir/api_key default to the
+    DATA_DIR/API_KEY environment variables."""
+    global INDEX_HTML
+    _configure(data_dir, api_key)
+    _load_icon_lookup()
+    _init_craft_db()
+    _close_orphaned_request_history()
+    _bootstrap_admin()
+    _init_power_db()
+    _init_item_history_db()
+    _load_network_snapshot()
+    with open(INDEX_HTML_PATH, "r", encoding="utf-8") as f:
+        INDEX_HTML = f.read()
+    return app
+
 
 def _cli_new_token(display_name):
     """Revokes a user's tokens and sessions and prints a new token - the
@@ -3089,6 +3113,7 @@ def _cli_new_token(display_name):
 
 
 if __name__ == "__main__":
+    create_app()
     if len(sys.argv) == 3 and sys.argv[1] == "new-token":
         _cli_new_token(sys.argv[2])
         sys.exit(0)
@@ -3103,4 +3128,8 @@ if __name__ == "__main__":
     # Single process on purpose: crafts, network scans, and craft/cancel
     # requests are held in module-level memory, so multiple worker
     # processes would each see a different copy.
-    serve(app, host="0.0.0.0", port=port, threads=8)
+    # clear_untrusted_proxy_headers=False: waitress otherwise strips every
+    # X-Forwarded-* header (its own trusted_proxy is unset), so ProxyFix
+    # never sees them and TRUSTED_PROXIES has no effect. The app already
+    # decides which peers to trust in _trusted_proxy_wsgi_app().
+    serve(app, host="0.0.0.0", port=port, threads=8, clear_untrusted_proxy_headers=False)

@@ -3,17 +3,14 @@ Shared fixtures for the backend test suite.
 
 Isolation strategy, and why it looks the way it does:
 
-- app.py runs real module-level side effects on import (SQLite init,
-  icons_lookup.json loading, etc.) - not something a test suite can
-  avoid, so instead it's pointed somewhere safe. API_KEY and DATA_DIR
-  are both set from environment variables BEFORE app is ever imported
-  (this file does it at module load time, which pytest guarantees runs
-  before any test file that imports from here), into a fresh temp
-  directory - real production data is never touched by running tests.
+- Importing app.py has no side effects; create_app() does all startup
+  work (SQLite init/migrations, icons_lookup.json loading, snapshot
+  reload). It is called once here with a fresh temp directory as
+  data_dir, so real production data is never touched by running tests.
 
-- app is imported exactly ONCE for the whole test session, not
-  reloaded per test. Re-importing a Flask app module mid-session is a
-  real source of "view function mapping is overwriting an existing
+- app is imported and created exactly ONCE for the whole test
+  session, not reloaded per test. Re-importing a Flask app module
+  mid-session is a real source of "view function mapping is overwriting an existing
   endpoint" errors (Flask tracks registered routes on the app object
   itself) - safer to import once and reset IN-MEMORY state between
   tests explicitly instead.
@@ -22,7 +19,7 @@ Isolation strategy, and why it looks the way it does:
   known in-memory global (the crafts/network/craft-request/cancel-
   request state, the valid-keys set) and wipes every SQLite table
   (DELETE FROM, not dropping/recreating - the schema/migration logic
-  already ran once at import and doesn't need re-running). This list is
+  already ran once in create_app() and doesn't need re-running). This list is
   maintained by hand against the real CREATE TABLE statements in app.py
   (confirmed via grep, not assumed) - if a future feature adds new
   module-level state or a new table, this fixture needs a matching
@@ -40,14 +37,14 @@ import pytest
 
 TEST_API_KEY = "test-key-for-pytest"
 _test_data_dir = tempfile.mkdtemp(prefix="gtnh_test_data_")
-os.environ["API_KEY"] = TEST_API_KEY
-os.environ["DATA_DIR"] = _test_data_dir
 
 # server/ itself (one level up from server/tests/) needs to be on the
 # import path so "import app" finds server/app.py.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import app as app_module  # noqa: E402  (must come after the env/path setup above)
+import app as app_module  # noqa: E402  (must come after the path setup above)
+
+app_module.create_app(data_dir=_test_data_dir, api_key=TEST_API_KEY)
 
 
 def pytest_sessionfinish(session, exitstatus):
