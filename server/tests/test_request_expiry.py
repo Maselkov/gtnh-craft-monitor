@@ -59,8 +59,19 @@ class TestCraftRequestExpiry:
         client.get("/api/craft/requests/pending", headers=api_headers)
         age(state.craft_requests.requests[req_id], 600, "created_at", "picked_up_at")
 
-        pending = client.get("/api/craft/requests/pending", headers=api_headers)
-        assert [r["id"] for r in pending.get_json()["requests"]] == [req_id]
+        assert state.craft_requests.requests[req_id]["status"] == "pending"
+        mine = client.get("/api/craft/requests").get_json()["requests"]
+        assert [(r["id"], r["status"]) for r in mine] == [(req_id, "pending")]
+
+    def test_picked_up_request_is_not_handed_out_again(self, client, api_headers):
+        # If craft_monitor.lua restarts it forgets what it was tracking;
+        # handing the request out again would craft it twice.
+        req_id = submit_craft_request(client)
+        first = client.get("/api/craft/requests/pending", headers=api_headers)
+        assert [r["id"] for r in first.get_json()["requests"]] == [req_id]
+
+        again = client.get("/api/craft/requests/pending", headers=api_headers)
+        assert again.get_json()["requests"] == []
 
     def test_picked_up_request_without_result_eventually_fails(self, client, api_headers):
         req_id = submit_craft_request(client)
@@ -84,6 +95,15 @@ class TestCraftRequestExpiry:
 
 
 class TestCancelExpiry:
+    def test_picked_up_cancel_is_not_handed_out_again(self, client, api_headers):
+        # A second cancel() on that CPU could hit the next job there.
+        req_id = submit_cancel(client, api_headers)
+        first = client.get("/api/craft/cancel/pending", headers=api_headers)
+        assert [r["id"] for r in first.get_json()["requests"]] == [req_id]
+
+        again = client.get("/api/craft/cancel/pending", headers=api_headers)
+        assert again.get_json()["requests"] == []
+
     def test_cancel_never_picked_up_is_not_run_later(self, client, api_headers):
         req_id = submit_cancel(client, api_headers)
         age(state.cancel_requests.requests[req_id], 21, "created_at")
@@ -138,3 +158,41 @@ def test_startup_closes_request_history_left_open(client):
     finally:
         conn.close()
     assert row == ("failed", "server restarted")
+
+
+class TestIdsAcrossRestarts:
+    def test_new_process_numbers_requests_above_earlier_ones(
+        self, client, api_headers
+    ):
+        # craft_monitor.lua may still be tracking a request from before a
+        # server restart; its late result must not land on a new request
+        # that reused the id.
+        old_craft = submit_craft_request(client)
+        old_cancel = submit_cancel(client, api_headers)
+
+        state.reset()  # the in-memory side of a restart
+        last_craft, last_cancel = history.last_request_ids()
+        state.craft_requests.start_after(last_craft)
+        state.cancel_requests.start_after(last_cancel)
+
+        assert submit_craft_request(client) == old_craft + 1
+        assert submit_cancel(client, api_headers) == old_cancel + 1
+
+    def test_stale_result_from_before_a_restart_is_refused(
+        self, client, api_headers
+    ):
+        old_id = submit_craft_request(client)
+        state.reset()
+        history.close_orphaned_requests()
+        state.craft_requests.start_after(history.last_request_ids()[0])
+        new_id = submit_craft_request(client)
+        assert new_id != old_id
+
+        res = client.post(
+            f"/api/craft/requests/{old_id}/result",
+            json={"status": "accepted", "cpu_name": "W01"},
+            headers=api_headers,
+        )
+        assert res.status_code == 404
+        mine = client.get("/api/craft/requests").get_json()["requests"]
+        assert [(r["id"], r["status"]) for r in mine] == [(new_id, "pending")]

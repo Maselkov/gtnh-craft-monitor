@@ -75,6 +75,22 @@ def update_craft_cancel(request_id, success, reason):
         conn.close()
 
 
+def last_request_ids():
+    """(highest craft request id, highest cancel id) ever recorded, so a
+    new process can carry on numbering above them."""
+    conn = db.craft_db()
+    try:
+        craft = conn.execute(
+            "SELECT COALESCE(MAX(request_id), 0) FROM craft_request_history"
+        ).fetchone()[0]
+        cancel = conn.execute(
+            "SELECT COALESCE(MAX(request_id), 0) FROM craft_cancel_history"
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    return craft, cancel
+
+
 def close_orphaned_requests():
     # Craft and cancel requests live in memory, so any history row still
     # open at startup belongs to a request the previous process lost.
