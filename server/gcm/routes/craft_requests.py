@@ -12,7 +12,7 @@ import time
 
 from flask import Blueprint, g, jsonify, request
 
-from gcm import auth, history, icons, state, store, tracking
+from gcm import auth, icons, state, store, tracking
 
 
 bp = Blueprint("craft_requests", __name__)
@@ -63,7 +63,7 @@ def craft_request_post():
             "created_at": created_at,
         }
     )
-    history.record_craft_request(
+    store.requests.record_request(
         req_id, user_id, label, mod, internal, damage, amount, kind, created_at
     )
     return jsonify({"ok": True, "id": req_id})
@@ -136,7 +136,7 @@ def craft_request_result(req_id):
         store.crafts.pin_cpu(user_id, cpu_name)
         tracking.note_job_started(cpu_name, req.get("label"), req.get("icon"))
 
-    history.update_craft_request(
+    store.requests.resolve_request(
         req_id, status, payload.get("reason"), payload.get("cpu_name")
     )
 
@@ -177,7 +177,7 @@ def craft_cancel_post():
             "created_at": created_at,
         }
     )
-    history.record_craft_cancel(req_id, user_id, cpu_name, created_at)
+    store.requests.record_cancel(req_id, user_id, cpu_name, created_at)
     return jsonify({"ok": True, "id": req_id})
 
 
@@ -215,6 +215,6 @@ def craft_cancel_result(req_id):
         req["reason"] = reason
         req["resolved_at"] = time.time()
 
-    history.update_craft_cancel(req_id, success, reason)
+    store.requests.resolve_cancel(req_id, success, reason)
 
     return jsonify({"ok": True})

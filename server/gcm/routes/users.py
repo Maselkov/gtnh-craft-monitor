@@ -7,7 +7,7 @@ import sqlite3
 
 from flask import Blueprint, g, jsonify, request
 
-from gcm import auth, config, db
+from gcm import auth, config, db, store
 
 
 bp = Blueprint("users", __name__)
@@ -265,32 +265,12 @@ def admin_user_history_get(user_id):
         ).fetchone()
         if not user:
             return jsonify({"error": "unknown user"}), 404
-        rows = conn.execute(
-            "SELECT 'request', label, status, reason, cpu_name, created_at, resolved_at "
-            "FROM craft_request_history WHERE user_id = ? "
-            "UNION ALL "
-            "SELECT 'cancel', cpu_name, status, reason, cpu_name, created_at, resolved_at "
-            "FROM craft_cancel_history WHERE user_id = ? "
-            "ORDER BY created_at DESC LIMIT 100",
-            (user_id, user_id),
-        ).fetchall()
     finally:
         conn.close()
     return jsonify(
         {
             "user": {"id": user[0], "display_name": user[1]},
-            "events": [
-                {
-                    "type": row[0],
-                    "target": row[1],
-                    "status": row[2],
-                    "reason": row[3],
-                    "cpu_name": row[4],
-                    "created_at": row[5],
-                    "resolved_at": row[6],
-                }
-                for row in rows
-            ],
+            "events": store.requests.user_activity(user_id),
         }
     )
 

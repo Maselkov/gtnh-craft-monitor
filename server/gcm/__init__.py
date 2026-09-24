@@ -3,7 +3,7 @@ startup work happens - importing any gcm module has no side effects."""
 
 from flask import Flask
 
-from gcm import auth, charts, config, db, history, icons, security, state
+from gcm import auth, charts, config, db, icons, security, state, store
 from gcm.routes import craft_requests, crafts, network, pages, power, users
 
 
@@ -16,8 +16,10 @@ def create_app(data_dir=None, api_key=None):
     config.configure(data_dir, api_key)
     icons.load_lookup()
     db.init_craft_db()
-    history.close_orphaned_requests()
-    last_craft_id, last_cancel_id = history.last_request_ids()
+    store.requests.close_orphaned()
+    with db.transaction(db.craft_db) as conn:
+        auth.prune_sessions(conn)
+    last_craft_id, last_cancel_id = store.requests.last_ids()
     state.craft_requests.start_after(last_craft_id)
     state.cancel_requests.start_after(last_cancel_id)
     auth.bootstrap_admin()

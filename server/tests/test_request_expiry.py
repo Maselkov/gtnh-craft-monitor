@@ -1,6 +1,6 @@
 import time
 
-from gcm import db, history, state
+from gcm import db, state, store
 from conftest import login_as
 
 
@@ -148,7 +148,7 @@ def test_login_prunes_expired_and_revoked_sessions(client, flask_app):
 
 def test_startup_closes_request_history_left_open(client):
     submit_craft_request(client)
-    history.close_orphaned_requests()
+    store.requests.close_orphaned()
 
     conn = db.craft_db()
     try:
@@ -171,7 +171,7 @@ class TestIdsAcrossRestarts:
         old_cancel = submit_cancel(client, api_headers)
 
         state.reset()  # the in-memory side of a restart
-        last_craft, last_cancel = history.last_request_ids()
+        last_craft, last_cancel = store.requests.last_ids()
         state.craft_requests.start_after(last_craft)
         state.cancel_requests.start_after(last_cancel)
 
@@ -183,8 +183,8 @@ class TestIdsAcrossRestarts:
     ):
         old_id = submit_craft_request(client)
         state.reset()
-        history.close_orphaned_requests()
-        state.craft_requests.start_after(history.last_request_ids()[0])
+        store.requests.close_orphaned()
+        state.craft_requests.start_after(store.requests.last_ids()[0])
         new_id = submit_craft_request(client)
         assert new_id != old_id
 

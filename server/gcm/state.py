@@ -7,7 +7,7 @@ reloaded from SQLite at startup)."""
 import time
 import threading
 
-from gcm import history
+from gcm import store
 
 
 # Latest crafting-CPU status POSTed by craft_monitor.lua.
@@ -203,7 +203,7 @@ craft_requests = CommandQueue(
     unclaimed_reason="the game didn't pick up this request - is craft_monitor running?",
     finished_status="failed",
     finished_at_field="failed_at",
-    on_expire=lambda req_id, reason: history.update_craft_request(
+    on_expire=lambda req_id, reason: store.requests.resolve_request(
         req_id, "failed", reason, None
     ),
 )
@@ -230,7 +230,7 @@ cancel_requests = CommandQueue(
     finished_status="resolved",
     finished_at_field="resolved_at",
     expired_fields={"success": False},
-    on_expire=lambda req_id, reason: history.update_craft_cancel(req_id, False, reason),
+    on_expire=lambda req_id, reason: store.requests.resolve_cancel(req_id, False, reason),
 )
 
 
