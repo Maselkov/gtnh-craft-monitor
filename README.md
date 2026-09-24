@@ -552,3 +552,8 @@ cover the server's HTTP API and helper functions, not the Lua scripts.
 GitHub Actions runs these tests, a Lua 5.3 syntax check of `oc/*.lua`, and a
 Docker build on every push and pull request (`.github/workflows/ci.yml`).
 Pushing a `v*` tag publishes the image to GHCR (`.github/workflows/publish.yml`).
+
+## License
+
+Licensed under the GNU General Public License v3.0 or later. See
+[LICENSE](LICENSE).
