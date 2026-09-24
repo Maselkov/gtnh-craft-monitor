@@ -496,57 +496,124 @@ def network_get():
 #   - Browser-facing endpoints use the signed-in user's session;
 #     submitting or cancelling a craft additionally requires the
 #     operator or admin role.
-_craft_requests_lock = threading.Lock()
-_craft_requests = {}  # id -> dict, see craft_request_post() for shape
-_craft_request_next_id = 1
+class CommandQueue:
+    """In-memory queue of browser-submitted commands that craft_monitor.lua
+    polls for. A request is "picked up" once the game has fetched it from
+    /pending. One that's never picked up means the game isn't polling,
+    and it's expired rather than left to run whenever the game comes
+    back; a picked-up one gets result_timeout to report back. Expired
+    and otherwise finished records are kept for `retention` seconds
+    after finishing so the browser can still show the outcome.
 
-# Bounds on how long request records live in memory. A request is
-# "picked up" once craft_monitor.lua has fetched it from /pending. One
-# that's never picked up means the game isn't polling, and it's failed
-# rather than left to run whenever the game comes back. A picked-up
-# craft request stays pending while AE2 plans the craft (minutes for a
-# big job), so it gets a much longer limit.
-CRAFT_REQUEST_PICKUP_TIMEOUT_SECONDS = 120
-CRAFT_REQUEST_RESULT_TIMEOUT_SECONDS = 3600
-FAILED_CRAFT_REQUEST_RETENTION_SECONDS = 86400
+    `requests` (id -> dict) and `lock` are public: endpoints read and
+    update records directly while holding the lock."""
 
+    def __init__(
+        self,
+        pickup_timeout,
+        result_timeout,
+        retention,
+        unclaimed_reason,
+        finished_status,
+        finished_at_field,
+        on_expire,
+        expired_fields=None,
+    ):
+        self.pickup_timeout = pickup_timeout
+        self.result_timeout = result_timeout
+        self.retention = retention
+        self.unclaimed_reason = unclaimed_reason
+        self.finished_status = finished_status
+        self.finished_at_field = finished_at_field
+        self.on_expire = on_expire  # (req_id, reason), called outside the lock
+        self.expired_fields = expired_fields or {}
+        self.lock = threading.Lock()
+        self.requests = {}
+        self._next_id = 1
 
-def _expire_craft_requests():
-    """Fails stale pending requests and forgets old failed ones. Returns
-    [(req_id, reason)] for the caller to record in history outside the
-    lock. Must be called with _craft_requests_lock held."""
-    now = time.time()
-    expired = []
-    for req_id, req in list(_craft_requests.items()):
-        if req["status"] == "pending":
-            picked_up_at = req.get("picked_up_at")
-            if picked_up_at is None:
-                if now - req["created_at"] <= CRAFT_REQUEST_PICKUP_TIMEOUT_SECONDS:
+    def reset(self):
+        with self.lock:
+            self.requests.clear()
+            self._next_id = 1
+
+    def add(self, record):
+        """Stores a new pending record, assigning and returning its id."""
+        with self.lock:
+            req_id = self._next_id
+            self._next_id += 1
+            self.requests[req_id] = {"id": req_id, **record, "status": "pending"}
+        return req_id
+
+    def _expire_locked(self):
+        now = time.time()
+        expired = []
+        for req_id, req in list(self.requests.items()):
+            if req["status"] == "pending":
+                picked_up_at = req.get("picked_up_at")
+                if picked_up_at is None:
+                    if now - req["created_at"] <= self.pickup_timeout:
+                        continue
+                    reason = self.unclaimed_reason
+                elif now - picked_up_at > self.result_timeout:
+                    reason = "no result from the game - check in-game"
+                else:
                     continue
-                reason = "the game didn't pick up this request - is craft_monitor running?"
-            elif now - picked_up_at > CRAFT_REQUEST_RESULT_TIMEOUT_SECONDS:
-                reason = "no result from the game - check in-game"
+                req.update(self.expired_fields)
+                req["status"] = self.finished_status
+                req["reason"] = reason
+                req[self.finished_at_field] = now
+                expired.append((req_id, reason))
             else:
-                continue
-            req["status"] = "failed"
-            req["reason"] = reason
-            req["failed_at"] = now
-            expired.append((req_id, reason))
-        elif req["status"] == "failed":
-            failed_at = req.get("failed_at", req["created_at"])
-            if now - failed_at > FAILED_CRAFT_REQUEST_RETENTION_SECONDS:
-                del _craft_requests[req_id]
-    return expired
+                finished_at = req.get(self.finished_at_field, req["created_at"])
+                if now - finished_at > self.retention:
+                    del self.requests[req_id]
+        return expired
+
+    def _record_expired(self, expired):
+        for req_id, reason in expired:
+            self.on_expire(req_id, reason)
+
+    def select(self, predicate):
+        """Expires stale records, then returns copies of those matching
+        predicate."""
+        with self.lock:
+            expired = self._expire_locked()
+            selected = [dict(r) for r in self.requests.values() if predicate(r)]
+        self._record_expired(expired)
+        return selected
+
+    def claim_pending(self):
+        """For the game's /pending poll: expires stale records, marks every
+        pending one as picked up (first poll only), and returns copies."""
+        now = time.time()
+        with self.lock:
+            expired = self._expire_locked()
+            pending = [r for r in self.requests.values() if r["status"] == "pending"]
+            for r in pending:
+                r.setdefault("picked_up_at", now)
+            pending = [dict(r) for r in pending]
+        self._record_expired(expired)
+        return pending
 
 
-def _record_expired_craft_requests(expired):
-    for req_id, reason in expired:
-        _update_craft_request_history(req_id, "failed", reason, None)
+# A picked-up craft request stays pending while AE2 plans the craft
+# (minutes for a big job), so it gets a much longer result timeout than
+# a cancellation.
+_craft_requests = CommandQueue(
+    pickup_timeout=120,
+    result_timeout=3600,
+    retention=86400,
+    unclaimed_reason="the game didn't pick up this request - is craft_monitor running?",
+    finished_status="failed",
+    finished_at_field="failed_at",
+    on_expire=lambda req_id, reason: _update_craft_request_history(
+        req_id, "failed", reason, None
+    ),
+)
 
 
 @app.route("/api/craft/request", methods=["POST"])
 def craft_request_post():
-    global _craft_request_next_id
     user_id = _require_user_id()
     if not user_id:
         return jsonify({"error": "authentication required"}), 401
@@ -571,11 +638,8 @@ def craft_request_post():
     icon = resolve_icon(mod, internal, damage, label)
     created_at = time.time()
 
-    with _craft_requests_lock:
-        req_id = _craft_request_next_id
-        _craft_request_next_id += 1
-        _craft_requests[req_id] = {
-            "id": req_id,
+    req_id = _craft_requests.add(
+        {
             "user_id": user_id,
             "label": label,
             "mod": mod,
@@ -588,12 +652,13 @@ def craft_request_post():
             # fluid request: items filter by name+damage,
             # fluids only matched when filtered by label)
             "icon": icon,
-            "status": "pending",  # pending -> accepted (removed from list, real
-            # pin takes over) | failed (stays until dismissed)
+            # status: pending -> accepted (removed from list, real pin
+            # takes over) | failed (stays until dismissed)
             "reason": None,
             "cpu_name": None,
             "created_at": created_at,
         }
+    )
     _record_craft_request_history(
         req_id, user_id, label, mod, internal, damage, amount, kind, created_at
     )
@@ -605,19 +670,14 @@ def craft_requests_get():
     user_id = _require_user_id()
     if not user_id:
         return jsonify({"error": "authentication required"}), 401
-    with _craft_requests_lock:
-        expired = _expire_craft_requests()
-        # "accepted" requests aren't returned here at all - the moment
-        # one is accepted, a real pin is created and it's the pin
-        # (existing infrastructure) that represents it from then on, not
-        # this ephemeral request record.
-        mine = [
-            r
-            for r in _craft_requests.values()
-            if r["user_id"] == user_id and r["status"] in ("pending", "failed")
-        ]
-        mine.sort(key=lambda r: r["created_at"], reverse=True)
-    _record_expired_craft_requests(expired)
+    # "accepted" requests aren't returned here at all - the moment one
+    # is accepted, a real pin is created and it's the pin (existing
+    # infrastructure) that represents it from then on, not this
+    # ephemeral request record.
+    mine = _craft_requests.select(
+        lambda r: r["user_id"] == user_id and r["status"] in ("pending", "failed")
+    )
+    mine.sort(key=lambda r: r["created_at"], reverse=True)
     return jsonify({"requests": mine})
 
 
@@ -626,10 +686,10 @@ def craft_request_dismiss(req_id):
     user_id = _require_user_id()
     if not user_id:
         return jsonify({"error": "authentication required"}), 401
-    with _craft_requests_lock:
-        req = _craft_requests.get(req_id)
+    with _craft_requests.lock:
+        req = _craft_requests.requests.get(req_id)
         if req and req["user_id"] == user_id:
-            del _craft_requests[req_id]
+            del _craft_requests.requests[req_id]
     return jsonify({"ok": True})
 
 
@@ -638,15 +698,7 @@ def craft_requests_pending():
     # Lua polling for work - every user's pending requests at once.
     if not _require_api_key():
         return jsonify({"error": "unauthorized"}), 401
-    now = time.time()
-    with _craft_requests_lock:
-        expired = _expire_craft_requests()
-        pending = [r for r in _craft_requests.values() if r["status"] == "pending"]
-        for r in pending:
-            r.setdefault("picked_up_at", now)
-        pending = [dict(r) for r in pending]
-    _record_expired_craft_requests(expired)
-    return jsonify({"requests": pending})
+    return jsonify({"requests": _craft_requests.claim_pending()})
 
 
 def _create_pin_bypassing_busy_check(user_id, cpu_name):
@@ -677,15 +729,15 @@ def craft_request_result(req_id):
     if status not in ("accepted", "failed"):
         return jsonify({"error": "status must be accepted or failed"}), 400
 
-    with _craft_requests_lock:
-        req = _craft_requests.get(req_id)
+    with _craft_requests.lock:
+        req = _craft_requests.requests.get(req_id)
         if not req:
             return jsonify({"error": "unknown request id"}), 404
         if status == "accepted":
             req["cpu_name"] = payload.get("cpu_name")
             user_id = req["user_id"]
             cpu_name = req["cpu_name"]
-            del _craft_requests[req_id]  # existing pin infra takes over now
+            del _craft_requests.requests[req_id]  # existing pin infra takes over now
         else:
             req["status"] = "failed"
             req["reason"] = payload.get("reason") or "request failed"
@@ -734,54 +786,25 @@ def craft_request_result(req_id):
 # one round trip per cancellation, not a whole pending-state lifecycle -
 # a lighter-weight mirror of the craft-request pattern, not a full copy
 # of it.
-_cancel_requests_lock = threading.Lock()
-_cancel_requests = (
-    {}
-)  # id -> {id, user_id, cpu_name, status, success, reason, created_at}
-_cancel_request_next_id = 1
-
+# id -> {id, user_id, cpu_name, status, success, reason, created_at}
+#
 # The browser stops waiting after ~15s and tells the user the game
 # didn't respond, so an unclaimed cancel must not run later (it could
 # hit a different job on that CPU by then).
-CANCEL_PICKUP_TIMEOUT_SECONDS = 20
-CANCEL_RESULT_TIMEOUT_SECONDS = 300
-RESOLVED_CANCEL_RETENTION_SECONDS = 600
-
-
-def _expire_cancel_requests():
-    """Same contract as _expire_craft_requests(), for cancellations.
-    Must be called with _cancel_requests_lock held."""
-    now = time.time()
-    expired = []
-    for req_id, req in list(_cancel_requests.items()):
-        if req["status"] == "pending":
-            picked_up_at = req.get("picked_up_at")
-            if picked_up_at is None:
-                if now - req["created_at"] <= CANCEL_PICKUP_TIMEOUT_SECONDS:
-                    continue
-                reason = "the game didn't pick up this cancellation"
-            elif now - picked_up_at > CANCEL_RESULT_TIMEOUT_SECONDS:
-                reason = "no result from the game - check in-game"
-            else:
-                continue
-            req["status"] = "resolved"
-            req["success"] = False
-            req["reason"] = reason
-            req["resolved_at"] = now
-            expired.append((req_id, reason))
-        elif now - req.get("resolved_at", req["created_at"]) > RESOLVED_CANCEL_RETENTION_SECONDS:
-            del _cancel_requests[req_id]
-    return expired
-
-
-def _record_expired_cancel_requests(expired):
-    for req_id, reason in expired:
-        _update_craft_cancel_history(req_id, False, reason)
+_cancel_requests = CommandQueue(
+    pickup_timeout=20,
+    result_timeout=300,
+    retention=600,
+    unclaimed_reason="the game didn't pick up this cancellation",
+    finished_status="resolved",
+    finished_at_field="resolved_at",
+    expired_fields={"success": False},
+    on_expire=lambda req_id, reason: _update_craft_cancel_history(req_id, False, reason),
+)
 
 
 @app.route("/api/craft/cancel", methods=["POST"])
 def craft_cancel_post():
-    global _cancel_request_next_id
     user_id = _require_user_id()
     if not user_id:
         return jsonify({"error": "authentication required"}), 401
@@ -806,18 +829,16 @@ def craft_cancel_post():
         return jsonify({"error": "CPU is not currently busy - nothing to cancel"}), 400
 
     created_at = time.time()
-    with _cancel_requests_lock:
-        req_id = _cancel_request_next_id
-        _cancel_request_next_id += 1
-        _cancel_requests[req_id] = {
-            "id": req_id,
+    req_id = _cancel_requests.add(
+        {
             "user_id": user_id,
             "cpu_name": cpu_name,
-            "status": "pending",  # pending -> resolved
+            # status: pending -> resolved
             "success": None,
             "reason": None,
             "created_at": created_at,
         }
+    )
     _record_craft_cancel_history(req_id, user_id, cpu_name, created_at)
     return jsonify({"ok": True, "id": req_id})
 
@@ -827,29 +848,19 @@ def craft_cancel_get(req_id):
     user_id = _require_user_id()
     if not user_id:
         return jsonify({"error": "authentication required"}), 401
-    with _cancel_requests_lock:
-        expired = _expire_cancel_requests()
-        req = _cancel_requests.get(req_id)
-        req = dict(req) if req and req["user_id"] == user_id else None
-    _record_expired_cancel_requests(expired)
-    if not req:
+    found = _cancel_requests.select(
+        lambda r: r["id"] == req_id and r["user_id"] == user_id
+    )
+    if not found:
         return jsonify({"error": "unknown request id"}), 404
-    return jsonify(req)
+    return jsonify(found[0])
 
 
 @app.route("/api/craft/cancel/pending", methods=["GET"])
 def craft_cancel_pending():
     if not _require_api_key():
         return jsonify({"error": "unauthorized"}), 401
-    now = time.time()
-    with _cancel_requests_lock:
-        expired = _expire_cancel_requests()
-        pending = [r for r in _cancel_requests.values() if r["status"] == "pending"]
-        for r in pending:
-            r.setdefault("picked_up_at", now)
-        pending = [dict(r) for r in pending]
-    _record_expired_cancel_requests(expired)
-    return jsonify({"requests": pending})
+    return jsonify({"requests": _cancel_requests.claim_pending()})
 
 
 @app.route("/api/craft/cancel/<int:req_id>/result", methods=["POST"])
@@ -860,8 +871,8 @@ def craft_cancel_result(req_id):
     success = bool(payload.get("success"))
     reason = payload.get("reason")
 
-    with _cancel_requests_lock:
-        req = _cancel_requests.get(req_id)
+    with _cancel_requests.lock:
+        req = _cancel_requests.requests.get(req_id)
         if not req:
             return jsonify({"error": "unknown request id"}), 404
         req["status"] = "resolved"
@@ -3064,6 +3075,38 @@ def index(identifier=None):
 
 INDEX_HTML_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
 INDEX_HTML = None
+
+
+def _reset_runtime_state():
+    """Clears every piece of in-memory state back to a fresh process.
+    Used by the test suite between tests - keep it in sync when adding
+    module-level state."""
+    with _lock:
+        _state["jobs"] = []
+        _state["source"] = None
+        _state["received_at"] = None
+    with _network_lock:
+        _network_buffer.clear()
+        _network_state.update(
+            items=[],
+            item_count=0,
+            updated_at=None,
+            in_progress=False,
+            scan_started_at=None,
+            is_reconstructed=False,
+            current_scan_token=None,
+            chunks_received=0,
+        )
+    _craft_requests.reset()
+    _cancel_requests.reset()
+    with _craft_tracking_lock:
+        _cpu_last_busy.clear()
+        _cpu_last_known.clear()
+    with _chart_cache_lock:
+        _chart_cache.clear()
+    with _chart_rate_lock:
+        _chart_request_times.clear()
+    _debug_dumps.clear()
 
 
 def create_app(data_dir=None, api_key=None):
