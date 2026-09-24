@@ -17,8 +17,7 @@ def create_app(data_dir=None, api_key=None):
     icons.load_lookup()
     db.init_craft_db()
     store.requests.close_orphaned()
-    with db.transaction(db.craft_db) as conn:
-        auth.prune_sessions(conn)
+    store.users.prune_sessions()
     last_craft_id, last_cancel_id = store.requests.last_ids()
     state.craft_requests.start_after(last_craft_id)
     state.cancel_requests.start_after(last_cancel_id)

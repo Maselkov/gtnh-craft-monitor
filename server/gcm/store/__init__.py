@@ -5,4 +5,4 @@ db.transaction() and return plain tuples and dicts, so callers never
 handle SQLite. A multi-statement change that must be atomic is one
 function here, not a sequence of calls."""
 
-from gcm.store import crafts, items, power, requests  # noqa: E402,F401
+from gcm.store import crafts, items, power, requests, users  # noqa: E402,F401
