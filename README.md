@@ -30,7 +30,7 @@ Features:
 ```
  Minecraft (OpenComputers)                       Server (Docker)
 ┌───────────────────────────┐    HTTP POST    ┌──────────────────────┐
-│ craft_monitor.lua         │ ──────────────▶ │ server/app.py (Flask)│ ◀── browser
+│ craft_monitor.lua         │ ──────────────▶ │ server/ (Flask)      │ ◀── browser
 │ power_monitor.lua         │ ◀────────────── │ SQLite in server/data│
 │ network_browser.lua       │  polled requests└──────────────────────┘
 └───────────────────────────┘
@@ -42,7 +42,7 @@ never connects into the game.
 
 | Path | Purpose |
 |---|---|
-| `server/` | Flask server and the web page (`index.html`) |
+| `server/` | Flask server (`app.py` entrypoint, `gcm/` package) and the web page (`index.html`, `static/`) |
 | `oc/craft_monitor.lua` | Reports crafting CPUs; executes craft requests and cancellations |
 | `oc/power_monitor.lua` | Reports a GregTech machine's stored EU |
 | `oc/network_browser.lua` | Scans ME network contents |
@@ -550,8 +550,15 @@ The tests use a temporary data directory and Flask's test client, so they
 don't need a running server or Docker and never touch `server/data/`. They
 cover the server's HTTP API and helper functions, not the Lua scripts.
 
-GitHub Actions runs these tests, a Lua 5.3 syntax check of `oc/*.lua`, and a
-Docker build on every push and pull request (`.github/workflows/ci.yml`).
+Run the frontend tests (Node 22 or newer, no dependencies) from the repo root:
+
+```bash
+node --test 'server/tests/js/*.test.js'
+```
+
+GitHub Actions runs both test suites, a syntax check of every frontend
+script, a Lua 5.3 syntax check of `oc/*.lua`, and a Docker build on every
+push and pull request (`.github/workflows/ci.yml`).
 Pushing a `v*` tag publishes the image to GHCR (`.github/workflows/publish.yml`).
 
 ## License
