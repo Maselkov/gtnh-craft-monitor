@@ -140,14 +140,22 @@ in their numbers and messages.
 **File organization, frontend**: `server/index.html` is a small shell;
 styles are `server/static/app.css` and the code is split per area under
 `server/static/js/` (`crafts.js`, `network.js`, `power.js`, ...). They
-are deliberately CLASSIC scripts, not ES modules: the inline `onclick=`
-handlers in `index.html` call global functions by name, and classic
-scripts loaded in order share one global scope exactly like the
-original single inline script did. Markup the JS itself builds never
-carries inline handlers: interactive elements get `data-action` plus
-`data-*` arguments, and one `delegateActions()` listener per container
-(`util.js`) dispatches them - so values like item or CPU names are only
-ever HTML-escaped into attributes, never spliced into JS source.
+are currently CLASSIC scripts, not ES modules: they call each other's
+functions as globals, and classic scripts loaded in order share one
+global scope exactly like the original single inline script did.
+
+There are no inline event handlers anywhere - not in `index.html`, not
+in markup the JS builds (`tests/test_frontend_assets.py` enforces
+this). Clickable elements carry `data-action="name"` plus `data-*`
+arguments; each area's `setup...()` function registers its actions
+with `delegateActions()` (`util.js`), and `main.js` calls every setup
+function before anything renders. Action names are unique page-wide -
+`delegateActions()` throws on a duplicate, since everything bubbles to
+`document` and a duplicate would fire twice. Non-click events (search
+and amount inputs, Enter to sign in, backdrop clicks via
+`onBackdropClick()`) are plain listeners in the same setup functions.
+Values like item or CPU names are only ever HTML-escaped into
+attributes, never spliced into JS source.
 The consequence: every script except `main.js` must only DECLARE things
 at top level (functions, `let`/`const`, event listener registration) -
 `main.js` loads last and is the one place startup actually runs. A top-

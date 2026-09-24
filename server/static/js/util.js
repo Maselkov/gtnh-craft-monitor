@@ -27,12 +27,30 @@ function escapeHtml(s) {
 // actions[name](element, event). Arguments travel as data-*
 // attributes, escaped with escapeHtml like any other attribute value,
 // never spliced into JS source inside an HTML attribute.
+//
+// Action names must be unique page-wide: several containers can see
+// the same click (everything bubbles to document), so a name
+// registered twice would run twice - refused here instead.
+const registeredActions = new Set();
 function delegateActions(container, actions) {
+  for (const name of Object.keys(actions)) {
+    if (registeredActions.has(name)) throw new Error(`data-action "${name}" registered twice`);
+    registeredActions.add(name);
+  }
   container.addEventListener('click', (e) => {
     const el = e.target.closest('[data-action]');
     if (!el || !container.contains(el)) return;
     const action = actions[el.dataset.action];
     if (action) action(el, e);
+  });
+}
+
+// Modal overlays close on a click on the dimmed backdrop itself, not on
+// anything inside the dialog.
+function onBackdropClick(overlayId, close) {
+  const overlay = document.getElementById(overlayId);
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) close();
   });
 }
 

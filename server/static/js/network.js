@@ -446,3 +446,10 @@ window.addEventListener('resize', () => {
     fillNetworkViewportIfNeeded();
   });
 });
+
+function setupNetworkActions() {
+  document.getElementById('networkSearch').addEventListener('input', onNetworkSearchInput);
+  delegateActions(document, {
+    'network-sort': (el) => setNetworkSort(el.dataset.sort),
+  });
+}

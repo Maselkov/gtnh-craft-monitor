@@ -25,29 +25,28 @@
     <div class="top-bar-right">
       <input type="password" id="accessTokenInput" class="craft-key-input"
         placeholder="Access token" autocomplete="off"
-        title="Enter your personal access token to sign in"
-        onkeydown="if (event.key === 'Enter') submitAccessToken()">
-      <button class="notif-btn" id="authBtn" onclick="submitAccessToken()">Sign in</button>
-      <button class="notif-btn" id="notifBtn" onclick="requestNotifPermission()">Enable notifications</button>
+        title="Enter your personal access token to sign in">
+      <button class="notif-btn" id="authBtn" data-action="sign-in">Sign in</button>
+      <button class="notif-btn" id="notifBtn" data-action="enable-notifications">Enable notifications</button>
       <div class="settings-wrap" id="settingsWrap" style="display:none;">
         <button class="notif-btn settings-btn" id="settingsBtn" title="Settings"
           aria-label="Settings" aria-haspopup="true" aria-expanded="false"
-          onclick="toggleSettingsMenu()">&#9881;</button>
+          data-action="toggle-settings">&#9881;</button>
         <div class="settings-menu" id="settingsMenu" role="menu" style="display:none;">
           <div class="settings-menu-user" id="settingsUser"></div>
           <button class="settings-menu-item" id="adminBtn" role="menuitem" style="display:none;"
-            onclick="closeSettingsMenu(); openAdminUsersModal()">Manage users</button>
+            data-action="open-admin">Manage users</button>
           <button class="settings-menu-item danger" role="menuitem"
-            onclick="closeSettingsMenu(); signOut()">Sign out</button>
+            data-action="sign-out">Sign out</button>
         </div>
       </div>
     </div>
   </div>
 
   <div class="tab-bar">
-    <button class="tab-btn active" id="tabBtnCrafts" onclick="switchTab('crafts')">Crafts</button>
-    <button class="tab-btn" id="tabBtnPower" onclick="switchTab('power')">Power</button>
-    <button class="tab-btn" id="tabBtnNetwork" onclick="switchTab('network')">Network</button>
+    <button class="tab-btn active" id="tabBtnCrafts" data-action="switch-tab" data-tab="crafts">Crafts</button>
+    <button class="tab-btn" id="tabBtnPower" data-action="switch-tab" data-tab="power">Power</button>
+    <button class="tab-btn" id="tabBtnNetwork" data-action="switch-tab" data-tab="network">Network</button>
   </div>
 
   <div id="craftsTab">
@@ -61,11 +60,11 @@
     <div class="power-head">
       <div class="power-current" id="powerCurrent">Waiting for data&hellip;</div>
       <div class="range-buttons">
-        <button class="range-btn" data-range="hour" onclick="setPowerRange('hour')">Hour</button>
-        <button class="range-btn active" data-range="day" onclick="setPowerRange('day')">Day</button>
-        <button class="range-btn" data-range="week" onclick="setPowerRange('week')">Week</button>
-        <button class="range-btn" data-range="month" onclick="setPowerRange('month')">Month</button>
-        <button class="range-btn" data-range="lifetime" onclick="setPowerRange('lifetime')">Lifetime</button>
+        <button class="range-btn" data-range="hour" data-action="power-range">Hour</button>
+        <button class="range-btn active" data-range="day" data-action="power-range">Day</button>
+        <button class="range-btn" data-range="week" data-action="power-range">Week</button>
+        <button class="range-btn" data-range="month" data-action="power-range">Month</button>
+        <button class="range-btn" data-range="lifetime" data-action="power-range">Lifetime</button>
       </div>
     </div>
     <div class="chart-wrap">
@@ -79,12 +78,12 @@
     <div id="craftRequestsSection"></div>
     <div class="network-head">
       <div class="network-search-wrap">
-        <input type="text" id="networkSearch" class="network-search" placeholder="Search items&hellip;" oninput="onNetworkSearchInput()" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off">
+        <input type="text" id="networkSearch" class="network-search" placeholder="Search items&hellip;" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off">
         <div id="networkSearchHighlight" class="network-search-highlight" aria-hidden="true"></div>
       </div>
       <div class="range-buttons">
-        <button class="range-btn" data-sort="name" onclick="setNetworkSort('name')">Name</button>
-        <button class="range-btn active" data-sort="size" onclick="setNetworkSort('size')">Quantity</button>
+        <button class="range-btn" data-sort="name" data-action="network-sort">Name</button>
+        <button class="range-btn active" data-sort="size" data-action="network-sort">Quantity</button>
       </div>
     </div>
     <div id="networkList" class="network-grid"></div>
@@ -93,24 +92,24 @@
 
   <div id="toastContainer" class="toast-container"></div>
 
-  <div id="craftRequestModal" class="modal-overlay" style="display:none;" onclick="if(event.target===this) closeCraftRequestModal()">
+  <div id="craftRequestModal" class="modal-overlay" style="display:none;">
     <div class="modal-box">
       <div class="modal-header">
         <img id="craftRequestIcon" class="modal-icon" src="" alt="" style="display:none;">
         <div id="craftRequestName" class="modal-item-name"></div>
       </div>
       <label class="modal-label">Quantity</label>
-      <input type="number" id="craftRequestAmount" class="modal-amount-input" value="1" min="1" step="1" oninput="updateCraftRequestAmountPreview()" spellcheck="false">
+      <input type="number" id="craftRequestAmount" class="modal-amount-input" value="1" min="1" step="1" spellcheck="false">
       <div id="craftRequestAmountPreview" class="modal-amount-preview" style="display:none;"></div>
       <div id="craftRequestError" class="modal-error" style="display:none;"></div>
       <div class="modal-buttons">
-        <button class="modal-btn secondary" onclick="closeCraftRequestModal()">Cancel</button>
-        <button class="modal-btn primary" id="craftRequestSubmitBtn" onclick="submitCraftRequest()">Request</button>
+        <button class="modal-btn secondary" data-action="close-craft-request">Cancel</button>
+        <button class="modal-btn primary" id="craftRequestSubmitBtn" data-action="submit-craft-request">Request</button>
       </div>
     </div>
   </div>
 
-  <div id="cancelConfirmModal" class="modal-overlay" style="display:none;" onclick="if(event.target===this) closeCancelConfirmModal()">
+  <div id="cancelConfirmModal" class="modal-overlay" style="display:none;">
     <div class="modal-box">
       <div class="modal-header">
         <div class="modal-item-name">Cancel this craft?</div>
@@ -118,13 +117,13 @@
       <div id="cancelConfirmSub" class="modal-note"></div>
       <div id="cancelConfirmError" class="modal-error" style="display:none;"></div>
       <div class="modal-buttons">
-        <button class="modal-btn secondary" onclick="closeCancelConfirmModal()">Keep going</button>
-        <button class="modal-btn cancel-confirm-btn" id="cancelConfirmSubmitBtn" onclick="submitCancelConfirm()">Cancel craft</button>
+        <button class="modal-btn secondary" data-action="close-cancel-confirm">Keep going</button>
+        <button class="modal-btn cancel-confirm-btn" id="cancelConfirmSubmitBtn" data-action="submit-cancel">Cancel craft</button>
       </div>
     </div>
   </div>
 
-  <div id="itemHistoryModal" class="modal-overlay" style="display:none;" onclick="if(event.target===this) closeItemHistory()">
+  <div id="itemHistoryModal" class="modal-overlay" style="display:none;">
     <div class="modal-box history-box">
       <div class="modal-header">
         <img id="itemHistoryIcon" class="modal-icon" src="" alt="" style="display:none;">
@@ -132,28 +131,28 @@
           <div id="itemHistoryName" class="modal-item-name history-name"></div>
           <div id="itemHistoryCurrent" class="history-current"></div>
         </div>
-        <button class="history-pin-btn" id="itemHistoryPinBtn" onclick="toggleNetworkItemPin(itemHistoryTarget)" title="Pin this item">&#128204;</button>
-        <button class="history-close-btn" onclick="closeItemHistory()" title="Close">&times;</button>
+        <button class="history-pin-btn" id="itemHistoryPinBtn" data-action="history-pin" title="Pin this item">&#128204;</button>
+        <button class="history-close-btn" data-action="close-history" title="Close">&times;</button>
       </div>
       <div class="range-buttons" id="itemHistoryRangeButtons">
-        <button class="range-btn active" data-range="day" onclick="setItemHistoryRange('day')">Day</button>
-        <button class="range-btn" data-range="week" onclick="setItemHistoryRange('week')">Week</button>
-        <button class="range-btn" data-range="month" onclick="setItemHistoryRange('month')">Month</button>
-        <button class="range-btn" data-range="lifetime" onclick="setItemHistoryRange('lifetime')">Lifetime</button>
+        <button class="range-btn active" data-range="day" data-action="history-range">Day</button>
+        <button class="range-btn" data-range="week" data-action="history-range">Week</button>
+        <button class="range-btn" data-range="month" data-action="history-range">Month</button>
+        <button class="range-btn" data-range="lifetime" data-action="history-range">Lifetime</button>
       </div>
       <div class="chart-wrap history-chart-wrap">
         <canvas id="itemHistoryChart"></canvas>
       </div>
       <div class="empty" id="itemHistoryEmpty" style="display:none;">No history yet for this item.</div>
-      <button class="modal-btn primary history-craft-btn" id="itemHistoryCraftBtn" style="display:none;" onclick="requestCraftFromHistory()">Request Craft</button>
+      <button class="modal-btn primary history-craft-btn" id="itemHistoryCraftBtn" style="display:none;" data-action="craft-from-history">Request Craft</button>
     </div>
   </div>
 
-  <div id="adminUsersModal" class="modal-overlay" style="display:none;" onclick="if(event.target===this) closeAdminUsersModal()">
+  <div id="adminUsersModal" class="modal-overlay" style="display:none;">
     <div class="modal-box admin-box">
       <div class="modal-header">
         <div class="modal-item-name">User management</div>
-        <button class="history-close-btn" onclick="closeAdminUsersModal()" title="Close">&times;</button>
+        <button class="history-close-btn" data-action="close-admin" title="Close">&times;</button>
       </div>
       <div class="modal-note">Create a user and share the generated access token securely. It is shown only once.</div>
       <div class="admin-form-grid">
@@ -166,13 +165,13 @@
       </div>
       <div id="adminUsersError" class="modal-error" style="display:none;"></div>
       <div class="modal-buttons" style="margin-top:12px;">
-        <button class="modal-btn primary" id="adminCreateUserBtn" onclick="createAdminUser()">Create user</button>
+        <button class="modal-btn primary" id="adminCreateUserBtn" data-action="create-user">Create user</button>
       </div>
       <div id="adminTokenResult" class="admin-token-result" style="display:none;">
         <label class="modal-label">New access token</label>
         <textarea id="adminTokenValue" class="modal-amount-input admin-token-value" readonly></textarea>
         <div class="modal-buttons">
-          <button class="modal-btn secondary" onclick="copyAdminToken()">Copy token</button>
+          <button class="modal-btn secondary" data-action="copy-token">Copy token</button>
         </div>
       </div>
       <div id="adminUsersList" class="admin-users"></div>
@@ -192,16 +191,16 @@
         <div class="modal-note">Store this token securely. It is shown only once.</div>
       </div>
       <div class="modal-buttons">
-        <button class="modal-btn primary" id="bootstrapRotationBtn" onclick="rotateBootstrapToken()">Create replacement token</button>
+        <button class="modal-btn primary" id="bootstrapRotationBtn" data-action="rotate-bootstrap">Create replacement token</button>
       </div>
     </div>
   </div>
 
-  <div id="userHistoryModal" class="modal-overlay" style="display:none;" onclick="if(event.target===this) closeUserHistoryModal()">
+  <div id="userHistoryModal" class="modal-overlay" style="display:none;">
     <div class="modal-box admin-box">
       <div class="modal-header">
         <div id="userHistoryTitle" class="modal-item-name">User history</div>
-        <button class="history-close-btn" onclick="closeUserHistoryModal()" title="Close">&times;</button>
+        <button class="history-close-btn" data-action="close-user-history" title="Close">&times;</button>
       </div>
       <div id="userHistoryList" class="user-history-list"></div>
     </div>
