@@ -8,6 +8,8 @@
 #
 #   restrict,from="<runner ip>",command="/usr/local/bin/gcm-deploy" ssh-ed25519 AAAA... gcm-ci
 #
+# DEPLOY_DIR holds a copy of deploy/docker-compose.yml, .env and data/.
+#
 # Expects "deploy <version>" as the SSH command, and the GHCR user and
 # token on stdin, one per line.
 set -eu

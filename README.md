@@ -80,16 +80,19 @@ described in [User accounts](#user-accounts).
 `API_KEY` is the shared secret the in-game scripts use; `gcm install` asks
 for it later and saves it in `/home/config.lua`.
 
-All persistent data (databases, icons) lives in `server/data/`, which
+All persistent data (databases, `images.zip`) lives in `server/data/`, which
 `docker-compose.yml` mounts into the container, so rebuilding the image
-doesn't lose history.
+doesn't lose history. The icon lookup table ships inside the image
+(`server/reference/`), so each release brings its own.
 
 ### Prebuilt image
 
 Tagged releases are published to `ghcr.io/maselkov/gtnh-craft-monitor` for
-amd64 and arm64. To use it, replace `build: ./server` in `docker-compose.yml`
-with `image: ghcr.io/maselkov/gtnh-craft-monitor:latest` and run
-`docker compose up -d`. Keep the `./server/data:/app/data` volume.
+amd64 and arm64. [`deploy/docker-compose.yml`](deploy/docker-compose.yml)
+runs it: copy it and `.env` into a directory of their own, add a `data/`
+directory beside them (with `images.zip`, if you have it), and run
+`docker compose up -d`. It runs `latest` unless `GCM_TAG` names a version;
+`deploy/gcm-deploy.sh` sets it on each release deploy.
 
 ### Without Docker
 
@@ -121,7 +124,7 @@ Environment variables (set in `.env` for Docker):
 | `CHART_CACHE_TTL_SECONDS` | `60` | Cache time for chart PNGs. |
 | `CHART_RATE_LIMIT_PER_MINUTE` | `30` | Chart PNG requests allowed per client per minute. |
 | `PORT` | `8420` | Listening port. |
-| `DATA_DIR` | `server/data` | Where databases and icon files are read and written. |
+| `DATA_DIR` | `server/data` | Where the databases are written and `images.zip` is read from. |
 
 ### Exposing it beyond your LAN
 
@@ -188,8 +191,8 @@ docker compose exec gtnh-craft-monitor python app.py new-token "Administrator"
 ### Item icons
 
 The page shows item icons taken from a [NESQL](https://github.com/ShadowTheAge/nesql-exporter)
-export. The icon lookup table (`server/data/icons_lookup.json`) is included
-in the repo; the images are not.
+export. The icon lookup table (`server/reference/icons_lookup.json`) is
+included in the repo and the image; the images are not.
 
 To enable icons, copy NESQL's `image.zip` unmodified to
 `server/data/images.zip` and restart the server. Images are read from the zip
@@ -209,7 +212,7 @@ Needed after a modpack update or for a different pack. Requires a JDK
    ```
    It downloads the HSQLDB driver if needed, exports the `Item` and `Fluid`
    tables to CSV with `tools/ExportItems.java` and `tools/ExportFluids.java`,
-   and writes `server/data/icons_lookup.json`.
+   and writes `server/reference/icons_lookup.json`.
 3. Replace `server/data/images.zip` with the new `image.zip`.
 
 The lookup contains three tables, tried in order:

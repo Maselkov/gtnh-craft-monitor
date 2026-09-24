@@ -59,8 +59,6 @@ function findChrome() {
 async function startServer() {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcm-e2e-data-'));
   tempDirs.push(dataDir);
-  const lookup = path.join(SERVER_DIR, 'data', 'icons_lookup.json');
-  if (fs.existsSync(lookup)) fs.copyFileSync(lookup, path.join(dataDir, 'icons_lookup.json'));
   const port = await freePort();
   const child = spawn(process.env.PYTHON || 'python3', ['app.py'], {
     cwd: SERVER_DIR,

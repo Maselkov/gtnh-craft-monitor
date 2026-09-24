@@ -1,5 +1,5 @@
-from gcm import charts, icons, store
-from gcm.routes import network, pages
+from gcm import charts, icons, inventory, store
+from gcm.routes import pages
 
 
 class TestItemKey:
@@ -77,7 +77,7 @@ class TestFormatQtyPy:
 class TestDownsampleSteps:
     def test_under_the_cap_returns_unchanged(self):
         rows = [(i, i) for i in range(5)]
-        result = network.downsample_steps(rows, max_points=100)
+        result = inventory.downsample_steps(rows, max_points=100)
         assert result == rows
 
     def test_picks_real_recorded_values_not_averages(self):
@@ -85,7 +85,7 @@ class TestDownsampleSteps:
         # preserve GENUINE observed values, not invent averaged ones -
         # item quantity is a step function.
         rows = [(i, 100 if i % 2 == 0 else 999999) for i in range(1000)]
-        result = network.downsample_steps(rows, max_points=50)
+        result = inventory.downsample_steps(rows, max_points=50)
         observed_values = {r[1] for r in rows}
         for _, size in result:
             assert size in observed_values

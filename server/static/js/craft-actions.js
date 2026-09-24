@@ -45,6 +45,7 @@ export function showToast(message, isError) {
 
 // ---------- Cancel craft ----------
 let cancelConfirmTarget = null;  // cpu_name currently targeted by the confirm modal
+let cancelConfirmOutput = null;  // what that CPU's job was making when the modal opened
 export const pendingCancelCpus = new Set();  // cpu_names with an in-flight
                                        // cancel request - drives the
                                        // spinner/disabled state on
@@ -52,6 +53,16 @@ export const pendingCancelCpus = new Set();  // cpu_names with an in-flight
 
 export function openCancelConfirmModal(cpuName) {
   cancelConfirmTarget = cpuName;
+  // Sent with the cancel so the server refuses it if the CPU has moved
+  // on to another job since - see "A cancel names the job" in CONTEXT.md.
+  const job = lastData && lastData.jobs.find((j) => j.name === cpuName);
+  cancelConfirmOutput = job && job.final_output_internal
+    ? {
+        mod: job.final_output_mod ?? null,
+        internal: job.final_output_internal,
+        damage: job.final_output_damage ?? null,
+      }
+    : null;
   document.getElementById('cancelConfirmSub').textContent = 'CPU ' + cpuName;
   const errorEl = document.getElementById('cancelConfirmError');
   errorEl.style.display = 'none';
@@ -64,6 +75,7 @@ export function openCancelConfirmModal(cpuName) {
 function closeCancelConfirmModal() {
   document.getElementById('cancelConfirmModal').style.display = 'none';
   cancelConfirmTarget = null;
+  cancelConfirmOutput = null;
 }
 
 async function submitCancelConfirm() {
@@ -86,7 +98,7 @@ async function submitCancelConfirm() {
     const res = await fetch('/api/craft/cancel', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cpu_name: cpuName }),
+      body: JSON.stringify({ cpu_name: cpuName, expected_output: cancelConfirmOutput }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {

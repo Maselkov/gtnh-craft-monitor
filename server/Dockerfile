@@ -7,7 +7,9 @@ COPY app.py .
 COPY gcm ./gcm
 COPY index.html .
 COPY static ./static
-COPY data ./data
+COPY reference ./reference
+# The mount point for the data volume (databases and images.zip).
+RUN mkdir -p data
 
 ENV PORT=8420
 ENV STALE_AFTER_SECONDS=30

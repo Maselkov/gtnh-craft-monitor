@@ -1,6 +1,7 @@
 import time
 
-from gcm import db, state, store
+import gcm
+from gcm import commands, db, store
 from conftest import login_as
 
 
@@ -45,7 +46,7 @@ def history_status(table, request_id):
 class TestCraftRequestExpiry:
     def test_request_never_picked_up_fails(self, client, api_headers):
         req_id = submit_craft_request(client)
-        age(state.craft_requests.requests[req_id], 121, "created_at")
+        age(commands.craft_requests.requests[req_id], 121, "created_at")
 
         pending = client.get("/api/craft/requests/pending", headers=api_headers)
         assert pending.get_json()["requests"] == []
@@ -57,9 +58,9 @@ class TestCraftRequestExpiry:
     def test_picked_up_request_waits_for_planning(self, client, api_headers):
         req_id = submit_craft_request(client)
         client.get("/api/craft/requests/pending", headers=api_headers)
-        age(state.craft_requests.requests[req_id], 600, "created_at", "picked_up_at")
+        age(commands.craft_requests.requests[req_id], 600, "created_at", "picked_up_at")
 
-        assert state.craft_requests.requests[req_id]["status"] == "pending"
+        assert commands.craft_requests.requests[req_id]["status"] == "pending"
         mine = client.get("/api/craft/requests").get_json()["requests"]
         assert [(r["id"], r["status"]) for r in mine] == [(req_id, "pending")]
 
@@ -76,10 +77,10 @@ class TestCraftRequestExpiry:
     def test_picked_up_request_without_result_eventually_fails(self, client, api_headers):
         req_id = submit_craft_request(client)
         client.get("/api/craft/requests/pending", headers=api_headers)
-        age(state.craft_requests.requests[req_id], 3601, "created_at", "picked_up_at")
+        age(commands.craft_requests.requests[req_id], 3601, "created_at", "picked_up_at")
 
         client.get("/api/craft/requests/pending", headers=api_headers)
-        assert state.craft_requests.requests[req_id]["status"] == "failed"
+        assert commands.craft_requests.requests[req_id]["status"] == "failed"
 
     def test_old_failed_requests_are_forgotten(self, client, api_headers):
         req_id = submit_craft_request(client)
@@ -88,10 +89,10 @@ class TestCraftRequestExpiry:
             json={"status": "failed", "reason": "missing resources"},
             headers=api_headers,
         )
-        age(state.craft_requests.requests[req_id], 86401, "created_at", "failed_at")
+        age(commands.craft_requests.requests[req_id], 86401, "created_at", "failed_at")
 
         assert client.get("/api/craft/requests").get_json()["requests"] == []
-        assert req_id not in state.craft_requests.requests
+        assert req_id not in commands.craft_requests.requests
 
 
 class TestCancelExpiry:
@@ -106,7 +107,7 @@ class TestCancelExpiry:
 
     def test_cancel_never_picked_up_is_not_run_later(self, client, api_headers):
         req_id = submit_cancel(client, api_headers)
-        age(state.cancel_requests.requests[req_id], 21, "created_at")
+        age(commands.cancel_requests.requests[req_id], 21, "created_at")
 
         pending = client.get("/api/craft/cancel/pending", headers=api_headers)
         assert pending.get_json()["requests"] == []
@@ -122,10 +123,10 @@ class TestCancelExpiry:
             json={"success": True},
             headers=api_headers,
         )
-        age(state.cancel_requests.requests[req_id], 601, "created_at", "resolved_at")
+        age(commands.cancel_requests.requests[req_id], 601, "created_at", "resolved_at")
 
         assert client.get(f"/api/craft/cancel/{req_id}").status_code == 404
-        assert req_id not in state.cancel_requests.requests
+        assert req_id not in commands.cancel_requests.requests
 
 
 def test_login_prunes_expired_and_revoked_sessions(client, flask_app):
@@ -170,10 +171,10 @@ class TestIdsAcrossRestarts:
         old_craft = submit_craft_request(client)
         old_cancel = submit_cancel(client, api_headers)
 
-        state.reset()  # the in-memory side of a restart
+        gcm.reset_runtime_state()  # the in-memory side of a restart
         last_craft, last_cancel = store.requests.last_ids()
-        state.craft_requests.start_after(last_craft)
-        state.cancel_requests.start_after(last_cancel)
+        commands.craft_requests.start_after(last_craft)
+        commands.cancel_requests.start_after(last_cancel)
 
         assert submit_craft_request(client) == old_craft + 1
         assert submit_cancel(client, api_headers) == old_cancel + 1
@@ -182,9 +183,9 @@ class TestIdsAcrossRestarts:
         self, client, api_headers
     ):
         old_id = submit_craft_request(client)
-        state.reset()
+        gcm.reset_runtime_state()
         store.requests.close_orphaned()
-        state.craft_requests.start_after(store.requests.last_ids()[0])
+        commands.craft_requests.start_after(store.requests.last_ids()[0])
         new_id = submit_craft_request(client)
         assert new_id != old_id
 
@@ -204,7 +205,7 @@ class TestLateResults:
     def test_late_accept_overrides_expiry(self, client, api_headers):
         req_id = submit_craft_request(client)
         client.get("/api/craft/requests/pending", headers=api_headers)
-        age(state.craft_requests.requests[req_id], 3601, "created_at", "picked_up_at")
+        age(commands.craft_requests.requests[req_id], 3601, "created_at", "picked_up_at")
         client.get("/api/craft/requests")
         assert history_status("craft_request_history", req_id)[0] == "failed"
 
@@ -221,7 +222,7 @@ class TestLateResults:
     def test_late_cancel_result_overrides_expiry(self, client, api_headers):
         req_id = submit_cancel(client, api_headers)
         client.get("/api/craft/cancel/pending", headers=api_headers)
-        age(state.cancel_requests.requests[req_id], 301, "created_at", "picked_up_at")
+        age(commands.cancel_requests.requests[req_id], 301, "created_at", "picked_up_at")
         assert client.get(f"/api/craft/cancel/{req_id}").get_json()["success"] is False
 
         client.post(

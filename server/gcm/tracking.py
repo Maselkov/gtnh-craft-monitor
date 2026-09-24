@@ -47,8 +47,8 @@ def _classify_status(progress):
 def _new_job_entry(started_at):
     # cpu_last_known entry for a job first seen at started_at. "output"
     # is the job's final output as craft_monitor.lua reported it - kept
-    # apart from "label", which a craft request can fill in with its own
-    # wording (a fluid request's label isn't the drop item AE2 reports).
+    # apart from "label", which a craft request fills in with the
+    # browser's name for the item until a status report names the output.
     return {
         "label": None,
         "icon": None,
@@ -69,6 +69,24 @@ def _job_output(job):
         job.get("final_output_internal"),
         job.get("final_output_damage"),
     )
+
+
+def output_identity(job):
+    """{mod, internal, damage} of what the job on this CPU is making, the
+    form craft_monitor.lua compares against the CPU's finalOutput() - or
+    None when that isn't reported."""
+    if not job.get("final_output_internal"):
+        return None
+    return {
+        "mod": job.get("final_output_mod"),
+        "internal": job.get("final_output_internal"),
+        "damage": job.get("final_output_damage"),
+    }
+
+
+def same_output(a, b):
+    """Whether two output identities name the same item."""
+    return all(a.get(key) == b.get(key) for key in ("mod", "internal", "damage"))
 
 
 def _end_job_locked(name, label=None, icon=None):

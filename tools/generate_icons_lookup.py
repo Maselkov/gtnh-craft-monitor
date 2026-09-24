@@ -21,7 +21,7 @@ ground truth rather than guessed:
     ExportItems.java's own comment already flags as uncertain without
     checking (Hibernate's naming strategy could have left them as-is
     instead).
-  - The real, existing server/data/icons_lookup.json this project already
+  - The real, existing server/reference/icons_lookup.json this project already
     ships, whose exact structure (by_key keyed "mod:internal:damage",
     fluids_by_key keyed by bare internal name, by_label keyed by display
     name) this script's output is designed to match.
@@ -232,8 +232,8 @@ def main():
         help="Path to your nesql-db files, WITHOUT any extension "
              "(e.g. .../nesql-repository/nesql-db)")
     parser.add_argument(
-        "--output", default=str(TOOLS_DIR.parent / "server" / "data" / "icons_lookup.json"),
-        help="Where to write icons_lookup.json (default: server/data/icons_lookup.json)")
+        "--output", default=str(TOOLS_DIR.parent / "server" / "reference" / "icons_lookup.json"),
+        help="Where to write icons_lookup.json (default: server/reference/icons_lookup.json)")
     parser.add_argument(
         "--items-csv", default=None,
         help="Skip re-running the Java exporter and use an existing items CSV instead")

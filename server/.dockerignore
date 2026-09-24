@@ -1,7 +1,5 @@
 # Runtime data is bind-mounted at /app/data (see docker-compose.yml);
-# keep local databases and the large icon zip out of the image.
-data/*.db
-data/*.db-*
-data/images.zip
+# nothing from a local data directory belongs in the image.
+data
 tests/
 __pycache__/

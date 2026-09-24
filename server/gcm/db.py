@@ -278,7 +278,7 @@ def _item_history_baseline(conn):
     # the Network tab sitting empty until network_browser.lua's next
     # scan completes (which could be most of 20 minutes away). Loaded
     # back into memory once at server startup - see
-    # load_network_snapshot() in routes/network.py.
+    # load_snapshot() in gcm/inventory.py.
     conn.execute("""
         CREATE TABLE IF NOT EXISTS network_snapshot (
             item_key TEXT PRIMARY KEY,
