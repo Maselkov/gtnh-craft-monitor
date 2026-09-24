@@ -35,5 +35,7 @@ docker compose pull
 docker compose up -d --remove-orphans
 docker image prune -f
 
-curl -fsS -o /dev/null --retry 10 --retry-connrefused --retry-delay 3 "$HEALTH_URL"
+# --retry-all-errors: right after start the port proxy accepts and then
+# resets connections until the app is listening, which plain --retry skips.
+curl -fsS -o /dev/null --retry 15 --retry-all-errors --retry-delay 2 "$HEALTH_URL"
 echo "deployed $version"
