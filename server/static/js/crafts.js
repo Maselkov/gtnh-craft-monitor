@@ -61,11 +61,24 @@ let lastData = null;  // cached so pin/unpin can re-render immediately
                        // instead of waiting up to 3s for the next poll
 let lastFetchAt = null;  // client-side Date.now() of the last successful fetch
 
-function toggleIngredients(key, ev) {
-  if (ev.target.open) openIngredients.add(key); else openIngredients.delete(key);
-}
-function toggleIdleSection(ev) {
-  idleSectionOpen = ev.target.open;
+function setupCraftsActions() {
+  const root = document.getElementById('root');
+  delegateActions(root, {
+    'toggle-pin': (el) => togglePin(el.dataset.cpu),
+    'cancel-craft': (el) => openCancelConfirmModal(el.dataset.cpu),
+    'acknowledge': (el) => acknowledgePin(el.dataset.completionId),
+    'acknowledge-all': () => acknowledgeAllPins(),
+  });
+  // Remembers which <details> are open so the 3s re-render can restore
+  // them. toggle doesn't bubble, so catch it on the way down.
+  root.addEventListener('toggle', (e) => {
+    const details = e.target;
+    if (details.matches('details.ingredients')) {
+      if (details.open) openIngredients.add(details.dataset.key); else openIngredients.delete(details.dataset.key);
+    } else if (details.matches('details.idle-group')) {
+      idleSectionOpen = details.open;
+    }
+  }, true);
 }
 
 async function togglePin(name) {
@@ -270,7 +283,7 @@ function renderItemList(label, list) {
   if (!Array.isArray(list) || list.length === 0) return '';
   const rows = list.map(it => {
     const icon = it.icon
-      ? `<img class="item-icon" src="/icons?path=${encodeURIComponent(it.icon)}" alt="" loading="lazy" onerror="this.remove()">`
+      ? `<img class="item-icon" src="/icons?path=${encodeURIComponent(it.icon)}" alt="" loading="lazy" data-remove-on-error>`
       : '';
     const linkAttrs = `data-mod="${escapeHtml(it.mod || '')}" data-internal="${escapeHtml(it.internal || '')}" `
       + `data-damage="${it.damage != null ? it.damage : ''}" data-name="${escapeHtml(it.name || '?')}" `
@@ -310,12 +323,12 @@ function renderCard(job) {
 
   const title = job.busy
     ? (job.final_output
-        ? `${job.final_output_icon ? `<img class="craft-icon" src="/icons?path=${encodeURIComponent(job.final_output_icon)}" alt="" loading="lazy" onerror="this.remove()">` : ''}<span class="item-history-link" data-mod="${escapeHtml(job.final_output_mod || '')}" data-internal="${escapeHtml(job.final_output_internal || '')}" data-damage="${job.final_output_damage != null ? job.final_output_damage : ''}" data-name="${escapeHtml(job.final_output)}" data-icon="${escapeHtml(job.final_output_icon || '')}">${escapeHtml(job.final_output)}</span>`
+        ? `${job.final_output_icon ? `<img class="craft-icon" src="/icons?path=${encodeURIComponent(job.final_output_icon)}" alt="" loading="lazy" data-remove-on-error>` : ''}<span class="item-history-link" data-mod="${escapeHtml(job.final_output_mod || '')}" data-internal="${escapeHtml(job.final_output_internal || '')}" data-damage="${job.final_output_damage != null ? job.final_output_damage : ''}" data-name="${escapeHtml(job.final_output)}" data-icon="${escapeHtml(job.final_output_icon || '')}">${escapeHtml(job.final_output)}</span>`
         : `<span style="color:var(--muted); font-weight:500;">Crafting job (no monitor tile)</span>`)
     : `<span style="color:var(--muted); font-weight:500;">Idle</span>`;
 
   const ingredientsBlock = (job.busy && itemCount > 0) ? `
-    <details class="ingredients" ${isOpen ? 'open' : ''} ontoggle="toggleIngredients(${jsArg(key)}, event)">
+    <details class="ingredients" ${isOpen ? 'open' : ''} data-key="${escapeHtml(key)}">
       <summary>Ingredients (${itemCount})</summary>
       <div class="ingredients-body">${body}</div>
     </details>
@@ -326,7 +339,7 @@ function renderCard(job) {
   const isOperator = AUTH_USER && (AUTH_USER.role === 'operator' || AUTH_USER.role === 'admin');
   const isCancelPending = pendingCancelCpus.has(job.name);
   const cancelBtn = (job.busy && isOperator)
-    ? `<button class="cancel-btn" ${isCancelPending ? 'disabled' : ''} onclick="openCancelConfirmModal(${jsArg(job.name)})" title="${isCancelPending ? 'Cancelling…' : 'Cancel this craft'}">${isCancelPending ? '&#8987;' : '&times;'}</button>`
+    ? `<button class="cancel-btn" ${isCancelPending ? 'disabled' : ''} data-action="cancel-craft" data-cpu="${escapeHtml(job.name)}" title="${isCancelPending ? 'Cancelling…' : 'Cancel this craft'}">${isCancelPending ? '&#8987;' : '&times;'}</button>`
     : '';
 
   return `
@@ -337,7 +350,7 @@ function renderCard(job) {
           <div class="cpu-id">CPU ${escapeHtml(job.name || '?')} &middot; storage ${job.storage ?? '?'} &middot; coprocessors ${job.coprocessors ?? '?'}</div>
         </div>
         <div class="head-right">
-          <button class="pin-btn ${isPinned ? 'pinned' : ''}" ${canPin ? '' : 'disabled'} onclick="togglePin(${jsArg(job.name)})" title="${pinTitle}">&#128204;</button>
+          <button class="pin-btn ${isPinned ? 'pinned' : ''}" ${canPin ? '' : 'disabled'} data-action="toggle-pin" data-cpu="${escapeHtml(job.name)}" title="${pinTitle}">&#128204;</button>
           ${cancelBtn}
           <div class="badge ${job.busy ? 'busy' : 'idle'}">${job.busy ? 'BUSY' : 'IDLE'}</div>
         </div>
@@ -350,7 +363,7 @@ function renderCard(job) {
 
 function renderCompletedCard(entry) {
   const icon = entry.icon
-    ? `<img class="craft-icon" src="/icons?path=${encodeURIComponent(entry.icon)}" alt="" loading="lazy" onerror="this.remove()">`
+    ? `<img class="craft-icon" src="/icons?path=${encodeURIComponent(entry.icon)}" alt="" loading="lazy" data-remove-on-error>`
     : '';
   // Deliberately item-first, no CPU reference - which CPU happened to
   // run this is irrelevant to what you're acknowledging.
@@ -365,7 +378,7 @@ function renderCompletedCard(entry) {
           <div class="craft-title">${icon}<span>${title}</span>${statusBadge}</div>
           <div class="cpu-id">Finished ${formatRelativeTime(entry.finishedAt)}</div>
         </div>
-        <button class="ack-btn" onclick="acknowledgePin(${jsArg(entry.id)})" title="Acknowledge">&#10003;</button>
+        <button class="ack-btn" data-action="acknowledge" data-completion-id="${escapeHtml(entry.id)}" title="Acknowledge">&#10003;</button>
       </div>
     </div>
   `;
@@ -393,7 +406,7 @@ function render(data) {
     <section class="group">
       <div class="group-heading completed-heading">
         <span>&#10003; Finished (${sortedCompleted.length})</span>
-        <button class="ack-all-btn" onclick="acknowledgeAllPins()">Acknowledge all</button>
+        <button class="ack-all-btn" data-action="acknowledge-all">Acknowledge all</button>
       </div>
       <div class="grid">${sortedCompleted.map(renderCompletedCard).join('')}</div>
     </section>
@@ -424,7 +437,7 @@ function render(data) {
   ` : (pinnedJobs.length === 0 ? `<div class="empty">No CPUs currently crafting.</div>` : '');
 
   const idleSection = idleJobs.length > 0 ? `
-    <details class="idle-group" ${idleSectionOpen ? 'open' : ''} ontoggle="toggleIdleSection(event)">
+    <details class="idle-group" ${idleSectionOpen ? 'open' : ''}>
       <summary>Idle CPUs (${idleJobs.length})</summary>
       <div class="grid">${idleJobs.map(renderCard).join('')}</div>
     </details>

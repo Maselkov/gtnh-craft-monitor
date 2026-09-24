@@ -276,7 +276,7 @@ let lastNetworkSort = null;
 
 function buildNetworkCellHtml(it, idx) {
   const icon = it.icon
-    ? `<img class="network-cell-icon" src="/icons?path=${encodeURIComponent(it.icon)}" alt="" loading="lazy" onerror="this.remove()">`
+    ? `<img class="network-cell-icon" src="/icons?path=${encodeURIComponent(it.icon)}" alt="" loading="lazy" data-remove-on-error>`
     : '';
   const qty = `<span class="network-cell-qty">${formatQty(it.size)}</span>`;
   // Blank Pattern icon (appliedenergistics2:item.ItemMultiMaterial
@@ -284,7 +284,7 @@ function buildNetworkCellHtml(it, idx) {
   // ANY craftable item regardless of current stock, matching how the
   // real AE2 terminal marks craftability.
   const patternBadge = it.isCraftable
-    ? `<img class="network-cell-pattern-badge" src="/icons?path=${encodeURIComponent(NETWORK_PATTERN_ICON)}" alt="" loading="lazy" onerror="this.remove()">`
+    ? `<img class="network-cell-pattern-badge" src="/icons?path=${encodeURIComponent(NETWORK_PATTERN_ICON)}" alt="" loading="lazy" data-remove-on-error>`
     : '';
   const isPinned = pinnedItemKeys.has(networkItemKey(it.mod, it.internal, it.damage, it.kind));
   const pinBadge = isPinned ? `<span class="network-cell-pin-badge">&#128204;</span>` : '';

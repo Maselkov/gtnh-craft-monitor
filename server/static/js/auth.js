@@ -78,7 +78,7 @@ async function refreshAdminUsers() {
     const tokens = (user.tokens || []).map((token) => `
       <div class="admin-token-row">
         <span class="admin-token-id">${escapeHtml(token.id)}</span>
-        <button class="admin-revoke-btn" onclick="revokeAdminToken(${jsArg(token.id)})">Revoke</button>
+        <button class="admin-revoke-btn" data-action="revoke-token" data-token-id="${escapeHtml(token.id)}">Revoke</button>
       </div>`).join('') || '<div class="admin-token-row">No active tokens</div>';
     return `<div class="admin-user-row">
       <div>
@@ -87,12 +87,21 @@ async function refreshAdminUsers() {
       </div>
       <div class="admin-user-actions">
         <span class="admin-user-role">${escapeHtml(user.role)}${user.disabled_at ? ' (disabled)' : ''}</span>
-        <button class="admin-history-btn" onclick="openUserHistory(${jsArg(user.id)})">History</button>
-        <button class="admin-history-btn" onclick="regenerateAdminToken(${jsArg(user.id)}, ${jsArg(user.display_name)})">New token</button>
-        <button class="admin-revoke-btn" onclick="deleteAdminUser(${jsArg(user.id)}, ${jsArg(user.display_name)})">Delete</button>
+        <button class="admin-history-btn" data-action="user-history" data-user-id="${escapeHtml(user.id)}">History</button>
+        <button class="admin-history-btn" data-action="regenerate-token" data-user-id="${escapeHtml(user.id)}" data-display-name="${escapeHtml(user.display_name)}">New token</button>
+        <button class="admin-revoke-btn" data-action="delete-user" data-user-id="${escapeHtml(user.id)}" data-display-name="${escapeHtml(user.display_name)}">Delete</button>
       </div>
     </div>`;
   }).join('') || '<div class="admin-user-row">No users yet.</div>';
+}
+
+function setupAdminActions() {
+  delegateActions(document.getElementById('adminUsersList'), {
+    'revoke-token': (el) => revokeAdminToken(el.dataset.tokenId),
+    'user-history': (el) => openUserHistory(el.dataset.userId),
+    'regenerate-token': (el) => regenerateAdminToken(el.dataset.userId, el.dataset.displayName),
+    'delete-user': (el) => deleteAdminUser(el.dataset.userId, el.dataset.displayName),
+  });
 }
 
 function closeUserHistoryModal() {

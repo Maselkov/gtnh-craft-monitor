@@ -556,7 +556,14 @@ Run the frontend tests (Node 22 or newer, no dependencies) from the repo root:
 node --test 'server/tests/js/*.test.js'
 ```
 
-GitHub Actions runs both test suites, a syntax check of every frontend
+Run the browser tests (Python with `server/requirements.txt`, Node 22+,
+and Chrome or Chromium - set `CHROME=/path/to/binary` if it isn't found):
+
+```bash
+node server/tests/e2e/run.mjs
+```
+
+GitHub Actions runs all three test suites, a syntax check of every frontend
 script, a Lua 5.3 syntax check of `oc/*.lua`, and a Docker build on every
 push and pull request (`.github/workflows/ci.yml`).
 Pushing a `v*` tag publishes the image to GHCR (`.github/workflows/publish.yml`).

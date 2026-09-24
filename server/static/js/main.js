@@ -1,6 +1,13 @@
 // Startup - must load last: every other script only declares
 // things, this one runs them.
 
+// Before anything renders: handlers for markup the render functions
+// rebuild via innerHTML.
+setupImageErrorRemoval();
+setupCraftsActions();
+setupAdminActions();
+setupCraftRequestActions();
+
 // Reflect whatever URL the page actually loaded on (/, /crafts,
 // /power, /network, or /network?item=...) rather than always
 // starting on the Crafts tab regardless of how it was linked to.
