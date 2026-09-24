@@ -3,20 +3,21 @@ import time
 import pytest
 
 import app as app_module
+from gcm import auth, config, db
 
 
 def test_access_token_resolves_stable_user_id():
-    conn = app_module._craft_db()
+    conn = db.craft_db()
     try:
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) "
             "VALUES (?, ?, ?, ?)",
             ("usr_alice", "Alice", "operator", time.time()),
         )
-        token = app_module._create_access_token(conn, "usr_alice")
+        token = auth.create_access_token(conn, "usr_alice")
         conn.commit()
 
-        identity = app_module._find_access_token(conn, token)
+        identity = auth.find_access_token(conn, token)
     finally:
         conn.close()
 
@@ -29,23 +30,23 @@ def test_access_token_resolves_stable_user_id():
 
 
 def test_invalid_access_token_is_rejected():
-    conn = app_module._craft_db()
+    conn = db.craft_db()
     try:
         token = "gcm_tok_unknown_not-a-real-secret"
-        assert app_module._find_access_token(conn, token) is None
+        assert auth.find_access_token(conn, token) is None
     finally:
         conn.close()
 
 
 def test_login_exchanges_access_token_for_session_cookie(client):
-    conn = app_module._craft_db()
+    conn = db.craft_db()
     try:
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) "
             "VALUES (?, ?, ?, ?)",
             ("usr_alice", "Alice", "operator", time.time()),
         )
-        token = app_module._create_access_token(conn, "usr_alice")
+        token = auth.create_access_token(conn, "usr_alice")
         conn.commit()
     finally:
         conn.close()
@@ -70,20 +71,20 @@ def test_spoofed_user_id_header_does_not_authenticate(client):
 
 
 def test_disabling_a_user_invalidates_existing_sessions(client):
-    conn = app_module._craft_db()
+    conn = db.craft_db()
     try:
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) "
             "VALUES (?, ?, ?, ?)",
             ("usr_alice", "Alice", "viewer", time.time()),
         )
-        token = app_module._create_access_token(conn, "usr_alice")
+        token = auth.create_access_token(conn, "usr_alice")
         conn.commit()
     finally:
         conn.close()
 
     assert client.post("/api/auth/login", json={"token": token}).status_code == 200
-    conn = app_module._craft_db()
+    conn = db.craft_db()
     try:
         conn.execute(
             "UPDATE users SET disabled_at = ? WHERE id = ?", (time.time(), "usr_alice")
@@ -96,14 +97,14 @@ def test_disabling_a_user_invalidates_existing_sessions(client):
 
 
 def test_only_admins_can_list_or_create_users(client):
-    conn = app_module._craft_db()
+    conn = db.craft_db()
     try:
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) "
             "VALUES (?, ?, ?, ?)",
             ("usr_viewer", "Viewer", "viewer", time.time()),
         )
-        viewer_token = app_module._create_access_token(conn, "usr_viewer")
+        viewer_token = auth.create_access_token(conn, "usr_viewer")
         conn.commit()
     finally:
         conn.close()
@@ -119,14 +120,14 @@ def test_only_admins_can_list_or_create_users(client):
         == 403
     )
 
-    conn = app_module._craft_db()
+    conn = db.craft_db()
     try:
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) "
             "VALUES (?, ?, ?, ?)",
             ("usr_admin", "Admin", "admin", time.time()),
         )
-        admin_token = app_module._create_access_token(conn, "usr_admin")
+        admin_token = auth.create_access_token(conn, "usr_admin")
         conn.commit()
     finally:
         conn.close()
@@ -152,18 +153,18 @@ def test_only_admins_can_list_or_create_users(client):
 
 def test_initial_admin_is_required_for_direct_server_startup():
     with pytest.raises(RuntimeError, match="No users exist"):
-        app_module._require_initial_admin()
+        auth.require_initial_admin()
 
 
 def test_bootstrap_token_must_be_rotated_before_admin_actions(client):
-    conn = app_module._craft_db()
+    conn = db.craft_db()
     try:
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) "
             "VALUES (?, ?, ?, ?)",
             ("usr_admin", "Admin", "admin", time.time()),
         )
-        bootstrap_token = app_module._create_access_token(
+        bootstrap_token = auth.create_access_token(
             conn, "usr_admin", is_bootstrap=True
         )
         conn.commit()
@@ -190,24 +191,24 @@ def test_bootstrap_token_must_be_rotated_before_admin_actions(client):
 
 
 def test_existing_bootstrap_session_is_revoked_during_startup_recognition(monkeypatch):
-    conn = app_module._craft_db()
+    conn = db.craft_db()
     try:
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) "
             "VALUES (?, ?, ?, ?)",
             ("usr_admin", "Admin", "admin", time.time()),
         )
-        bootstrap_token = app_module._create_access_token(conn, "usr_admin")
-        access_token = app_module._find_access_token(conn, bootstrap_token)
-        app_module._create_session(conn, access_token)
+        bootstrap_token = auth.create_access_token(conn, "usr_admin")
+        access_token = auth.find_access_token(conn, bootstrap_token)
+        auth.create_session(conn, access_token)
         conn.commit()
     finally:
         conn.close()
 
     monkeypatch.setenv("GCM_BOOTSTRAP_ADMIN_TOKEN", bootstrap_token)
-    app_module._bootstrap_admin()
+    auth.bootstrap_admin()
 
-    conn = app_module._craft_db()
+    conn = db.craft_db()
     try:
         token_row = conn.execute(
             "SELECT is_bootstrap FROM access_tokens WHERE id = ?", (access_token["id"],)
@@ -224,26 +225,26 @@ def test_existing_bootstrap_session_is_revoked_during_startup_recognition(monkey
 
 
 def test_default_or_short_service_key_is_rejected(monkeypatch):
-    monkeypatch.setattr(app_module, "API_KEY", "change-me")
+    monkeypatch.setattr(config, "API_KEY", "change-me")
     with pytest.raises(RuntimeError, match="API_KEY must be a unique secret"):
-        app_module._require_runtime_secrets()
+        config.require_runtime_secrets()
 
-    monkeypatch.setattr(app_module, "API_KEY", "too-short")
+    monkeypatch.setattr(config, "API_KEY", "too-short")
     with pytest.raises(RuntimeError, match="API_KEY must be a unique secret"):
-        app_module._require_runtime_secrets()
+        config.require_runtime_secrets()
 
 
 def test_debug_dumps_require_an_operator_session(client):
     assert client.get("/api/debug").status_code == 403
 
-    conn = app_module._craft_db()
+    conn = db.craft_db()
     try:
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) "
             "VALUES (?, ?, ?, ?)",
             ("usr_operator", "Operator", "operator", time.time()),
         )
-        token = app_module._create_access_token(conn, "usr_operator")
+        token = auth.create_access_token(conn, "usr_operator")
         conn.commit()
     finally:
         conn.close()
@@ -253,14 +254,14 @@ def test_debug_dumps_require_an_operator_session(client):
 
 
 def test_cross_origin_session_writes_are_rejected(client):
-    conn = app_module._craft_db()
+    conn = db.craft_db()
     try:
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) "
             "VALUES (?, ?, ?, ?)",
             ("usr_alice", "Alice", "viewer", time.time()),
         )
-        token = app_module._create_access_token(conn, "usr_alice")
+        token = auth.create_access_token(conn, "usr_alice")
         conn.commit()
     finally:
         conn.close()
@@ -313,7 +314,7 @@ def test_trusted_proxy_can_supply_forwarded_host(client, monkeypatch):
 
 
 def test_admin_can_revoke_a_token_and_its_sessions(client):
-    conn = app_module._craft_db()
+    conn = db.craft_db()
     try:
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) "
@@ -325,9 +326,9 @@ def test_admin_can_revoke_a_token_and_its_sessions(client):
             "VALUES (?, ?, ?, ?)",
             ("usr_operator", "Operator", "operator", time.time()),
         )
-        admin_token = app_module._create_access_token(conn, "usr_admin")
-        operator_token = app_module._create_access_token(conn, "usr_operator")
-        operator_token_id = app_module._find_access_token(conn, operator_token)["id"]
+        admin_token = auth.create_access_token(conn, "usr_admin")
+        operator_token = auth.create_access_token(conn, "usr_operator")
+        operator_token_id = auth.find_access_token(conn, operator_token)["id"]
         conn.commit()
     finally:
         conn.close()
@@ -357,7 +358,7 @@ def test_admin_can_revoke_a_token_and_its_sessions(client):
 
 
 def test_admin_can_view_user_action_history(client):
-    conn = app_module._craft_db()
+    conn = db.craft_db()
     try:
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) "
@@ -384,7 +385,7 @@ def test_admin_can_view_user_action_history(client):
                 time.time(),
             ),
         )
-        admin_token = app_module._create_access_token(conn, "usr_admin")
+        admin_token = auth.create_access_token(conn, "usr_admin")
         conn.commit()
     finally:
         conn.close()
@@ -400,7 +401,7 @@ def test_admin_can_view_user_action_history(client):
 
 
 def test_revoked_tokens_are_not_listed(client):
-    conn = app_module._craft_db()
+    conn = db.craft_db()
     try:
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) "
@@ -412,9 +413,9 @@ def test_revoked_tokens_are_not_listed(client):
             "VALUES (?, ?, ?, ?)",
             ("usr_alice", "Alice", "operator", time.time()),
         )
-        admin_token = app_module._create_access_token(conn, "usr_admin")
-        alice_token = app_module._create_access_token(conn, "usr_alice")
-        alice_token_id = app_module._find_access_token(conn, alice_token)["id"]
+        admin_token = auth.create_access_token(conn, "usr_admin")
+        alice_token = auth.create_access_token(conn, "usr_alice")
+        alice_token_id = auth.find_access_token(conn, alice_token)["id"]
         conn.commit()
     finally:
         conn.close()
@@ -430,7 +431,7 @@ def test_revoked_tokens_are_not_listed(client):
 
 
 def test_admin_can_delete_a_user_and_their_credentials(client):
-    conn = app_module._craft_db()
+    conn = db.craft_db()
     try:
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) "
@@ -442,8 +443,8 @@ def test_admin_can_delete_a_user_and_their_credentials(client):
             "VALUES (?, ?, ?, ?)",
             ("usr_alice", "Alice", "operator", time.time()),
         )
-        admin_token = app_module._create_access_token(conn, "usr_admin")
-        alice_token = app_module._create_access_token(conn, "usr_alice")
+        admin_token = auth.create_access_token(conn, "usr_admin")
+        alice_token = auth.create_access_token(conn, "usr_alice")
         conn.commit()
     finally:
         conn.close()
@@ -470,14 +471,14 @@ def test_admin_can_delete_a_user_and_their_credentials(client):
 
 
 def test_admin_cannot_delete_their_own_account(client):
-    conn = app_module._craft_db()
+    conn = db.craft_db()
     try:
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) "
             "VALUES (?, ?, ?, ?)",
             ("usr_admin", "Admin", "admin", time.time()),
         )
-        admin_token = app_module._create_access_token(conn, "usr_admin")
+        admin_token = auth.create_access_token(conn, "usr_admin")
         conn.commit()
     finally:
         conn.close()
@@ -490,7 +491,7 @@ def test_admin_cannot_delete_their_own_account(client):
 
 
 def test_admin_can_regenerate_a_users_token(client):
-    conn = app_module._craft_db()
+    conn = db.craft_db()
     try:
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) "
@@ -502,8 +503,8 @@ def test_admin_can_regenerate_a_users_token(client):
             "VALUES (?, ?, ?, ?)",
             ("usr_alice", "Alice", "operator", time.time()),
         )
-        admin_token = app_module._create_access_token(conn, "usr_admin")
-        old_token = app_module._create_access_token(conn, "usr_alice")
+        admin_token = auth.create_access_token(conn, "usr_admin")
+        old_token = auth.create_access_token(conn, "usr_alice")
         conn.commit()
     finally:
         conn.close()
@@ -540,14 +541,14 @@ def test_admin_can_regenerate_a_users_token(client):
 
 
 def _login_new_admin(client):
-    conn = app_module._craft_db()
+    conn = db.craft_db()
     try:
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) "
             "VALUES (?, ?, ?, ?)",
             ("usr_admin", "Admin", "admin", time.time()),
         )
-        token = app_module._create_access_token(conn, "usr_admin")
+        token = auth.create_access_token(conn, "usr_admin")
         conn.commit()
     finally:
         conn.close()
@@ -574,14 +575,14 @@ def test_cross_origin_token_revoke_is_rejected(client):
 
 
 def test_cli_new_token_replaces_a_users_tokens(client, capsys):
-    conn = app_module._craft_db()
+    conn = db.craft_db()
     try:
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) "
             "VALUES (?, ?, ?, ?)",
             ("usr_admin", "Admin", "admin", time.time()),
         )
-        old_token = app_module._create_access_token(conn, "usr_admin")
+        old_token = auth.create_access_token(conn, "usr_admin")
         conn.commit()
     finally:
         conn.close()

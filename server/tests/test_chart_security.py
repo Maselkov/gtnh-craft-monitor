@@ -1,6 +1,6 @@
 from io import BytesIO
 
-import app as app_module
+from gcm import charts
 
 
 def test_power_chart_reuses_cached_png(client, monkeypatch):
@@ -11,7 +11,7 @@ def test_power_chart_reuses_cached_png(client, monkeypatch):
         render_count += 1
         return BytesIO(b"cached-chart")
 
-    monkeypatch.setattr(app_module, "_render_chart_png", render_chart)
+    monkeypatch.setattr(charts, "render_png", render_chart)
 
     first = client.get("/api/power/chart.png?range=day")
     second = client.get("/api/power/chart.png?range=day")
@@ -23,7 +23,7 @@ def test_power_chart_reuses_cached_png(client, monkeypatch):
 
 
 def test_chart_rate_limit_rejects_excess_requests(client, monkeypatch):
-    monkeypatch.setattr(app_module, "CHART_RATE_LIMIT_PER_MINUTE", 1)
+    monkeypatch.setattr(charts, "CHART_RATE_LIMIT_PER_MINUTE", 1)
 
     assert client.get("/api/power/chart.png").status_code == 200
     response = client.get("/api/power/chart.png")
@@ -33,7 +33,7 @@ def test_chart_rate_limit_rejects_excess_requests(client, monkeypatch):
 
 
 def test_chart_rate_limiter_caps_tracked_clients(client, monkeypatch):
-    monkeypatch.setattr(app_module, "CHART_MAX_TRACKED_CLIENTS", 2)
+    monkeypatch.setattr(charts, "CHART_MAX_TRACKED_CLIENTS", 2)
 
     for address in ("198.51.100.1", "198.51.100.2", "198.51.100.3"):
         response = client.get(
@@ -42,4 +42,4 @@ def test_chart_rate_limiter_caps_tracked_clients(client, monkeypatch):
         )
         assert response.status_code == 200
 
-    assert len(app_module._chart_request_times) == 2
+    assert len(charts._chart_request_times) == 2

@@ -1,3 +1,5 @@
+from gcm import db
+
 from conftest import login_as
 
 
@@ -107,7 +109,7 @@ class TestCancelLifecycle:
             json={"success": False, "reason": "already finished"},
             headers=api_headers,
         )
-        conn = __import__("app")._craft_db()
+        conn = db.craft_db()
         try:
             row = conn.execute(
                 "SELECT status, success, reason FROM craft_cancel_history "

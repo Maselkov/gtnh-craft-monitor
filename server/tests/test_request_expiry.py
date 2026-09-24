@@ -1,6 +1,7 @@
 import time
 
 import app as app_module
+from gcm import db
 from conftest import login_as
 
 
@@ -33,7 +34,7 @@ def age(record, seconds, *fields):
 
 
 def history_status(table, request_id):
-    conn = app_module._craft_db()
+    conn = db.craft_db()
     try:
         return conn.execute(
             f"SELECT status, reason FROM {table} WHERE request_id = ?", (request_id,)
@@ -110,7 +111,7 @@ class TestCancelExpiry:
 
 def test_login_prunes_expired_and_revoked_sessions(client):
     login_as(client, "usr_alice")
-    conn = app_module._craft_db()
+    conn = db.craft_db()
     try:
         conn.execute("UPDATE sessions SET expires_at = ?", (time.time() - 1,))
         conn.commit()
@@ -119,7 +120,7 @@ def test_login_prunes_expired_and_revoked_sessions(client):
 
     login_as(app_module.app.test_client(), "usr_alice")
 
-    conn = app_module._craft_db()
+    conn = db.craft_db()
     try:
         assert conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 1
     finally:
@@ -130,7 +131,7 @@ def test_startup_closes_request_history_left_open(client):
     submit_craft_request(client)
     app_module._close_orphaned_request_history()
 
-    conn = app_module._craft_db()
+    conn = db.craft_db()
     try:
         row = conn.execute(
             "SELECT status, reason FROM craft_request_history"

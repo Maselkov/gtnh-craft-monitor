@@ -39,6 +39,7 @@ _test_data_dir = tempfile.mkdtemp(prefix="gtnh_test_data_")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import app as app_module  # noqa: E402  (must come after the path setup above)
+from gcm import auth, config, db  # noqa: E402
 
 app_module.create_app(data_dir=_test_data_dir, api_key=TEST_API_KEY)
 
@@ -69,14 +70,14 @@ def api_headers(api_key):
 
 
 def login_as(client, user_id, role="viewer"):
-    conn = app_module._craft_db()
+    conn = db.craft_db()
     try:
         conn.execute(
             "INSERT OR IGNORE INTO users (id, display_name, role, created_at) "
             "VALUES (?, ?, ?, ?)",
             (user_id, user_id, role, time.time()),
         )
-        token = app_module._create_access_token(conn, user_id)
+        token = auth.create_access_token(conn, user_id)
         conn.commit()
     finally:
         conn.close()
@@ -94,9 +95,9 @@ def reset_state():
     # slate). Tables are read from sqlite_master so new ones are covered
     # automatically.
     for db_path in (
-        app_module.CRAFT_HISTORY_DB_PATH,
-        app_module.POWER_DB_PATH,
-        app_module.ITEM_HISTORY_DB_PATH,
+        config.CRAFT_HISTORY_DB_PATH,
+        config.POWER_DB_PATH,
+        config.ITEM_HISTORY_DB_PATH,
     ):
         conn = sqlite3.connect(db_path)
         try:

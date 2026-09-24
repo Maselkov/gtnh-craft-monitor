@@ -1,27 +1,28 @@
 import app as app_module
+from gcm import charts, db, icons
 
 
 class TestItemKey:
     def test_item_with_damage(self):
-        assert app_module._item_key("gregtech", "gt.blockmachines", 123, "item") == "gregtech|gt.blockmachines|123|item"
+        assert db.item_key("gregtech", "gt.blockmachines", 123, "item") == "gregtech|gt.blockmachines|123|item"
 
     def test_fluid_no_mod_no_damage(self):
         # Confirmed real shape from the Cryotheum investigation - mod and
         # damage are both None for a fluid, not empty string or 0.
-        assert app_module._item_key(None, "cryotheum", None, "fluid") == "|cryotheum||fluid"
+        assert db.item_key(None, "cryotheum", None, "fluid") == "|cryotheum||fluid"
 
     def test_damage_zero_is_not_the_same_as_damage_none(self):
         # damage=0 is a real, valid value (the common case for
         # non-variant items) and must not collapse to the same key as
         # damage=None (a fluid, or genuinely absent).
-        key_zero = app_module._item_key("minecraft", "stone", 0, "item")
-        key_none = app_module._item_key("minecraft", "stone", None, "item")
+        key_zero = db.item_key("minecraft", "stone", 0, "item")
+        key_none = db.item_key("minecraft", "stone", None, "item")
         assert key_zero != key_none
         assert key_zero == "minecraft|stone|0|item"
         assert key_none == "minecraft|stone||item"
 
     def test_missing_kind_defaults_to_item(self):
-        assert app_module._item_key("mod", "internal", 0, None) == "mod|internal|0|item"
+        assert db.item_key("mod", "internal", 0, None) == "mod|internal|0|item"
 
 
 class TestParseItemUrlPath:
@@ -50,26 +51,26 @@ class TestParseItemUrlPath:
 
 class TestFormatQtyPy:
     def test_thousands(self):
-        assert app_module._format_qty_py(1500) == "1.5k"
+        assert charts.format_qty(1500) == "1.5k"
 
     def test_millions(self):
-        assert app_module._format_qty_py(2_500_000) == "2.50M"
+        assert charts.format_qty(2_500_000) == "2.50M"
 
     def test_billions(self):
-        assert app_module._format_qty_py(3_000_000_000) == "3.00B"
+        assert charts.format_qty(3_000_000_000) == "3.00B"
 
     def test_trillions(self):
-        assert app_module._format_qty_py(4_000_000_000_000) == "4.00T"
+        assert charts.format_qty(4_000_000_000_000) == "4.00T"
 
     def test_small_numbers_unabbreviated(self):
-        assert app_module._format_qty_py(42) == "42"
+        assert charts.format_qty(42) == "42"
 
     def test_none_is_zero(self):
-        assert app_module._format_qty_py(None) == "0"
+        assert charts.format_qty(None) == "0"
 
     def test_negative_numbers(self):
         # Discharging power trend can genuinely be negative.
-        result = app_module._format_qty_py(-500)
+        result = charts.format_qty(-500)
         assert result.startswith("-")
 
 
@@ -113,31 +114,31 @@ class TestDownsampleSteps:
 
 class TestResolveIcon:
     def test_item_key_lookup(self, monkeypatch):
-        monkeypatch.setattr(app_module, "_icons_by_key", {"gregtech:gt.blockmachines:123": "path/to/icon.png"})
-        monkeypatch.setattr(app_module, "_fluids_by_key", {})
-        monkeypatch.setattr(app_module, "_icons_by_label", {})
-        result = app_module.resolve_icon("gregtech", "gt.blockmachines", 123, "Robot Arm")
+        monkeypatch.setattr(icons, "_icons_by_key", {"gregtech:gt.blockmachines:123": "path/to/icon.png"})
+        monkeypatch.setattr(icons, "_fluids_by_key", {})
+        monkeypatch.setattr(icons, "_icons_by_label", {})
+        result = icons.resolve_icon("gregtech", "gt.blockmachines", 123, "Robot Arm")
         assert result == "path/to/icon.png"
 
     def test_fluid_lookup_no_mod(self, monkeypatch):
         # Confirmed real shape: fluids resolve via fluids_by_key using
         # just the bare internal name, since mod is None for a fluid.
-        monkeypatch.setattr(app_module, "_icons_by_key", {})
-        monkeypatch.setattr(app_module, "_fluids_by_key", {"cryotheum": "path/to/cryotheum.png"})
-        monkeypatch.setattr(app_module, "_icons_by_label", {})
-        result = app_module.resolve_icon(None, "cryotheum", None, "Cryotheum")
+        monkeypatch.setattr(icons, "_icons_by_key", {})
+        monkeypatch.setattr(icons, "_fluids_by_key", {"cryotheum": "path/to/cryotheum.png"})
+        monkeypatch.setattr(icons, "_icons_by_label", {})
+        result = icons.resolve_icon(None, "cryotheum", None, "Cryotheum")
         assert result == "path/to/cryotheum.png"
 
     def test_falls_back_to_label(self, monkeypatch):
-        monkeypatch.setattr(app_module, "_icons_by_key", {})
-        monkeypatch.setattr(app_module, "_fluids_by_key", {})
-        monkeypatch.setattr(app_module, "_icons_by_label", {"Some Item": "path/to/fallback.png"})
-        result = app_module.resolve_icon("unknownmod", "unknown_internal", 0, "Some Item")
+        monkeypatch.setattr(icons, "_icons_by_key", {})
+        monkeypatch.setattr(icons, "_fluids_by_key", {})
+        monkeypatch.setattr(icons, "_icons_by_label", {"Some Item": "path/to/fallback.png"})
+        result = icons.resolve_icon("unknownmod", "unknown_internal", 0, "Some Item")
         assert result == "path/to/fallback.png"
 
     def test_no_match_returns_none(self, monkeypatch):
-        monkeypatch.setattr(app_module, "_icons_by_key", {})
-        monkeypatch.setattr(app_module, "_fluids_by_key", {})
-        monkeypatch.setattr(app_module, "_icons_by_label", {})
-        result = app_module.resolve_icon("x", "y", 0, "z")
+        monkeypatch.setattr(icons, "_icons_by_key", {})
+        monkeypatch.setattr(icons, "_fluids_by_key", {})
+        monkeypatch.setattr(icons, "_icons_by_label", {})
+        result = icons.resolve_icon("x", "y", 0, "z")
         assert result is None

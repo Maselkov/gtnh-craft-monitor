@@ -1,6 +1,7 @@
 import sqlite3
 
 import app as app_module
+from gcm import config, icons
 from conftest import login_as
 
 
@@ -90,7 +91,7 @@ class TestDuplicateItemKeyRegression:
         duplicate_b = dict(ITEM, size=250)
         run_scan(client, api_headers, [[duplicate_a], [duplicate_b]])
 
-        conn = sqlite3.connect(app_module.ITEM_HISTORY_DB_PATH)
+        conn = sqlite3.connect(config.ITEM_HISTORY_DB_PATH)
         try:
             rows = conn.execute("SELECT size FROM network_snapshot").fetchall()
         finally:
@@ -104,12 +105,11 @@ class TestSnapshotRestartRecovery:
         self, client, api_headers, monkeypatch
     ):
         monkeypatch.setattr(
-            app_module,
-            "_icons_by_key",
+            icons, "_icons_by_key",
             {"minecraft:iron_ingot:0": "item/minecraft/iron_ingot.png"},
         )
-        monkeypatch.setattr(app_module, "_fluids_by_key", {})
-        monkeypatch.setattr(app_module, "_icons_by_label", {})
+        monkeypatch.setattr(icons, "_fluids_by_key", {})
+        monkeypatch.setattr(icons, "_icons_by_label", {})
 
         craftable_item = dict(ITEM, isCraftable=True)
         run_scan(client, api_headers, [[craftable_item]])

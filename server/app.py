@@ -13,33 +13,19 @@ Or via Docker (see Dockerfile / docker-compose.yml in this project).
 
 import os
 import time
-import json
 import secrets
-import hashlib
-import hmac
 import ipaddress
 import uuid
-import zipfile
 import sqlite3
 import sys
 import threading
-from collections import OrderedDict, deque
-from datetime import datetime
 from html import escape as html_escape
-from io import BytesIO
 from urllib.parse import unquote
-
-import matplotlib
-
-matplotlib.use("Agg")  # no display in a container - must be set before
-# importing pyplot, or it tries (and fails) to
-# find a GUI backend
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-from matplotlib.ticker import FuncFormatter
 
 from flask import Flask, request, jsonify, Response, abort
 from werkzeug.middleware.proxy_fix import ProxyFix
+
+from gcm import auth, charts, config, db, icons
 
 app = Flask(__name__)
 
@@ -81,153 +67,29 @@ def _trusted_proxy_wsgi_app(environ, start_response):
 
 app.wsgi_app = _trusted_proxy_wsgi_app
 
-API_KEY = os.environ.get("API_KEY", "")
-STALE_AFTER_SECONDS = int(os.environ.get("STALE_AFTER_SECONDS", "30"))
-SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "1") != "0"
 app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024
 
 
-def _require_api_key():
-    supplied_key = request.headers.get("X-API-Key", "")
-    return bool(API_KEY) and hmac.compare_digest(supplied_key, API_KEY)
 
 
-def _require_runtime_secrets():
-    if len(API_KEY) < 32 or API_KEY == "change-me":
-        raise RuntimeError(
-            "API_KEY must be a unique secret of at least 32 characters. "
-            "Set it in .env before starting the server."
-        )
 
 
-# Set by _configure(), called from create_app(). Nothing here touches
-# the filesystem at import time.
-DATA_DIR = None
-ICONS_LOOKUP_PATH = None
-IMAGES_ZIP_PATH = None
-POWER_DB_PATH = None
-ITEM_HISTORY_DB_PATH = None
-CRAFT_HISTORY_DB_PATH = None
 
 
-def _configure(data_dir=None, api_key=None):
-    global API_KEY, DATA_DIR, ICONS_LOOKUP_PATH, IMAGES_ZIP_PATH
-    global POWER_DB_PATH, ITEM_HISTORY_DB_PATH, CRAFT_HISTORY_DB_PATH
-    global _images_zip, _images_zip_missing_logged
-    if api_key is not None:
-        API_KEY = api_key
-    DATA_DIR = data_dir or os.environ.get("DATA_DIR") or os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "data"
-    )
-    ICONS_LOOKUP_PATH = os.path.join(DATA_DIR, "icons_lookup.json")
-    IMAGES_ZIP_PATH = os.path.join(DATA_DIR, "images.zip")
-    POWER_DB_PATH = os.path.join(DATA_DIR, "power.db")
-    ITEM_HISTORY_DB_PATH = os.path.join(DATA_DIR, "item_history.db")
-    CRAFT_HISTORY_DB_PATH = os.path.join(DATA_DIR, "craft_history.db")
-    _images_zip = None
-    _images_zip_missing_logged = False
-
-# Built from a NESQL export (see oc/README notes). Two separate keyspaces:
-# - by_key: "modid:internalname:damage" -> image path, for ordinary items.
-#   AE2 gives us `name` as "modid:internalname" for these (colon present).
-# - fluids_by_key: raw Forge fluid registry name -> image path. Confirmed
-#   empirically: GT/GTNH's Fluid Discretizer pseudo-items have a `name`
-#   with NO colon at all - it's just the bare fluid registry name itself
-#   (e.g. name="molten.mutatedlivingsolder", no mod prefix, no NBT tag
-#   involved despite that being the original assumption). Forge fluid
-#   names are globally unique, so no further disambiguation is needed.
-# by_label is the weakest fallback for either case - plain item labels
-# collide across mods ~8% of the time, so only used when nothing else matched.
-_icons_by_key = {}
-_icons_by_label = {}
-_fluids_by_key = {}
 
 
-def _load_icon_lookup():
-    global _icons_by_key, _icons_by_label, _fluids_by_key
-    icon_data = {}
-    if os.path.exists(ICONS_LOOKUP_PATH):
-        with open(ICONS_LOOKUP_PATH, "r", encoding="utf-8") as f:
-            icon_data = json.load(f)
-    _icons_by_key = icon_data.get("by_key", {})
-    _icons_by_label = icon_data.get("by_label", {})
-    _fluids_by_key = icon_data.get("fluids_by_key", {})
-
-_images_zip = None
-_images_zip_missing_logged = False
-_zip_lock = threading.Lock()
 
 
-def _get_images_zip():
-    global _images_zip, _images_zip_missing_logged
-    if _images_zip is not None:
-        return _images_zip
-    with _zip_lock:
-        if _images_zip is None:
-            if os.path.exists(IMAGES_ZIP_PATH):
-                _images_zip = zipfile.ZipFile(IMAGES_ZIP_PATH, "r")
-            elif not _images_zip_missing_logged:
-                print(
-                    f"[icons] {IMAGES_ZIP_PATH} not found - icons will be blank until it's added."
-                )
-                _images_zip_missing_logged = True
-    return _images_zip
 
 
-def _damage_str(damage):
-    if damage is None:
-        return None
-    if isinstance(damage, float) and damage.is_integer():
-        return str(int(damage))
-    return str(damage)
 
 
-def resolve_icon(mod, internal, damage, label):
-    """Returns the image path inside images.zip for an item or fluid, or None."""
-    if mod and internal:
-        dmg = _damage_str(damage)
-        if dmg is not None:
-            path = _icons_by_key.get(f"{mod}:{internal}:{dmg}")
-            if path:
-                return path
-    elif internal:
-        # No mod prefix at all in `name` -> treat the whole thing as a
-        # bare fluid registry name (see comment above the lookup tables).
-        path = _fluids_by_key.get(internal)
-        if path:
-            return path
-    if label:
-        return _icons_by_label.get(label)
-    return None
 
 
-def _attach_item_icons(items):
-    for item in items or []:
-        icon = resolve_icon(
-            item.get("mod"), item.get("internal"), item.get("damage"), item.get("name")
-        )
-        if icon:
-            item["icon"] = icon
-    return items
 
 
-def _attach_job_icons(jobs):
-    # Resolved once here, at ingestion, rather than on every /api/crafts
-    # poll - the lookup table is static, no point redoing the work every
-    # 3s for however many browser tabs happen to be open.
-    for job in jobs or []:
-        icon = resolve_icon(
-            job.get("final_output_mod"),
-            job.get("final_output_internal"),
-            job.get("final_output_damage"),
-            job.get("final_output"),
-        )
-        if icon:
-            job["final_output_icon"] = icon
-        _attach_item_icons(job.get("active"))
-        _attach_item_icons(job.get("pending"))
-        _attach_item_icons(job.get("stored"))
-    return jobs
+
+
 
 
 _lock = threading.Lock()
@@ -288,7 +150,7 @@ _network_state = {
 
 @app.route("/api/network/scan/start", methods=["POST"])
 def network_scan_start():
-    if not _require_api_key():
+    if not auth.require_api_key():
         return jsonify({"error": "unauthorized"}), 401
     with _network_lock:
         _network_buffer.clear()
@@ -310,12 +172,12 @@ def _check_scan_token(payload):
 
 @app.route("/api/network/scan/batch", methods=["POST"])
 def network_scan_batch():
-    if not _require_api_key():
+    if not auth.require_api_key():
         return jsonify({"error": "unauthorized"}), 401
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
         return jsonify({"error": "invalid payload"}), 400
-    items = _attach_item_icons(payload.get("items", []))
+    items = icons.attach_item_icons(payload.get("items", []))
     with _network_lock:
         # See network_scan_finish() for the full reasoning - this batch
         # only gets accepted if it actually belongs to the scan this
@@ -347,7 +209,7 @@ def network_scan_batch():
 
 @app.route("/api/network/scan/finish", methods=["POST"])
 def network_scan_finish():
-    if not _require_api_key():
+    if not auth.require_api_key():
         return jsonify({"error": "unauthorized"}), 401
     payload = request.get_json(silent=True) or {}
     with _network_lock:
@@ -614,10 +476,10 @@ _craft_requests = CommandQueue(
 
 @app.route("/api/craft/request", methods=["POST"])
 def craft_request_post():
-    user_id = _require_user_id()
+    user_id = auth.require_user_id()
     if not user_id:
         return jsonify({"error": "authentication required"}), 401
-    if not _is_operator(_session_user()):
+    if not auth.is_operator(auth.session_user()):
         return jsonify({"error": "operator access required"}), 403
 
     payload = request.get_json(silent=True) or {}
@@ -635,7 +497,7 @@ def craft_request_post():
     if kind not in ("item", "fluid"):
         return jsonify({"error": "kind must be item or fluid"}), 400
 
-    icon = resolve_icon(mod, internal, damage, label)
+    icon = icons.resolve_icon(mod, internal, damage, label)
     created_at = time.time()
 
     req_id = _craft_requests.add(
@@ -667,7 +529,7 @@ def craft_request_post():
 
 @app.route("/api/craft/requests", methods=["GET"])
 def craft_requests_get():
-    user_id = _require_user_id()
+    user_id = auth.require_user_id()
     if not user_id:
         return jsonify({"error": "authentication required"}), 401
     # "accepted" requests aren't returned here at all - the moment one
@@ -683,7 +545,7 @@ def craft_requests_get():
 
 @app.route("/api/craft/requests/<int:req_id>/dismiss", methods=["POST"])
 def craft_request_dismiss(req_id):
-    user_id = _require_user_id()
+    user_id = auth.require_user_id()
     if not user_id:
         return jsonify({"error": "authentication required"}), 401
     with _craft_requests.lock:
@@ -696,7 +558,7 @@ def craft_request_dismiss(req_id):
 @app.route("/api/craft/requests/pending", methods=["GET"])
 def craft_requests_pending():
     # Lua polling for work - every user's pending requests at once.
-    if not _require_api_key():
+    if not auth.require_api_key():
         return jsonify({"error": "unauthorized"}), 401
     return jsonify({"requests": _craft_requests.claim_pending()})
 
@@ -709,7 +571,7 @@ def _create_pin_bypassing_busy_check(user_id, cpu_name):
     # than that next regular poll lands. The trust here comes directly
     # from Lua's own confirmation that it just watched this CPU get
     # assigned, not from re-deriving it against a possibly-stale cache.
-    conn = _craft_db()
+    conn = db.craft_db()
     try:
         conn.execute(
             "INSERT OR IGNORE INTO user_pins (user_id, cpu_name, pinned_at) VALUES (?, ?, ?)",
@@ -722,7 +584,7 @@ def _create_pin_bypassing_busy_check(user_id, cpu_name):
 
 @app.route("/api/craft/requests/<int:req_id>/result", methods=["POST"])
 def craft_request_result(req_id):
-    if not _require_api_key():
+    if not auth.require_api_key():
         return jsonify({"error": "unauthorized"}), 401
     payload = request.get_json(silent=True) or {}
     status = payload.get("status")
@@ -805,10 +667,10 @@ _cancel_requests = CommandQueue(
 
 @app.route("/api/craft/cancel", methods=["POST"])
 def craft_cancel_post():
-    user_id = _require_user_id()
+    user_id = auth.require_user_id()
     if not user_id:
         return jsonify({"error": "authentication required"}), 401
-    if not _is_operator(_session_user()):
+    if not auth.is_operator(auth.session_user()):
         return jsonify({"error": "operator access required"}), 403
 
     payload = request.get_json(silent=True) or {}
@@ -845,7 +707,7 @@ def craft_cancel_post():
 
 @app.route("/api/craft/cancel/<int:req_id>", methods=["GET"])
 def craft_cancel_get(req_id):
-    user_id = _require_user_id()
+    user_id = auth.require_user_id()
     if not user_id:
         return jsonify({"error": "authentication required"}), 401
     found = _cancel_requests.select(
@@ -858,14 +720,14 @@ def craft_cancel_get(req_id):
 
 @app.route("/api/craft/cancel/pending", methods=["GET"])
 def craft_cancel_pending():
-    if not _require_api_key():
+    if not auth.require_api_key():
         return jsonify({"error": "unauthorized"}), 401
     return jsonify({"requests": _cancel_requests.claim_pending()})
 
 
 @app.route("/api/craft/cancel/<int:req_id>/result", methods=["POST"])
 def craft_cancel_result(req_id):
-    if not _require_api_key():
+    if not auth.require_api_key():
         return jsonify({"error": "unauthorized"}), 401
     payload = request.get_json(silent=True) or {}
     success = bool(payload.get("success"))
@@ -908,19 +770,14 @@ CRAFT_EVENT_FINISHED_THRESHOLD = 99  # progress_percent >= this counts as "finis
 COMPLETIONS_MAX_AGE_SECONDS = (
     30 * 86400
 )  # user_completions rows older than this get pruned
-SESSION_LIFETIME_SECONDS = int(
-    os.environ.get("SESSION_LIFETIME_SECONDS", str(7 * 86400))
-)
 
 
-def _craft_db():
-    return sqlite3.connect(CRAFT_HISTORY_DB_PATH, timeout=10)
 
 
 def _record_craft_request_history(
     request_id, user_id, label, mod, internal, damage, amount, kind, created_at
 ):
-    conn = _craft_db()
+    conn = db.craft_db()
     try:
         conn.execute(
             "INSERT INTO craft_request_history "
@@ -944,7 +801,7 @@ def _record_craft_request_history(
 
 
 def _update_craft_request_history(request_id, status, reason, cpu_name):
-    conn = _craft_db()
+    conn = db.craft_db()
     try:
         conn.execute(
             "UPDATE craft_request_history "
@@ -958,7 +815,7 @@ def _update_craft_request_history(request_id, status, reason, cpu_name):
 
 
 def _record_craft_cancel_history(request_id, user_id, cpu_name, created_at):
-    conn = _craft_db()
+    conn = db.craft_db()
     try:
         conn.execute(
             "INSERT INTO craft_cancel_history "
@@ -972,7 +829,7 @@ def _record_craft_cancel_history(request_id, user_id, cpu_name, created_at):
 
 
 def _update_craft_cancel_history(request_id, success, reason):
-    conn = _craft_db()
+    conn = db.craft_db()
     try:
         conn.execute(
             "UPDATE craft_cancel_history "
@@ -985,280 +842,32 @@ def _update_craft_cancel_history(request_id, success, reason):
         conn.close()
 
 
-def _hash_secret(secret):
-    return hashlib.sha256(secret.encode("utf-8")).hexdigest()
-
-
-def _parse_access_token(token):
-    try:
-        prefix, token_id, secret = token.split("_", 2)
-    except ValueError:
-        return None
-    if prefix != "gcm" or not token_id or not secret:
-        return None
-    return token_id, secret
-
-
-def _create_access_token(conn, user_id, is_bootstrap=False):
-    token_id = f"tok-{secrets.token_hex(12)}"
-    secret = secrets.token_urlsafe(32)
-    conn.execute(
-        "INSERT INTO access_tokens "
-        "(id, user_id, secret_hash, created_at, is_bootstrap) VALUES (?, ?, ?, ?, ?)",
-        (token_id, user_id, _hash_secret(secret), time.time(), int(is_bootstrap)),
-    )
-    return f"gcm_{token_id}_{secret}"
-
-
-def _find_access_token(conn, token):
-    parsed = _parse_access_token(token)
-    if not parsed:
-        return None
-    token_id, secret = parsed
-    row = conn.execute(
-        "SELECT id, user_id, secret_hash, revoked_at, is_bootstrap "
-        "FROM access_tokens WHERE id = ?",
-        (token_id,),
-    ).fetchone()
-    if (
-        not row
-        or row[3] is not None
-        or not hmac.compare_digest(row[2], _hash_secret(secret))
-    ):
-        return None
-    return {"id": row[0], "user_id": row[1], "is_bootstrap": bool(row[4])}
-
-
-def _create_session(conn, access_token):
-    session_token = secrets.token_urlsafe(32)
-    now = time.time()
-    conn.execute(
-        "INSERT INTO sessions "
-        "(id, user_id, token_hash, access_token_id, must_rotate_bootstrap, created_at, expires_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (
-            f"ses_{uuid.uuid4().hex}",
-            access_token["user_id"],
-            _hash_secret(session_token),
-            access_token["id"],
-            int(access_token["is_bootstrap"]),
-            now,
-            now + SESSION_LIFETIME_SECONDS,
-        ),
-    )
-    return session_token
-
-
-def _session_user():
-    session_token = request.cookies.get("gcm_session")
-    if not session_token:
-        return None
-    conn = _craft_db()
-    try:
-        row = conn.execute(
-            "SELECT users.id, users.display_name, users.role, sessions.id, "
-            "sessions.access_token_id, sessions.must_rotate_bootstrap FROM sessions "
-            "JOIN users ON users.id = sessions.user_id "
-            "WHERE sessions.token_hash = ? AND sessions.revoked_at IS NULL "
-            "AND sessions.expires_at > ? AND users.disabled_at IS NULL",
-            (_hash_secret(session_token), time.time()),
-        ).fetchone()
-    finally:
-        conn.close()
-    if not row:
-        return None
-    return {
-        "id": row[0],
-        "display_name": row[1],
-        "role": row[2],
-        "session_id": row[3],
-        "access_token_id": row[4],
-        "must_rotate_bootstrap": bool(row[5]),
-    }
-
-
-def _is_admin(user):
-    return user is not None and user["role"] == "admin"
-
-
-def _is_operator(user):
-    return user is not None and user["role"] in ("operator", "admin")
-
-
-def _init_craft_db():
-    conn = _craft_db()
-    try:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id TEXT PRIMARY KEY,
-                display_name TEXT NOT NULL UNIQUE,
-                role TEXT NOT NULL CHECK (role IN ('viewer', 'operator', 'admin')),
-                created_at REAL NOT NULL,
-                disabled_at REAL
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS access_tokens (
-                id TEXT PRIMARY KEY,
-                user_id TEXT NOT NULL REFERENCES users(id),
-                secret_hash TEXT NOT NULL,
-                created_at REAL NOT NULL,
-                last_used_at REAL,
-                revoked_at REAL,
-                is_bootstrap INTEGER NOT NULL DEFAULT 0
-            )
-        """)
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_access_tokens_user ON access_tokens (user_id)"
-        )
-        token_columns = {
-            row[1] for row in conn.execute("PRAGMA table_info(access_tokens)")
-        }
-        if "is_bootstrap" not in token_columns:
-            conn.execute(
-                "ALTER TABLE access_tokens ADD COLUMN is_bootstrap INTEGER NOT NULL DEFAULT 0"
-            )
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS sessions (
-                id TEXT PRIMARY KEY,
-                user_id TEXT NOT NULL REFERENCES users(id),
-                token_hash TEXT NOT NULL UNIQUE,
-                access_token_id TEXT,
-                must_rotate_bootstrap INTEGER NOT NULL DEFAULT 0,
-                created_at REAL NOT NULL,
-                expires_at REAL NOT NULL,
-                revoked_at REAL
-            )
-        """)
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions (user_id)"
-        )
-        session_columns = {
-            row[1] for row in conn.execute("PRAGMA table_info(sessions)")
-        }
-        if "access_token_id" not in session_columns:
-            conn.execute("ALTER TABLE sessions ADD COLUMN access_token_id TEXT")
-        if "must_rotate_bootstrap" not in session_columns:
-            conn.execute(
-                "ALTER TABLE sessions ADD COLUMN must_rotate_bootstrap INTEGER NOT NULL DEFAULT 0"
-            )
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS craft_request_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                request_id INTEGER NOT NULL,
-                user_id TEXT NOT NULL,
-                label TEXT NOT NULL,
-                mod TEXT,
-                internal TEXT NOT NULL,
-                damage INTEGER,
-                amount REAL NOT NULL,
-                kind TEXT NOT NULL,
-                status TEXT NOT NULL,
-                reason TEXT,
-                cpu_name TEXT,
-                created_at REAL NOT NULL,
-                resolved_at REAL
-            )
-        """)
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_craft_request_history_user "
-            "ON craft_request_history (user_id, created_at DESC)"
-        )
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS craft_cancel_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                request_id INTEGER NOT NULL,
-                user_id TEXT NOT NULL,
-                cpu_name TEXT NOT NULL,
-                status TEXT NOT NULL,
-                success INTEGER,
-                reason TEXT,
-                created_at REAL NOT NULL,
-                resolved_at REAL
-            )
-        """)
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_craft_cancel_history_user "
-            "ON craft_cancel_history (user_id, created_at DESC)"
-        )
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS craft_events (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                cpu_name TEXT NOT NULL,
-                item_label TEXT,
-                item_icon TEXT,
-                status TEXT NOT NULL,
-                progress_at_end INTEGER,
-                occurred_at REAL NOT NULL
-            )
-        """)
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_craft_events_cpu ON craft_events (cpu_name)"
-        )
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS user_pins (
-                user_id TEXT NOT NULL,
-                cpu_name TEXT NOT NULL,
-                pinned_at REAL NOT NULL,
-                PRIMARY KEY (user_id, cpu_name)
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS user_completions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id TEXT NOT NULL,
-                craft_event_id INTEGER NOT NULL REFERENCES craft_events(id),
-                created_at REAL NOT NULL
-            )
-        """)
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_user_completions_user ON user_completions (user_id)"
-        )
-        # Leftover from the retired craft_keys.txt sync; request access is
-        # now decided by account roles.
-        conn.execute("DROP TABLE IF EXISTS craft_keys")
-        # Item pins (Network tab "favorite this item" feature) - a
-        # genuinely different concept from user_pins above (which tracks
-        # CPUs being watched for craft completion), so kept as its own
-        # table rather than overloading that one. item_key reuses the
-        # exact same mod|internal|damage|kind format _item_key() already
-        # builds for item history, rather than a composite primary key
-        # over individually-nullable columns (mod and damage can both be
-        # NULL for a fluid - standard SQL NULL semantics treat NULL as
-        # never equal to itself even in a primary key, so a plain
-        # composite key over nullable columns wouldn't reliably prevent
-        # duplicate rows for the same fluid).
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS user_item_pins (
-                user_id TEXT NOT NULL,
-                item_key TEXT NOT NULL,
-                mod TEXT,
-                internal TEXT NOT NULL,
-                damage INTEGER,
-                kind TEXT NOT NULL,
-                pinned_at REAL NOT NULL,
-                PRIMARY KEY (user_id, item_key)
-            )
-        """)
-        conn.commit()
-    finally:
-        conn.close()
 
 
 
-def _prune_sessions(conn):
-    # Expired and revoked sessions can never authenticate again.
-    conn.execute(
-        "DELETE FROM sessions WHERE expires_at <= ? OR revoked_at IS NOT NULL",
-        (time.time(),),
-    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def _close_orphaned_request_history():
     # Craft and cancel requests live in memory, so any history row still
     # open at startup belongs to a request the previous process lost.
     now = time.time()
-    conn = _craft_db()
+    conn = db.craft_db()
     try:
         conn.execute(
             "UPDATE craft_request_history SET status = 'failed', "
@@ -1270,74 +879,16 @@ def _close_orphaned_request_history():
             "reason = 'server restarted', resolved_at = ? WHERE resolved_at IS NULL",
             (now,),
         )
-        _prune_sessions(conn)
+        auth.prune_sessions(conn)
         conn.commit()
     finally:
         conn.close()
 
 
 
-def _bootstrap_admin():
-    token = os.environ.get("GCM_BOOTSTRAP_ADMIN_TOKEN", "").strip()
-    if not token:
-        return
-    parsed = _parse_access_token(token)
-    if not parsed:
-        raise RuntimeError(
-            "GCM_BOOTSTRAP_ADMIN_TOKEN must use the gcm_<token-id>_<secret> format"
-        )
-
-    conn = _craft_db()
-    try:
-        token_id, secret = parsed
-        user_count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-        if user_count:
-            row = conn.execute(
-                "SELECT user_id FROM access_tokens "
-                "WHERE id = ? AND secret_hash = ? AND revoked_at IS NULL",
-                (token_id, _hash_secret(secret)),
-            ).fetchone()
-            if row:
-                conn.execute(
-                    "UPDATE access_tokens SET is_bootstrap = 1 WHERE id = ?",
-                    (token_id,),
-                )
-                conn.execute(
-                    "UPDATE sessions SET revoked_at = ? "
-                    "WHERE user_id = ? AND revoked_at IS NULL",
-                    (time.time(), row[0]),
-                )
-            conn.commit()
-            return
-        user_id = f"usr_{uuid.uuid4().hex}"
-        now = time.time()
-        conn.execute(
-            "INSERT INTO users (id, display_name, role, created_at) VALUES (?, ?, 'admin', ?)",
-            (user_id, os.environ.get("GCM_BOOTSTRAP_ADMIN_NAME", "Administrator"), now),
-        )
-        conn.execute(
-            "INSERT INTO access_tokens "
-            "(id, user_id, secret_hash, created_at, is_bootstrap) VALUES (?, ?, ?, ?, 1)",
-            (token_id, user_id, _hash_secret(secret), now),
-        )
-        conn.commit()
-    finally:
-        conn.close()
 
 
 
-def _require_initial_admin():
-    conn = _craft_db()
-    try:
-        user_count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-    finally:
-        conn.close()
-    if user_count:
-        return
-    raise RuntimeError(
-        "No users exist. Create .env from .env.example, set "
-        "GCM_BOOTSTRAP_ADMIN_TOKEN, then restart the server."
-    )
 
 
 # In-memory only, deliberately not persisted. After a restart, a CPU
@@ -1370,7 +921,7 @@ def _process_craft_transitions(jobs):
     """Detects busy->idle transitions against our own server-side memory
     of each CPU's last state, logs a permanent craft_events row for each,
     and fans out + auto-unpins any users who had that CPU pinned."""
-    conn = _craft_db()
+    conn = db.craft_db()
     try:
         with _craft_tracking_lock:
             for job in jobs:
@@ -1435,14 +986,11 @@ def _prune_old_completions(conn):
     conn.execute("DELETE FROM user_completions WHERE created_at < ?", (cutoff,))
 
 
-def _require_user_id():
-    user = _session_user()
-    return user["id"] if user else None
 
 
 @app.route("/api/auth/session", methods=["GET"])
 def auth_session_get():
-    user = _session_user()
+    user = auth.session_user()
     if not user:
         return jsonify({"authenticated": False})
     return jsonify(
@@ -1461,9 +1009,9 @@ def auth_login_post():
     if not isinstance(token, str):
         return jsonify({"error": "invalid credentials"}), 401
 
-    conn = _craft_db()
+    conn = db.craft_db()
     try:
-        access_token = _find_access_token(conn, token.strip())
+        access_token = auth.find_access_token(conn, token.strip())
         if not access_token:
             return jsonify({"error": "invalid credentials"}), 401
         user = conn.execute(
@@ -1476,8 +1024,8 @@ def auth_login_post():
             "UPDATE access_tokens SET last_used_at = ? WHERE id = ?",
             (time.time(), access_token["id"]),
         )
-        _prune_sessions(conn)
-        session_token = _create_session(conn, access_token)
+        auth.prune_sessions(conn)
+        session_token = auth.create_session(conn, access_token)
         conn.commit()
     finally:
         conn.close()
@@ -1492,8 +1040,8 @@ def auth_login_post():
     response.set_cookie(
         "gcm_session",
         session_token,
-        max_age=SESSION_LIFETIME_SECONDS,
-        secure=SESSION_COOKIE_SECURE,
+        max_age=auth.SESSION_LIFETIME_SECONDS,
+        secure=config.SESSION_COOKIE_SECURE,
         httponly=True,
         samesite="Lax",
         path="/",
@@ -1505,11 +1053,11 @@ def auth_login_post():
 def auth_logout_post():
     session_token = request.cookies.get("gcm_session")
     if session_token:
-        conn = _craft_db()
+        conn = db.craft_db()
         try:
             conn.execute(
                 "UPDATE sessions SET revoked_at = ? WHERE token_hash = ?",
-                (time.time(), _hash_secret(session_token)),
+                (time.time(), auth.hash_secret(session_token)),
             )
             conn.commit()
         finally:
@@ -1521,14 +1069,14 @@ def auth_logout_post():
 
 @app.route("/api/auth/rotate-bootstrap", methods=["POST"])
 def auth_rotate_bootstrap_post():
-    user = _session_user()
-    if not user or not user["must_rotate_bootstrap"] or not _is_admin(user):
+    user = auth.session_user()
+    if not user or not user["must_rotate_bootstrap"] or not auth.is_admin(user):
         return jsonify({"error": "bootstrap rotation is not available"}), 403
 
-    conn = _craft_db()
+    conn = db.craft_db()
     try:
-        replacement_token = _create_access_token(conn, user["id"])
-        replacement_token_id, _ = _parse_access_token(replacement_token)
+        replacement_token = auth.create_access_token(conn, user["id"])
+        replacement_token_id, _ = auth.parse_access_token(replacement_token)
         now = time.time()
         conn.execute(
             "UPDATE access_tokens SET revoked_at = ? WHERE id = ? AND is_bootstrap = 1",
@@ -1594,7 +1142,7 @@ _SESSION_WRITE_ENDPOINTS = {
 def block_unrotated_bootstrap_sessions():
     if request.endpoint not in _BOOTSTRAP_BLOCKED_ENDPOINTS:
         return None
-    user = _session_user()
+    user = auth.session_user()
     if user and user["must_rotate_bootstrap"]:
         return jsonify({"error": "rotate the bootstrap token before continuing"}), 403
     return None
@@ -1604,7 +1152,7 @@ def block_unrotated_bootstrap_sessions():
 def reject_cross_origin_session_writes():
     if request.endpoint not in _SESSION_WRITE_ENDPOINTS:
         return None
-    if not _session_user():
+    if not auth.session_user():
         return None
     origin = request.headers.get("Origin")
     if origin and origin != request.host_url.rstrip("/"):
@@ -1637,8 +1185,8 @@ def add_browser_security_headers(response):
 
 @app.route("/api/admin/users", methods=["POST"])
 def admin_user_post():
-    admin = _session_user()
-    if not _is_admin(admin):
+    admin = auth.session_user()
+    if not auth.is_admin(admin):
         return jsonify({"error": "administrator access required"}), 403
     payload = request.get_json(silent=True) or {}
     display_name = (payload.get("display_name") or "").strip()
@@ -1651,14 +1199,14 @@ def admin_user_post():
             400,
         )
 
-    conn = _craft_db()
+    conn = db.craft_db()
     try:
         user_id = f"usr_{uuid.uuid4().hex}"
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) VALUES (?, ?, ?, ?)",
             (user_id, display_name, role, time.time()),
         )
-        token = _create_access_token(conn, user_id)
+        token = auth.create_access_token(conn, user_id)
         conn.commit()
     except sqlite3.IntegrityError:
         return jsonify({"error": "display name already exists"}), 409
@@ -1677,11 +1225,11 @@ def admin_user_post():
 
 @app.route("/api/admin/users", methods=["GET"])
 def admin_users_get():
-    admin = _session_user()
-    if not _is_admin(admin):
+    admin = auth.session_user()
+    if not auth.is_admin(admin):
         return jsonify({"error": "administrator access required"}), 403
 
-    conn = _craft_db()
+    conn = db.craft_db()
     try:
         rows = conn.execute(
             "SELECT users.id, users.display_name, users.role, users.created_at, "
@@ -1719,13 +1267,13 @@ def admin_users_get():
 
 @app.route("/api/admin/users/<user_id>", methods=["DELETE"])
 def admin_user_delete(user_id):
-    admin = _session_user()
-    if not _is_admin(admin):
+    admin = auth.session_user()
+    if not auth.is_admin(admin):
         return jsonify({"error": "administrator access required"}), 403
     if user_id == admin["id"]:
         return jsonify({"error": "cannot delete your own account"}), 400
 
-    conn = _craft_db()
+    conn = db.craft_db()
     try:
         cursor = conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
         if not cursor.rowcount:
@@ -1744,11 +1292,11 @@ def admin_user_delete(user_id):
 
 @app.route("/api/admin/users/<user_id>/tokens", methods=["POST"])
 def admin_user_token_regenerate(user_id):
-    admin = _session_user()
-    if not _is_admin(admin):
+    admin = auth.session_user()
+    if not auth.is_admin(admin):
         return jsonify({"error": "administrator access required"}), 403
 
-    conn = _craft_db()
+    conn = db.craft_db()
     try:
         user = conn.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
         if not user:
@@ -1764,7 +1312,7 @@ def admin_user_token_regenerate(user_id):
             "WHERE user_id = ? AND revoked_at IS NULL",
             (now, user_id),
         )
-        token = _create_access_token(conn, user_id)
+        token = auth.create_access_token(conn, user_id)
         conn.commit()
     finally:
         conn.close()
@@ -1773,11 +1321,11 @@ def admin_user_token_regenerate(user_id):
 
 @app.route("/api/admin/users/<user_id>/history", methods=["GET"])
 def admin_user_history_get(user_id):
-    admin = _session_user()
-    if not _is_admin(admin):
+    admin = auth.session_user()
+    if not auth.is_admin(admin):
         return jsonify({"error": "administrator access required"}), 403
 
-    conn = _craft_db()
+    conn = db.craft_db()
     try:
         user = conn.execute(
             "SELECT id, display_name FROM users WHERE id = ?", (user_id,)
@@ -1816,11 +1364,11 @@ def admin_user_history_get(user_id):
 
 @app.route("/api/admin/tokens/<token_id>/revoke", methods=["POST"])
 def admin_token_revoke_post(token_id):
-    admin = _session_user()
-    if not _is_admin(admin):
+    admin = auth.session_user()
+    if not auth.is_admin(admin):
         return jsonify({"error": "administrator access required"}), 403
 
-    conn = _craft_db()
+    conn = db.craft_db()
     try:
         now = time.time()
         cursor = conn.execute(
@@ -1851,7 +1399,7 @@ _DEBUG_DUMPS_KEEP = 10
 
 @app.route("/api/debug", methods=["POST"])
 def debug_post():
-    if not _require_api_key():
+    if not auth.require_api_key():
         return jsonify({"error": "unauthorized"}), 401
     payload = request.get_json(silent=True) or {}
     with _lock:
@@ -1868,7 +1416,7 @@ def debug_post():
 
 @app.route("/api/debug", methods=["GET"])
 def debug_get():
-    if not _is_operator(_session_user()):
+    if not auth.is_operator(auth.session_user()):
         return jsonify({"error": "operator access required"}), 403
     with _lock:
         if not _debug_dumps:
@@ -1882,14 +1430,14 @@ def debug_get():
 
 @app.route("/api/crafts", methods=["POST"])
 def crafts_post():
-    if not _require_api_key():
+    if not auth.require_api_key():
         return jsonify({"error": "unauthorized"}), 401
 
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
         return jsonify({"error": "invalid payload"}), 400
 
-    jobs = _attach_job_icons(payload.get("jobs", []))
+    jobs = icons.attach_job_icons(payload.get("jobs", []))
 
     with _lock:
         _state["jobs"] = jobs
@@ -1913,17 +1461,17 @@ def crafts_get():
                 "jobs": _state["jobs"],
                 "source": _state["source"],
                 "age_seconds": age,
-                "stale": age is None or age > STALE_AFTER_SECONDS,
+                "stale": age is None or age > config.STALE_AFTER_SECONDS,
             }
         )
 
 
 @app.route("/api/pins", methods=["GET"])
 def pins_get():
-    user_id = _require_user_id()
+    user_id = auth.require_user_id()
     if not user_id:
         return jsonify({"error": "authentication required"}), 401
-    conn = _craft_db()
+    conn = db.craft_db()
     try:
         rows = conn.execute(
             "SELECT cpu_name FROM user_pins WHERE user_id = ?", (user_id,)
@@ -1935,7 +1483,7 @@ def pins_get():
 
 @app.route("/api/pins", methods=["POST"])
 def pins_post():
-    user_id = _require_user_id()
+    user_id = auth.require_user_id()
     if not user_id:
         return jsonify({"error": "authentication required"}), 401
 
@@ -1956,7 +1504,7 @@ def pins_post():
     if not job.get("busy"):
         return jsonify({"error": "CPU is not currently busy - nothing to pin"}), 400
 
-    conn = _craft_db()
+    conn = db.craft_db()
     try:
         conn.execute(
             "INSERT OR IGNORE INTO user_pins (user_id, cpu_name, pinned_at) VALUES (?, ?, ?)",
@@ -1970,7 +1518,7 @@ def pins_post():
 
 @app.route("/api/pins/unpin", methods=["POST"])
 def pins_unpin():
-    user_id = _require_user_id()
+    user_id = auth.require_user_id()
     if not user_id:
         return jsonify({"error": "authentication required"}), 401
 
@@ -1979,7 +1527,7 @@ def pins_unpin():
     if not cpu_name:
         return jsonify({"error": "missing cpu_name"}), 400
 
-    conn = _craft_db()
+    conn = db.craft_db()
     try:
         conn.execute(
             "DELETE FROM user_pins WHERE user_id = ? AND cpu_name = ?",
@@ -1993,11 +1541,11 @@ def pins_unpin():
 
 @app.route("/api/completions", methods=["GET"])
 def completions_get():
-    user_id = _require_user_id()
+    user_id = auth.require_user_id()
     if not user_id:
         return jsonify({"error": "authentication required"}), 401
 
-    conn = _craft_db()
+    conn = db.craft_db()
     try:
         _prune_old_completions(conn)
         conn.commit()
@@ -2032,10 +1580,10 @@ def completions_get():
 
 @app.route("/api/completions/<int:completion_id>/ack", methods=["POST"])
 def completions_ack(completion_id):
-    user_id = _require_user_id()
+    user_id = auth.require_user_id()
     if not user_id:
         return jsonify({"error": "authentication required"}), 401
-    conn = _craft_db()
+    conn = db.craft_db()
     try:
         conn.execute(
             "DELETE FROM user_completions WHERE id = ? AND user_id = ?",
@@ -2049,10 +1597,10 @@ def completions_ack(completion_id):
 
 @app.route("/api/completions/ack-all", methods=["POST"])
 def completions_ack_all():
-    user_id = _require_user_id()
+    user_id = auth.require_user_id()
     if not user_id:
         return jsonify({"error": "authentication required"}), 401
-    conn = _craft_db()
+    conn = db.craft_db()
     try:
         conn.execute("DELETE FROM user_completions WHERE user_id = ?", (user_id,))
         conn.commit()
@@ -2072,10 +1620,10 @@ def icon():
     img_path = request.args.get("path", "")
     if not img_path:
         abort(404)
-    zf = _get_images_zip()
+    zf = icons.get_images_zip()
     if zf is None:
         abort(404)
-    with _zip_lock:
+    with icons._zip_lock:
         try:
             data = zf.read(img_path)
         except KeyError:
@@ -2096,59 +1644,8 @@ def icon():
 # ---------------------------------------------------------------------
 
 
-def _power_db():
-    # A fresh connection per call rather than one shared connection -
-    # sqlite3 connections aren't safe to share across Flask's threads,
-    # and at this traffic level (one insert a minute, occasional reads)
-    # the cost of opening a new one each time is irrelevant.
-    conn = sqlite3.connect(POWER_DB_PATH, timeout=10)
-    return conn
 
 
-def _init_power_db():
-    conn = _power_db()
-    try:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS power_readings (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                ts REAL NOT NULL,
-                stored REAL NOT NULL,
-                capacity REAL NOT NULL
-            )
-        """)
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_power_readings_ts ON power_readings (ts)"
-        )
-        # Migration for existing installs - these columns didn't exist
-        # before this feature (avg EU in/out over a few windows, plus a
-        # time-to-empty estimate - all confirmed available for free from
-        # the SAME getSensorInformation() call power_monitor.lua already
-        # makes, from a real captured dump off a Lapotronic Super
-        # Capacitor). SQLite has no "ADD COLUMN IF NOT EXISTS", so check
-        # the existing column list first rather than trying the ALTER
-        # and swallowing a "duplicate column" error - more explicit
-        # about what's actually happening, and safe to run on every
-        # startup either way (only adds what's genuinely missing).
-        existing_cols = {
-            row[1] for row in conn.execute("PRAGMA table_info(power_readings)")
-        }
-        new_cols = [
-            ("avg_eu_in_5s", "REAL"),
-            ("avg_eu_out_5s", "REAL"),
-            ("avg_eu_in_5m", "REAL"),
-            ("avg_eu_out_5m", "REAL"),
-            ("avg_eu_in_1h", "REAL"),
-            ("avg_eu_out_1h", "REAL"),
-            ("time_to_empty_minutes", "REAL"),
-        ]
-        for col_name, col_type in new_cols:
-            if col_name not in existing_cols:
-                conn.execute(
-                    f"ALTER TABLE power_readings ADD COLUMN {col_name} {col_type}"
-                )
-        conn.commit()
-    finally:
-        conn.close()
 
 
 POWER_RANGE_SECONDS = {
@@ -2186,7 +1683,7 @@ def _downsample(rows, max_points=POWER_MAX_POINTS):
 
 @app.route("/api/power", methods=["POST"])
 def power_post():
-    if not _require_api_key():
+    if not auth.require_api_key():
         return jsonify({"error": "unauthorized"}), 401
 
     payload = request.get_json(silent=True)
@@ -2208,7 +1705,7 @@ def power_post():
         v = payload.get(key)
         return float(v) if v is not None else None
 
-    conn = _power_db()
+    conn = db.power_db()
     try:
         conn.execute(
             "INSERT INTO power_readings "
@@ -2240,7 +1737,7 @@ def _fetch_power_rows(range_key):
         range_key = "day"
     seconds = POWER_RANGE_SECONDS[range_key]
 
-    conn = _power_db()
+    conn = db.power_db()
     try:
         if seconds is None:
             cur = conn.execute(
@@ -2279,7 +1776,7 @@ def _fetch_latest_power_reading():
     together (not two separate latest-row queries) - both correctness
     (no risk of the two disagreeing if a new reading lands between two
     separate queries) and efficiency."""
-    conn = _power_db()
+    conn = db.power_db()
     try:
         row = conn.execute(
             "SELECT ts, stored, capacity, avg_eu_in_5s, avg_eu_out_5s FROM power_readings ORDER BY ts DESC LIMIT 1"
@@ -2313,74 +1810,15 @@ def power_get():
     )
 
 
+
+
+
+
+
+
 # ---------------------------------------------------------------------
-# Item/fluid quantity history (SQLite-backed, own db file - separate
-# from power.db and craft_history.db, matching the established "one db
-# per major concern" pattern rather than growing an existing file with
-# an unrelated table).
-#
-# Change-only storage, NOT one row per scan: with ~6,000+ items scanned
-# every 20 minutes, storing every scan unconditionally would mean ~470k
-# rows/day - several GB/year and a table that keeps getting slower to
-# query. Item quantity is fundamentally a step function (constant, then
-# jumps), not a continuously-sampled signal like power draw, so a row is
-# only written when a value actually CHANGES from what was last
-# recorded for that item - most items (stockpiled materials, anything
-# not currently being produced/consumed) simply don't change between
-# most scans, which is what keeps this genuinely small in practice.
-def _item_key(mod, internal, damage, kind):
-    # Canonical, stable identifier - built explicitly rather than
-    # relying on dict/JSON key ordering, since this is used both as the
-    # SQLite storage key and as the browser's shareable URL parameter.
-    return f"{mod or ''}|{internal or ''}|{damage if damage is not None else ''}|{kind or 'item'}"
-
-
-def _item_history_db():
-    conn = sqlite3.connect(ITEM_HISTORY_DB_PATH, timeout=10)
-    return conn
-
-
-def _init_item_history_db():
-    conn = _item_history_db()
-    try:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS item_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                item_key TEXT NOT NULL,
-                label TEXT,
-                size REAL NOT NULL,
-                recorded_at REAL NOT NULL
-            )
-        """)
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_item_history_key_time ON item_history (item_key, recorded_at)"
-        )
-        # A true MIRROR of the live network snapshot (unlike item_history
-        # above, which is change-only) - wiped and fully rewritten on
-        # every scan/finish, so it always reflects exactly what the last
-        # completed scan saw. Purpose: surviving a SERVER restart without
-        # the Network tab sitting empty until network_browser.lua's next
-        # scan completes (which could be most of 20 minutes away). Loaded
-        # back into memory once at server startup - see
-        # _load_network_snapshot().
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS network_snapshot (
-                item_key TEXT PRIMARY KEY,
-                mod TEXT,
-                internal TEXT NOT NULL,
-                damage INTEGER,
-                kind TEXT NOT NULL,
-                name TEXT,
-                size REAL NOT NULL,
-                is_craftable INTEGER NOT NULL,
-                updated_at REAL NOT NULL
-            )
-        """)
-        conn.commit()
-    finally:
-        conn.close()
-
-
+# Item/fluid quantity history (item_history.db). Change-only storage -
+# see the item_history section in gcm/db.py for why.
 def _persist_network_snapshot(items):
     """Wholesale replace, not change-only - this is a MIRROR of the live
     snapshot, not a history log. Runs after every real scan; the DELETE+
@@ -2400,7 +1838,7 @@ def _persist_network_snapshot(items):
     now = time.time()
     rows = []
     for it in items:
-        key = _item_key(
+        key = db.item_key(
             it.get("mod"), it.get("internal"), it.get("damage"), it.get("kind")
         )
         rows.append(
@@ -2416,7 +1854,7 @@ def _persist_network_snapshot(items):
                 now,
             )
         )
-    conn = _item_history_db()
+    conn = db.item_history_db()
     try:
         conn.execute("DELETE FROM network_snapshot")
         if rows:
@@ -2437,7 +1875,7 @@ def _load_network_snapshot():
     immediately rather than sitting empty until the next real scan
     completes. Marks is_reconstructed=True; network_scan_finish() clears
     it the moment a real scan actually completes."""
-    conn = _item_history_db()
+    conn = db.item_history_db()
     try:
         rows = conn.execute(
             "SELECT mod, internal, damage, kind, name, size, is_craftable, updated_at FROM network_snapshot"
@@ -2472,7 +1910,7 @@ def _load_network_snapshot():
     # path reconstructed items never go through, so without this call
     # every icon on a freshly-restarted server's grid would silently be
     # missing (confirmed as a real, reported bug, not a hypothetical).
-    _attach_item_icons(items)
+    icons.attach_item_icons(items)
 
     with _network_lock:
         _network_state["items"] = items
@@ -2492,7 +1930,7 @@ def _record_item_history_changes(old_items, new_items):
     present)."""
     old_by_key = {}
     for it in old_items or []:
-        key = _item_key(
+        key = db.item_key(
             it.get("mod"), it.get("internal"), it.get("damage"), it.get("kind")
         )
         old_by_key[key] = it.get("size", 0)
@@ -2501,7 +1939,7 @@ def _record_item_history_changes(old_items, new_items):
     changes = []
     seen_keys = set()
     for it in new_items or []:
-        key = _item_key(
+        key = db.item_key(
             it.get("mod"), it.get("internal"), it.get("damage"), it.get("kind")
         )
         seen_keys.add(key)
@@ -2516,7 +1954,7 @@ def _record_item_history_changes(old_items, new_items):
     if not changes:
         return
 
-    conn = _item_history_db()
+    conn = db.item_history_db()
     try:
         conn.executemany(
             "INSERT INTO item_history (item_key, label, size, recorded_at) VALUES (?, ?, ?, ?)",
@@ -2557,168 +1995,27 @@ def _downsample_steps(rows, max_points=ITEM_HISTORY_MAX_POINTS):
     return out
 
 
-# ---------------------------------------------------------------------
-# Static chart images (matplotlib) for OpenGraph embeds - Discord (and
-# any other link-unfurling crawler) does a plain HTTP GET and reads
-# <meta property="og:..."> tags straight out of the raw HTML; it never
-# runs JS, so the in-app Chart.js rendering is invisible to it entirely.
-# This renders an actual PNG server-side, independent of the browser.
-_CHART_BG = "#0f1115"
-_CHART_PANEL = "#1a1d24"
-_CHART_LINE = "#5fb3ff"
-_CHART_MUTED = "#8a8f98"
-_CHART_WIDTH_PX = 800
-_CHART_HEIGHT_PX = 400  # 2:1 - landscape, which matters: Discord reads
-# og:image:width/height as one of its signals
-# for picking the large-image embed layout
-# over a small thumbnail, alongside twitter:card
-# below - a portrait/near-square image would
-# work against that signal instead of for it.
-CHART_CACHE_TTL_SECONDS = int(os.environ.get("CHART_CACHE_TTL_SECONDS", "60"))
-CHART_CACHE_MAX_ENTRIES = int(os.environ.get("CHART_CACHE_MAX_ENTRIES", "64"))
-CHART_RATE_LIMIT_PER_MINUTE = int(os.environ.get("CHART_RATE_LIMIT_PER_MINUTE", "30"))
-CHART_MAX_TRACKED_CLIENTS = int(os.environ.get("CHART_MAX_TRACKED_CLIENTS", "4096"))
-_chart_cache = OrderedDict()
-_chart_cache_lock = threading.Lock()
-_chart_request_times = OrderedDict()
-_chart_rate_lock = threading.Lock()
 
 
-def _chart_client_id():
-    return request.remote_addr or "unknown"
 
 
-def _chart_rate_limit_response():
-    now = time.time()
-    client_id = _chart_client_id()
-    with _chart_rate_lock:
-        timestamps = _chart_request_times.get(client_id)
-        if timestamps is None:
-            if len(_chart_request_times) >= CHART_MAX_TRACKED_CLIENTS:
-                _chart_request_times.popitem(last=False)
-            timestamps = deque()
-            _chart_request_times[client_id] = timestamps
-        _chart_request_times.move_to_end(client_id)
-        while timestamps and timestamps[0] <= now - 60:
-            timestamps.popleft()
-        if len(timestamps) >= CHART_RATE_LIMIT_PER_MINUTE:
-            retry_after = max(1, int(timestamps[0] + 60 - now) + 1)
-            response = jsonify({"error": "chart rate limit exceeded"})
-            response.headers["Retry-After"] = str(retry_after)
-            return response, 429
-        timestamps.append(now)
-    return None
 
 
-def _cached_chart_png(cache_key, render):
-    now = time.time()
-    with _chart_cache_lock:
-        cached = _chart_cache.get(cache_key)
-        if cached and cached[0] > now:
-            _chart_cache.move_to_end(cache_key)
-            return cached[1]
-        if cached:
-            del _chart_cache[cache_key]
-
-    png_bytes = render()
-    with _chart_cache_lock:
-        _chart_cache[cache_key] = (now + CHART_CACHE_TTL_SECONDS, png_bytes)
-        _chart_cache.move_to_end(cache_key)
-        while len(_chart_cache) > CHART_CACHE_MAX_ENTRIES:
-            _chart_cache.popitem(last=False)
-    return png_bytes
 
 
-def _format_qty_py(n):
-    # Same abbreviation scheme as the frontend's formatQty()/formatEU| -
-    # doesn't need to be pixel-identical to the in-app JS version, just
-    # informative for a preview image glanced at in a chat client.
-    if n is None:
-        return "0"
-    n = float(n)
-    a = abs(n)
-    if a >= 1e12:
-        return f"{n/1e12:.2f}T"
-    if a >= 1e9:
-        return f"{n/1e9:.2f}B"
-    if a >= 1e6:
-        return f"{n/1e6:.2f}M"
-    if a >= 1e3:
-        return f"{n/1e3:.1f}k"
-    return f"{n:.0f}"
 
 
-def _render_chart_png(
-    rows, stepped, width_px=_CHART_WIDTH_PX, height_px=_CHART_HEIGHT_PX
-):
-    """rows: list of (unix_ts, value). stepped=True draws a step line
-    (item quantity - a step function, matching the 'stepped: after'
-    Chart.js config already used in the browser); stepped=False draws a
-    smooth line (power draw, a continuously-sampled signal)."""
-    dpi = 100
-    fig, ax = plt.subplots(figsize=(width_px / dpi, height_px / dpi), dpi=dpi)
-    fig.patch.set_facecolor(_CHART_BG)
-    ax.set_facecolor(_CHART_PANEL)
-
-    if rows:
-        times = [datetime.fromtimestamp(r[0]) for r in rows]
-        values = [r[1] for r in rows]
-        if stepped:
-            ax.step(times, values, where="post", color=_CHART_LINE, linewidth=2)
-            ax.fill_between(times, values, step="post", color=_CHART_LINE, alpha=0.15)
-        else:
-            ax.plot(times, values, color=_CHART_LINE, linewidth=2)
-            ax.fill_between(times, values, color=_CHART_LINE, alpha=0.15)
-        ax.set_ylim(bottom=0)
-    else:
-        ax.text(
-            0.5,
-            0.5,
-            "No data yet",
-            ha="center",
-            va="center",
-            color=_CHART_MUTED,
-            fontsize=12,
-            transform=ax.transAxes,
-        )
-        ax.set_xticks([])
-        ax.set_yticks([])
-
-    ax.yaxis.set_major_formatter(FuncFormatter(lambda v, pos: _format_qty_py(v)))
-    # Explicit date locator/formatter - without this, matplotlib falls
-    # back to raw numeric-ish date labels (confirmed by actually looking
-    # at a rendered chart, not assumed) instead of readable times.
-    # AutoDateLocator + ConciseDateFormatter picks a sensible format
-    # automatically based on the actual span of data (HH:MM for a day,
-    # month/day for longer ranges) rather than needing this function to
-    # hand-roll that same range-based logic itself.
-    locator = mdates.AutoDateLocator()
-    ax.xaxis.set_major_locator(locator)
-    ax.xaxis.set_major_formatter(mdates.ConciseDateFormatter(locator))
-    ax.tick_params(colors=_CHART_MUTED, labelsize=9)
-    for spine in ax.spines.values():
-        spine.set_color(_CHART_MUTED)
-        spine.set_alpha(0.3)
-    ax.grid(True, color=_CHART_MUTED, alpha=0.15)
-    fig.autofmt_xdate()
-    fig.tight_layout()
-
-    buf = BytesIO()
-    fig.savefig(buf, format="png", facecolor=fig.get_facecolor())
-    plt.close(fig)
-    buf.seek(0)
-    return buf
 
 
 @app.route("/api/power/chart.png", methods=["GET"])
 def power_chart_png():
-    rate_limited = _chart_rate_limit_response()
+    rate_limited = charts.rate_limit_response()
     if rate_limited:
         return rate_limited
     range_key, rows = _fetch_power_rows(request.args.get("range", "day"))
-    png_bytes = _cached_chart_png(
+    png_bytes = charts.cached_png(
         ("power", range_key),
-        lambda: _render_chart_png(
+        lambda: charts.render_png(
             [(r[0], r[1]) for r in rows], stepped=False
         ).getvalue(),
     )
@@ -2729,7 +2026,7 @@ def power_chart_png():
 
 @app.route("/api/network/history/chart.png", methods=["GET"])
 def network_history_chart_png():
-    rate_limited = _chart_rate_limit_response()
+    rate_limited = charts.rate_limit_response()
     if rate_limited:
         return rate_limited
     mod = request.args.get("mod") or None
@@ -2748,9 +2045,9 @@ def network_history_chart_png():
     range_key, rows = _fetch_item_history_rows(
         mod, internal, damage, kind, request.args.get("range", "day")
     )
-    png_bytes = _cached_chart_png(
+    png_bytes = charts.cached_png(
         ("network", mod, internal, damage, kind, range_key),
-        lambda: _render_chart_png(rows, stepped=True).getvalue(),
+        lambda: charts.render_png(rows, stepped=True).getvalue(),
     )
     resp = Response(png_bytes, mimetype="image/png")
     resp.headers["Cache-Control"] = "public, max-age=60"
@@ -2758,12 +2055,12 @@ def network_history_chart_png():
 
 
 def _fetch_item_history_rows(mod, internal, damage, kind, range_key):
-    key = _item_key(mod, internal, damage, kind)
+    key = db.item_key(mod, internal, damage, kind)
     if range_key not in ITEM_HISTORY_RANGE_SECONDS:
         range_key = "day"
     seconds = ITEM_HISTORY_RANGE_SECONDS[range_key]
 
-    conn = _item_history_db()
+    conn = db.item_history_db()
     try:
         if seconds is None:
             cur = conn.execute(
@@ -2834,10 +2131,10 @@ def network_history_get():
 # signed-in user can pin items.
 @app.route("/api/network/pins", methods=["GET"])
 def network_item_pins_get():
-    user_id = _require_user_id()
+    user_id = auth.require_user_id()
     if not user_id:
         return jsonify({"error": "authentication required"}), 401
-    conn = _craft_db()
+    conn = db.craft_db()
     try:
         rows = conn.execute(
             "SELECT mod, internal, damage, kind FROM user_item_pins WHERE user_id = ?",
@@ -2857,7 +2154,7 @@ def network_item_pins_get():
 
 @app.route("/api/network/pins", methods=["POST"])
 def network_item_pins_post():
-    user_id = _require_user_id()
+    user_id = auth.require_user_id()
     if not user_id:
         return jsonify({"error": "authentication required"}), 401
     payload = request.get_json(silent=True) or {}
@@ -2868,8 +2165,8 @@ def network_item_pins_post():
     if not internal:
         return jsonify({"error": "missing internal"}), 400
 
-    key = _item_key(mod, internal, damage, kind)
-    conn = _craft_db()
+    key = db.item_key(mod, internal, damage, kind)
+    conn = db.craft_db()
     try:
         conn.execute(
             "INSERT OR IGNORE INTO user_item_pins (user_id, item_key, mod, internal, damage, kind, pinned_at) "
@@ -2884,7 +2181,7 @@ def network_item_pins_post():
 
 @app.route("/api/network/pins/unpin", methods=["POST"])
 def network_item_pins_unpin():
-    user_id = _require_user_id()
+    user_id = auth.require_user_id()
     if not user_id:
         return jsonify({"error": "authentication required"}), 401
     payload = request.get_json(silent=True) or {}
@@ -2895,8 +2192,8 @@ def network_item_pins_unpin():
     if not internal:
         return jsonify({"error": "missing internal"}), 400
 
-    key = _item_key(mod, internal, damage, kind)
-    conn = _craft_db()
+    key = db.item_key(mod, internal, damage, kind)
+    conn = db.craft_db()
     try:
         conn.execute(
             "DELETE FROM user_item_pins WHERE user_id = ? AND item_key = ?",
@@ -2926,8 +2223,8 @@ def _lookup_item_display_info(mod, internal, damage, kind):
             ):
                 return it.get("name"), it.get("size")
 
-    key = _item_key(mod, internal, damage, kind)
-    conn = _item_history_db()
+    key = db.item_key(mod, internal, damage, kind)
+    conn = db.item_history_db()
     try:
         row = conn.execute(
             "SELECT label, size FROM item_history WHERE item_key = ? AND label IS NOT NULL "
@@ -2991,7 +2288,7 @@ def _build_og_tags(path, args):
         if rows:
             stored, capacity = rows[-1][1], rows[-1][2]
             pct = round(stored / capacity * 100, 1) if capacity else 0
-            desc = f"{_format_qty_py(stored)} EU stored of {_format_qty_py(capacity)} EU ({pct}%)"
+            desc = f"{charts.format_qty(stored)} EU stored of {charts.format_qty(capacity)} EU ({pct}%)"
             image = f"{base}/api/power/chart.png?range=day"
         else:
             desc = "No power data yet"
@@ -3054,8 +2351,8 @@ def _build_og_tags(path, args):
         # it was evidently landing on the thumbnail layout by default.
         tags += (
             f'<meta property="og:image" content="{html_escape(image)}">\n'
-            f'<meta property="og:image:width" content="{_CHART_WIDTH_PX}">\n'
-            f'<meta property="og:image:height" content="{_CHART_HEIGHT_PX}">\n'
+            f'<meta property="og:image:width" content="{charts.WIDTH_PX}">\n'
+            f'<meta property="og:image:height" content="{charts.HEIGHT_PX}">\n'
             f'<meta name="twitter:card" content="summary_large_image">\n'
         )
     return tags
@@ -3102,10 +2399,7 @@ def _reset_runtime_state():
     with _craft_tracking_lock:
         _cpu_last_busy.clear()
         _cpu_last_known.clear()
-    with _chart_cache_lock:
-        _chart_cache.clear()
-    with _chart_rate_lock:
-        _chart_request_times.clear()
+    charts.reset()
     _debug_dumps.clear()
 
 
@@ -3116,13 +2410,13 @@ def create_app(data_dir=None, api_key=None):
     the one place startup happens. data_dir/api_key default to the
     DATA_DIR/API_KEY environment variables."""
     global INDEX_HTML
-    _configure(data_dir, api_key)
-    _load_icon_lookup()
-    _init_craft_db()
+    config.configure(data_dir, api_key)
+    icons.load_lookup()
+    db.init_craft_db()
     _close_orphaned_request_history()
-    _bootstrap_admin()
-    _init_power_db()
-    _init_item_history_db()
+    auth.bootstrap_admin()
+    db.init_power_db()
+    db.init_item_history_db()
     _load_network_snapshot()
     with open(INDEX_HTML_PATH, "r", encoding="utf-8") as f:
         INDEX_HTML = f.read()
@@ -3132,7 +2426,7 @@ def create_app(data_dir=None, api_key=None):
 def _cli_new_token(display_name):
     """Revokes a user's tokens and sessions and prints a new token - the
     recovery path when the only admin has lost theirs."""
-    conn = _craft_db()
+    conn = db.craft_db()
     try:
         row = conn.execute(
             "SELECT id FROM users WHERE display_name = ?", (display_name,)
@@ -3148,7 +2442,7 @@ def _cli_new_token(display_name):
             "UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL",
             (now, row[0]),
         )
-        token = _create_access_token(conn, row[0])
+        token = auth.create_access_token(conn, row[0])
         conn.commit()
     finally:
         conn.close()
@@ -3160,8 +2454,8 @@ if __name__ == "__main__":
     if len(sys.argv) == 3 and sys.argv[1] == "new-token":
         _cli_new_token(sys.argv[2])
         sys.exit(0)
-    _require_runtime_secrets()
-    _require_initial_admin()
+    config.require_runtime_secrets()
+    auth.require_initial_admin()
     import logging
 
     from waitress import serve

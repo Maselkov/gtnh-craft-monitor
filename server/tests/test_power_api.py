@@ -1,7 +1,7 @@
 import sqlite3
 import time
 
-import app as app_module
+from gcm import config, db
 
 
 class TestPowerEndpoint:
@@ -90,7 +90,7 @@ class TestLatestReadingIsRangeIndependent:
         for i in range(count):
             seconds_ago = 86400 * (count - 1 - i) / (count - 1)
             rows.append((now - seconds_ago, 1000 + i, 5_000_000))
-        conn = sqlite3.connect(app_module.POWER_DB_PATH)
+        conn = sqlite3.connect(config.POWER_DB_PATH)
         try:
             conn.executemany("INSERT INTO power_readings (ts, stored, capacity) VALUES (?, ?, ?)", rows)
             conn.commit()
@@ -136,7 +136,7 @@ class TestPowerDbMigration:
         # Simulate a pre-existing power.db from before the trend-field
         # feature existed: drop down to the OLD schema directly, insert
         # a row, then re-run the same init function real startup uses.
-        conn = sqlite3.connect(app_module.POWER_DB_PATH)
+        conn = sqlite3.connect(config.POWER_DB_PATH)
         try:
             conn.execute("DROP TABLE IF EXISTS power_readings")
             conn.execute("""
@@ -154,9 +154,9 @@ class TestPowerDbMigration:
         finally:
             conn.close()
 
-        app_module._init_power_db()  # the same migration real startup runs
+        db.init_power_db()  # the same migration real startup runs
 
-        conn = sqlite3.connect(app_module.POWER_DB_PATH)
+        conn = sqlite3.connect(config.POWER_DB_PATH)
         try:
             cols = {row[1] for row in conn.execute("PRAGMA table_info(power_readings)")}
             rows = conn.execute("SELECT ts, stored, capacity FROM power_readings").fetchall()
@@ -170,6 +170,6 @@ class TestPowerDbMigration:
     def test_migration_is_idempotent(self):
         # Running it multiple times (as every server startup does)
         # must never error, even once the columns already exist.
-        app_module._init_power_db()
-        app_module._init_power_db()
-        app_module._init_power_db()
+        db.init_power_db()
+        db.init_power_db()
+        db.init_power_db()

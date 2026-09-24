@@ -1,4 +1,5 @@
 import app as app_module
+from gcm import db
 from conftest import login_as
 
 
@@ -138,7 +139,7 @@ class TestCraftRequestLifecycle:
             json={"status": "accepted", "cpu_name": "W01"},
             headers=api_headers,
         )
-        conn = app_module._craft_db()
+        conn = db.craft_db()
         try:
             row = conn.execute(
                 "SELECT status, cpu_name FROM craft_request_history "
