@@ -25,9 +25,9 @@ crafts = {
 # In-memory as the live source of truth (unlike power/craft history,
 # this is "what's in the network right now", not a time series) - but
 # ALSO mirrored into the network_snapshot SQLite table on every real
-# scan (see _persist_network_snapshot()/load_network_snapshot() in
-# routes/network.py), specifically so a server restart doesn't leave the Network tab
-# empty until the next scan completes.
+# scan (see store/items.py save_snapshot()/load_snapshot()),
+# specifically so a server restart doesn't leave the Network tab empty
+# until the next scan completes.
 #
 # A scan is a start/batch*/finish sequence, not one big POST - the whole
 # reason getItemsInNetworkById() is viable at all is that both the

@@ -97,24 +97,31 @@ for admin recovery). The server itself is the `server/gcm/` package:
 ```
 gcm/__init__.py     create_app() - the ONLY place startup work happens
 gcm/config.py       env settings + data paths (read as config.X at call time)
-gcm/db.py           SQLite connections + schemas/migrations for all 3 files
-gcm/auth.py         API key, access tokens, sessions, roles, admin bootstrap
+gcm/db.py           SQLite connections, transaction(), schemas + migrations
+gcm/store/*.py      ALL other SQL, one module per domain: power, items,
+                    crafts, requests, users
+gcm/auth.py         API key, signed-in user, roles, bootstrap, route decorators
 gcm/security.py     trusted-proxy wrapper, bootstrap/cross-origin hooks, headers
 gcm/state.py        ALL in-memory live state (crafts, network scan, request
                     queues, CPU transition tracking) + reset()
-gcm/history.py      craft request/cancel history rows
+gcm/tracking.py     busy->idle CPU transitions -> craft events + completions
 gcm/icons.py        icon lookup + images.zip access
 gcm/charts.py       matplotlib PNGs for OpenGraph, with cache + rate limit
 gcm/routes/*.py     one Flask Blueprint per area: crafts, craft_requests,
                     network, power, users, pages
 ```
 
-Three rules keep this layout honest:
+Four rules keep this layout honest:
 - **Importing any `gcm` module has no side effects.** Schema creation,
   migrations, restart cleanup, admin bootstrap and the network snapshot
   reload all run inside `create_app()`. The test suite relies on this -
   it points `create_app()` at a temp directory instead of juggling env
   vars before import.
+- **SQL lives only in `db.py` and `gcm/store/`.** Routes validate the
+  request and shape the response; store functions open their own
+  connection, return plain tuples/dicts, and make each change that must
+  be atomic a single function. `tests/test_store_boundary.py` fails on
+  a query or connection anywhere else.
 - **Other modules read settings as `config.NAME` at call time**, never
   `from gcm.config import NAME` - otherwise `configure()` (and tests'
   monkeypatching) would silently not reach them.
