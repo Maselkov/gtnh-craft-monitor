@@ -138,30 +138,41 @@ same pickup-timeout/result-timeout/retention lifecycle, differing only
 in their numbers and messages.
 
 **File organization, frontend**: `server/index.html` is a small shell;
-styles are `server/static/app.css` and the code is split per area under
-`server/static/js/` (`crafts.js`, `network.js`, `power.js`, ...). They
-are currently CLASSIC scripts, not ES modules: they call each other's
-functions as globals, and classic scripts loaded in order share one
-global scope exactly like the original single inline script did.
+styles are `server/static/app.css` and the code is ES modules split per
+area under `server/static/js/` (`crafts.js`, `network.js`, `power.js`,
+...). `main.js` is the only `<script>` in the page; every other module
+is reached through its imports, and each file's `import` lines say
+exactly what it uses from where. Chart.js stays a CDN global.
 
-There are no inline event handlers anywhere - not in `index.html`, not
-in markup the JS builds (`tests/test_frontend_assets.py` enforces
-this). Clickable elements carry `data-action="name"` plus `data-*`
-arguments; each area's `setup...()` function registers its actions
-with `delegateActions()` (`util.js`), and `main.js` calls every setup
-function before anything renders. Action names are unique page-wide -
-`delegateActions()` throws on a duplicate, since everything bubbles to
-`document` and a duplicate would fire twice. Non-click events (search
-and amount inputs, Enter to sign in, backdrop clicks via
-`onBackdropClick()`) are plain listeners in the same setup functions.
-Values like item or CPU names are only ever HTML-escaped into
-attributes, never spliced into JS source.
-The consequence: every script except `main.js` must only DECLARE things
-at top level (functions, `let`/`const`, event listener registration) -
-`main.js` loads last and is the one place startup actually runs. A top-
-level call into a function from a later file would throw at load time.
-Asset URLs carry `?v=<content hash>` (`pages.load_index_html()`), so a
-deploy never runs stale cached JS against a newer page.
+Rules that keep this working:
+- **Only `main.js` runs anything.** Every other module just declares
+  functions and state - importing one has no side effects, which is
+  also what lets the node tests import them directly. Listeners are
+  registered inside each area's `setup...()` function, and `main.js`
+  calls all of them before anything renders. The modules import each
+  other in cycles (auth <-> crafts, tabs <-> network/history, ...),
+  which is only safe BECAUSE nothing reads an import at top level.
+- **Another module's `let` is read-only to you.** Imports are live but
+  can't be assigned; state other modules need to reset goes through a
+  small function in its owning module (`clearPins()`,
+  `setPendingItemFromUrl()`).
+- **No inline event handlers** - not in `index.html`, not in markup the
+  JS builds (`tests/test_frontend_assets.py` enforces this). Clickable
+  elements carry `data-action="name"` plus `data-*` arguments, and each
+  setup function registers its actions with `delegateActions()`
+  (`util.js`). Action names are unique page-wide - `delegateActions()`
+  throws on a duplicate, since everything bubbles to `document` and a
+  duplicate would fire twice. Non-click events (search and amount
+  inputs, Enter to sign in, backdrop clicks via `onBackdropClick()`)
+  are plain listeners in the same setup functions. Values like item or
+  CPU names are only ever HTML-escaped into attributes, never spliced
+  into JS source.
+
+Caching: `index.html` loads `main.js` and `app.css` with
+`?v=<content hash>` (`pages.load_index_html()`), but modules import each
+other by plain path, so `/static` is served with `Cache-Control:
+no-cache` - browsers revalidate each file (a 304 when unchanged) instead
+of running stale code after a deploy.
 
 History, for context: the frontend started life as a multi-thousand-
 line Python string (`INDEX_HTML`) embedded directly in `app.py`, which
@@ -497,7 +508,7 @@ touch-primary device" is decided elsewhere in this project too.
 
 ## Test suite (server/tests/)
 
-171 pytest tests across 14 files, covering every endpoint - crafts, CPU
+172 pytest tests across 14 files, covering every endpoint - crafts, CPU
 pins, craft requests, cancellation, network scanning (including the
 scan-integrity mechanism above), item history, network item pins,
 power readings (including the DB migration), auth/admin, OpenGraph
@@ -505,8 +516,7 @@ tags - plus the pure helpers, the security endpoint lists and the
 frontend asset wiring. Plus 15 node:test tests (`server/tests/js/`)
 for the frontend's pure functions: the NEI-style search tokenizer and
 matcher, the craft amount evaluator and `formatQty`. They load
-the real `static/js/` files into a VM context the same way the browser
-does (classic scripts sharing one scope). Run with:
+by importing the real `static/js/` modules directly. Run with:
 And a browser test (`server/tests/e2e/run.mjs`, no dependencies - it
 drives headless Chrome over the DevTools protocol with Node's built-in
 WebSocket): it starts the real server on seeded data and clicks through

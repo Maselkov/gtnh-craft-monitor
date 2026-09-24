@@ -2,6 +2,8 @@
 // syntax-highlight overlay markup. Pure functions (tested under
 // server/tests/js/).
 
+import { escapeHtml } from './util.js';
+
 // Advanced search, matching NEI's own syntax (confirmed against the
 // GTNH wiki, a community guide, and real screenshots - not
 // independently verified against real NEI beyond that, so built for
@@ -40,7 +42,7 @@
 // term (spaces and all) rather than being split apart, and a
 // leading "-" stays glued to whatever follows it (a quote, an @, or
 // a plain word) rather than being its own separate token.
-function tokenizeSearchText(text) {
+export function tokenizeSearchText(text) {
   const tokens = [];
   let i = 0;
   while (i < text.length) {
@@ -67,7 +69,7 @@ function tokenizeSearchText(text) {
 // Splits a raw term into {negate, rest} - shared by the matcher and
 // the highlighter so "what counts as a leading negation dash" can
 // never disagree between the two.
-function stripNegatePrefix(term) {
+export function stripNegatePrefix(term) {
   if (term.startsWith('-') && term.length > 1) {
     return { negate: true, rest: term.slice(1) };
   }
@@ -91,7 +93,7 @@ function classifySearchTerm(rawTerm) {
   return { type: 'text', negate, value: rest.toLowerCase() };
 }
 
-function parseSearchQuery(query) {
+export function parseSearchQuery(query) {
   return tokenizeSearchText(query.trim())
     .filter(t => t.type === 'term')
     .map(t => classifySearchTerm(t.raw));
@@ -116,7 +118,7 @@ function searchTermMatches(name, mod, term) {
 // Every term must match (AND by default) - an empty term list (no
 // query typed) vacuously matches everything, which is exactly the
 // "no filter" behavior wanted.
-function itemMatchesSearch(it, parsedTerms) {
+export function itemMatchesSearch(it, parsedTerms) {
   const name = (it.name || '').toLowerCase();
   const mod = it.mod || '';
   return parsedTerms.every(term => searchTermMatches(name, mod, term));
@@ -160,7 +162,7 @@ function buildTermHighlightHtml(rawTerm) {
   return prefixHtml + escapeHtml(rest);
 }
 
-function buildSearchHighlightHtml(text) {
+export function buildSearchHighlightHtml(text) {
   if (!text) return '';
   return tokenizeSearchText(text)
     .map(t => t.type === 'ws' ? escapeHtml(t.raw) : buildTermHighlightHtml(t.raw))

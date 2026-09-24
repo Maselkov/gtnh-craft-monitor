@@ -1,5 +1,15 @@
 // Item history popup and its chart.
 
+import { openCraftRequestModal } from './craft-actions.js';
+import {
+  lastNetworkData,
+  networkItemKey,
+  pinnedItemKeys,
+  toggleNetworkItemPin,
+} from './network.js';
+import { activeTab, switchTab } from './tabs.js';
+import { delegateActions, formatQty, onBackdropClick } from './util.js';
+
 // ---------- Item history popup ----------
 let itemHistoryTarget = null;
 let itemHistoryRange = 'day';
@@ -11,6 +21,10 @@ let pendingItemFromUrl = null;  // set when the page loads (or a back/
                                  // holds the PARSED {mod,internal,
                                  // damage,kind} object, not a raw string
 
+export function setPendingItemFromUrl(item) {
+  pendingItemFromUrl = item;
+}
+
 // Clean path-based item URLs (/network/item/mod:internal:damage, or
 // /network/item/internal for a fluid) instead of a JSON blob crammed
 // into a query string - reuses the mod:internal:damage shape AE2
@@ -21,7 +35,7 @@ let pendingItemFromUrl = null;  // set when the page loads (or a back/
 // Cryotheum fix), while an item's mod:internal always does. damage
 // is omitted from the URL entirely when it's 0 (the common case for
 // non-variant items), defaulting back to 0 on parse when absent.
-const NETWORK_ITEM_PATH_PREFIX = '/network/item/';
+export const NETWORK_ITEM_PATH_PREFIX = '/network/item/';
 
 function itemUrlPath(it) {
   if (it.kind === 'fluid') {
@@ -35,7 +49,7 @@ function itemUrlPath(it) {
 // Returns null if pathname isn't an item URL at all - distinct from
 // returning a parsed object, so callers can tell "not an item page"
 // from "an item page with fields to use."
-function parseItemUrlPath(pathname) {
+export function parseItemUrlPath(pathname) {
   if (!pathname.startsWith(NETWORK_ITEM_PATH_PREFIX)) return null;
   const raw = pathname.slice(NETWORK_ITEM_PATH_PREFIX.length);
   if (!raw) return null;
@@ -112,7 +126,7 @@ function readDamageFromDataset(raw) {
   return isNaN(n) ? null : n;
 }
 
-function setupCraftHistoryLinks() {
+export function setupCraftHistoryLinks() {
   // Event delegation, same reasoning as the network grid's tooltip -
   // the crafts container is rebuilt wholesale via innerHTML on every
   // poll, so per-element listeners would just be discarded each time.
@@ -133,7 +147,7 @@ function setupCraftHistoryLinks() {
 // lands on an item URL. Only ever tries once per pending key: if the
 // item genuinely isn't in this network, retrying forever on every
 // subsequent poll wouldn't find it either.
-function tryOpenItemFromUrl() {
+export function tryOpenItemFromUrl() {
   if (!pendingItemFromUrl) return;
   if (!lastNetworkData || !lastNetworkData.items || lastNetworkData.items.length === 0) return;
   const parsed = pendingItemFromUrl;
@@ -142,7 +156,7 @@ function tryOpenItemFromUrl() {
   if (match) openItemHistory(match, false);  // false: don't push a NEW url, we're already at this one
 }
 
-function openItemHistory(it, pushUrl) {
+export function openItemHistory(it, pushUrl) {
   if (pushUrl === undefined) pushUrl = true;
 
   // Item history is a "subpart" of the Network tab's URL space even
@@ -187,7 +201,7 @@ function openItemHistory(it, pushUrl) {
   fetchItemHistory();
 }
 
-function closeItemHistory(pushUrl) {
+export function closeItemHistory(pushUrl) {
   if (pushUrl === undefined) pushUrl = true;
   document.getElementById('itemHistoryModal').style.display = 'none';
   itemHistoryTarget = null;
@@ -234,7 +248,7 @@ function updateItemHistoryCurrent(size, kind) {
   el.textContent = 'Currently stored: ' + Math.round(size).toLocaleString() + unit;
 }
 
-function updateItemHistoryPinButton(it) {
+export function updateItemHistoryPinButton(it) {
   const btn = document.getElementById('itemHistoryPinBtn');
   const isPinned = pinnedItemKeys.has(networkItemKey(it.mod, it.internal, it.damage, it.kind));
   btn.classList.toggle('pinned', isPinned);
@@ -246,7 +260,7 @@ function updateItemHistoryPinButton(it) {
 // the actual query range enforcement still happens server-side.
 // Shared by both charts (item history AND power) - same range keys,
 // same second values on both the client and server side.
-const CHART_RANGE_SECONDS_JS = { hour: 3600, day: 86400, week: 7 * 86400, month: 30 * 86400, lifetime: null };
+export const CHART_RANGE_SECONDS_JS = { hour: 3600, day: 86400, week: 7 * 86400, month: 30 * 86400, lifetime: null };
 
 // Forces 24-hour, no-seconds formatting throughout the time scale -
 // HH is 24-hour in date-fns's token format (hh would be 12-hour with
@@ -267,7 +281,7 @@ const CHART_TIME_DISPLAY_FORMATS = {
   week: 'MMM d',
   month: 'MMM yyyy',
 };
-const CHART_TIME_CONFIG = {
+export const CHART_TIME_CONFIG = {
   displayFormats: CHART_TIME_DISPLAY_FORMATS,
   tooltipFormat: 'MMM d, HH:mm',  // minute precision - seconds add
                                   // nothing useful when hovering a
@@ -397,7 +411,7 @@ function requestCraftFromHistory() {
   openCraftRequestModal(it);
 }
 
-function setupHistoryActions() {
+export function setupHistoryActions() {
   delegateActions(document, {
     'history-range': (el) => setItemHistoryRange(el.dataset.range),
     'history-pin': () => toggleNetworkItemPin(itemHistoryTarget),

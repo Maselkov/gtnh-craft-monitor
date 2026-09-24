@@ -1,6 +1,10 @@
 // Crafts tab: CPU status polling and rendering, pins, completion
 // notifications.
 
+import { AUTH_USER, userHeaders } from './auth.js';
+import { openCancelConfirmModal, pendingCancelCpus } from './craft-actions.js';
+import { delegateActions, escapeHtml } from './util.js';
+
 // Toggle-open state survives across the 3s auto-refresh (which
 // rebuilds the DOM from scratch), keyed by CPU name for ingredient
 // panels and a single flag for the idle-CPU section.
@@ -13,6 +17,12 @@ let idleSectionOpen = false;
 // of truth now.
 let pinnedCpus = new Set();
 let completedPins = [];
+
+// For signing out - other modules can read these but not reassign them.
+export function clearPins() {
+  pinnedCpus = new Set();
+  completedPins = [];
+}
 
 // Tracks which completion ids have already shown a desktop
 // Cross-tab notification claim, via localStorage (shared across ALL
@@ -57,11 +67,11 @@ function saveClaimedIds(set) {
 // be freshly loaded).
 let seenCompletionIds = null;  // null until the baseline fetch resolves
 
-let lastData = null;  // cached so pin/unpin can re-render immediately
+export let lastData = null;  // cached so pin/unpin can re-render immediately
                        // instead of waiting up to 3s for the next poll
 let lastFetchAt = null;  // client-side Date.now() of the last successful fetch
 
-function setupCraftsActions() {
+export function setupCraftsActions() {
   delegateActions(document, {
     'enable-notifications': () => requestNotifPermission(),
   });
@@ -132,7 +142,7 @@ async function acknowledgeAllPins() {
   if (lastData) render(lastData);
 }
 
-async function refreshPinsAndCompletions() {
+export async function refreshPinsAndCompletions() {
   if (!AUTH_USER) {
     pinnedCpus = new Set();
     completedPins = [];
@@ -206,7 +216,7 @@ function formatRelativeTime(seconds) {
   return Math.round(diffHr / 24) + 'd ago';
 }
 
-function updateNotifButton() {
+export function updateNotifButton() {
   const btn = document.getElementById('notifBtn');
   if (!('Notification' in window)) {
     btn.textContent = 'Notifications unsupported';
@@ -248,7 +258,7 @@ function notifyCraftDone(itemName, status) {
   }
 }
 
-async function refresh() {
+export async function refresh() {
   try {
     const craftsPromise = fetch('/api/crafts');
     await refreshPinsAndCompletions();
@@ -267,7 +277,7 @@ async function refresh() {
 // client-side time, independent of the 3s data poll - otherwise the
 // display only advances once every 3s (whenever refresh() happens to
 // run) and visibly jumps instead of counting smoothly.
-function tickSourceLine() {
+export function tickSourceLine() {
   const sourceLine = document.getElementById('sourceLine');
   if (!lastData) return;
   if (!lastData.source) {
@@ -387,7 +397,7 @@ function renderCompletedCard(entry) {
   `;
 }
 
-function render(data) {
+export function render(data) {
   const banner = document.getElementById('staleBanner');
   banner.classList.toggle('show', !!data.stale);
 

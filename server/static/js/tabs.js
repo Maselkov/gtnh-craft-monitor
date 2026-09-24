@@ -1,14 +1,26 @@
 // Tab switching and URL <-> tab mapping.
 
+import { fetchCraftRequests } from './craft-actions.js';
+import {
+  closeItemHistory,
+  NETWORK_ITEM_PATH_PREFIX,
+  parseItemUrlPath,
+  setPendingItemFromUrl,
+  tryOpenItemFromUrl,
+} from './history.js';
+import { fetchNetwork, fetchNetworkPins, tickNetworkSourceLine } from './network.js';
+import { fetchPower, tickPowerSourceLine } from './power.js';
+import { delegateActions } from './util.js';
+
 // ---------- Tabs ----------
-let activeTab = 'crafts';
+export let activeTab = 'crafts';
 let powerInterval = null;
 let powerTickInterval = null;
 let networkInterval = null;
 let networkTickInterval = null;
 let craftRequestsInterval = null;
 
-function pathToTab(path) {
+export function pathToTab(path) {
   if (path === '/power') return 'power';
   if (path === '/network' || path.startsWith(NETWORK_ITEM_PATH_PREFIX)) return 'network';
   return 'crafts';  // '/', '/crafts', or anything unrecognized
@@ -20,7 +32,7 @@ function tabToPath(tab) {
   return '/crafts';
 }
 
-function switchTab(tab, pushUrl) {
+export function switchTab(tab, pushUrl) {
   if (pushUrl === undefined) pushUrl = true;
   activeTab = tab;
   document.getElementById('tabBtnCrafts').classList.toggle('active', tab === 'crafts');
@@ -69,26 +81,26 @@ function switchTab(tab, pushUrl) {
   }
 }
 
-window.addEventListener('popstate', () => {
-  const tab = pathToTab(location.pathname);
-  switchTab(tab, false);  // reacting to a nav that already happened - don't push another
-  // Explicit close/open here, not left to switchTab()'s own side
-  // effect - that only closes the popup when LEAVING the network
-  // tab entirely (tab !== 'network'), but both /network and
-  // /network/item/... map to the SAME tab, so navigating back from
-  // an item page to the bare network page never triggered it: the
-  // tab never "changed" from switchTab's point of view, even though
-  // the popup very much needs to close.
-  const parsed = (tab === 'network') ? parseItemUrlPath(location.pathname) : null;
-  if (parsed) {
-    pendingItemFromUrl = parsed;
-    tryOpenItemFromUrl();
-  } else {
-    closeItemHistory(false);
-  }
-});
+export function setupTabActions() {
+  window.addEventListener('popstate', () => {
+    const tab = pathToTab(location.pathname);
+    switchTab(tab, false);  // reacting to a nav that already happened - don't push another
+    // Explicit close/open here, not left to switchTab()'s own side
+    // effect - that only closes the popup when LEAVING the network
+    // tab entirely (tab !== 'network'), but both /network and
+    // /network/item/... map to the SAME tab, so navigating back from
+    // an item page to the bare network page never triggered it: the
+    // tab never "changed" from switchTab's point of view, even though
+    // the popup very much needs to close.
+    const parsed = (tab === 'network') ? parseItemUrlPath(location.pathname) : null;
+    if (parsed) {
+      setPendingItemFromUrl(parsed);
+      tryOpenItemFromUrl();
+    } else {
+      closeItemHistory(false);
+    }
+  });
 
-function setupTabActions() {
   delegateActions(document, {
     'switch-tab': (el) => switchTab(el.dataset.tab),
   });

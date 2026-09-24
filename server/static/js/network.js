@@ -1,7 +1,14 @@
 // Network tab: item grid, tooltip, pins, infinite scroll.
 
+import { userHeaders } from './auth.js';
+import { openCraftRequestModal } from './craft-actions.js';
+import { openItemHistory, tryOpenItemFromUrl, updateItemHistoryPinButton } from './history.js';
+import { buildSearchHighlightHtml, itemMatchesSearch, parseSearchQuery } from './search.js';
+import { activeTab } from './tabs.js';
+import { delegateActions, escapeHtml, formatQty } from './util.js';
+
 // ---------- Network browser ----------
-let lastNetworkData = null;
+export let lastNetworkData = null;
 let networkSort = 'size';
 let networkShownItems = [];  // the currently-rendered array, indexed by
                               // each cell's data-idx - lets the tooltip
@@ -17,13 +24,13 @@ let networkShownItems = [];  // the currently-rendered array, indexed by
 // kind FIELDS remain the actual source of truth, so if this ever
 // drifted out of sync the worst case is a cosmetic "badge didn't
 // show", not a real data problem.
-let pinnedItemKeys = new Set();
+export let pinnedItemKeys = new Set();
 
-function networkItemKey(mod, internal, damage, kind) {
+export function networkItemKey(mod, internal, damage, kind) {
   return (mod || '') + '|' + (internal || '') + '|' + (damage != null ? damage : '') + '|' + (kind || 'item');
 }
 
-async function fetchNetworkPins() {
+export async function fetchNetworkPins() {
   try {
     const res = await fetch('/api/network/pins', { headers: userHeaders() });
     const data = await res.json();
@@ -38,7 +45,7 @@ async function fetchNetworkPins() {
   }
 }
 
-async function toggleNetworkItemPin(it) {
+export async function toggleNetworkItemPin(it) {
   const key = networkItemKey(it.mod, it.internal, it.damage, it.kind);
   const isPinned = pinnedItemKeys.has(key);
   const path = isPinned ? '/api/network/pins/unpin' : '/api/network/pins';
@@ -116,7 +123,7 @@ function showNetworkTooltip(cell, x, y) {
   positionNetworkTooltip(tip, x, y);
 }
 
-function setupNetworkTooltipEvents() {
+export function setupNetworkTooltipEvents() {
   const listEl = document.getElementById('networkList');
   // Event delegation on the (stable) container, not per-cell listeners -
   // the grid's inner content gets replaced wholesale on every render
@@ -199,7 +206,7 @@ function handleNetworkCellClick(cell, button) {
 // data just sat there looking completely normal.
 const NETWORK_SCAN_STALE_SECONDS = 600;
 
-function tickNetworkSourceLine() {
+export function tickNetworkSourceLine() {
   const el = document.getElementById('networkSourceLine');
   if (!lastNetworkData || !lastNetworkData.updated_at) {
     el.textContent = lastNetworkData && lastNetworkData.in_progress
@@ -235,7 +242,7 @@ function tickNetworkSourceLine() {
   el.textContent = baseText + progressNote;
 }
 
-async function fetchNetwork() {
+export async function fetchNetwork() {
   try {
     const res = await fetch('/api/network');
     const data = await res.json();
@@ -291,7 +298,7 @@ function buildNetworkCellHtml(it, idx) {
   return `<div class="network-cell${it.isCraftable ? ' craftable' : ''}" data-idx="${idx}">${icon}${qty}${patternBadge}${pinBadge}</div>`;
 }
 
-function updateNetworkSearchHighlight() {
+export function updateNetworkSearchHighlight() {
   const input = document.getElementById('networkSearch');
   const overlay = document.getElementById('networkSearchHighlight');
   overlay.innerHTML = buildSearchHighlightHtml(input.value);
@@ -435,19 +442,21 @@ function onNetworkScroll() {
     if (nearBottom) growNetworkList();
   });
 }
-window.addEventListener('scroll', onNetworkScroll);
 
 let networkResizeTicking = false;
-window.addEventListener('resize', () => {
-  if (networkResizeTicking) return;
-  networkResizeTicking = true;
-  requestAnimationFrame(() => {
-    networkResizeTicking = false;
-    fillNetworkViewportIfNeeded();
-  });
-});
 
-function setupNetworkActions() {
+export function setupNetworkActions() {
+  window.addEventListener('scroll', onNetworkScroll);
+
+  window.addEventListener('resize', () => {
+    if (networkResizeTicking) return;
+    networkResizeTicking = true;
+    requestAnimationFrame(() => {
+      networkResizeTicking = false;
+      fillNetworkViewportIfNeeded();
+    });
+  });
+
   document.getElementById('networkSearch').addEventListener('input', onNetworkSearchInput);
   delegateActions(document, {
     'network-sort': (el) => setNetworkSort(el.dataset.sort),

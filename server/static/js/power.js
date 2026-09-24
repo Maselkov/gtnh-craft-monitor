@@ -1,5 +1,8 @@
 // Power tab: readings, trend and chart.
 
+import { CHART_RANGE_SECONDS_JS, CHART_TIME_CONFIG } from './history.js';
+import { delegateActions } from './util.js';
+
 // ---------- Power chart ----------
 let powerRange = 'day';
 let powerChart = null;
@@ -22,7 +25,7 @@ function setPowerRange(range) {
 // using client-side elapsed time), this recomputes directly from
 // latest.t - an absolute server timestamp - every tick, so there's
 // nothing to extrapolate or keep in sync separately.
-function tickPowerSourceLine() {
+export function tickPowerSourceLine() {
   const el = document.getElementById('powerSourceLine');
   if (!lastPowerData || !lastPowerData.latest) {
     el.textContent = 'Waiting for data from power_monitor.lua...';
@@ -42,7 +45,7 @@ function formatEU(n) {
   return String(Math.round(n));
 }
 
-async function fetchPower() {
+export async function fetchPower() {
   try {
     const res = await fetch('/api/power?range=' + powerRange);
     const data = await res.json();
@@ -218,7 +221,7 @@ function renderPower(data) {
   });
 }
 
-function setupPowerActions() {
+export function setupPowerActions() {
   delegateActions(document, {
     'power-range': (el) => setPowerRange(el.dataset.range),
   });

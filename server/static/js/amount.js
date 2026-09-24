@@ -45,7 +45,7 @@ function tokenizeAmountExpression(text) {
 }
 
 // Returns {ok: true, value: N} or {ok: false, error: '...'}.
-function evaluateAmountExpression(text) {
+export function evaluateAmountExpression(text) {
   if (text == null) return { ok: false, error: 'empty' };
   const tokens = tokenizeAmountExpression(String(text));
   if (!tokens || tokens.length === 0) return { ok: false, error: 'empty or unrecognized input' };

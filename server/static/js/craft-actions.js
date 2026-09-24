@@ -1,9 +1,15 @@
 // Craft request and cancel modals, pending craft requests.
 
+import { evaluateAmountExpression } from './amount.js';
+import { AUTH_USER, closeAdminUsersModal, closeSettingsMenu, userHeaders } from './auth.js';
+import { lastData, render } from './crafts.js';
+import { closeItemHistory } from './history.js';
+import { delegateActions, escapeHtml, onBackdropClick } from './util.js';
+
 // ---------- Craft request modal ----------
 let craftRequestTarget = null;
 
-function openCraftRequestModal(it) {
+export function openCraftRequestModal(it) {
   craftRequestTarget = it;
   document.getElementById('craftRequestName').textContent = it.name || '?';
   const iconEl = document.getElementById('craftRequestIcon');
@@ -28,7 +34,7 @@ function closeCraftRequestModal() {
   craftRequestTarget = null;
 }
 
-function showToast(message, isError) {
+export function showToast(message, isError) {
   const container = document.getElementById('toastContainer');
   const el = document.createElement('div');
   el.className = 'toast' + (isError ? ' error' : '');
@@ -39,12 +45,12 @@ function showToast(message, isError) {
 
 // ---------- Cancel craft ----------
 let cancelConfirmTarget = null;  // cpu_name currently targeted by the confirm modal
-const pendingCancelCpus = new Set();  // cpu_names with an in-flight
+export const pendingCancelCpus = new Set();  // cpu_names with an in-flight
                                        // cancel request - drives the
                                        // spinner/disabled state on
                                        // that specific card
 
-function openCancelConfirmModal(cpuName) {
+export function openCancelConfirmModal(cpuName) {
   cancelConfirmTarget = cpuName;
   document.getElementById('cancelConfirmSub').textContent = 'CPU ' + cpuName;
   const errorEl = document.getElementById('cancelConfirmError');
@@ -133,45 +139,6 @@ async function pollCancelResult(id, cpuName, attemptsLeft) {
     if (lastData) render(lastData);
   }
 }
-
-// Same fix as the img[src^="/icons?"] CSS rule above, for browsers
-// (Android Chrome among them) where -webkit-touch-callout alone
-// doesn't suppress the native long-press "save/copy image" menu -
-// this covers those by directly blocking the contextmenu event
-// itself, which is what that menu actually fires through on a
-// touch-and-hold, not just a real right-click. Delegated on
-// document rather than attached per-icon, since icons are rebuilt
-// wholesale on every render (search, sort, the 3s poll) - per-
-// element listeners would just be discarded each time anyway.
-document.addEventListener('contextmenu', (e) => {
-  if (e.target.closest('img[src^="/icons?"]')) {
-    e.preventDefault();
-  }
-});
-
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') {
-    if (document.getElementById('settingsMenu').style.display !== 'none') {
-      closeSettingsMenu();
-    } else if (document.getElementById('craftRequestModal').style.display !== 'none') {
-      closeCraftRequestModal();
-    } else if (document.getElementById('cancelConfirmModal').style.display !== 'none') {
-      closeCancelConfirmModal();
-    } else if (document.getElementById('itemHistoryModal').style.display !== 'none') {
-      closeItemHistory();
-    } else if (document.getElementById('adminUsersModal').style.display !== 'none') {
-      closeAdminUsersModal();
-    }
-  } else if (e.key === 'Enter') {
-    // Only the craft-request modal - cancelConfirm's primary action
-    // is destructive, so Enter shouldn't accidentally trigger it,
-    // and itemHistory has no single "submit" action to speak of.
-    if (document.getElementById('craftRequestModal').style.display !== 'none') {
-      e.preventDefault();
-      submitCraftRequest();
-    }
-  }
-});
 
 // Shows "= 68,000,000" below the field, but ONLY when it would tell
 // the user something they don't already know from looking at their
@@ -277,7 +244,7 @@ async function submitCraftRequest() {
 // ---------- Pending craft requests ----------
 let craftRequests = [];
 
-async function fetchCraftRequests() {
+export async function fetchCraftRequests() {
   try {
     const res = await fetch('/api/craft/requests', { headers: userHeaders() });
     const data = await res.json();
@@ -318,7 +285,46 @@ function renderCraftRequests() {
   }).join('');
 }
 
-function setupCraftDialogActions() {
+export function setupCraftDialogActions() {
+  // Same fix as the img[src^="/icons?"] CSS rule in app.css, for browsers
+  // (Android Chrome among them) where -webkit-touch-callout alone
+  // doesn't suppress the native long-press "save/copy image" menu -
+  // this covers those by directly blocking the contextmenu event
+  // itself, which is what that menu actually fires through on a
+  // touch-and-hold, not just a real right-click. Delegated on
+  // document rather than attached per-icon, since icons are rebuilt
+  // wholesale on every render (search, sort, the 3s poll) - per-
+  // element listeners would just be discarded each time anyway.
+  document.addEventListener('contextmenu', (e) => {
+    if (e.target.closest('img[src^="/icons?"]')) {
+      e.preventDefault();
+    }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      if (document.getElementById('settingsMenu').style.display !== 'none') {
+        closeSettingsMenu();
+      } else if (document.getElementById('craftRequestModal').style.display !== 'none') {
+        closeCraftRequestModal();
+      } else if (document.getElementById('cancelConfirmModal').style.display !== 'none') {
+        closeCancelConfirmModal();
+      } else if (document.getElementById('itemHistoryModal').style.display !== 'none') {
+        closeItemHistory();
+      } else if (document.getElementById('adminUsersModal').style.display !== 'none') {
+        closeAdminUsersModal();
+      }
+    } else if (e.key === 'Enter') {
+      // Only the craft-request modal - cancelConfirm's primary action
+      // is destructive, so Enter shouldn't accidentally trigger it,
+      // and itemHistory has no single "submit" action to speak of.
+      if (document.getElementById('craftRequestModal').style.display !== 'none') {
+        e.preventDefault();
+        submitCraftRequest();
+      }
+    }
+  });
+
   document.getElementById('craftRequestAmount').addEventListener('input', updateCraftRequestAmountPreview);
   delegateActions(document, {
     'close-craft-request': () => closeCraftRequestModal(),
@@ -330,7 +336,7 @@ function setupCraftDialogActions() {
   onBackdropClick('cancelConfirmModal', closeCancelConfirmModal);
 }
 
-function setupCraftRequestActions() {
+export function setupCraftRequestActions() {
   delegateActions(document.getElementById('craftRequestsSection'), {
     'dismiss-request': (el) => dismissCraftRequest(el.dataset.requestId),
   });
@@ -352,7 +358,7 @@ async function dismissCraftRequest(id) {
 // keyboard on any touch device that DOES end up with the text
 // input somehow (a hybrid device with a mouse, say), rather than
 // the full alphabetic keyboard a bare type="text" would invite.
-function setupAmountInputForDevice() {
+export function setupAmountInputForDevice() {
   const isDesktop = !(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
   if (!isDesktop) return;
   const input = document.getElementById('craftRequestAmount');
