@@ -1,7 +1,7 @@
 // Crafts tab: CPU status polling and rendering, pins, completion
 // notifications.
 
-import { AUTH_USER, userHeaders } from './auth.js';
+import { AUTH_USER } from './auth.js';
 import { openCancelConfirmModal, pendingCancelCpus } from './craft-actions.js';
 import { delegateActions, escapeHtml } from './util.js';
 
@@ -100,13 +100,13 @@ async function togglePin(name) {
     if (isPinned) {
       await fetch('/api/pins/unpin', {
         method: 'POST',
-        headers: userHeaders({ 'Content-Type': 'application/json' }),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cpu_name: name }),
       });
     } else {
       const res = await fetch('/api/pins', {
         method: 'POST',
-        headers: userHeaders({ 'Content-Type': 'application/json' }),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cpu_name: name }),
       });
       if (!res.ok) {
@@ -128,7 +128,7 @@ async function togglePin(name) {
 
 async function acknowledgePin(id) {
   try {
-    await fetch(`/api/completions/${encodeURIComponent(id)}/ack`, { method: 'POST', headers: userHeaders() });
+    await fetch(`/api/completions/${encodeURIComponent(id)}/ack`, { method: 'POST' });
   } catch (e) { /* ignore */ }
   await refreshPinsAndCompletions();
   if (lastData) render(lastData);
@@ -136,7 +136,7 @@ async function acknowledgePin(id) {
 
 async function acknowledgeAllPins() {
   try {
-    await fetch('/api/completions/ack-all', { method: 'POST', headers: userHeaders() });
+    await fetch('/api/completions/ack-all', { method: 'POST' });
   } catch (e) { /* ignore */ }
   await refreshPinsAndCompletions();
   if (lastData) render(lastData);
@@ -150,8 +150,8 @@ export async function refreshPinsAndCompletions() {
   }
   try {
     const [pinsRes, completionsRes] = await Promise.all([
-      fetch('/api/pins', { headers: userHeaders() }),
-      fetch('/api/completions', { headers: userHeaders() }),
+      fetch('/api/pins'),
+      fetch('/api/completions'),
     ]);
     const pinsData = await pinsRes.json();
     const completionsData = await completionsRes.json();

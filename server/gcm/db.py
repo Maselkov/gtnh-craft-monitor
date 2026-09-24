@@ -25,7 +25,11 @@ def transaction(open_db):
 
 
 def craft_db():
-    return sqlite3.connect(config.CRAFT_HISTORY_DB_PATH, timeout=10)
+    conn = sqlite3.connect(config.CRAFT_HISTORY_DB_PATH, timeout=10)
+    # Off by default in SQLite, per connection - without it the
+    # REFERENCES clauses below are never checked.
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
 
 
 def _craft_baseline(conn):
@@ -302,7 +306,14 @@ def _item_history_baseline(conn):
 # from before versioning all report version 0 whatever state they're
 # in. Every later step runs exactly once, so it can be a plain change.
 # Never edit a step that has shipped - append a new one.
-CRAFT_MIGRATIONS = [_craft_baseline]
+def _craft_drop_orphaned_user_rows(conn):
+    # Deleting a user used to leave their pins and pending completions
+    # behind, and those pins kept producing completions nobody could read.
+    for table in ("user_pins", "user_completions", "user_item_pins", "access_tokens", "sessions"):
+        conn.execute(f"DELETE FROM {table} WHERE user_id NOT IN (SELECT id FROM users)")
+
+
+CRAFT_MIGRATIONS = [_craft_baseline, _craft_drop_orphaned_user_rows]
 POWER_MIGRATIONS = [_power_baseline]
 ITEM_HISTORY_MIGRATIONS = [_item_history_baseline]
 

@@ -171,7 +171,8 @@ Managing users:
   channel.
 - **Revoke** invalidates a token and ends its sessions immediately.
 - **New token** replaces a user's current token in one step.
-- **Delete** permanently removes a user with their tokens and sessions.
+- **Delete** permanently removes a user with their tokens, sessions,
+  pins and pending notifications. Their craft request history is kept.
 
 If the server starts with no users and no bootstrap token, it exits with a
 setup error rather than running without an administrator.

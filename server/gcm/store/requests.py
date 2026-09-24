@@ -30,12 +30,15 @@ def record_request(
         )
 
 
-def resolve_request(request_id, status, reason, cpu_name):
+# only_if_open: an expiry only closes a row nothing has resolved yet,
+# while the game's own result always wins - it can arrive after the
+# request expired, and it's what actually happened in-game.
+def resolve_request(request_id, status, reason, cpu_name, only_if_open=False):
     with db.transaction(db.craft_db) as conn:
         conn.execute(
             "UPDATE craft_request_history "
             "SET status = ?, reason = ?, cpu_name = ?, resolved_at = ? "
-            "WHERE request_id = ? AND resolved_at IS NULL",
+            "WHERE request_id = ?" + (" AND resolved_at IS NULL" if only_if_open else ""),
             (status, reason, cpu_name, time.time(), request_id),
         )
 
@@ -50,12 +53,12 @@ def record_cancel(request_id, user_id, cpu_name, created_at):
         )
 
 
-def resolve_cancel(request_id, success, reason):
+def resolve_cancel(request_id, success, reason, only_if_open=False):
     with db.transaction(db.craft_db) as conn:
         conn.execute(
             "UPDATE craft_cancel_history "
             "SET status = 'resolved', success = ?, reason = ?, resolved_at = ? "
-            "WHERE request_id = ? AND resolved_at IS NULL",
+            "WHERE request_id = ?" + (" AND resolved_at IS NULL" if only_if_open else ""),
             (int(success), reason, time.time(), request_id),
         )
 

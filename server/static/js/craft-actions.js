@@ -1,7 +1,7 @@
 // Craft request and cancel modals, pending craft requests.
 
 import { evaluateAmountExpression } from './amount.js';
-import { AUTH_USER, closeAdminUsersModal, closeSettingsMenu, userHeaders } from './auth.js';
+import { AUTH_USER, closeAdminUsersModal, closeSettingsMenu } from './auth.js';
 import { lastData, render } from './crafts.js';
 import { closeItemHistory } from './history.js';
 import { delegateActions, escapeHtml, onBackdropClick } from './util.js';
@@ -85,7 +85,7 @@ async function submitCancelConfirm() {
   try {
     const res = await fetch('/api/craft/cancel', {
       method: 'POST',
-      headers: userHeaders({ 'Content-Type': 'application/json' }),
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ cpu_name: cpuName }),
     });
     const data = await res.json().catch(() => ({}));
@@ -116,7 +116,7 @@ async function submitCancelConfirm() {
 async function pollCancelResult(id, cpuName, attemptsLeft) {
   if (attemptsLeft === undefined) attemptsLeft = 15;
   try {
-    const res = await fetch('/api/craft/cancel/' + id, { headers: userHeaders() });
+    const res = await fetch('/api/craft/cancel/' + id);
     const data = await res.json();
     if (data.status === 'resolved') {
       pendingCancelCpus.delete(cpuName);
@@ -212,7 +212,7 @@ async function submitCraftRequest() {
   try {
     const res = await fetch('/api/craft/request', {
       method: 'POST',
-      headers: userHeaders({ 'Content-Type': 'application/json' }),
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         label: craftRequestTarget.name,
         mod: craftRequestTarget.mod,
@@ -246,7 +246,7 @@ let craftRequests = [];
 
 export async function fetchCraftRequests() {
   try {
-    const res = await fetch('/api/craft/requests', { headers: userHeaders() });
+    const res = await fetch('/api/craft/requests');
     const data = await res.json();
     craftRequests = data.requests || [];
     renderCraftRequests();
@@ -344,7 +344,7 @@ export function setupCraftRequestActions() {
 
 async function dismissCraftRequest(id) {
   try {
-    await fetch(`/api/craft/requests/${id}/dismiss`, { method: 'POST', headers: userHeaders() });
+    await fetch(`/api/craft/requests/${id}/dismiss`, { method: 'POST' });
   } catch (e) { /* ignore */ }
   fetchCraftRequests();
 }

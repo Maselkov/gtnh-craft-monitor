@@ -246,19 +246,22 @@ def all_with_tokens():
     return list(users.values())
 
 
+# Rows that exist only for their user and go when the user is deleted.
+USER_OWNED_TABLES = ("user_pins", "user_completions", "user_item_pins", "sessions", "access_tokens")
+
+
 def delete(user_id):
-    """Removes the user and their credentials. False if there was no
-    such user."""
+    """Removes the user with their credentials, pins and pending
+    completions. False if there was no such user. Their request/cancel
+    history stays as the audit trail."""
     with db.transaction(db.craft_db) as conn:
-        cursor = conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
-        if not cursor.rowcount:
+        if not conn.execute("SELECT 1 FROM users WHERE id = ?", (user_id,)).fetchone():
             return False
-        # access_tokens/sessions aren't ON DELETE CASCADE (SQLite foreign
-        # keys are declared but not enforced unless PRAGMA foreign_keys is
-        # on for this connection) - removed explicitly so a deleted user's
-        # credentials can never authenticate again.
-        conn.execute("DELETE FROM access_tokens WHERE user_id = ?", (user_id,))
-        conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+        # Nothing is ON DELETE CASCADE, and foreign keys are enforced, so
+        # everything pointing at the user goes before the users row.
+        for table in USER_OWNED_TABLES:
+            conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
     return True
 
 

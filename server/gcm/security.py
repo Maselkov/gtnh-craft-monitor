@@ -10,12 +10,11 @@ exists."""
 import base64
 import hashlib
 import ipaddress
-import os
 
 from flask import Blueprint, current_app, jsonify, request
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from gcm import auth
+from gcm import auth, config
 
 
 bp = Blueprint("security", __name__)
@@ -36,28 +35,12 @@ def init_app(app):
     app.register_blueprint(bp)
 
 
-def _parse_trusted_proxies(value):
-    networks = []
-    for entry in value.split(","):
-        entry = entry.strip()
-        if not entry:
-            continue
-        try:
-            networks.append(ipaddress.ip_network(entry, strict=False))
-        except ValueError as error:
-            raise RuntimeError(f"Invalid TRUSTED_PROXIES entry: {entry}") from error
-    return networks
-
-
-TRUSTED_PROXY_NETWORKS = _parse_trusted_proxies(os.environ.get("TRUSTED_PROXIES", ""))
-
-
 def _is_trusted_proxy_address(address):
     try:
         ip_address = ipaddress.ip_address(address)
     except ValueError:
         return False
-    return any(ip_address in network for network in TRUSTED_PROXY_NETWORKS)
+    return any(ip_address in network for network in config.TRUSTED_PROXY_NETWORKS)
 
 
 # Routes a bootstrap-token session may not use until the token is

@@ -32,7 +32,7 @@ def auth_login_post():
     if not isinstance(token, str):
         return jsonify({"error": "invalid credentials"}), 401
 
-    signed_in = store.users.sign_in(token.strip(), auth.SESSION_LIFETIME_SECONDS)
+    signed_in = store.users.sign_in(token.strip(), config.SESSION_LIFETIME_SECONDS)
     if not signed_in:
         return jsonify({"error": "invalid credentials"}), 401
     user, session_token, must_rotate_bootstrap = signed_in
@@ -47,7 +47,7 @@ def auth_login_post():
     response.set_cookie(
         "gcm_session",
         session_token,
-        max_age=auth.SESSION_LIFETIME_SECONDS,
+        max_age=config.SESSION_LIFETIME_SECONDS,
         secure=config.SESSION_COOKIE_SECURE,
         httponly=True,
         samesite="Lax",

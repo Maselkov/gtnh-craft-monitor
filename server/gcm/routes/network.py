@@ -27,7 +27,7 @@ def network_scan_start():
 
 def _check_scan_token(payload):
     """True if payload's scan_token matches the currently active scan.
-    Must be called with _network_lock already held."""
+    Must be called with state.network_lock already held."""
     token = payload.get("scan_token") if isinstance(payload, dict) else None
     current = state.network.get("current_scan_token")
     return bool(current) and token == current
@@ -173,7 +173,7 @@ def network_scan_finish():
     # Outside the lock - a SQLite write shouldn't hold up anyone reading
     # the live snapshot at the same moment. Both wrapped defensively -
     # neither is the actual scan result the website depends on (that's
-    # already committed to _network_state above), just best-effort
+    # already committed to state.network above), just best-effort
     # extras (history charts, restart recovery) - a failure in either
     # one is logged, not allowed to turn into a 500 that makes
     # network_browser.lua think the whole scan failed when it didn't.
@@ -193,20 +193,44 @@ def network_scan_finish():
     return jsonify({"ok": True, "item_count": item_count})
 
 
+# Changes whenever the served snapshot could: a new process (icons are
+# re-resolved on reload) or any of the fields below.
+_PROCESS_TAG = secrets.token_hex(4)
+
+
 @bp.route("/api/network", methods=["GET"])
 @auth.public
 def network_get():
+    # Every open tab re-polls the whole item list (thousands of items),
+    # but it only changes once per scan - so answer with an ETag and let
+    # the browser cache turn most polls into an empty 304.
     with state.network_lock:
-        return jsonify(
-            {
-                "items": state.network["items"],
-                "item_count": state.network["item_count"],
-                "updated_at": state.network["updated_at"],
-                "in_progress": state.network["in_progress"],
-                "scan_started_at": state.network["scan_started_at"],
-                "is_reconstructed": state.network["is_reconstructed"],
-            }
+        etag = "-".join(
+            str(v)
+            for v in (
+                _PROCESS_TAG,
+                state.network["updated_at"],
+                state.network["in_progress"],
+                state.network["scan_started_at"],
+                state.network["is_reconstructed"],
+            )
         )
+        if request.if_none_match.contains(etag):
+            response = Response(status=304)
+        else:
+            response = jsonify(
+                {
+                    "items": state.network["items"],
+                    "item_count": state.network["item_count"],
+                    "updated_at": state.network["updated_at"],
+                    "in_progress": state.network["in_progress"],
+                    "scan_started_at": state.network["scan_started_at"],
+                    "is_reconstructed": state.network["is_reconstructed"],
+                }
+            )
+    response.set_etag(etag)
+    response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 def load_network_snapshot():

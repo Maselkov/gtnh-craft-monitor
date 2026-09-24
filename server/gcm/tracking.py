@@ -1,5 +1,5 @@
 """Craft completion tracking: turns each crafting-CPU status report into
-busy->idle transitions, and those into craft_events rows and completion
+job ends, and those into craft_events rows and completion
 notifications for users who pinned the CPU.
 
 Done server-side, rather than client-side (as it originally was, by
@@ -15,13 +15,15 @@ design couldn't fix:
      either way. The server classifies this from the last known
      progress_percent at the moment of the transition instead.
 
-craft_events is a permanent, unpruned log of every busy->idle
-transition for every CPU, regardless of whether anyone has it pinned -
+craft_events is a permanent, unpruned log of the end of every job on
+every CPU, regardless of whether anyone has it pinned -
 cheap (a few dozen writes a day at most) and doubles as raw material
 for any future historical/analytics view.
 
 The per-CPU memory it compares against lives in gcm/state.py
 (cpu_last_busy, cpu_last_known) and isn't persisted."""
+
+import time
 
 from gcm import state, store
 
@@ -42,10 +44,58 @@ def _classify_status(progress):
     return "finished" if progress >= FINISHED_THRESHOLD else "incomplete"
 
 
+def _new_job_entry(started_at):
+    # cpu_last_known entry for a job first seen at started_at. "output"
+    # is the job's final output as craft_monitor.lua reported it - kept
+    # apart from "label", which a craft request can fill in with its own
+    # wording (a fluid request's label isn't the drop item AE2 reports).
+    return {
+        "label": None,
+        "icon": None,
+        "progress": None,
+        "output": None,
+        "started_at": started_at,
+    }
+
+
+def _job_output(job):
+    """What the job on this CPU is making, as reported - None when the
+    CPU has no Crafting Monitor to ask."""
+    if not job.get("final_output"):
+        return None
+    return (
+        job.get("final_output"),
+        job.get("final_output_mod"),
+        job.get("final_output_internal"),
+        job.get("final_output_damage"),
+    )
+
+
+def _end_job_locked(name, label=None, icon=None):
+    """Records the end of the job tracked on CPU `name`. Caller holds
+    state.tracking_lock."""
+    last_known = state.cpu_last_known.pop(name, {})
+    progress = last_known.get("progress")
+    store.crafts.record_job_end(
+        name,
+        label or last_known.get("label"),
+        icon or last_known.get("icon"),
+        _classify_status(progress),
+        progress,
+    )
+
+
 def process_jobs(jobs):
-    """Detects busy->idle transitions against our own server-side memory
-    of each CPU's last state, logs a permanent craft_events row for each,
-    and fans out + auto-unpins any users who had that CPU pinned."""
+    """Detects the end of each CPU's job against our own server-side
+    memory of its last state, logs a permanent craft_events row for
+    each, and fans out + auto-unpins any users who had that CPU pinned.
+
+    A job ends when its CPU goes busy->idle, or when a busy CPU reports
+    a different final output than before - a CPU that finishes and
+    starts its next job between two polls is never seen idle, and its
+    pins must not carry over to the new job. A back-to-back job making
+    the same item, or a CPU without a Crafting Monitor (no final output
+    at all), still can't be told apart from one long job."""
     with state.tracking_lock:
         for job in jobs:
             name = job.get("name")
@@ -53,26 +103,23 @@ def process_jobs(jobs):
                 continue
             busy = bool(job.get("busy"))
             was_busy = state.cpu_last_busy.get(name)
+            output = _job_output(job)
 
             if was_busy is None and not busy:
                 store.crafts.drop_cpu_pins(name)
 
             if was_busy is True and busy is False:
-                last_known = state.cpu_last_known.pop(name, {})
-                progress = last_known.get("progress")
-                store.crafts.record_job_end(
-                    name,
-                    job.get("final_output") or last_known.get("label"),
-                    job.get("final_output_icon") or last_known.get("icon"),
-                    _classify_status(progress),
-                    progress,
-                )
+                _end_job_locked(name, job.get("final_output"), job.get("final_output_icon"))
+
+            if was_busy is True and busy:
+                previous = state.cpu_last_known.get(name, {}).get("output")
+                if output and previous and output != previous:
+                    _end_job_locked(name)
 
             if busy:
-                entry = state.cpu_last_known.setdefault(
-                    name, {"label": None, "icon": None, "progress": None}
-                )
-                if job.get("final_output"):
+                entry = state.cpu_last_known.setdefault(name, _new_job_entry(time.time()))
+                if output:
+                    entry["output"] = output
                     entry["label"] = job.get("final_output")
                     entry["icon"] = job.get("final_output_icon")
                 if job.get("progress_percent") is not None:
@@ -81,25 +128,38 @@ def process_jobs(jobs):
             state.cpu_last_busy[name] = busy
 
 
-def note_job_started(cpu_name, label, icon):
-    """Records that a job just started on cpu_name, for when the game
-    reports an accepted craft request before its next status poll.
-    Without this, a craft that completes faster than craft_monitor.lua's
-    own 5s poll interval is invisible to process_jobs() entirely: it
-    never observes a busy=true sample to compare against the later
-    busy=false one, so the completion is never detected, the pin is
-    never cleaned up, and it just sits there forever pointing at an idle
-    CPU. Seeding "last known busy=true" here means the NEXT real poll -
-    even if it's the first one that ever samples this CPU - can still
-    correctly detect the transition retroactively. progress is left
-    unknown (None) rather than guessed, which _classify_status reads as
-    "finished" for exactly this reason."""
+def start_requested_job(user_id, cpu_name, label, icon, requested_at):
+    """A browser craft request the game reports it started on cpu_name:
+    pins it for the requester and records the job as started.
+
+    Pinned directly rather than through /api/pins, which requires the
+    CPU to already show busy in the last status report - that only
+    updates on craft_monitor.lua's regular 5s poll, and the game can
+    report "accepted, CPU X" before then. The trust here comes from the
+    game's own confirmation that it just watched this CPU get assigned.
+
+    Seeding "busy" here also matters: without it, a craft that completes
+    faster than the 5s poll is invisible to process_jobs() - it never
+    sees a busy sample to compare against the later idle one, so the
+    completion is never detected and the pin sits there forever. With
+    it, the next poll can still detect the transition retroactively.
+    progress is left unknown (None) rather than guessed, which
+    _classify_status reads as "finished" for exactly this reason.
+
+    The game only starts a request on a CPU it saw idle, so a job we're
+    still tracking there from before the request was made has already
+    ended - it's closed first, or the new pin would inherit its end. A
+    job first seen after the request is this request's own."""
     with state.tracking_lock:
-        state.cpu_last_busy[cpu_name] = True
-        entry = state.cpu_last_known.setdefault(
-            cpu_name, {"label": None, "icon": None, "progress": None}
-        )
-        if label:
+        entry = state.cpu_last_known.get(cpu_name)
+        if state.cpu_last_busy.get(cpu_name) and entry and entry["started_at"] < requested_at:
+            _end_job_locked(cpu_name)
+            entry = None
+        if entry is None:
+            entry = state.cpu_last_known[cpu_name] = _new_job_entry(time.time())
+        if label and not entry["output"]:
             entry["label"] = label
-        if icon:
+        if icon and not entry["output"]:
             entry["icon"] = icon
+        state.cpu_last_busy[cpu_name] = True
+        store.crafts.pin_cpu(user_id, cpu_name)
