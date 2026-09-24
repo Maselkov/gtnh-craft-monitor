@@ -550,13 +550,13 @@ The tests use a temporary data directory and Flask's test client, so they
 don't need a running server or Docker and never touch `server/data/`. They
 cover the server's HTTP API and helper functions, not the Lua scripts.
 
-Run the frontend tests (Node 22 or newer, no dependencies) from the repo root:
+Run the frontend tests (Node 24 or newer, no dependencies) from the repo root:
 
 ```bash
 node --test 'server/tests/js/*.test.js'
 ```
 
-Run the browser tests (Python with `server/requirements.txt`, Node 22+,
+Run the browser tests (Python with `server/requirements.txt`, Node 24+,
 and Chrome or Chromium - set `CHROME=/path/to/binary` if it isn't found):
 
 ```bash

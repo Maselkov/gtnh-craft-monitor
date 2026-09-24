@@ -1,9 +1,13 @@
 // Sign-in state, admin user/token management modals, settings menu.
 
-let AUTH_USER = null;
+import { showToast } from './craft-actions.js';
+import { clearPins, lastData, refreshPinsAndCompletions, render } from './crafts.js';
+import { delegateActions, escapeHtml, onBackdropClick } from './util.js';
+
+export let AUTH_USER = null;
 let AUTH_MUST_ROTATE_BOOTSTRAP = false;
 
-function userHeaders(extra) {
+export function userHeaders(extra) {
   return Object.assign({}, extra || {});
 }
 
@@ -20,7 +24,7 @@ function updateAuthenticationControl() {
   adminButton.style.display = AUTH_USER && AUTH_USER.role === 'admin' && !AUTH_MUST_ROTATE_BOOTSTRAP ? '' : 'none';
 }
 
-async function loadAuthentication() {
+export async function loadAuthentication() {
   const response = await fetch('/api/auth/session');
   const data = await response.json();
   AUTH_USER = data.authenticated ? data.user : null;
@@ -61,7 +65,7 @@ async function openAdminUsersModal() {
   document.getElementById('adminUserName').focus();
 }
 
-function closeAdminUsersModal() {
+export function closeAdminUsersModal() {
   document.getElementById('adminUsersModal').style.display = 'none';
 }
 
@@ -95,7 +99,12 @@ async function refreshAdminUsers() {
   }).join('') || '<div class="admin-user-row">No users yet.</div>';
 }
 
-function setupAuthControls() {
+export function setupAuthControls() {
+  // Close the settings dropdown on any click outside it.
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#settingsWrap')) closeSettingsMenu();
+  });
+
   document.getElementById('accessTokenInput').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') submitAccessToken();
   });
@@ -114,7 +123,7 @@ function setupAuthControls() {
   onBackdropClick('userHistoryModal', closeUserHistoryModal);
 }
 
-function setupAdminActions() {
+export function setupAdminActions() {
   delegateActions(document.getElementById('adminUsersList'), {
     'revoke-token': (el) => revokeAdminToken(el.dataset.tokenId),
     'user-history': (el) => openUserHistory(el.dataset.userId),
@@ -285,22 +294,16 @@ function toggleSettingsMenu() {
   }
 }
 
-function closeSettingsMenu() {
+export function closeSettingsMenu() {
   document.getElementById('settingsMenu').style.display = 'none';
   document.getElementById('settingsBtn').setAttribute('aria-expanded', 'false');
 }
-
-// Close the settings dropdown on any click outside it.
-document.addEventListener('click', (e) => {
-  if (!e.target.closest('#settingsWrap')) closeSettingsMenu();
-});
 
 async function signOut() {
   await fetch('/api/auth/logout', { method: 'POST' });
   AUTH_USER = null;
   AUTH_MUST_ROTATE_BOOTSTRAP = false;
-  pinnedCpus = new Set();
-  completedPins = [];
+  clearPins();
   updateAuthenticationControl();
   if (lastData) render(lastData);
 }

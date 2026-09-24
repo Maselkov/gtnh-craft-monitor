@@ -20,20 +20,35 @@ def test_index_references_existing_versioned_assets(client):
         assert version == pages._asset_version()
 
 
-def test_every_script_is_loaded_and_main_is_last(client):
+IMPORT = re.compile(r"""^import\s[^;]*?from\s+'\./([\w-]+\.js)';""", re.MULTILINE | re.DOTALL)
+
+
+def test_main_is_the_only_script_and_reaches_every_module(client):
     html = client.get("/").get_data(as_text=True)
-    scripts = [p for p, _ in asset_paths(html) if p.startswith("js/")]
-    on_disk = {f"js/{name}" for name in os.listdir(os.path.join(STATIC_DIR, "js"))}
-    # A new file under static/js/ that index.html forgets to load would
-    # only fail in the browser, at the first call into it.
-    assert set(scripts) == on_disk
-    assert scripts[-1] == "js/main.js"
+    local_scripts = re.findall(r'<script([^>]*)src="/static/([^"?]+)', html)
+    assert local_scripts == [(' type="module" ', "js/main.js")]
+
+    # Walk the import graph from main.js: a module nothing imports would
+    # never load, and would only fail in the browser.
+    reachable, todo = set(), ["main.js"]
+    while todo:
+        name = todo.pop()
+        if name in reachable:
+            continue
+        reachable.add(name)
+        with open(os.path.join(STATIC_DIR, "js", name), encoding="utf-8") as f:
+            todo.extend(IMPORT.findall(f.read()))
+    on_disk = set(os.listdir(os.path.join(STATIC_DIR, "js")))
+    assert reachable == on_disk
 
 
-def test_static_files_are_served(client):
+def test_static_files_are_served_and_revalidated(client):
     response = client.get("/static/js/main.js")
     assert response.status_code == 200
     assert "javascript" in response.content_type
+    # Modules import each other without ?v=, so they must never be
+    # reused from cache without checking.
+    assert response.headers["Cache-Control"] == "no-cache"
 
 
 def test_no_inline_event_handlers():

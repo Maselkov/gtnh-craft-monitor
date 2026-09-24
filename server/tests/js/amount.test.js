@@ -1,10 +1,9 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const { loadScripts } = require('./load');
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { evaluateAmountExpression } from '../../static/js/amount.js';
 
-const js = loadScripts('amount.js');
-const value = text => js.evaluateAmountExpression(text).value;
-const error = text => js.evaluateAmountExpression(text).error;
+const value = text => evaluateAmountExpression(text).value;
+const error = text => evaluateAmountExpression(text).error;
 
 test('plain numbers and metric suffixes', () => {
   assert.equal(value('64'), 64);
@@ -26,8 +25,8 @@ test('whitespace is ignored', () => {
 });
 
 test('malformed input is rejected, not guessed at', () => {
-  assert.equal(js.evaluateAmountExpression('').ok, false);
-  assert.equal(js.evaluateAmountExpression('abc').ok, false);
+  assert.equal(evaluateAmountExpression('').ok, false);
+  assert.equal(evaluateAmountExpression('abc').ok, false);
   assert.equal(error('(1+2'), 'missing closing parenthesis');
   assert.equal(error('1+'), 'unexpected end of expression');
   assert.equal(error('1/0'), 'division by zero');

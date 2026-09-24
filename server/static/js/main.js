@@ -1,8 +1,32 @@
-// Startup - must load last: every other script only declares
-// things, this one runs them.
+// Entry point (the only <script> in index.html). Every other module
+// only declares things - importing one has no side effects - and this
+// one runs them.
+
+import { loadAuthentication, setupAdminActions, setupAuthControls } from './auth.js';
+import {
+  setupAmountInputForDevice,
+  setupCraftDialogActions,
+  setupCraftRequestActions,
+} from './craft-actions.js';
+import { refresh, setupCraftsActions, tickSourceLine, updateNotifButton } from './crafts.js';
+import {
+  parseItemUrlPath,
+  setPendingItemFromUrl,
+  setupCraftHistoryLinks,
+  setupHistoryActions,
+} from './history.js';
+import {
+  setupNetworkActions,
+  setupNetworkTooltipEvents,
+  updateNetworkSearchHighlight,
+} from './network.js';
+import { setupPowerActions } from './power.js';
+import { pathToTab, setupTabActions, switchTab } from './tabs.js';
+import { removeLegacyStorageKeys, setupImageErrorRemoval } from './util.js';
 
 // Before anything renders: every event handler on the page. index.html
 // and the render functions only carry data-action attributes.
+removeLegacyStorageKeys();
 setupImageErrorRemoval();
 setupAuthControls();
 setupAdminActions();
@@ -21,7 +45,7 @@ setupCraftRequestActions();
   const initialTab = pathToTab(location.pathname);
   if (initialTab === 'network') {
     const parsed = parseItemUrlPath(location.pathname);
-    if (parsed) pendingItemFromUrl = parsed;
+    if (parsed) setPendingItemFromUrl(parsed);
   }
   switchTab(initialTab, false);  // false: don't push a new history entry
                                   // over the URL we just loaded

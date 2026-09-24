@@ -1,24 +1,16 @@
-// Small shared helpers: defensive localStorage access, HTML/JS
-// escaping for generated markup, and quantity formatting.
-
-// localStorage helpers - wrapped defensively since some browsers/modes
-// (private browsing, storage disabled) throw on access rather than
-// just returning null.
-function lsGet(key) {
-  try { return localStorage.getItem(key); } catch (e) { return null; }
-}
-function lsSet(key, value) {
-  try { localStorage.setItem(key, value); } catch (e) { /* ignore */ }
-}
+// Small shared helpers: event delegation, HTML escaping for generated
+// markup, and quantity formatting.
 
 // One-time cleanup of the old all-client-side pin/completion keys
 // this page used before pins moved server-side - harmless to leave,
 // but nothing reads them anymore, so no reason to keep them around.
-['gtnhCraftMonitor.pinnedCpus', 'gtnhCraftMonitor.completedPins',
- 'gtnhCraftMonitor.lastBusyByName', 'gtnhCraftMonitor.lastFinalOutputByName']
-  .forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
+export function removeLegacyStorageKeys() {
+  ['gtnhCraftMonitor.pinnedCpus', 'gtnhCraftMonitor.completedPins',
+   'gtnhCraftMonitor.lastBusyByName', 'gtnhCraftMonitor.lastFinalOutputByName']
+    .forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
+}
 
-function escapeHtml(s) {
+export function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
@@ -32,7 +24,7 @@ function escapeHtml(s) {
 // the same click (everything bubbles to document), so a name
 // registered twice would run twice - refused here instead.
 const registeredActions = new Set();
-function delegateActions(container, actions) {
+export function delegateActions(container, actions) {
   for (const name of Object.keys(actions)) {
     if (registeredActions.has(name)) throw new Error(`data-action "${name}" registered twice`);
     registeredActions.add(name);
@@ -47,7 +39,7 @@ function delegateActions(container, actions) {
 
 // Modal overlays close on a click on the dimmed backdrop itself, not on
 // anything inside the dialog.
-function onBackdropClick(overlayId, close) {
+export function onBackdropClick(overlayId, close) {
   const overlay = document.getElementById(overlayId);
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) close();
@@ -57,14 +49,14 @@ function onBackdropClick(overlayId, close) {
 // <img data-remove-on-error> removes itself when it fails to load (an
 // icon missing from images.zip) rather than showing a broken-image
 // glyph. error events don't bubble, hence the capture-phase listener.
-function setupImageErrorRemoval() {
+export function setupImageErrorRemoval() {
   document.addEventListener('error', (e) => {
     if (e.target instanceof HTMLImageElement && e.target.hasAttribute('data-remove-on-error')) {
       e.target.remove();
     }
   }, true);
 }
-function formatQty(n) {
+export function formatQty(n) {
   if (n == null) return '?';
   const abs = Math.abs(n);
   if (abs >= 1e9) return (n / 1e9).toFixed(2) + 'B';

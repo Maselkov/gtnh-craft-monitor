@@ -1,8 +1,12 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const { loadScripts, plain } = require('./load');
-
-const js = loadScripts('util.js', 'search.js');
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  buildSearchHighlightHtml,
+  itemMatchesSearch,
+  parseSearchQuery,
+  stripNegatePrefix,
+  tokenizeSearchText,
+} from '../../static/js/search.js';
 
 const ITEMS = [
   { name: 'Molten Neutronium', mod: 'gregtech' },
@@ -14,8 +18,8 @@ const ITEMS = [
 ];
 
 function search(query) {
-  const terms = js.parseSearchQuery(query);
-  return ITEMS.filter(it => js.itemMatchesSearch(it, terms)).map(it => it.name);
+  const terms = parseSearchQuery(query);
+  return ITEMS.filter(it => itemMatchesSearch(it, terms)).map(it => it.name);
 }
 
 test('plain terms are ANDed regardless of order', () => {
@@ -44,12 +48,12 @@ test('unterminated quote runs to end of input', () => {
 });
 
 test('a lone "-" is a plain term, not a negation', () => {
-  assert.deepEqual(plain(js.stripNegatePrefix('-')), { negate: false, rest: '-' });
+  assert.deepEqual(stripNegatePrefix('-'), { negate: false, rest: '-' });
 });
 
 test('tokenizer keeps whitespace so the highlighter can rebuild the input', () => {
   const text = '  -@gregtech "air shard"  ingot';
-  const tokens = plain(js.tokenizeSearchText(text));
+  const tokens = tokenizeSearchText(text);
   assert.equal(tokens.map(t => t.raw).join(''), text);
   assert.deepEqual(
     tokens.filter(t => t.type === 'term').map(t => t.raw),
@@ -59,7 +63,7 @@ test('tokenizer keeps whitespace so the highlighter can rebuild the input', () =
 
 test('highlight markup colors mod, exclude dash and quotes, and escapes text', () => {
   assert.equal(
-    js.buildSearchHighlightHtml('-@gt "a<b" x'),
+    buildSearchHighlightHtml('-@gt "a<b" x'),
     '<span class="search-hl-exclude">-</span><span class="search-hl-mod">@gt</span> '
       + '<span class="search-hl-quote">"</span>a&lt;b<span class="search-hl-quote">"</span> x',
   );

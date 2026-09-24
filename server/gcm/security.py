@@ -141,6 +141,11 @@ def add_browser_security_headers(response):
     response.headers.setdefault(
         "Permissions-Policy", "camera=(), microphone=(), geolocation=()"
     )
+    if request.endpoint == "static":
+        # JS modules import each other by plain path, without the ?v=
+        # hash index.html puts on main.js - so every static file must be
+        # revalidated (a cheap 304) rather than reused stale from cache.
+        response.headers["Cache-Control"] = "no-cache"
     if request.endpoint in NO_STORE_ENDPOINTS:
         response.headers["Cache-Control"] = "no-store"
     return response

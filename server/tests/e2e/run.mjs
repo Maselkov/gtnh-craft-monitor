@@ -253,7 +253,16 @@ const PAGE_LIB = `
     el.value = text;
     el.dispatchEvent(new Event('input', { bubbles: true }));
   };
-  window.pressEnter = (sel) => $(sel).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  window.pressKey = (key, sel) => (sel ? $(sel) : document.body)
+    .dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+  window.pressEnter = (sel) => pressKey('Enter', sel);
+  // Opens an item's history the way a user would: search, click the cell.
+  window.openItem = (name) => {
+    typeInto('#networkSearch', name);
+    const cells = $$('#networkList .network-cell');
+    if (cells.length !== 1) throw new Error('expected one cell for ' + name + ', got ' + cells.length);
+    cells[0].click();
+  };
   window.confirm = () => true;
   true;
 `;
@@ -396,10 +405,8 @@ async function main() {
     await waitFor('back to 3', `$$('#networkList .network-cell').length === 3`);
   });
 
-  const ironCell = `$$('#networkList .network-cell')[networkShownItems.findIndex(it => it.name === 'Iron Ingot')]`;
-
   step('item history: open, range, pin, craft request with math', async () => {
-    await click(ironCell);
+    await evaluate(`openItem('Iron Ingot'), true`);
     await waitFor('history open', `visible($('#itemHistoryModal')) && $('#itemHistoryName').textContent === 'Iron Ingot'`);
     await waitFor('url', `location.pathname.startsWith('/network/item/minecraft:iron_ingot')`);
     await click(`$('#itemHistoryRangeButtons [data-range="week"]')`);
@@ -411,12 +418,12 @@ async function main() {
     await waitFor('craft dialog', `visible($('#craftRequestModal')) && !visible($('#itemHistoryModal'))`);
     await click(`byText('#craftRequestModal button', 'Cancel')`);
     await waitFor('closed by button', `!visible($('#craftRequestModal'))`);
-    await click(ironCell);
+    await evaluate(`openItem('Iron Ingot'), true`);
     await click(`$('#itemHistoryCraftBtn')`);
     await waitFor('craft dialog again', `visible($('#craftRequestModal'))`);
     await click(`$('#craftRequestModal')`);
     await waitFor('closed by backdrop', `!visible($('#craftRequestModal'))`);
-    await click(ironCell);
+    await evaluate(`openItem('Iron Ingot'), true`);
     await click(`$('#itemHistoryCraftBtn')`);
     await waitFor('craft dialog', `visible($('#craftRequestModal')) && $('#craftRequestName').textContent.includes('Iron Ingot')`);
     await evaluate(`typeInto('#craftRequestAmount', '4+3*2')`);
@@ -426,23 +433,51 @@ async function main() {
   });
 
   step('item history closes via its button and via the backdrop', async () => {
-    await click(ironCell);
+    await evaluate(`openItem('Iron Ingot'), true`);
     await waitFor('history open', `visible($('#itemHistoryModal'))`);
     await click(`$$('#itemHistoryModal button').find(b => b.textContent.trim() === '×' || b.textContent.trim() === 'Close')`);
     await waitFor('closed by button', `!visible($('#itemHistoryModal')) && location.pathname === '/network'`);
-    await click(ironCell);
+    await evaluate(`openItem('Iron Ingot'), true`);
     await waitFor('history open again', `visible($('#itemHistoryModal'))`);
     await click(`$('#itemHistoryModal')`);
     await waitFor('closed by backdrop', `!visible($('#itemHistoryModal')) && location.pathname === '/network'`);
   });
 
-  step('failed craft request can be dismissed', async () => {
-    await waitFor('request pending', `$('#craftRequestsSection .craft-request-card')`);
-    await api(base, 'GET', '/api/craft/requests/pending', undefined, { 'X-API-Key': API_KEY });
-    await api(base, 'POST', '/api/craft/requests/1/result', { status: 'failed', reason: 'e2e says no' }, { 'X-API-Key': API_KEY });
-    await waitFor('failure shown', `$('#craftRequestsSection .craft-request-card.failed')?.textContent.includes('e2e says no')`);
+  step('keyboard: Escape closes dialogs and menus, Enter submits a craft', async () => {
+    await evaluate(`openItem('Iron Ingot'), true`);
+    await waitFor('history open', `visible($('#itemHistoryModal'))`);
+    await evaluate(`pressKey('Escape'), true`);
+    await waitFor('history closed', `!visible($('#itemHistoryModal'))`);
+    await evaluate(`openItem('Iron Ingot'), true`);
+    await click(`$('#itemHistoryCraftBtn')`);
+    await waitFor('craft dialog', `visible($('#craftRequestModal'))`);
+    await evaluate(`pressKey('Escape'), true`);
+    await waitFor('craft dialog closed', `!visible($('#craftRequestModal'))`);
+    await click(`$('#settingsBtn')`);
+    await waitFor('menu open', `visible($('#settingsMenu'))`);
+    await evaluate(`pressKey('Escape'), true`);
+    await waitFor('menu closed', `!visible($('#settingsMenu'))`);
+    await evaluate(`openItem('Iron Ingot'), true`);
+    await click(`$('#itemHistoryCraftBtn')`);
+    await waitFor('craft dialog', `visible($('#craftRequestModal'))`);
+    await evaluate(`typeInto('#craftRequestAmount', '2k')`);
+    await evaluate(`pressKey('Enter'), true`);
+    await waitFor('submitted by Enter', `!visible($('#craftRequestModal'))`);
+    await evaluate(`typeInto('#networkSearch', ''), true`);
+  });
+
+  step('failed craft requests can be dismissed', async () => {
+    await waitFor('two requests pending', `$$('#craftRequestsSection .craft-request-card').length === 2`);
+    const { data } = await api(base, 'GET', '/api/craft/requests/pending', undefined, { 'X-API-Key': API_KEY });
+    for (const r of data.requests) {
+      await api(base, 'POST', `/api/craft/requests/${r.id}/result`, { status: 'failed', reason: 'e2e says no' }, { 'X-API-Key': API_KEY });
+    }
+    await waitFor('failures shown', `$$('#craftRequestsSection .craft-request-card.failed').length === 2`);
+    await waitFor('2k was parsed', `$('#craftRequestsSection').textContent.includes('×2000')`);
     await click(`$('#craftRequestsSection .craft-request-dismiss')`);
-    await waitFor('dismissed', `!$('#craftRequestsSection .craft-request-card')`);
+    await waitFor('one dismissed', `$$('#craftRequestsSection .craft-request-card').length === 1`);
+    await click(`$('#craftRequestsSection .craft-request-dismiss')`);
+    await waitFor('both dismissed', `!$('#craftRequestsSection .craft-request-card')`);
   });
 
   step('admin: create user, history, new token, revoke, delete', async () => {
@@ -494,6 +529,18 @@ async function main() {
     await waitFor('crafts', `visible($('#craftsTab')) && location.pathname === '/crafts'`);
     await evaluate(`history.back(), true`);
     await waitFor('back to network', `visible($('#networkTab'))`);
+  });
+
+  step('a deep link to an item opens its history on load', async () => {
+    await cdp.send('Page.navigate', { url: base + '/network/item/minecraft:iron_ingot:0' });
+    await waitFor('reloaded', `document.readyState === 'complete' && !window.byText`);
+    await evaluate(PAGE_LIB);
+    await waitFor('network tab', `visible($('#networkTab'))`);
+    await waitFor('history open', `visible($('#itemHistoryModal')) && $('#itemHistoryName').textContent === 'Iron Ingot'`);
+    await cdp.send('Page.navigate', { url: base + '/power' });
+    await waitFor('reloaded', `document.readyState === 'complete' && !window.byText`);
+    await evaluate(PAGE_LIB);
+    await waitFor('power tab', `visible($('#powerTab')) && $('#tabBtnPower').classList.contains('active')`);
   });
 
   let failed = 0;
