@@ -12,15 +12,14 @@ from collections import OrderedDict, deque
 from datetime import datetime
 from io import BytesIO
 
-import matplotlib
+# The Figure API directly, never pyplot: pyplot keeps global figure
+# state that isn't safe across waitress's request threads. A bare
+# Figure needs no backend selection either - savefig() renders with Agg.
+import matplotlib.dates as mdates
+from matplotlib.figure import Figure
+from matplotlib.ticker import FuncFormatter
 
-matplotlib.use("Agg")  # no display in a container - must be set before
-# importing pyplot, or it tries (and fails) to find a GUI backend
-import matplotlib.pyplot as plt  # noqa: E402
-import matplotlib.dates as mdates  # noqa: E402
-from matplotlib.ticker import FuncFormatter  # noqa: E402
-
-from flask import jsonify, request  # noqa: E402
+from flask import jsonify, request
 
 _BG = "#0f1115"
 _PANEL = "#1a1d24"
@@ -115,7 +114,8 @@ def render_png(
     Chart.js config already used in the browser); stepped=False draws a
     smooth line (power draw, a continuously-sampled signal)."""
     dpi = 100
-    fig, ax = plt.subplots(figsize=(width_px / dpi, height_px / dpi), dpi=dpi)
+    fig = Figure(figsize=(width_px / dpi, height_px / dpi), dpi=dpi)
+    ax = fig.subplots()
     fig.patch.set_facecolor(_BG)
     ax.set_facecolor(_PANEL)
 
@@ -164,7 +164,6 @@ def render_png(
 
     buf = BytesIO()
     fig.savefig(buf, format="png", facecolor=fig.get_facecolor())
-    plt.close(fig)
     buf.seek(0)
     return buf
 
