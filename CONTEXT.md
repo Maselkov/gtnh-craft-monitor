@@ -220,6 +220,17 @@ production history, not just a code reorganization). Revisit only if a
 genuine feature need shows up (e.g. a query that has to join across
 them), not for tidiness alone.
 
+**Schema changes are numbered migration steps** (`db.py`,
+`CRAFT_MIGRATIONS` and friends). Each file's `PRAGMA user_version`
+records how many steps it has had; startup runs the rest, each in one
+transaction with its version bump. To change a schema, append a step -
+never edit one that has shipped. Step 1 is the baseline from before
+versioning and has to stay idempotent: every older install reports
+version 0 whatever state its tables are in (a real one still had the
+retired `craft_keys` table and none of the request-history tables). A
+file at a higher version than the server knows stops startup rather
+than being run by older code.
+
 ## Network scan integrity (why scan/finish looks the way it does)
 
 This ended up being the single most-iterated-on piece of server logic

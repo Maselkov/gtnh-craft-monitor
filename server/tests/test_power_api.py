@@ -147,6 +147,8 @@ class TestPowerDbMigration:
             conn.execute(
                 "INSERT INTO power_readings (ts, stored, capacity) VALUES (?, ?, ?)",
                 (1000.0, 500000, 5000000))
+            # Files from before schema versioning all report version 0.
+            conn.execute("PRAGMA user_version = 0")
             conn.commit()
         finally:
             conn.close()
