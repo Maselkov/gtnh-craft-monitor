@@ -4,7 +4,7 @@ the live item list, per-item quantity history and item pins."""
 import time
 import secrets
 
-from flask import abort, Blueprint, current_app, jsonify, request, Response
+from flask import abort, Blueprint, current_app, g, jsonify, request, Response
 
 from gcm import auth, charts, db, icons, state
 
@@ -13,9 +13,8 @@ bp = Blueprint("network", __name__)
 
 
 @bp.route("/api/network/scan/start", methods=["POST"])
+@auth.api_key_required
 def network_scan_start():
-    if not auth.require_api_key():
-        return jsonify({"error": "unauthorized"}), 401
     with state.network_lock:
         state.network_buffer.clear()
         state.network["in_progress"] = True
@@ -35,9 +34,8 @@ def _check_scan_token(payload):
 
 
 @bp.route("/api/network/scan/batch", methods=["POST"])
+@auth.api_key_required
 def network_scan_batch():
-    if not auth.require_api_key():
-        return jsonify({"error": "unauthorized"}), 401
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
         return jsonify({"error": "invalid payload"}), 400
@@ -72,9 +70,8 @@ def network_scan_batch():
 
 
 @bp.route("/api/network/scan/finish", methods=["POST"])
+@auth.api_key_required
 def network_scan_finish():
-    if not auth.require_api_key():
-        return jsonify({"error": "unauthorized"}), 401
     payload = request.get_json(silent=True) or {}
     with state.network_lock:
         # Primary defense #1: does this scan/finish actually belong to
@@ -197,6 +194,7 @@ def network_scan_finish():
 
 
 @bp.route("/api/network", methods=["GET"])
+@auth.public
 def network_get():
     with state.network_lock:
         return jsonify(
@@ -392,6 +390,7 @@ def downsample_steps(rows, max_points=ITEM_HISTORY_MAX_POINTS):
 
 
 @bp.route("/api/network/history/chart.png", methods=["GET"])
+@auth.public
 def network_history_chart_png():
     rate_limited = charts.rate_limit_response()
     if rate_limited:
@@ -462,6 +461,7 @@ def _fetch_item_history_rows(mod, internal, damage, kind, range_key):
 
 
 @bp.route("/api/network/history", methods=["GET"])
+@auth.public
 def network_history_get():
     mod = request.args.get("mod") or None
     internal = request.args.get("internal") or None
@@ -497,10 +497,9 @@ def network_history_get():
 # requests/cancellation this doesn't require the operator role - any
 # signed-in user can pin items.
 @bp.route("/api/network/pins", methods=["GET"])
+@auth.login_required
 def network_item_pins_get():
-    user_id = auth.require_user_id()
-    if not user_id:
-        return jsonify({"error": "authentication required"}), 401
+    user_id = g.user["id"]
     conn = db.craft_db()
     try:
         rows = conn.execute(
@@ -520,10 +519,9 @@ def network_item_pins_get():
 
 
 @bp.route("/api/network/pins", methods=["POST"])
+@auth.login_required
 def network_item_pins_post():
-    user_id = auth.require_user_id()
-    if not user_id:
-        return jsonify({"error": "authentication required"}), 401
+    user_id = g.user["id"]
     payload = request.get_json(silent=True) or {}
     mod = payload.get("mod")
     internal = payload.get("internal")
@@ -547,10 +545,9 @@ def network_item_pins_post():
 
 
 @bp.route("/api/network/pins/unpin", methods=["POST"])
+@auth.login_required
 def network_item_pins_unpin():
-    user_id = auth.require_user_id()
-    if not user_id:
-        return jsonify({"error": "authentication required"}), 401
+    user_id = g.user["id"]
     payload = request.get_json(silent=True) or {}
     mod = payload.get("mod")
     internal = payload.get("internal")

@@ -123,6 +123,15 @@ Three rules keep this layout honest:
   name in `security.py`'s sets doesn't exist, so renaming or moving a
   route can't silently drop its bootstrap/cross-origin protection.
 
+**Every route declares its auth policy with a decorator from
+`gcm/auth.py`** - `api_key_required` (the in-game scripts),
+`login_required`, `operator_required`, `admin_required` (these set
+`g.user`), `public`, or `custom_check` (checked in the view, with a
+comment saying why). `tests/test_route_auth.py` fails if any route has
+none, and pins the exact list of public routes, so making something
+public is always a visible, reviewed change. A view that reads
+`g.user` without its decorator crashes rather than serving anonymously.
+
 Craft requests and cancellations share one `CommandQueue` class
 (`state.py`) - they used to be two hand-copied implementations of the
 same pickup-timeout/result-timeout/retention lifecycle, differing only
@@ -476,7 +485,7 @@ touch-primary device" is decided elsewhere in this project too.
 
 ## Test suite (server/tests/)
 
-166 pytest tests across 13 files, covering every endpoint - crafts, CPU
+171 pytest tests across 14 files, covering every endpoint - crafts, CPU
 pins, craft requests, cancellation, network scanning (including the
 scan-integrity mechanism above), item history, network item pins,
 power readings (including the DB migration), auth/admin, OpenGraph
@@ -543,9 +552,6 @@ DOM-interactive frontend JS (event wiring, rendering, modals).
   OC API surface at all (see "Gotchas" above).
 - The three SQLite files remain separate - deliberate, discussed, and
   deferred, not an oversight (see "Architecture" above).
-- API-key and session checks are still written inline at the top of
-  each route rather than as decorators - consistent, but a new route
-  has to remember them by hand.
 - The `oc/*.lua` scripts have no automated test coverage at all (the
   test suites cover the server and frontend only) - anything Lua-side is
   still verified via manual `luac -p` syntax checks and live-server/
