@@ -118,10 +118,13 @@ Three rules keep this layout honest:
 - **Other modules read settings as `config.NAME` at call time**, never
   `from gcm.config import NAME` - otherwise `configure()` (and tests'
   monkeypatching) would silently not reach them.
-- **Security hooks match on blueprint-qualified endpoint names**
-  (`crafts.pins_post`). `tests/test_security_endpoints.py` fails if any
-  name in `security.py`'s sets doesn't exist, so renaming or moving a
-  route can't silently drop its bootstrap/cross-origin protection.
+- **Security hooks never list routes by name.** The bootstrap-rotation
+  block covers every route whose auth decorator is `login_required`,
+  `operator_required` or `admin_required`, and the cross-origin check
+  covers every non-GET request that carries a live session. A new
+  route is protected without being listed; `tests/test_security_endpoints.py`
+  requests every registered route to prove it. Only `NO_STORE_ENDPOINTS`
+  is still by name, and that test checks each name exists.
 
 **Every route declares its auth policy with a decorator from
 `gcm/auth.py`** - `api_key_required` (the in-game scripts),
@@ -135,7 +138,16 @@ public is always a visible, reviewed change. A view that reads
 Craft requests and cancellations share one `CommandQueue` class
 (`state.py`) - they used to be two hand-copied implementations of the
 same pickup-timeout/result-timeout/retention lifecycle, differing only
-in their numbers and messages.
+in their numbers and messages. Two guarantees matter to the game side:
+- **Each command is handed out at most once.** `/pending` returns only
+  records nobody has picked up yet. Running a craft twice costs double
+  resources and a second cancel can hit the next job on that CPU;
+  a lost `/pending` response only costs a request that times out.
+- **Ids keep counting across restarts.** `create_app()` starts each
+  queue above the highest `request_id` in its history table.
+  craft_monitor.lua reports results by id and may still hold one from
+  before a restart; with a reused id, that late result landed on an
+  unrelated new request.
 
 **File organization, frontend**: `server/index.html` is a small shell;
 styles are `server/static/app.css` and the code is ES modules split per

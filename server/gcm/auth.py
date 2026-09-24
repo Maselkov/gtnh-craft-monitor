@@ -103,6 +103,14 @@ def create_session(conn, access_token):
 
 
 def session_user():
+    """The signed-in user for this request, or None. Looked up once per
+    request - the security hooks and the route decorators all ask."""
+    if "session_user" not in g:
+        g.session_user = _lookup_session_user()
+    return g.session_user
+
+
+def _lookup_session_user():
     session_token = request.cookies.get("gcm_session")
     if not session_token:
         return None

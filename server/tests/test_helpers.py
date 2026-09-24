@@ -1,5 +1,5 @@
 from gcm import charts, db, icons
-from gcm.routes import network, pages, power
+from gcm.routes import network, pages
 
 
 class TestItemKey:
@@ -74,27 +74,6 @@ class TestFormatQtyPy:
         assert result.startswith("-")
 
 
-class TestDownsample:
-    def test_under_the_cap_returns_unchanged(self):
-        rows = [(i, i * 10, 1000) for i in range(10)]
-        result = power.downsample(rows, max_points=100)
-        assert result == rows
-
-    def test_over_the_cap_reduces_point_count(self):
-        rows = [(i, i * 10, 1000) for i in range(1000)]
-        result = power.downsample(rows, max_points=100)
-        assert len(result) <= 100
-
-    def test_averaging_preserves_overall_range(self):
-        # Bucket-averaging shouldn't invent values wildly outside the
-        # real data's own min/max.
-        rows = [(i, i * 10, 1000) for i in range(1000)]
-        result = power.downsample(rows, max_points=50)
-        stored_values = [r[1] for r in result]
-        assert min(stored_values) >= 0
-        assert max(stored_values) <= 9990
-
-
 class TestDownsampleSteps:
     def test_under_the_cap_returns_unchanged(self):
         rows = [(i, i) for i in range(5)]
@@ -102,7 +81,7 @@ class TestDownsampleSteps:
         assert result == rows
 
     def test_picks_real_recorded_values_not_averages(self):
-        # Unlike _downsample (power, continuous signal), this must
+        # Unlike power's bucket averaging (a continuous signal), this must
         # preserve GENUINE observed values, not invent averaged ones -
         # item quantity is a step function.
         rows = [(i, 100 if i % 2 == 0 else 999999) for i in range(1000)]

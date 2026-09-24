@@ -39,8 +39,8 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: "26"
-      # The page loads these as classic scripts, so a syntax error in one
-      # would otherwise only show up in someone's browser console.
+      # The page loads these as ES modules, so a syntax error in one would
+      # otherwise only show up in someone's browser console.
       - run: for f in server/static/js/*.js; do node --check "$f" || exit 1; done
       - run: node --test 'server/tests/js/*.test.js'
 

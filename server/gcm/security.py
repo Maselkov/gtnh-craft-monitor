@@ -1,16 +1,18 @@
 """Request-level security: which proxies may set X-Forwarded-* headers,
-endpoints blocked until the bootstrap token is rotated, cross-origin
+routes blocked until the bootstrap token is rotated, cross-origin
 checks on session writes, and browser security headers.
 
-Endpoint names are blueprint-qualified ("crafts.pins_post");
-tests/test_security_endpoints.py checks each one exists."""
+The first two are decided from each route's gcm.auth decorator and the
+request method, not from lists of endpoint names. NO_STORE_ENDPOINTS is
+still by name; tests/test_security_endpoints.py checks each one
+exists."""
 
 import base64
 import hashlib
 import ipaddress
 import os
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from gcm import auth
@@ -58,46 +60,18 @@ def _is_trusted_proxy_address(address):
     return any(ip_address in network for network in TRUSTED_PROXY_NETWORKS)
 
 
-BOOTSTRAP_BLOCKED_ENDPOINTS = {
-    "craft_requests.craft_request_post",
-    "craft_requests.craft_requests_get",
-    "craft_requests.craft_request_dismiss",
-    "craft_requests.craft_cancel_post",
-    "craft_requests.craft_cancel_get",
-    "crafts.pins_get",
-    "crafts.pins_post",
-    "crafts.pins_unpin",
-    "crafts.completions_get",
-    "crafts.completions_ack",
-    "crafts.completions_ack_all",
-    "network.network_item_pins_get",
-    "network.network_item_pins_post",
-    "network.network_item_pins_unpin",
-    "users.admin_user_post",
-    "users.admin_token_revoke_post",
-    "users.admin_users_get",
-    "users.admin_user_history_get",
-    "users.admin_user_delete",
-    "users.admin_user_token_regenerate",
-}
+# Routes a bootstrap-token session may not use until the token is
+# rotated: every route that acts as a signed-in user, read from its
+# gcm.auth decorator so a new route is covered without being listed.
+BOOTSTRAP_BLOCKED_POLICIES = {"login", "operator", "admin"}
 
-SESSION_WRITE_ENDPOINTS = {
-    "users.auth_logout_post",
-    "users.auth_rotate_bootstrap_post",
-    "craft_requests.craft_request_post",
-    "craft_requests.craft_request_dismiss",
-    "craft_requests.craft_cancel_post",
-    "crafts.pins_post",
-    "crafts.pins_unpin",
-    "crafts.completions_ack",
-    "crafts.completions_ack_all",
-    "network.network_item_pins_post",
-    "network.network_item_pins_unpin",
-    "users.admin_user_post",
-    "users.admin_user_delete",
-    "users.admin_user_token_regenerate",
-    "users.admin_token_revoke_post",
-}
+SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+
+def _auth_policies():
+    view = current_app.view_functions.get(request.endpoint)
+    return getattr(view, "auth_policies", ())
+
 
 # Responses that carry session or token state; never cached.
 NO_STORE_ENDPOINTS = {
@@ -115,7 +89,7 @@ NO_STORE_ENDPOINTS = {
 
 @bp.before_app_request
 def block_unrotated_bootstrap_sessions():
-    if request.endpoint not in BOOTSTRAP_BLOCKED_ENDPOINTS:
+    if not BOOTSTRAP_BLOCKED_POLICIES.intersection(_auth_policies()):
         return None
     user = auth.session_user()
     if user and user["must_rotate_bootstrap"]:
@@ -125,7 +99,11 @@ def block_unrotated_bootstrap_sessions():
 
 @bp.before_app_request
 def reject_cross_origin_session_writes():
-    if request.endpoint not in SESSION_WRITE_ENDPOINTS:
+    # Every state-changing request that carries a live session must come
+    # from this origin - whichever route it is, so none can be forgotten.
+    # Requests without a session (the game's API-key calls, login) have
+    # no ambient credentials to abuse.
+    if request.method in SAFE_METHODS:
         return None
     if not auth.session_user():
         return None

@@ -82,6 +82,15 @@ class CommandQueue:
     and otherwise finished records are kept for `retention` seconds
     after finishing so the browser can still show the outcome.
 
+    Each record is handed to the game at most once: running a craft or
+    a cancel twice does real damage (double resources, or cancelling the
+    next job on that CPU), while a lost /pending response only costs a
+    request that times out.
+
+    Ids keep counting up across restarts (see start_after()): the game
+    reports results by id, and may still be holding an id from before a
+    restart that must not match a new request.
+
     `requests` (id -> dict) and `lock` are public: endpoints read and
     update records directly while holding the lock."""
 
@@ -112,6 +121,12 @@ class CommandQueue:
         with self.lock:
             self.requests.clear()
             self._next_id = 1
+
+    def start_after(self, last_id):
+        """Makes new ids start above last_id - the highest id any earlier
+        process handed out."""
+        with self.lock:
+            self._next_id = max(self._next_id, last_id + 1)
 
     def add(self, record):
         """Stores a new pending record, assigning and returning its id."""
@@ -161,13 +176,18 @@ class CommandQueue:
 
     def claim_pending(self):
         """For the game's /pending poll: expires stale records, marks every
-        pending one as picked up (first poll only), and returns copies."""
+        pending one not yet picked up as picked up, and returns copies of
+        just those."""
         now = time.time()
         with self.lock:
             expired = self._expire_locked()
-            pending = [r for r in self.requests.values() if r["status"] == "pending"]
+            pending = [
+                r
+                for r in self.requests.values()
+                if r["status"] == "pending" and "picked_up_at" not in r
+            ]
             for r in pending:
-                r.setdefault("picked_up_at", now)
+                r["picked_up_at"] = now
             pending = [dict(r) for r in pending]
         self._record_expired(expired)
         return pending
