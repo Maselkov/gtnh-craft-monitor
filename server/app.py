@@ -4,9 +4,9 @@ GTNH Craft Monitor - server side
 Receives crafting-CPU status POSTed by the in-game OpenComputers script
 and serves a small webpage that polls it and displays current jobs.
 
-Run directly:
-    pip install flask
-    API_KEY=change-me python app.py
+Run directly (see README for the required environment variables):
+    pip install -r requirements.txt
+    python app.py
 
 Or via Docker (see Dockerfile / docker-compose.yml in this project).
 """
@@ -477,6 +477,49 @@ _craft_requests_lock = threading.Lock()
 _craft_requests = {}  # id -> dict, see craft_request_post() for shape
 _craft_request_next_id = 1
 
+# Bounds on how long request records live in memory. A request is
+# "picked up" once craft_monitor.lua has fetched it from /pending. One
+# that's never picked up means the game isn't polling, and it's failed
+# rather than left to run whenever the game comes back. A picked-up
+# craft request stays pending while AE2 plans the craft (minutes for a
+# big job), so it gets a much longer limit.
+CRAFT_REQUEST_PICKUP_TIMEOUT_SECONDS = 120
+CRAFT_REQUEST_RESULT_TIMEOUT_SECONDS = 3600
+FAILED_CRAFT_REQUEST_RETENTION_SECONDS = 86400
+
+
+def _expire_craft_requests():
+    """Fails stale pending requests and forgets old failed ones. Returns
+    [(req_id, reason)] for the caller to record in history outside the
+    lock. Must be called with _craft_requests_lock held."""
+    now = time.time()
+    expired = []
+    for req_id, req in list(_craft_requests.items()):
+        if req["status"] == "pending":
+            picked_up_at = req.get("picked_up_at")
+            if picked_up_at is None:
+                if now - req["created_at"] <= CRAFT_REQUEST_PICKUP_TIMEOUT_SECONDS:
+                    continue
+                reason = "the game didn't pick up this request - is craft_monitor running?"
+            elif now - picked_up_at > CRAFT_REQUEST_RESULT_TIMEOUT_SECONDS:
+                reason = "no result from the game - check in-game"
+            else:
+                continue
+            req["status"] = "failed"
+            req["reason"] = reason
+            req["failed_at"] = now
+            expired.append((req_id, reason))
+        elif req["status"] == "failed":
+            failed_at = req.get("failed_at", req["created_at"])
+            if now - failed_at > FAILED_CRAFT_REQUEST_RETENTION_SECONDS:
+                del _craft_requests[req_id]
+    return expired
+
+
+def _record_expired_craft_requests(expired):
+    for req_id, reason in expired:
+        _update_craft_request_history(req_id, "failed", reason, None)
+
 
 @app.route("/api/craft/request", methods=["POST"])
 def craft_request_post():
@@ -538,8 +581,9 @@ def craft_request_post():
 def craft_requests_get():
     user_id = _require_user_id()
     if not user_id:
-        return jsonify({"error": "missing X-User-Id header"}), 400
+        return jsonify({"error": "authentication required"}), 401
     with _craft_requests_lock:
+        expired = _expire_craft_requests()
         # "accepted" requests aren't returned here at all - the moment
         # one is accepted, a real pin is created and it's the pin
         # (existing infrastructure) that represents it from then on, not
@@ -550,6 +594,7 @@ def craft_requests_get():
             if r["user_id"] == user_id and r["status"] in ("pending", "failed")
         ]
         mine.sort(key=lambda r: r["created_at"], reverse=True)
+    _record_expired_craft_requests(expired)
     return jsonify({"requests": mine})
 
 
@@ -557,7 +602,7 @@ def craft_requests_get():
 def craft_request_dismiss(req_id):
     user_id = _require_user_id()
     if not user_id:
-        return jsonify({"error": "missing X-User-Id header"}), 400
+        return jsonify({"error": "authentication required"}), 401
     with _craft_requests_lock:
         req = _craft_requests.get(req_id)
         if req and req["user_id"] == user_id:
@@ -570,8 +615,14 @@ def craft_requests_pending():
     # Lua polling for work - every user's pending requests at once.
     if not _require_api_key():
         return jsonify({"error": "unauthorized"}), 401
+    now = time.time()
     with _craft_requests_lock:
+        expired = _expire_craft_requests()
         pending = [r for r in _craft_requests.values() if r["status"] == "pending"]
+        for r in pending:
+            r.setdefault("picked_up_at", now)
+        pending = [dict(r) for r in pending]
+    _record_expired_craft_requests(expired)
     return jsonify({"requests": pending})
 
 
@@ -615,6 +666,7 @@ def craft_request_result(req_id):
         else:
             req["status"] = "failed"
             req["reason"] = payload.get("reason") or "request failed"
+            req["failed_at"] = time.time()
             user_id = None
             cpu_name = None
 
@@ -665,6 +717,44 @@ _cancel_requests = (
 )  # id -> {id, user_id, cpu_name, status, success, reason, created_at}
 _cancel_request_next_id = 1
 
+# The browser stops waiting after ~15s and tells the user the game
+# didn't respond, so an unclaimed cancel must not run later (it could
+# hit a different job on that CPU by then).
+CANCEL_PICKUP_TIMEOUT_SECONDS = 20
+CANCEL_RESULT_TIMEOUT_SECONDS = 300
+RESOLVED_CANCEL_RETENTION_SECONDS = 600
+
+
+def _expire_cancel_requests():
+    """Same contract as _expire_craft_requests(), for cancellations.
+    Must be called with _cancel_requests_lock held."""
+    now = time.time()
+    expired = []
+    for req_id, req in list(_cancel_requests.items()):
+        if req["status"] == "pending":
+            picked_up_at = req.get("picked_up_at")
+            if picked_up_at is None:
+                if now - req["created_at"] <= CANCEL_PICKUP_TIMEOUT_SECONDS:
+                    continue
+                reason = "the game didn't pick up this cancellation"
+            elif now - picked_up_at > CANCEL_RESULT_TIMEOUT_SECONDS:
+                reason = "no result from the game - check in-game"
+            else:
+                continue
+            req["status"] = "resolved"
+            req["success"] = False
+            req["reason"] = reason
+            req["resolved_at"] = now
+            expired.append((req_id, reason))
+        elif now - req.get("resolved_at", req["created_at"]) > RESOLVED_CANCEL_RETENTION_SECONDS:
+            del _cancel_requests[req_id]
+    return expired
+
+
+def _record_expired_cancel_requests(expired):
+    for req_id, reason in expired:
+        _update_craft_cancel_history(req_id, False, reason)
+
 
 @app.route("/api/craft/cancel", methods=["POST"])
 def craft_cancel_post():
@@ -713,20 +803,29 @@ def craft_cancel_post():
 def craft_cancel_get(req_id):
     user_id = _require_user_id()
     if not user_id:
-        return jsonify({"error": "missing X-User-Id header"}), 400
+        return jsonify({"error": "authentication required"}), 401
     with _cancel_requests_lock:
+        expired = _expire_cancel_requests()
         req = _cancel_requests.get(req_id)
-        if not req or req["user_id"] != user_id:
-            return jsonify({"error": "unknown request id"}), 404
-        return jsonify(dict(req))
+        req = dict(req) if req and req["user_id"] == user_id else None
+    _record_expired_cancel_requests(expired)
+    if not req:
+        return jsonify({"error": "unknown request id"}), 404
+    return jsonify(req)
 
 
 @app.route("/api/craft/cancel/pending", methods=["GET"])
 def craft_cancel_pending():
     if not _require_api_key():
         return jsonify({"error": "unauthorized"}), 401
+    now = time.time()
     with _cancel_requests_lock:
+        expired = _expire_cancel_requests()
         pending = [r for r in _cancel_requests.values() if r["status"] == "pending"]
+        for r in pending:
+            r.setdefault("picked_up_at", now)
+        pending = [dict(r) for r in pending]
+    _record_expired_cancel_requests(expired)
     return jsonify({"requests": pending})
 
 
@@ -745,6 +844,7 @@ def craft_cancel_result(req_id):
         req["status"] = "resolved"
         req["success"] = success
         req["reason"] = reason
+        req["resolved_at"] = time.time()
 
     _update_craft_cancel_history(req_id, success, reason)
 
@@ -768,12 +868,8 @@ def craft_cancel_result(req_id):
 # cheap (a few dozen writes a day at most) and doubles as raw material
 # for any future historical/analytics view.
 #
-# user_pins / user_completions are per-user (identified by a
-# self-issued UUID the browser generates once and keeps in
-# localStorage, sent as the X-User-Id header - this is identity, not
-# authentication; anyone with the UUID can act as that user, which is
-# an acceptable tradeoff behind your own network/auth but not a real
-# security boundary).
+# user_pins / user_completions are per-user, keyed by the signed-in
+# user's ID from their session.
 CRAFT_EVENT_FINISHED_THRESHOLD = 99  # progress_percent >= this counts as "finished"
 COMPLETIONS_MAX_AGE_SECONDS = (
     30 * 86400
@@ -1118,6 +1214,39 @@ def _init_craft_db():
 _init_craft_db()
 
 
+def _prune_sessions(conn):
+    # Expired and revoked sessions can never authenticate again.
+    conn.execute(
+        "DELETE FROM sessions WHERE expires_at <= ? OR revoked_at IS NOT NULL",
+        (time.time(),),
+    )
+
+
+def _close_orphaned_request_history():
+    # Craft and cancel requests live in memory, so any history row still
+    # open at startup belongs to a request the previous process lost.
+    now = time.time()
+    conn = _craft_db()
+    try:
+        conn.execute(
+            "UPDATE craft_request_history SET status = 'failed', "
+            "reason = 'server restarted', resolved_at = ? WHERE resolved_at IS NULL",
+            (now,),
+        )
+        conn.execute(
+            "UPDATE craft_cancel_history SET status = 'resolved', success = 0, "
+            "reason = 'server restarted', resolved_at = ? WHERE resolved_at IS NULL",
+            (now,),
+        )
+        _prune_sessions(conn)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+_close_orphaned_request_history()
+
+
 def _bootstrap_admin():
     token = os.environ.get("GCM_BOOTSTRAP_ADMIN_TOKEN", "").strip()
     if not token:
@@ -1319,6 +1448,7 @@ def auth_login_post():
             "UPDATE access_tokens SET last_used_at = ? WHERE id = ?",
             (time.time(), access_token["id"]),
         )
+        _prune_sessions(conn)
         session_token = _create_session(conn, access_token)
         conn.commit()
     finally:
@@ -1764,7 +1894,7 @@ def crafts_get():
 def pins_get():
     user_id = _require_user_id()
     if not user_id:
-        return jsonify({"error": "missing X-User-Id header"}), 400
+        return jsonify({"error": "authentication required"}), 401
     conn = _craft_db()
     try:
         rows = conn.execute(
@@ -1779,7 +1909,7 @@ def pins_get():
 def pins_post():
     user_id = _require_user_id()
     if not user_id:
-        return jsonify({"error": "missing X-User-Id header"}), 400
+        return jsonify({"error": "authentication required"}), 401
 
     payload = request.get_json(silent=True) or {}
     cpu_name = payload.get("cpu_name")
@@ -1814,7 +1944,7 @@ def pins_post():
 def pins_unpin():
     user_id = _require_user_id()
     if not user_id:
-        return jsonify({"error": "missing X-User-Id header"}), 400
+        return jsonify({"error": "authentication required"}), 401
 
     payload = request.get_json(silent=True) or {}
     cpu_name = payload.get("cpu_name")
@@ -1837,7 +1967,7 @@ def pins_unpin():
 def completions_get():
     user_id = _require_user_id()
     if not user_id:
-        return jsonify({"error": "missing X-User-Id header"}), 400
+        return jsonify({"error": "authentication required"}), 401
 
     conn = _craft_db()
     try:
@@ -1876,7 +2006,7 @@ def completions_get():
 def completions_ack(completion_id):
     user_id = _require_user_id()
     if not user_id:
-        return jsonify({"error": "missing X-User-Id header"}), 400
+        return jsonify({"error": "authentication required"}), 401
     conn = _craft_db()
     try:
         conn.execute(
@@ -1893,7 +2023,7 @@ def completions_ack(completion_id):
 def completions_ack_all():
     user_id = _require_user_id()
     if not user_id:
-        return jsonify({"error": "missing X-User-Id header"}), 400
+        return jsonify({"error": "authentication required"}), 401
     conn = _craft_db()
     try:
         conn.execute("DELETE FROM user_completions WHERE user_id = ?", (user_id,))
@@ -2683,7 +2813,7 @@ def network_history_get():
 def network_item_pins_get():
     user_id = _require_user_id()
     if not user_id:
-        return jsonify({"error": "missing X-User-Id header"}), 400
+        return jsonify({"error": "authentication required"}), 401
     conn = _craft_db()
     try:
         rows = conn.execute(
@@ -2706,7 +2836,7 @@ def network_item_pins_get():
 def network_item_pins_post():
     user_id = _require_user_id()
     if not user_id:
-        return jsonify({"error": "missing X-User-Id header"}), 400
+        return jsonify({"error": "authentication required"}), 401
     payload = request.get_json(silent=True) or {}
     mod = payload.get("mod")
     internal = payload.get("internal")
@@ -2733,7 +2863,7 @@ def network_item_pins_post():
 def network_item_pins_unpin():
     user_id = _require_user_id()
     if not user_id:
-        return jsonify({"error": "missing X-User-Id header"}), 400
+        return jsonify({"error": "authentication required"}), 401
     payload = request.get_json(silent=True) or {}
     mod = payload.get("mod")
     internal = payload.get("internal")
@@ -2964,5 +3094,13 @@ if __name__ == "__main__":
         sys.exit(0)
     _require_runtime_secrets()
     _require_initial_admin()
+    import logging
+
+    from waitress import serve
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     port = int(os.environ.get("PORT", "8420"))
-    app.run(host="0.0.0.0", port=port)
+    # Single process on purpose: crafts, network scans, and craft/cancel
+    # requests are held in module-level memory, so multiple worker
+    # processes would each see a different copy.
+    serve(app, host="0.0.0.0", port=port, threads=8)

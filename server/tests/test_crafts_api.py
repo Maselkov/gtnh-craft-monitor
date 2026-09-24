@@ -57,9 +57,9 @@ class TestCpuPins:
             headers=api_headers,
         )
 
-    def test_pin_requires_user_id_header(self, client):
+    def test_pin_requires_sign_in(self, client):
         res = client.post("/api/pins", json={"cpu_name": "W01"})
-        assert res.status_code == 400
+        assert res.status_code == 401
 
     def test_cannot_pin_unknown_cpu(self, client, api_headers):
         self._post_busy_job(client, api_headers)

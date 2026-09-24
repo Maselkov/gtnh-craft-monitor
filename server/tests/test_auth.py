@@ -66,7 +66,7 @@ def test_login_exchanges_access_token_for_session_cookie(client):
 def test_spoofed_user_id_header_does_not_authenticate(client):
     response = client.get("/api/pins", headers={"X-User-Id": "usr_alice"})
 
-    assert response.status_code == 400
+    assert response.status_code == 401
 
 
 def test_disabling_a_user_invalidates_existing_sessions(client):

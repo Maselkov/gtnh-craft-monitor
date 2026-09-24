@@ -148,11 +148,11 @@ class TestSnapshotRestartRecovery:
 
 
 class TestNetworkItemPins:
-    def test_pin_requires_user_id(self, client):
+    def test_pin_requires_sign_in(self, client):
         res = client.post(
             "/api/network/pins", json={"internal": "iron_ingot", "mod": "minecraft"}
         )
-        assert res.status_code == 400
+        assert res.status_code == 401
 
     def test_pin_then_list_it(self, client):
         login_as(client, "usr_alice")
