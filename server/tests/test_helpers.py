@@ -1,28 +1,28 @@
-from gcm import charts, db, icons
+from gcm import charts, icons, store
 from gcm.routes import network, pages
 
 
 class TestItemKey:
     def test_item_with_damage(self):
-        assert db.item_key("gregtech", "gt.blockmachines", 123, "item") == "gregtech|gt.blockmachines|123|item"
+        assert store.items.item_key("gregtech", "gt.blockmachines", 123, "item") == "gregtech|gt.blockmachines|123|item"
 
     def test_fluid_no_mod_no_damage(self):
         # Confirmed real shape from the Cryotheum investigation - mod and
         # damage are both None for a fluid, not empty string or 0.
-        assert db.item_key(None, "cryotheum", None, "fluid") == "|cryotheum||fluid"
+        assert store.items.item_key(None, "cryotheum", None, "fluid") == "|cryotheum||fluid"
 
     def test_damage_zero_is_not_the_same_as_damage_none(self):
         # damage=0 is a real, valid value (the common case for
         # non-variant items) and must not collapse to the same key as
         # damage=None (a fluid, or genuinely absent).
-        key_zero = db.item_key("minecraft", "stone", 0, "item")
-        key_none = db.item_key("minecraft", "stone", None, "item")
+        key_zero = store.items.item_key("minecraft", "stone", 0, "item")
+        key_none = store.items.item_key("minecraft", "stone", None, "item")
         assert key_zero != key_none
         assert key_zero == "minecraft|stone|0|item"
         assert key_none == "minecraft|stone||item"
 
     def test_missing_kind_defaults_to_item(self):
-        assert db.item_key("mod", "internal", 0, None) == "mod|internal|0|item"
+        assert store.items.item_key("mod", "internal", 0, None) == "mod|internal|0|item"
 
 
 class TestParseItemUrlPath:

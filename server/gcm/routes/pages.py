@@ -9,8 +9,8 @@ from urllib.parse import unquote
 
 from flask import abort, Blueprint, request, Response
 
-from gcm import auth, charts, config, icons, security, state
-from gcm.routes import network, power
+from gcm import auth, charts, config, icons, security, state, store
+from gcm.routes import network
 
 
 bp = Blueprint("pages", __name__)
@@ -91,7 +91,7 @@ def _build_og_tags(path, args):
     elif path == "/power":
         # The latest raw reading, like the page's own readout - not the
         # last bucket of a downsampled range.
-        latest = power.fetch_latest_power_reading()
+        latest = store.power.latest()
         title = "Power"
         if latest:
             stored, capacity = latest[1], latest[2]

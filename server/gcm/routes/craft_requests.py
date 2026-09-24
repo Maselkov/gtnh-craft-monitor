@@ -12,7 +12,7 @@ import time
 
 from flask import Blueprint, g, jsonify, request
 
-from gcm import auth, db, history, icons, state
+from gcm import auth, icons, state, store, tracking
 
 
 bp = Blueprint("craft_requests", __name__)
@@ -63,7 +63,7 @@ def craft_request_post():
             "created_at": created_at,
         }
     )
-    history.record_craft_request(
+    store.requests.record_request(
         req_id, user_id, label, mod, internal, damage, amount, kind, created_at
     )
     return jsonify({"ok": True, "id": req_id})
@@ -102,25 +102,6 @@ def craft_requests_pending():
     return jsonify({"requests": state.craft_requests.claim_pending()})
 
 
-def _create_pin_bypassing_busy_check(user_id, cpu_name):
-    # Deliberately NOT going through the normal pin-creation path (which
-    # requires the CPU to already show busy=true in _state["jobs"]) -
-    # that state only updates on craft_monitor.lua's regular 5s poll,
-    # and Lua's craft-request thread can report "accepted, CPU X" faster
-    # than that next regular poll lands. The trust here comes directly
-    # from Lua's own confirmation that it just watched this CPU get
-    # assigned, not from re-deriving it against a possibly-stale cache.
-    conn = db.craft_db()
-    try:
-        conn.execute(
-            "INSERT OR IGNORE INTO user_pins (user_id, cpu_name, pinned_at) VALUES (?, ?, ?)",
-            (user_id, cpu_name, time.time()),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-
 @bp.route("/api/craft/requests/<int:req_id>/result", methods=["POST"])
 @auth.api_key_required
 def craft_request_result(req_id):
@@ -146,32 +127,16 @@ def craft_request_result(req_id):
             cpu_name = None
 
     if status == "accepted" and user_id and cpu_name:
-        _create_pin_bypassing_busy_check(user_id, cpu_name)
-        # Also seed the transition-detection state the main status loop
-        # relies on - without this, a craft that completes faster than
-        # craft_monitor.lua's own 5s poll interval is invisible to
-        # _process_craft_transitions entirely: it never observes a
-        # busy=true sample to compare against the later busy=false one,
-        # so the completion is never detected, the pin is never cleaned
-        # up, and it just sits there forever pointing at an idle CPU.
-        # Seeding "last known busy=true" here means the NEXT real poll -
-        # even if it's the first one that ever samples this CPU - can
-        # still correctly detect the transition retroactively. progress
-        # is left unknown (None) rather than guessed, which _classify_status
-        # now correctly reads as "finished" for exactly this reason.
-        with state.tracking_lock:
-            state.cpu_last_busy[cpu_name] = True
-            entry = state.cpu_last_known.setdefault(
-                cpu_name, {"label": None, "icon": None, "progress": None}
-            )
-            req_label = req.get("label")
-            req_icon = req.get("icon")
-            if req_label:
-                entry["label"] = req_label
-            if req_icon:
-                entry["icon"] = req_icon
+        # Pinned directly rather than through /api/pins, which requires
+        # the CPU to already show busy in the last status report - that
+        # only updates on craft_monitor.lua's regular 5s poll, and the
+        # game can report "accepted, CPU X" before then. The trust here
+        # comes from the game's own confirmation that it just watched
+        # this CPU get assigned, not from a possibly-stale cache.
+        store.crafts.pin_cpu(user_id, cpu_name)
+        tracking.note_job_started(cpu_name, req.get("label"), req.get("icon"))
 
-    history.update_craft_request(
+    store.requests.resolve_request(
         req_id, status, payload.get("reason"), payload.get("cpu_name")
     )
 
@@ -212,7 +177,7 @@ def craft_cancel_post():
             "created_at": created_at,
         }
     )
-    history.record_craft_cancel(req_id, user_id, cpu_name, created_at)
+    store.requests.record_cancel(req_id, user_id, cpu_name, created_at)
     return jsonify({"ok": True, "id": req_id})
 
 
@@ -250,6 +215,6 @@ def craft_cancel_result(req_id):
         req["reason"] = reason
         req["resolved_at"] = time.time()
 
-    history.update_craft_cancel(req_id, success, reason)
+    store.requests.resolve_cancel(req_id, success, reason)
 
     return jsonify({"ok": True})

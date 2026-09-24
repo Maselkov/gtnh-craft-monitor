@@ -4,7 +4,7 @@ import time
 import pytest
 
 import app as app_module
-from gcm import auth, config, db, security
+from gcm import auth, config, db, security, store
 
 
 def test_access_token_resolves_stable_user_id():
@@ -15,10 +15,10 @@ def test_access_token_resolves_stable_user_id():
             "VALUES (?, ?, ?, ?)",
             ("usr_alice", "Alice", "operator", time.time()),
         )
-        token = auth.create_access_token(conn, "usr_alice")
+        token = store.users.create_access_token(conn, "usr_alice")
         conn.commit()
 
-        identity = auth.find_access_token(conn, token)
+        identity = store.users.find_access_token(conn, token)
     finally:
         conn.close()
 
@@ -34,7 +34,7 @@ def test_invalid_access_token_is_rejected():
     conn = db.craft_db()
     try:
         token = "gcm_tok_unknown_not-a-real-secret"
-        assert auth.find_access_token(conn, token) is None
+        assert store.users.find_access_token(conn, token) is None
     finally:
         conn.close()
 
@@ -47,7 +47,7 @@ def test_login_exchanges_access_token_for_session_cookie(client):
             "VALUES (?, ?, ?, ?)",
             ("usr_alice", "Alice", "operator", time.time()),
         )
-        token = auth.create_access_token(conn, "usr_alice")
+        token = store.users.create_access_token(conn, "usr_alice")
         conn.commit()
     finally:
         conn.close()
@@ -79,7 +79,7 @@ def test_disabling_a_user_invalidates_existing_sessions(client):
             "VALUES (?, ?, ?, ?)",
             ("usr_alice", "Alice", "viewer", time.time()),
         )
-        token = auth.create_access_token(conn, "usr_alice")
+        token = store.users.create_access_token(conn, "usr_alice")
         conn.commit()
     finally:
         conn.close()
@@ -105,7 +105,7 @@ def test_only_admins_can_list_or_create_users(client):
             "VALUES (?, ?, ?, ?)",
             ("usr_viewer", "Viewer", "viewer", time.time()),
         )
-        viewer_token = auth.create_access_token(conn, "usr_viewer")
+        viewer_token = store.users.create_access_token(conn, "usr_viewer")
         conn.commit()
     finally:
         conn.close()
@@ -128,7 +128,7 @@ def test_only_admins_can_list_or_create_users(client):
             "VALUES (?, ?, ?, ?)",
             ("usr_admin", "Admin", "admin", time.time()),
         )
-        admin_token = auth.create_access_token(conn, "usr_admin")
+        admin_token = store.users.create_access_token(conn, "usr_admin")
         conn.commit()
     finally:
         conn.close()
@@ -165,7 +165,7 @@ def test_bootstrap_token_must_be_rotated_before_admin_actions(client, flask_app)
             "VALUES (?, ?, ?, ?)",
             ("usr_admin", "Admin", "admin", time.time()),
         )
-        bootstrap_token = auth.create_access_token(
+        bootstrap_token = store.users.create_access_token(
             conn, "usr_admin", is_bootstrap=True
         )
         conn.commit()
@@ -199,9 +199,9 @@ def test_existing_bootstrap_session_is_revoked_during_startup_recognition(monkey
             "VALUES (?, ?, ?, ?)",
             ("usr_admin", "Admin", "admin", time.time()),
         )
-        bootstrap_token = auth.create_access_token(conn, "usr_admin")
-        access_token = auth.find_access_token(conn, bootstrap_token)
-        auth.create_session(conn, access_token)
+        bootstrap_token = store.users.create_access_token(conn, "usr_admin")
+        access_token = store.users.find_access_token(conn, bootstrap_token)
+        store.users.create_session(conn, access_token, auth.SESSION_LIFETIME_SECONDS)
         conn.commit()
     finally:
         conn.close()
@@ -245,7 +245,7 @@ def test_debug_dumps_require_an_operator_session(client):
             "VALUES (?, ?, ?, ?)",
             ("usr_operator", "Operator", "operator", time.time()),
         )
-        token = auth.create_access_token(conn, "usr_operator")
+        token = store.users.create_access_token(conn, "usr_operator")
         conn.commit()
     finally:
         conn.close()
@@ -262,7 +262,7 @@ def test_cross_origin_session_writes_are_rejected(client):
             "VALUES (?, ?, ?, ?)",
             ("usr_alice", "Alice", "viewer", time.time()),
         )
-        token = auth.create_access_token(conn, "usr_alice")
+        token = store.users.create_access_token(conn, "usr_alice")
         conn.commit()
     finally:
         conn.close()
@@ -327,9 +327,9 @@ def test_admin_can_revoke_a_token_and_its_sessions(client, flask_app):
             "VALUES (?, ?, ?, ?)",
             ("usr_operator", "Operator", "operator", time.time()),
         )
-        admin_token = auth.create_access_token(conn, "usr_admin")
-        operator_token = auth.create_access_token(conn, "usr_operator")
-        operator_token_id = auth.find_access_token(conn, operator_token)["id"]
+        admin_token = store.users.create_access_token(conn, "usr_admin")
+        operator_token = store.users.create_access_token(conn, "usr_operator")
+        operator_token_id = store.users.find_access_token(conn, operator_token)["id"]
         conn.commit()
     finally:
         conn.close()
@@ -386,7 +386,7 @@ def test_admin_can_view_user_action_history(client):
                 time.time(),
             ),
         )
-        admin_token = auth.create_access_token(conn, "usr_admin")
+        admin_token = store.users.create_access_token(conn, "usr_admin")
         conn.commit()
     finally:
         conn.close()
@@ -414,9 +414,9 @@ def test_revoked_tokens_are_not_listed(client):
             "VALUES (?, ?, ?, ?)",
             ("usr_alice", "Alice", "operator", time.time()),
         )
-        admin_token = auth.create_access_token(conn, "usr_admin")
-        alice_token = auth.create_access_token(conn, "usr_alice")
-        alice_token_id = auth.find_access_token(conn, alice_token)["id"]
+        admin_token = store.users.create_access_token(conn, "usr_admin")
+        alice_token = store.users.create_access_token(conn, "usr_alice")
+        alice_token_id = store.users.find_access_token(conn, alice_token)["id"]
         conn.commit()
     finally:
         conn.close()
@@ -444,8 +444,8 @@ def test_admin_can_delete_a_user_and_their_credentials(client, flask_app):
             "VALUES (?, ?, ?, ?)",
             ("usr_alice", "Alice", "operator", time.time()),
         )
-        admin_token = auth.create_access_token(conn, "usr_admin")
-        alice_token = auth.create_access_token(conn, "usr_alice")
+        admin_token = store.users.create_access_token(conn, "usr_admin")
+        alice_token = store.users.create_access_token(conn, "usr_alice")
         conn.commit()
     finally:
         conn.close()
@@ -479,7 +479,7 @@ def test_admin_cannot_delete_their_own_account(client):
             "VALUES (?, ?, ?, ?)",
             ("usr_admin", "Admin", "admin", time.time()),
         )
-        admin_token = auth.create_access_token(conn, "usr_admin")
+        admin_token = store.users.create_access_token(conn, "usr_admin")
         conn.commit()
     finally:
         conn.close()
@@ -504,8 +504,8 @@ def test_admin_can_regenerate_a_users_token(client, flask_app):
             "VALUES (?, ?, ?, ?)",
             ("usr_alice", "Alice", "operator", time.time()),
         )
-        admin_token = auth.create_access_token(conn, "usr_admin")
-        old_token = auth.create_access_token(conn, "usr_alice")
+        admin_token = store.users.create_access_token(conn, "usr_admin")
+        old_token = store.users.create_access_token(conn, "usr_alice")
         conn.commit()
     finally:
         conn.close()
@@ -549,7 +549,7 @@ def _login_new_admin(client):
             "VALUES (?, ?, ?, ?)",
             ("usr_admin", "Admin", "admin", time.time()),
         )
-        token = auth.create_access_token(conn, "usr_admin")
+        token = store.users.create_access_token(conn, "usr_admin")
         conn.commit()
     finally:
         conn.close()
@@ -583,7 +583,7 @@ def test_cli_new_token_replaces_a_users_tokens(client, capsys):
             "VALUES (?, ?, ?, ?)",
             ("usr_admin", "Admin", "admin", time.time()),
         )
-        old_token = auth.create_access_token(conn, "usr_admin")
+        old_token = store.users.create_access_token(conn, "usr_admin")
         conn.commit()
     finally:
         conn.close()

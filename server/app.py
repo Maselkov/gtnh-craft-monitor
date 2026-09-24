@@ -18,35 +18,17 @@ Or via Docker (see Dockerfile / docker-compose.yml in this project).
 
 import os
 import sys
-import time
 
-from gcm import auth, config, create_app, db
+from gcm import auth, config, create_app, store
 
 
 def _cli_new_token(display_name):
     """Revokes a user's tokens and sessions and prints a new token - the
     recovery path when the only admin has lost theirs."""
-    conn = db.craft_db()
-    try:
-        row = conn.execute(
-            "SELECT id FROM users WHERE display_name = ?", (display_name,)
-        ).fetchone()
-        if not row:
-            raise SystemExit(f"No user named {display_name!r}")
-        now = time.time()
-        conn.execute(
-            "UPDATE access_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL",
-            (now, row[0]),
-        )
-        conn.execute(
-            "UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL",
-            (now, row[0]),
-        )
-        token = auth.create_access_token(conn, row[0])
-        conn.commit()
-    finally:
-        conn.close()
-    print(token)
+    user_id = store.users.id_for_display_name(display_name)
+    if not user_id:
+        raise SystemExit(f"No user named {display_name!r}")
+    print(store.users.replace_credentials(user_id))
 
 
 if __name__ == "__main__":

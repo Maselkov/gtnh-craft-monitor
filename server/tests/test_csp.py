@@ -55,7 +55,6 @@ def test_generated_markup_has_no_inline_styles():
             assert not re.search(r'\sstyle="', f.read()), name
 
 
-
 def test_external_scripts_are_pinned_and_integrity_checked():
     # The CSP allows each CDN URL; an exact version plus an integrity
     # hash makes it allow exactly one file's contents, too.

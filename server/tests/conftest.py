@@ -38,7 +38,7 @@ _test_data_dir = tempfile.mkdtemp(prefix="gtnh_test_data_")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import gcm  # noqa: E402  (must come after the path setup above)
-from gcm import auth, config, db  # noqa: E402
+from gcm import config, db, store  # noqa: E402
 
 _app = gcm.create_app(data_dir=_test_data_dir, api_key=TEST_API_KEY)
 
@@ -76,7 +76,7 @@ def login_as(client, user_id, role="viewer"):
             "VALUES (?, ?, ?, ?)",
             (user_id, user_id, role, time.time()),
         )
-        token = auth.create_access_token(conn, user_id)
+        token = store.users.create_access_token(conn, user_id)
         conn.commit()
     finally:
         conn.close()

@@ -7,7 +7,7 @@ reloaded from SQLite at startup)."""
 import time
 import threading
 
-from gcm import history
+from gcm import store
 
 
 # Latest crafting-CPU status POSTed by craft_monitor.lua.
@@ -25,9 +25,9 @@ crafts = {
 # In-memory as the live source of truth (unlike power/craft history,
 # this is "what's in the network right now", not a time series) - but
 # ALSO mirrored into the network_snapshot SQLite table on every real
-# scan (see _persist_network_snapshot()/load_network_snapshot() in
-# routes/network.py), specifically so a server restart doesn't leave the Network tab
-# empty until the next scan completes.
+# scan (see store/items.py save_snapshot()/load_snapshot()),
+# specifically so a server restart doesn't leave the Network tab empty
+# until the next scan completes.
 #
 # A scan is a start/batch*/finish sequence, not one big POST - the whole
 # reason getItemsInNetworkById() is viable at all is that both the
@@ -203,7 +203,7 @@ craft_requests = CommandQueue(
     unclaimed_reason="the game didn't pick up this request - is craft_monitor running?",
     finished_status="failed",
     finished_at_field="failed_at",
-    on_expire=lambda req_id, reason: history.update_craft_request(
+    on_expire=lambda req_id, reason: store.requests.resolve_request(
         req_id, "failed", reason, None
     ),
 )
@@ -230,7 +230,7 @@ cancel_requests = CommandQueue(
     finished_status="resolved",
     finished_at_field="resolved_at",
     expired_fields={"success": False},
-    on_expire=lambda req_id, reason: history.update_craft_cancel(req_id, False, reason),
+    on_expire=lambda req_id, reason: store.requests.resolve_cancel(req_id, False, reason),
 )
 
 

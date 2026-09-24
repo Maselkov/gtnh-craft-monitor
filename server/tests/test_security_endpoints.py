@@ -1,6 +1,6 @@
 import time
 
-from gcm import auth, db, security
+from gcm import db, security, store
 
 
 def test_every_no_store_endpoint_exists(flask_app):
@@ -35,7 +35,7 @@ def login_with_bootstrap_token(client):
             "VALUES (?, ?, ?, ?)",
             ("usr_admin", "Admin", "admin", time.time()),
         )
-        token = auth.create_access_token(conn, "usr_admin", is_bootstrap=True)
+        token = store.users.create_access_token(conn, "usr_admin", is_bootstrap=True)
         conn.commit()
     finally:
         conn.close()
