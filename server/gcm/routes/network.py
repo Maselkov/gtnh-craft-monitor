@@ -6,7 +6,7 @@ import secrets
 
 from flask import abort, Blueprint, current_app, g, jsonify, request, Response
 
-from gcm import auth, charts, db, icons, state
+from gcm import auth, charts, icons, state, store
 
 
 bp = Blueprint("network", __name__)
@@ -178,13 +178,13 @@ def network_scan_finish():
     # one is logged, not allowed to turn into a 500 that makes
     # network_browser.lua think the whole scan failed when it didn't.
     try:
-        _record_item_history_changes(old_items, new_items)
+        store.items.record_changes(old_items, new_items)
     except Exception as e:
         current_app.logger.exception(
             "item history recording failed (scan itself still succeeded): %s", e
         )
     try:
-        _persist_network_snapshot(new_items)
+        store.items.save_snapshot(new_items)
     except Exception as e:
         current_app.logger.exception(
             "network snapshot persistence failed (scan itself still succeeded): %s", e
@@ -209,90 +209,15 @@ def network_get():
         )
 
 
-# ---------------------------------------------------------------------
-# Item/fluid quantity history (item_history.db). Change-only storage -
-# see the item_history section in gcm/db.py for why.
-def _persist_network_snapshot(items):
-    """Wholesale replace, not change-only - this is a MIRROR of the live
-    snapshot, not a history log. Runs after every real scan; the DELETE+
-    INSERT happens in one transaction so a reader never sees a half-
-    written table.
-
-    INSERT OR REPLACE, not a plain INSERT - confirmed from a real
-    production crash: a scan's item list can apparently contain two or
-    more entries resolving to the same item_key (exact cause not
-    pinned down - a plain INSERT just surfaces it as an uncaught
-    IntegrityError instead of handling it). Duplicates aren't corruption
-    worth treating as fatal either way, so REPLACE just lets the later
-    occurrence in the list win, matching ordinary "last write wins"
-    semantics rather than crashing the entire scan/finish request over
-    what's genuinely a best-effort persistence step, not the actual
-    scan result the website itself depends on."""
-    now = time.time()
-    rows = []
-    for it in items:
-        key = db.item_key(
-            it.get("mod"), it.get("internal"), it.get("damage"), it.get("kind")
-        )
-        rows.append(
-            (
-                key,
-                it.get("mod"),
-                it.get("internal"),
-                it.get("damage"),
-                it.get("kind") or "item",
-                it.get("name"),
-                it.get("size", 0) or 0,
-                1 if it.get("isCraftable") else 0,
-                now,
-            )
-        )
-    conn = db.item_history_db()
-    try:
-        conn.execute("DELETE FROM network_snapshot")
-        if rows:
-            conn.executemany(
-                "INSERT OR REPLACE INTO network_snapshot "
-                "(item_key, mod, internal, damage, kind, name, size, is_craftable, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                rows,
-            )
-        conn.commit()
-    finally:
-        conn.close()
-
-
 def load_network_snapshot():
-    """Called once at server startup - seeds _network_state from whatever
-    was last persisted, so the Network tab has SOMETHING to show
+    """Called once at server startup - seeds the live network state from
+    whatever was last persisted, so the Network tab has SOMETHING to show
     immediately rather than sitting empty until the next real scan
     completes. Marks is_reconstructed=True; network_scan_finish() clears
     it the moment a real scan actually completes."""
-    conn = db.item_history_db()
-    try:
-        rows = conn.execute(
-            "SELECT mod, internal, damage, kind, name, size, is_craftable, updated_at FROM network_snapshot"
-        ).fetchall()
-    finally:
-        conn.close()
-    if not rows:
+    items, updated_at = store.items.load_snapshot()
+    if not items:
         return
-
-    items = []
-    max_updated = 0.0
-    for r in rows:
-        items.append(
-            {
-                "mod": r[0],
-                "internal": r[1],
-                "damage": r[2],
-                "kind": r[3],
-                "name": r[4],
-                "size": r[5],
-                "isCraftable": bool(r[6]),
-            }
-        )
-        max_updated = max(max_updated, r[7])
 
     # network_snapshot deliberately doesn't store an icon path - it's a
     # pure function of mod/internal/damage/label, always re-derivable,
@@ -308,53 +233,8 @@ def load_network_snapshot():
     with state.network_lock:
         state.network["items"] = items
         state.network["item_count"] = len(items)
-        state.network["updated_at"] = max_updated
+        state.network["updated_at"] = updated_at
         state.network["is_reconstructed"] = True
-
-
-def _record_item_history_changes(old_items, new_items):
-    """old_items/new_items: lists of item dicts (mod, internal, damage,
-    kind, name, size). Writes one row per item whose size differs from
-    the last-known value, including items present before but absent now
-    (size implicitly 0 - they only vanish from a scan by genuinely
-    having zero stock and no craftable pattern, since getItemsInNetworkById/
-    getFluidsInNetwork only ever return entries AE2 itself considers
-    present)."""
-    old_by_key = {}
-    for it in old_items or []:
-        key = db.item_key(
-            it.get("mod"), it.get("internal"), it.get("damage"), it.get("kind")
-        )
-        old_by_key[key] = it.get("size", 0)
-
-    now = time.time()
-    changes = []
-    seen_keys = set()
-    for it in new_items or []:
-        key = db.item_key(
-            it.get("mod"), it.get("internal"), it.get("damage"), it.get("kind")
-        )
-        seen_keys.add(key)
-        new_size = it.get("size", 0)
-        if old_by_key.get(key) != new_size:
-            changes.append((key, it.get("name"), new_size, now))
-
-    for key, old_size in old_by_key.items():
-        if key not in seen_keys and old_size != 0:
-            changes.append((key, None, 0, now))
-
-    if not changes:
-        return
-
-    conn = db.item_history_db()
-    try:
-        conn.executemany(
-            "INSERT INTO item_history (item_key, label, size, recorded_at) VALUES (?, ?, ?, ?)",
-            changes,
-        )
-        conn.commit()
-    finally:
-        conn.close()
 
 
 ITEM_HISTORY_RANGE_SECONDS = {
@@ -408,7 +288,7 @@ def network_history_chart_png():
     if not internal:
         abort(400)
 
-    range_key, rows = _fetch_item_history_rows(
+    range_key, rows = _item_history_rows(
         mod, internal, damage, kind, request.args.get("range", "day")
     )
     png_bytes = charts.cached_png(
@@ -420,43 +300,12 @@ def network_history_chart_png():
     return resp
 
 
-def _fetch_item_history_rows(mod, internal, damage, kind, range_key):
-    key = db.item_key(mod, internal, damage, kind)
+def _item_history_rows(mod, internal, damage, kind, range_key):
     if range_key not in ITEM_HISTORY_RANGE_SECONDS:
         range_key = "day"
     seconds = ITEM_HISTORY_RANGE_SECONDS[range_key]
-
-    conn = db.item_history_db()
-    try:
-        if seconds is None:
-            cur = conn.execute(
-                "SELECT recorded_at, size FROM item_history WHERE item_key = ? ORDER BY recorded_at ASC",
-                (key,),
-            )
-            rows = cur.fetchall()
-        else:
-            since = time.time() - seconds
-            cur = conn.execute(
-                "SELECT recorded_at, size FROM item_history WHERE item_key = ? AND recorded_at >= ? ORDER BY recorded_at ASC",
-                (key, since),
-            )
-            rows = cur.fetchall()
-
-            # A step chart starting mid-air (no point until the first
-            # change INSIDE the range) looks wrong/misleading - prepend
-            # the last known value from BEFORE the range started, if any,
-            # so the line correctly holds its prior value from the very
-            # left edge of the chart.
-            lead = conn.execute(
-                "SELECT recorded_at, size FROM item_history WHERE item_key = ? AND recorded_at < ? "
-                "ORDER BY recorded_at DESC LIMIT 1",
-                (key, since),
-            ).fetchone()
-            if lead:
-                rows = [(since, lead[1])] + rows
-    finally:
-        conn.close()
-
+    since = None if seconds is None else time.time() - seconds
+    rows = store.items.history(store.items.item_key(mod, internal, damage, kind), since)
     return range_key, downsample_steps(rows)
 
 
@@ -477,7 +326,7 @@ def network_history_get():
     if not internal:
         return jsonify({"error": "missing internal"}), 400
 
-    range_key, rows = _fetch_item_history_rows(
+    range_key, rows = _item_history_rows(
         mod, internal, damage, kind, request.args.get("range", "day")
     )
     latest = rows[-1] if rows else None
@@ -499,23 +348,7 @@ def network_history_get():
 @bp.route("/api/network/pins", methods=["GET"])
 @auth.login_required
 def network_item_pins_get():
-    user_id = g.user["id"]
-    conn = db.craft_db()
-    try:
-        rows = conn.execute(
-            "SELECT mod, internal, damage, kind FROM user_item_pins WHERE user_id = ?",
-            (user_id,),
-        ).fetchall()
-    finally:
-        conn.close()
-    return jsonify(
-        {
-            "pins": [
-                {"mod": r[0], "internal": r[1], "damage": r[2], "kind": r[3]}
-                for r in rows
-            ]
-        }
-    )
+    return jsonify({"pins": store.items.pins(g.user["id"])})
 
 
 @bp.route("/api/network/pins", methods=["POST"])
@@ -530,17 +363,7 @@ def network_item_pins_post():
     if not internal:
         return jsonify({"error": "missing internal"}), 400
 
-    key = db.item_key(mod, internal, damage, kind)
-    conn = db.craft_db()
-    try:
-        conn.execute(
-            "INSERT OR IGNORE INTO user_item_pins (user_id, item_key, mod, internal, damage, kind, pinned_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (user_id, key, mod, internal, damage, kind, time.time()),
-        )
-        conn.commit()
-    finally:
-        conn.close()
+    store.items.pin(user_id, mod, internal, damage, kind)
     return jsonify({"ok": True})
 
 
@@ -556,16 +379,7 @@ def network_item_pins_unpin():
     if not internal:
         return jsonify({"error": "missing internal"}), 400
 
-    key = db.item_key(mod, internal, damage, kind)
-    conn = db.craft_db()
-    try:
-        conn.execute(
-            "DELETE FROM user_item_pins WHERE user_id = ? AND item_key = ?",
-            (user_id, key),
-        )
-        conn.commit()
-    finally:
-        conn.close()
+    store.items.unpin(user_id, mod, internal, damage, kind)
     return jsonify({"ok": True})
 
 
@@ -587,16 +401,4 @@ def lookup_item_display_info(mod, internal, damage, kind):
             ):
                 return it.get("name"), it.get("size")
 
-    key = db.item_key(mod, internal, damage, kind)
-    conn = db.item_history_db()
-    try:
-        row = conn.execute(
-            "SELECT label, size FROM item_history WHERE item_key = ? AND label IS NOT NULL "
-            "ORDER BY recorded_at DESC LIMIT 1",
-            (key,),
-        ).fetchone()
-    finally:
-        conn.close()
-    if row:
-        return row[0], row[1]
-    return None, None
+    return store.items.last_recorded(store.items.item_key(mod, internal, damage, kind))

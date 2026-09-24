@@ -162,7 +162,7 @@ def _craft_baseline(conn):
     # genuinely different concept from user_pins above (which tracks
     # CPUs being watched for craft completion), so kept as its own
     # table rather than overloading that one. item_key reuses the
-    # exact same mod|internal|damage|kind format item_key() already
+    # exact same mod|internal|damage|kind format store.items.item_key()
     # builds for item history, rather than a composite primary key
     # over individually-nullable columns (mod and damage can both be
     # NULL for a fluid - standard SQL NULL semantics treat NULL as
@@ -248,13 +248,7 @@ def _power_baseline(conn):
 # recorded for that item - most items (stockpiled materials, anything
 # not currently being produced/consumed) simply don't change between
 # most scans, which is what keeps this genuinely small in practice.
-def item_key(mod, internal, damage, kind):
-    # Canonical, stable identifier - built explicitly rather than
-    # relying on dict/JSON key ordering, since this is used both as the
-    # SQLite storage key and as the browser's shareable URL parameter.
-    return f"{mod or ''}|{internal or ''}|{damage if damage is not None else ''}|{kind or 'item'}"
-
-
+# (store/items.py writes it.)
 def item_history_db():
     conn = sqlite3.connect(config.ITEM_HISTORY_DB_PATH, timeout=10)
     return conn
