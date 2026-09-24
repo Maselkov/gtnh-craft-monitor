@@ -2,6 +2,7 @@ import sqlite3
 import time
 
 from gcm import config, db
+from gcm.routes import power
 
 
 class TestPowerEndpoint:
@@ -51,7 +52,7 @@ class TestPowerTrendFields:
         assert data["latest"]["avg_eu_out_5s"] == 350171922
 
     def test_latest_trend_is_not_range_filtered(self, client, api_headers):
-        # _fetch_latest_power_reading() is a deliberately separate,
+        # fetch_latest_power_reading() is a deliberately separate,
         # unfiltered query - it should reflect the single most recent
         # reading regardless of what chart range happens to be selected.
         client.post(
@@ -115,14 +116,10 @@ class TestLatestReadingIsRangeIndependent:
     def test_chart_points_still_downsample_per_range(self, client):
         # Confirms the fix didn't accidentally disable downsampling for
         # the CHART itself - only the live "latest" readout needed to
-        # stop depending on it. Not asserting the exact boundary value
-        # (_downsample can return one more than POWER_MAX_POINTS in some
-        # cases - a pre-existing, unrelated quirk, not something this
-        # fix touches) - just that real downsampling clearly happened
-        # at all, comfortably fewer points than the 2000 raw rows seeded.
+        # stop depending on it.
         self._seed_dense_readings()
         day_points = client.get("/api/power?range=day").get_json()["points"]
-        assert len(day_points) < 1000
+        assert len(day_points) == power.POWER_MAX_POINTS
 
 
 class TestPowerDbMigration:
@@ -173,3 +170,41 @@ class TestPowerDbMigration:
         db.init_power_db()
         db.init_power_db()
         db.init_power_db()
+
+
+class TestPowerDownsampling:
+    def _seed(self, rows):
+        conn = sqlite3.connect(config.POWER_DB_PATH)
+        try:
+            conn.executemany(
+                "INSERT INTO power_readings (ts, stored, capacity) VALUES (?, ?, ?)", rows
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def test_under_the_cap_returns_raw_readings(self):
+        now = time.time()
+        rows = [(now - 60 * i, 1000 + i, 5000) for i in range(10)]
+        self._seed(rows)
+        _, result = power.fetch_power_rows("hour", max_points=100)
+        assert result == sorted(rows)
+
+    def test_over_the_cap_is_averaged_into_ordered_buckets(self):
+        now = time.time()
+        rows = [(now - 60 * i, i * 10, 1000) for i in range(1000)]
+        self._seed(rows)
+        _, result = power.fetch_power_rows("lifetime", max_points=50)
+        assert len(result) == 50
+        assert [r[0] for r in result] == sorted(r[0] for r in result)
+        # Averaging never invents values outside the real data's range.
+        assert min(r[1] for r in result) >= 0
+        assert max(r[1] for r in result) <= 9990
+        assert all(r[2] == 1000 for r in result)
+
+    def test_readings_with_one_timestamp_do_not_divide_by_zero(self):
+        now = time.time()
+        self._seed([(now, i, 1000) for i in range(20)])
+        _, result = power.fetch_power_rows("hour", max_points=10)
+        assert len(result) == 1
+        assert result[0][1] == sum(range(20)) / 20

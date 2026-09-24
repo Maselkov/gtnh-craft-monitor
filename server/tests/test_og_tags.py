@@ -1,3 +1,4 @@
+import time
 import urllib.parse
 
 
@@ -57,6 +58,15 @@ class TestPowerOgTags:
         assert "70.0%" in html
         assert 'og:image" content="' in html
         assert "/api/power/chart.png" in html
+
+    def test_uses_latest_reading_even_when_older_than_an_hour(self, client, api_headers):
+        client.post(
+            "/api/power",
+            json={"stored": 1000000, "capacity": 4000000, "timestamp": time.time() - 7200},
+            headers=api_headers,
+        )
+        html = client.get("/power").get_data(as_text=True)
+        assert "25.0%" in html
 
     def test_has_theme_color_and_site_name(self, client):
         html = client.get("/power").get_data(as_text=True)

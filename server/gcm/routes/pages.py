@@ -89,12 +89,12 @@ def _build_og_tags(path, args):
         )
 
     elif path == "/power":
-        _, rows = power.fetch_power_rows(
-            "hour"
-        )  # just need the latest reading, not a full day
+        # The latest raw reading, like the page's own readout - not the
+        # last bucket of a downsampled range.
+        latest = power.fetch_latest_power_reading()
         title = "Power"
-        if rows:
-            stored, capacity = rows[-1][1], rows[-1][2]
+        if latest:
+            stored, capacity = latest[1], latest[2]
             pct = round(stored / capacity * 100, 1) if capacity else 0
             desc = f"{charts.format_qty(stored)} EU stored of {charts.format_qty(capacity)} EU ({pct}%)"
             image = f"{base}/api/power/chart.png?range=day"

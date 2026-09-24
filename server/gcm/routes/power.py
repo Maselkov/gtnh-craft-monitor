@@ -25,27 +25,6 @@ POWER_RANGE_SECONDS = {
 POWER_MAX_POINTS = 800
 
 
-def downsample(rows, max_points=POWER_MAX_POINTS):
-    """rows: list of (ts, stored, capacity), ascending by ts. Bucket-averages
-    down to at most max_points rows, preserving overall shape."""
-    n = len(rows)
-    if n <= max_points:
-        return rows
-    bucket_size = n / max_points
-    out = []
-    i = 0.0
-    while int(i) < n:
-        start = int(i)
-        end = min(n, max(start + 1, int(i + bucket_size)))
-        chunk = rows[start:end]
-        avg_stored = sum(r[1] for r in chunk) / len(chunk)
-        avg_capacity = sum(r[2] for r in chunk) / len(chunk)
-        mid_ts = chunk[len(chunk) // 2][0]
-        out.append((mid_ts, avg_stored, avg_capacity))
-        i += bucket_size
-    return out
-
-
 @bp.route("/api/power", methods=["POST"])
 @auth.api_key_required
 def power_post():
@@ -95,34 +74,48 @@ def power_post():
     return jsonify({"ok": True})
 
 
-def fetch_power_rows(range_key):
+def fetch_power_rows(range_key, max_points=POWER_MAX_POINTS):
+    """(range_key, rows) with rows as (ts, stored, capacity), ascending.
+    Over max_points readings, they're averaged into max_points equal
+    time buckets inside SQLite, so a long range never pulls every raw
+    reading into Python."""
     if range_key not in POWER_RANGE_SECONDS:
         range_key = "day"
     seconds = POWER_RANGE_SECONDS[range_key]
+    if seconds is None:
+        where, params = "", ()
+    else:
+        where, params = "WHERE ts >= ?", (time.time() - seconds,)
 
     conn = db.power_db()
     try:
-        if seconds is None:
-            cur = conn.execute(
-                "SELECT ts, stored, capacity FROM power_readings ORDER BY ts ASC"
-            )
+        count, first, last = conn.execute(
+            f"SELECT COUNT(*), MIN(ts), MAX(ts) FROM power_readings {where}", params
+        ).fetchone()
+        if count <= max_points:
+            rows = conn.execute(
+                f"SELECT ts, stored, capacity FROM power_readings {where} ORDER BY ts ASC",
+                params,
+            ).fetchall()
         else:
-            since = time.time() - seconds
-            cur = conn.execute(
-                "SELECT ts, stored, capacity FROM power_readings WHERE ts >= ? ORDER BY ts ASC",
-                (since,),
-            )
-        rows = cur.fetchall()
+            # The newest reading lands exactly on bucket max_points, so
+            # it's folded into the last one.
+            width = (last - first) / max_points
+            rows = conn.execute(
+                f"SELECT AVG(ts), AVG(stored), AVG(capacity) FROM power_readings {where} "
+                "GROUP BY MIN(CAST((ts - ?) / ? AS INTEGER), ?) ORDER BY 1",
+                params + (first, width, max_points - 1),
+            ).fetchall()
     finally:
         conn.close()
 
-    return range_key, downsample(rows)
+    return range_key, rows
 
 
-def _fetch_latest_power_reading():
+def fetch_latest_power_reading():
     """The single most recent RAW reading, in full - deliberately a
     separate, unfiltered query rather than reusing whatever
-    _fetch_power_rows(range_key) happened to return.
+    fetch_power_rows(range_key) happened to return.
 
     CONFIRMED as a real, reported bug otherwise: the live "currently
     stored" readout used to come from rows[-1] of the RANGE-FILTERED,
@@ -153,7 +146,7 @@ def _fetch_latest_power_reading():
 @auth.public
 def power_get():
     range_key, rows = fetch_power_rows(request.args.get("range", "day"))
-    latest = _fetch_latest_power_reading()
+    latest = fetch_latest_power_reading()
 
     return jsonify(
         {
