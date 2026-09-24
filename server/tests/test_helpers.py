@@ -1,5 +1,5 @@
-import app as app_module
 from gcm import charts, db, icons
+from gcm.routes import network, pages, power
 
 
 class TestItemKey:
@@ -27,24 +27,24 @@ class TestItemKey:
 
 class TestParseItemUrlPath:
     def test_item_with_damage(self):
-        result = app_module._parse_item_url_path("gregtech:gt.blockmachines:123")
+        result = pages.parse_item_url_path("gregtech:gt.blockmachines:123")
         assert result == {"mod": "gregtech", "internal": "gt.blockmachines", "damage": 123, "kind": "item"}
 
     def test_item_without_damage_defaults_to_zero(self):
-        result = app_module._parse_item_url_path("minecraft:stone")
+        result = pages.parse_item_url_path("minecraft:stone")
         assert result["damage"] == 0
         assert result["kind"] == "item"
 
     def test_fluid_bare_internal_no_colon(self):
         # The exact real-world case that motivated the clean-URL feature.
-        result = app_module._parse_item_url_path("molten.silicone")
+        result = pages.parse_item_url_path("molten.silicone")
         assert result == {"mod": None, "internal": "molten.silicone", "damage": None, "kind": "fluid"}
 
     def test_matches_the_frontend_js_parser_shape(self):
         # Both sides need to agree exactly - this mirrors the manual
         # cross-check already done for the real feature (see the
         # conversation history for the JS-side equivalent test).
-        assert app_module._parse_item_url_path("cryotheum") == {
+        assert pages.parse_item_url_path("cryotheum") == {
             "mod": None, "internal": "cryotheum", "damage": None, "kind": "fluid",
         }
 
@@ -77,19 +77,19 @@ class TestFormatQtyPy:
 class TestDownsample:
     def test_under_the_cap_returns_unchanged(self):
         rows = [(i, i * 10, 1000) for i in range(10)]
-        result = app_module._downsample(rows, max_points=100)
+        result = power.downsample(rows, max_points=100)
         assert result == rows
 
     def test_over_the_cap_reduces_point_count(self):
         rows = [(i, i * 10, 1000) for i in range(1000)]
-        result = app_module._downsample(rows, max_points=100)
+        result = power.downsample(rows, max_points=100)
         assert len(result) <= 100
 
     def test_averaging_preserves_overall_range(self):
         # Bucket-averaging shouldn't invent values wildly outside the
         # real data's own min/max.
         rows = [(i, i * 10, 1000) for i in range(1000)]
-        result = app_module._downsample(rows, max_points=50)
+        result = power.downsample(rows, max_points=50)
         stored_values = [r[1] for r in result]
         assert min(stored_values) >= 0
         assert max(stored_values) <= 9990
@@ -98,7 +98,7 @@ class TestDownsample:
 class TestDownsampleSteps:
     def test_under_the_cap_returns_unchanged(self):
         rows = [(i, i) for i in range(5)]
-        result = app_module._downsample_steps(rows, max_points=100)
+        result = network.downsample_steps(rows, max_points=100)
         assert result == rows
 
     def test_picks_real_recorded_values_not_averages(self):
@@ -106,7 +106,7 @@ class TestDownsampleSteps:
         # preserve GENUINE observed values, not invent averaged ones -
         # item quantity is a step function.
         rows = [(i, 100 if i % 2 == 0 else 999999) for i in range(1000)]
-        result = app_module._downsample_steps(rows, max_points=50)
+        result = network.downsample_steps(rows, max_points=50)
         observed_values = {r[1] for r in rows}
         for _, size in result:
             assert size in observed_values

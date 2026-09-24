@@ -1,4 +1,4 @@
-import app as app_module
+from gcm import state
 from conftest import login_as
 
 
@@ -115,7 +115,7 @@ class TestCpuPins:
         self._post_busy_job(client, api_headers)
         login_as(client, "alice")
         client.post("/api/pins", json={"cpu_name": "W01"})
-        app_module._cpu_last_busy.clear()
+        state.cpu_last_busy.clear()
 
         self._post_busy_job(client, api_headers, busy=False)
         assert client.get("/api/pins").get_json()["pins"] == []
@@ -129,7 +129,7 @@ class TestCpuPins:
         self._post_busy_job(client, api_headers)
         login_as(client, "alice")
         client.post("/api/pins", json={"cpu_name": "W01"})
-        app_module._cpu_last_busy.clear()
+        state.cpu_last_busy.clear()
 
         self._post_busy_job(client, api_headers)
         assert client.get("/api/pins").get_json()["pins"] == ["W01"]

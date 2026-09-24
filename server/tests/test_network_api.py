@@ -1,7 +1,7 @@
 import sqlite3
 
-import app as app_module
-from gcm import config, icons
+from gcm import config, icons, state
+from gcm.routes import network
 from conftest import login_as
 
 
@@ -117,11 +117,11 @@ class TestSnapshotRestartRecovery:
         # Simulate a server restart: wipe the in-memory state exactly like
         # a fresh process would start with, then call the same function
         # that real startup calls.
-        app_module._network_state["items"] = []
-        app_module._network_state["item_count"] = 0
-        app_module._network_state["is_reconstructed"] = False
+        state.network["items"] = []
+        state.network["item_count"] = 0
+        state.network["is_reconstructed"] = False
 
-        app_module._load_network_snapshot()
+        network.load_network_snapshot()
 
         data = client.get("/api/network").get_json()
         assert data["is_reconstructed"] is True
@@ -139,7 +139,7 @@ class TestSnapshotRestartRecovery:
         self, client, api_headers
     ):
         run_scan(client, api_headers, [[ITEM]])
-        app_module._network_state["is_reconstructed"] = (
+        state.network["is_reconstructed"] = (
             True  # simulate the post-restart state directly
         )
 
@@ -515,7 +515,7 @@ class TestScanTokenMechanism:
         # token the way a fresh process would start with (nil), exactly
         # like _load_network_snapshot() is the real equivalent for the
         # item snapshot itself after a real restart.
-        app_module._network_state["current_scan_token"] = (
+        state.network["current_scan_token"] = (
             "some-other-token-a-fresh-process-would-never-know-about"
         )
 

@@ -1,5 +1,4 @@
-import app as app_module
-from gcm import db
+from gcm import db, state
 from conftest import login_as
 
 
@@ -112,9 +111,9 @@ class TestCraftRequestLifecycle:
             json={"status": "accepted", "cpu_name": "W01"},
             headers=api_headers,
         )
-        assert app_module._cpu_last_busy.get("W01") is True
+        assert state.cpu_last_busy.get("W01") is True
         assert (
-            app_module._cpu_last_known.get("W01", {}).get("label") == "Neutronium Ingot"
+            state.cpu_last_known.get("W01", {}).get("label") == "Neutronium Ingot"
         )
 
     def test_failed_result_keeps_request_visible_with_reason(self, client, api_headers):

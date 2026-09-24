@@ -3,23 +3,22 @@ Shared fixtures for the backend test suite.
 
 Isolation strategy, and why it looks the way it does:
 
-- Importing app.py has no side effects; create_app() does all startup
+- Importing gcm has no side effects; gcm.create_app() does all startup
   work (SQLite init/migrations, icons_lookup.json loading, snapshot
   reload). It is called once here with a fresh temp directory as
   data_dir, so real production data is never touched by running tests.
 
-- app is imported and created exactly ONCE for the whole test
-  session, not reloaded per test. Re-importing a Flask app module
-  mid-session is a real source of "view function mapping is overwriting an existing
-  endpoint" errors (Flask tracks registered routes on the app object
-  itself) - safer to import once and reset IN-MEMORY state between
-  tests explicitly instead.
+- The app is created exactly ONCE for the whole test session and
+  shared through the flask_app fixture. In-memory state lives at module
+  level in gcm/state.py regardless of how many apps exist, so one app
+  plus an explicit reset between tests is simpler than a fresh app
+  per test.
 
 - reset_state (autouse) runs before every single test: calls
-  app._reset_runtime_state() for in-memory state and empties every
+  gcm.reset_runtime_state() for in-memory state and empties every
   table in every SQLite file (discovered from sqlite_master, so a new
   table needs no change here). New module-level state still needs
-  adding to _reset_runtime_state() in app.py.
+  adding to state.reset() in gcm/state.py.
 """
 
 import os
@@ -35,13 +34,13 @@ TEST_API_KEY = "test-key-for-pytest"
 _test_data_dir = tempfile.mkdtemp(prefix="gtnh_test_data_")
 
 # server/ itself (one level up from server/tests/) needs to be on the
-# import path so "import app" finds server/app.py.
+# import path so "import gcm" finds server/gcm/.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import app as app_module  # noqa: E402  (must come after the path setup above)
+import gcm  # noqa: E402  (must come after the path setup above)
 from gcm import auth, config, db  # noqa: E402
 
-app_module.create_app(data_dir=_test_data_dir, api_key=TEST_API_KEY)
+_app = gcm.create_app(data_dir=_test_data_dir, api_key=TEST_API_KEY)
 
 
 def pytest_sessionfinish(session, exitstatus):
@@ -50,8 +49,8 @@ def pytest_sessionfinish(session, exitstatus):
 
 @pytest.fixture(scope="session")
 def flask_app():
-    app_module.app.config["TESTING"] = True
-    return app_module.app
+    _app.config["TESTING"] = True
+    return _app
 
 
 @pytest.fixture()
@@ -88,7 +87,7 @@ def login_as(client, user_id, role="viewer"):
 
 @pytest.fixture(autouse=True)
 def reset_state():
-    app_module._reset_runtime_state()
+    gcm.reset_runtime_state()
 
     # SQLite - wiped, not dropped/recreated (the schema/migration logic
     # already ran once in create_app(); DELETE FROM is enough for a clean
