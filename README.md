@@ -239,11 +239,12 @@ without NBT is used, since the in-game scripts don't report NBT.
 ### Install
 
 `gcm` installs the scripts from the latest release and updates them later.
-Download it once, then run it:
+Download it to `/tmp` once and run it from there; `gcm install` installs
+itself to `/usr/bin`, so afterwards it runs as plain `gcm`:
 
 ```
-wget -f https://raw.githubusercontent.com/Maselkov/gtnh-craft-monitor/main/oc/gcm.lua /usr/bin/gcm.lua
-gcm install
+wget -f https://raw.githubusercontent.com/Maselkov/gtnh-craft-monitor/main/oc/gcm.lua /tmp/gcm.lua
+/tmp/gcm.lua install
 ```
 
 `gcm install` asks which scripts to install, then asks for the server URL

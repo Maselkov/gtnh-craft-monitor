@@ -8,10 +8,12 @@
 -- Add --ref=<tag or branch> to install or update from something other
 -- than the latest release, e.g. --ref=main to test unreleased changes.
 --
--- First install (this is the only download that comes from main):
+-- First install (this is the only download that comes from main). A fresh
+-- OpenOS has no /usr/bin yet, so the first copy goes to /tmp; install then
+-- puts the permanent copy in /usr/bin:
 --
---   wget -f https://raw.githubusercontent.com/Maselkov/gtnh-craft-monitor/main/oc/gcm.lua /usr/bin/gcm.lua
---   gcm install
+--   wget -f https://raw.githubusercontent.com/Maselkov/gtnh-craft-monitor/main/oc/gcm.lua /tmp/gcm.lua
+--   /tmp/gcm.lua install
 --
 -- Self-contained on purpose: json.lua and http.lua may not be installed
 -- yet when this runs.
