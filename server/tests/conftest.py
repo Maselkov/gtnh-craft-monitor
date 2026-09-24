@@ -15,15 +15,11 @@ Isolation strategy, and why it looks the way it does:
   itself) - safer to import once and reset IN-MEMORY state between
   tests explicitly instead.
 
-- reset_state (autouse) runs before every single test: clears every
-  known in-memory global (the crafts/network/craft-request/cancel-
-  request state, the valid-keys set) and wipes every SQLite table
-  (DELETE FROM, not dropping/recreating - the schema/migration logic
-  already ran once in create_app() and doesn't need re-running). This list is
-  maintained by hand against the real CREATE TABLE statements in app.py
-  (confirmed via grep, not assumed) - if a future feature adds new
-  module-level state or a new table, this fixture needs a matching
-  update, the same way it would for any hand-maintained test harness.
+- reset_state (autouse) runs before every single test: calls
+  app._reset_runtime_state() for in-memory state and empties every
+  table in every SQLite file (discovered from sqlite_master, so a new
+  table needs no change here). New module-level state still needs
+  adding to _reset_runtime_state() in app.py.
 """
 
 import os
@@ -91,54 +87,25 @@ def login_as(client, user_id, role="viewer"):
 
 @pytest.fixture(autouse=True)
 def reset_state():
-    # In-memory state
-    app_module._state["jobs"] = []
-    app_module._state["source"] = None
-    app_module._state["received_at"] = None
+    app_module._reset_runtime_state()
 
-    app_module._network_buffer.clear()
-    app_module._network_state["items"] = []
-    app_module._network_state["item_count"] = 0
-    app_module._network_state["updated_at"] = None
-    app_module._network_state["in_progress"] = False
-    app_module._network_state["scan_started_at"] = None
-    app_module._network_state["is_reconstructed"] = False
-
-    app_module._craft_requests.clear()
-    app_module._craft_request_next_id = 1
-    app_module._cancel_requests.clear()
-    app_module._cancel_request_next_id = 1
-    app_module._chart_cache.clear()
-    app_module._chart_request_times.clear()
-    app_module._cpu_last_busy.clear()
-    app_module._cpu_last_known.clear()
-
-    # SQLite - wiped, not dropped/recreated (CREATE TABLE IF NOT EXISTS
-    # already ran once at import; DELETE FROM is enough for a clean slate
-    # and avoids re-running migration logic per test).
-    db_tables = {
-        app_module.CRAFT_HISTORY_DB_PATH: [
-            "users",
-            "access_tokens",
-            "sessions",
-            "craft_events",
-            "user_pins",
-            "user_completions",
-            "user_item_pins",
-            "craft_request_history",
-            "craft_cancel_history",
-        ],
-        app_module.POWER_DB_PATH: ["power_readings"],
-        app_module.ITEM_HISTORY_DB_PATH: ["item_history", "network_snapshot"],
-    }
-    for db_path, tables in db_tables.items():
+    # SQLite - wiped, not dropped/recreated (the schema/migration logic
+    # already ran once in create_app(); DELETE FROM is enough for a clean
+    # slate). Tables are read from sqlite_master so new ones are covered
+    # automatically.
+    for db_path in (
+        app_module.CRAFT_HISTORY_DB_PATH,
+        app_module.POWER_DB_PATH,
+        app_module.ITEM_HISTORY_DB_PATH,
+    ):
         conn = sqlite3.connect(db_path)
         try:
-            for table in tables:
-                try:
-                    conn.execute(f"DELETE FROM {table}")
-                except sqlite3.OperationalError:
-                    pass  # table doesn't exist yet on this DB - fine
+            tables = conn.execute(
+                "SELECT name FROM sqlite_master "
+                "WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+            ).fetchall()
+            for (table,) in tables:
+                conn.execute(f'DELETE FROM "{table}"')
             conn.commit()
         finally:
             conn.close()
