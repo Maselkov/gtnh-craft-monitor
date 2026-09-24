@@ -140,10 +140,14 @@ in their numbers and messages.
 **File organization, frontend**: `server/index.html` is a small shell;
 styles are `server/static/app.css` and the code is split per area under
 `server/static/js/` (`crafts.js`, `network.js`, `power.js`, ...). They
-are deliberately CLASSIC scripts, not ES modules: dozens of inline
-`onclick=` handlers, plus the HTML strings the render functions build,
-call global functions by name, and classic scripts loaded in order share
-one global scope exactly like the original single inline script did.
+are deliberately CLASSIC scripts, not ES modules: the inline `onclick=`
+handlers in `index.html` call global functions by name, and classic
+scripts loaded in order share one global scope exactly like the
+original single inline script did. Markup the JS itself builds never
+carries inline handlers: interactive elements get `data-action` plus
+`data-*` arguments, and one `delegateActions()` listener per container
+(`util.js`) dispatches them - so values like item or CPU names are only
+ever HTML-escaped into attributes, never spliced into JS source.
 The consequence: every script except `main.js` must only DECLARE things
 at top level (functions, `let`/`const`, event listener registration) -
 `main.js` loads last and is the one place startup actually runs. A top-
@@ -492,12 +496,23 @@ power readings (including the DB migration), auth/admin, OpenGraph
 tags - plus the pure helpers, the security endpoint lists and the
 frontend asset wiring. Plus 15 node:test tests (`server/tests/js/`)
 for the frontend's pure functions: the NEI-style search tokenizer and
-matcher, the craft amount evaluator, `formatQty` and `jsArg`. They load
+matcher, the craft amount evaluator and `formatQty`. They load
 the real `static/js/` files into a VM context the same way the browser
 does (classic scripts sharing one scope). Run with:
+And a browser test (`server/tests/e2e/run.mjs`, no dependencies - it
+drives headless Chrome over the DevTools protocol with Node's built-in
+WebSocket): it starts the real server on seeded data and clicks through
+every interactive part of the page - tabs, pins and acknowledgements,
+ingredients/idle toggles surviving the 3s re-render, the cancel and
+craft-request dialogs (including the amount maths), item history,
+network search/sort, admin user management, sign in/out, back/forward -
+and fails on any uncaught error or console error. Elements are found by
+id or visible text rather than by how their handlers are wired, so it
+keeps meaning the same thing across frontend refactors. Run with:
 ```
 cd server && pip install -r tests/requirements-test.txt && pytest
 node --test 'server/tests/js/*.test.js'   # from the repo root
+node server/tests/e2e/run.mjs             # from the repo root; needs Chrome/Chromium
 ```
 
 Fully isolated from real data: `conftest.py` calls `gcm.create_app()`
@@ -520,7 +535,7 @@ actually catch the regression it claims to guard against - worth
 verifying the second thing specifically for anything non-trivial.
 
 Not covered: the `oc/*.lua` scripts (no Lua test harness exists), and
-DOM-interactive frontend JS (event wiring, rendering, modals).
+browser notifications (headless Chrome denies the permission).
 
 ## Icon pipeline (if it ever needs redoing)
 

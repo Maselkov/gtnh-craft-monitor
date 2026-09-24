@@ -296,14 +296,14 @@ function renderCraftRequests() {
   }
   el.innerHTML = craftRequests.map(r => {
     const icon = r.icon
-      ? `<img class="craft-request-icon" src="/icons?path=${encodeURIComponent(r.icon)}" alt="" loading="lazy" onerror="this.remove()">`
+      ? `<img class="craft-request-icon" src="/icons?path=${encodeURIComponent(r.icon)}" alt="" loading="lazy" data-remove-on-error>`
       : '';
     const isFailed = r.status === 'failed';
     const statusText = isFailed
       ? escapeHtml(r.reason || 'Request failed')
       : 'Waiting for acknowledgement…';
     const dismissBtn = isFailed
-      ? `<button class="craft-request-dismiss" onclick="dismissCraftRequest(${r.id})" title="Dismiss">&times;</button>`
+      ? `<button class="craft-request-dismiss" data-action="dismiss-request" data-request-id="${escapeHtml(r.id)}" title="Dismiss">&times;</button>`
       : '';
     return `
       <div class="craft-request-card${isFailed ? ' failed' : ''}">
@@ -316,6 +316,12 @@ function renderCraftRequests() {
       </div>
     `;
   }).join('');
+}
+
+function setupCraftRequestActions() {
+  delegateActions(document.getElementById('craftRequestsSection'), {
+    'dismiss-request': (el) => dismissCraftRequest(el.dataset.requestId),
+  });
 }
 
 async function dismissCraftRequest(id) {

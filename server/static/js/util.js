@@ -22,12 +22,29 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-// A JS string literal that's safe inside a double-quoted inline
-// handler attribute: onclick="fn(${jsArg(value)})". JSON.stringify
-// escapes quotes/backslashes for the JS parser; escapeHtml then
-// protects the attribute (the browser decodes it back before JS runs).
-function jsArg(s) {
-  return escapeHtml(JSON.stringify(String(s)));
+// Clicks on any [data-action] element inside container - including
+// elements added later by an innerHTML re-render - call
+// actions[name](element, event). Arguments travel as data-*
+// attributes, escaped with escapeHtml like any other attribute value,
+// never spliced into JS source inside an HTML attribute.
+function delegateActions(container, actions) {
+  container.addEventListener('click', (e) => {
+    const el = e.target.closest('[data-action]');
+    if (!el || !container.contains(el)) return;
+    const action = actions[el.dataset.action];
+    if (action) action(el, e);
+  });
+}
+
+// <img data-remove-on-error> removes itself when it fails to load (an
+// icon missing from images.zip) rather than showing a broken-image
+// glyph. error events don't bubble, hence the capture-phase listener.
+function setupImageErrorRemoval() {
+  document.addEventListener('error', (e) => {
+    if (e.target instanceof HTMLImageElement && e.target.hasAttribute('data-remove-on-error')) {
+      e.target.remove();
+    }
+  }, true);
 }
 function formatQty(n) {
   if (n == null) return '?';
