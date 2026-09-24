@@ -1,7 +1,6 @@
 import time
 
-import app as app_module
-from gcm import db
+from gcm import db, history, state
 from conftest import login_as
 
 
@@ -46,7 +45,7 @@ def history_status(table, request_id):
 class TestCraftRequestExpiry:
     def test_request_never_picked_up_fails(self, client, api_headers):
         req_id = submit_craft_request(client)
-        age(app_module._craft_requests.requests[req_id], 121, "created_at")
+        age(state.craft_requests.requests[req_id], 121, "created_at")
 
         pending = client.get("/api/craft/requests/pending", headers=api_headers)
         assert pending.get_json()["requests"] == []
@@ -58,7 +57,7 @@ class TestCraftRequestExpiry:
     def test_picked_up_request_waits_for_planning(self, client, api_headers):
         req_id = submit_craft_request(client)
         client.get("/api/craft/requests/pending", headers=api_headers)
-        age(app_module._craft_requests.requests[req_id], 600, "created_at", "picked_up_at")
+        age(state.craft_requests.requests[req_id], 600, "created_at", "picked_up_at")
 
         pending = client.get("/api/craft/requests/pending", headers=api_headers)
         assert [r["id"] for r in pending.get_json()["requests"]] == [req_id]
@@ -66,10 +65,10 @@ class TestCraftRequestExpiry:
     def test_picked_up_request_without_result_eventually_fails(self, client, api_headers):
         req_id = submit_craft_request(client)
         client.get("/api/craft/requests/pending", headers=api_headers)
-        age(app_module._craft_requests.requests[req_id], 3601, "created_at", "picked_up_at")
+        age(state.craft_requests.requests[req_id], 3601, "created_at", "picked_up_at")
 
         client.get("/api/craft/requests/pending", headers=api_headers)
-        assert app_module._craft_requests.requests[req_id]["status"] == "failed"
+        assert state.craft_requests.requests[req_id]["status"] == "failed"
 
     def test_old_failed_requests_are_forgotten(self, client, api_headers):
         req_id = submit_craft_request(client)
@@ -78,16 +77,16 @@ class TestCraftRequestExpiry:
             json={"status": "failed", "reason": "missing resources"},
             headers=api_headers,
         )
-        age(app_module._craft_requests.requests[req_id], 86401, "created_at", "failed_at")
+        age(state.craft_requests.requests[req_id], 86401, "created_at", "failed_at")
 
         assert client.get("/api/craft/requests").get_json()["requests"] == []
-        assert req_id not in app_module._craft_requests.requests
+        assert req_id not in state.craft_requests.requests
 
 
 class TestCancelExpiry:
     def test_cancel_never_picked_up_is_not_run_later(self, client, api_headers):
         req_id = submit_cancel(client, api_headers)
-        age(app_module._cancel_requests.requests[req_id], 21, "created_at")
+        age(state.cancel_requests.requests[req_id], 21, "created_at")
 
         pending = client.get("/api/craft/cancel/pending", headers=api_headers)
         assert pending.get_json()["requests"] == []
@@ -103,13 +102,13 @@ class TestCancelExpiry:
             json={"success": True},
             headers=api_headers,
         )
-        age(app_module._cancel_requests.requests[req_id], 601, "created_at", "resolved_at")
+        age(state.cancel_requests.requests[req_id], 601, "created_at", "resolved_at")
 
         assert client.get(f"/api/craft/cancel/{req_id}").status_code == 404
-        assert req_id not in app_module._cancel_requests.requests
+        assert req_id not in state.cancel_requests.requests
 
 
-def test_login_prunes_expired_and_revoked_sessions(client):
+def test_login_prunes_expired_and_revoked_sessions(client, flask_app):
     login_as(client, "usr_alice")
     conn = db.craft_db()
     try:
@@ -118,7 +117,7 @@ def test_login_prunes_expired_and_revoked_sessions(client):
     finally:
         conn.close()
 
-    login_as(app_module.app.test_client(), "usr_alice")
+    login_as(flask_app.test_client(), "usr_alice")
 
     conn = db.craft_db()
     try:
@@ -129,7 +128,7 @@ def test_login_prunes_expired_and_revoked_sessions(client):
 
 def test_startup_closes_request_history_left_open(client):
     submit_craft_request(client)
-    app_module._close_orphaned_request_history()
+    history.close_orphaned_requests()
 
     conn = db.craft_db()
     try:

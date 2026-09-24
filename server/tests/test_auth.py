@@ -1,9 +1,10 @@
+import ipaddress
 import time
 
 import pytest
 
 import app as app_module
-from gcm import auth, config, db
+from gcm import auth, config, db, security
 
 
 def test_access_token_resolves_stable_user_id():
@@ -156,7 +157,7 @@ def test_initial_admin_is_required_for_direct_server_startup():
         auth.require_initial_admin()
 
 
-def test_bootstrap_token_must_be_rotated_before_admin_actions(client):
+def test_bootstrap_token_must_be_rotated_before_admin_actions(client, flask_app):
     conn = db.craft_db()
     try:
         conn.execute(
@@ -181,7 +182,7 @@ def test_bootstrap_token_must_be_rotated_before_admin_actions(client):
     assert replacement_token.startswith("gcm_tok-")
     assert client.get("/api/admin/users").status_code == 200
 
-    other_client = app_module.app.test_client()
+    other_client = flask_app.test_client()
     assert (
         other_client.post(
             "/api/auth/login", json={"token": bootstrap_token}
@@ -297,9 +298,9 @@ def test_untrusted_peer_cannot_spoof_forwarded_host(client):
 
 def test_trusted_proxy_can_supply_forwarded_host(client, monkeypatch):
     monkeypatch.setattr(
-        app_module,
+        security,
         "TRUSTED_PROXY_NETWORKS",
-        [app_module.ipaddress.ip_network("10.0.0.0/8")],
+        [ipaddress.ip_network("10.0.0.0/8")],
     )
     response = client.get(
         "/",
@@ -313,7 +314,7 @@ def test_trusted_proxy_can_supply_forwarded_host(client, monkeypatch):
     assert "https://monitor.example/" in response.get_data(as_text=True)
 
 
-def test_admin_can_revoke_a_token_and_its_sessions(client):
+def test_admin_can_revoke_a_token_and_its_sessions(client, flask_app):
     conn = db.craft_db()
     try:
         conn.execute(
@@ -333,7 +334,7 @@ def test_admin_can_revoke_a_token_and_its_sessions(client):
     finally:
         conn.close()
 
-    operator_client = app_module.app.test_client()
+    operator_client = flask_app.test_client()
     assert (
         operator_client.post(
             "/api/auth/login", json={"token": operator_token}
@@ -430,7 +431,7 @@ def test_revoked_tokens_are_not_listed(client):
     assert alice["tokens"] == []
 
 
-def test_admin_can_delete_a_user_and_their_credentials(client):
+def test_admin_can_delete_a_user_and_their_credentials(client, flask_app):
     conn = db.craft_db()
     try:
         conn.execute(
@@ -449,7 +450,7 @@ def test_admin_can_delete_a_user_and_their_credentials(client):
     finally:
         conn.close()
 
-    alice_client = app_module.app.test_client()
+    alice_client = flask_app.test_client()
     assert (
         alice_client.post("/api/auth/login", json={"token": alice_token}).status_code
         == 200
@@ -490,7 +491,7 @@ def test_admin_cannot_delete_their_own_account(client):
     assert response.status_code == 400
 
 
-def test_admin_can_regenerate_a_users_token(client):
+def test_admin_can_regenerate_a_users_token(client, flask_app):
     conn = db.craft_db()
     try:
         conn.execute(
@@ -509,7 +510,7 @@ def test_admin_can_regenerate_a_users_token(client):
     finally:
         conn.close()
 
-    alice_client = app_module.app.test_client()
+    alice_client = flask_app.test_client()
     assert (
         alice_client.post("/api/auth/login", json={"token": old_token}).status_code
         == 200
