@@ -168,6 +168,23 @@ Rules that keep this working:
   CPU names are only ever HTML-escaped into attributes, never spliced
   into JS source.
 
+Content-Security-Policy: the page is served with a strict CSP
+(`security.content_security_policy()`, sent by `pages.index()`), built
+at startup from `index.html` itself so it can't drift from the page:
+- `script-src 'self'` plus the two exact Chart.js file URLs - not all
+  of `cdn.jsdelivr.net`, which hosts every npm package and would let an
+  injected tag load anything. No `'unsafe-inline'`, so an injected
+  `<script>` or `on*=` attribute simply doesn't run.
+- Inline styles only by hash of the exact `style="..."` values in
+  `index.html` (`'unsafe-hashes'`; today `display:none;` and two
+  margins). Anything the JS builds must not carry `style="..."` -
+  set `el.style.*` instead, which CSP doesn't restrict (the progress
+  bar width does this). `tests/test_csp.py` enforces both.
+- If you add a new external script, or a new inline `style=` value in
+  `index.html`, the policy picks it up automatically on restart; a
+  `style=` in JS-built markup is blocked, and the browser test fails
+  on the resulting CSP violation.
+
 Caching: `index.html` loads `main.js` and `app.css` with
 `?v=<content hash>` (`pages.load_index_html()`), but modules import each
 other by plain path, so `/static` is served with `Cache-Control:
@@ -508,7 +525,7 @@ touch-primary device" is decided elsewhere in this project too.
 
 ## Test suite (server/tests/)
 
-172 pytest tests across 14 files, covering every endpoint - crafts, CPU
+176 pytest tests across 15 files, covering every endpoint - crafts, CPU
 pins, craft requests, cancellation, network scanning (including the
 scan-integrity mechanism above), item history, network item pins,
 power readings (including the DB migration), auth/admin, OpenGraph

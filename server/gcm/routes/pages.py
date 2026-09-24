@@ -3,12 +3,13 @@ unfurling) and icon images."""
 
 import hashlib
 import os
+import re
 from html import escape as html_escape
 from urllib.parse import unquote
 
 from flask import abort, Blueprint, request, Response
 
-from gcm import auth, charts, config, icons, state
+from gcm import auth, charts, config, icons, security, state
 from gcm.routes import network, power
 
 
@@ -175,12 +176,15 @@ def index(identifier=None):
     html = INDEX_HTML.replace(
         "<!--OG_TAGS-->", _build_og_tags(request.path, request.args)
     )
-    return Response(html, mimetype="text/html")
+    response = Response(html, mimetype="text/html")
+    response.headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
+    return response
 
 
 INDEX_HTML_PATH = os.path.join(config.SERVER_DIR, "index.html")
 STATIC_DIR = os.path.join(config.SERVER_DIR, "static")
 INDEX_HTML = None
+CONTENT_SECURITY_POLICY = None
 
 
 def _asset_version():
@@ -199,6 +203,11 @@ def _asset_version():
 
 
 def load_index_html():
-    global INDEX_HTML
+    global INDEX_HTML, CONTENT_SECURITY_POLICY
     with open(INDEX_HTML_PATH, "r", encoding="utf-8") as f:
         INDEX_HTML = f.read().replace("__ASSET_VERSION__", _asset_version())
+    # Derived from the page itself so the policy can't drift from it.
+    CONTENT_SECURITY_POLICY = security.content_security_policy(
+        external_scripts=re.findall(r'<script\b[^>]*\bsrc="(https://[^"]+)"', INDEX_HTML),
+        inline_style_values=re.findall(r'\sstyle="([^"]*)"', INDEX_HTML),
+    )
