@@ -396,3 +396,13 @@ function requestCraftFromHistory() {
   closeItemHistory();
   openCraftRequestModal(it);
 }
+
+function setupHistoryActions() {
+  delegateActions(document, {
+    'history-range': (el) => setItemHistoryRange(el.dataset.range),
+    'history-pin': () => toggleNetworkItemPin(itemHistoryTarget),
+    'close-history': () => closeItemHistory(),
+    'craft-from-history': () => requestCraftFromHistory(),
+  });
+  onBackdropClick('itemHistoryModal', () => closeItemHistory());
+}

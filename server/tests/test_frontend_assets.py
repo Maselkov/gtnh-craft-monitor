@@ -34,3 +34,19 @@ def test_static_files_are_served(client):
     response = client.get("/static/js/main.js")
     assert response.status_code == 200
     assert "javascript" in response.content_type
+
+
+def test_no_inline_event_handlers():
+    # All handlers are registered from static/js (data-action + listeners);
+    # an inline on*="..." attribute would also break a script-src CSP.
+    inline = re.compile(r"""\son[a-z]+\s*=\s*["']""", re.IGNORECASE)
+    paths = [pages.INDEX_HTML_PATH] + [
+        os.path.join(STATIC_DIR, "js", name) for name in os.listdir(os.path.join(STATIC_DIR, "js"))
+    ]
+    offenders = {}
+    for path in paths:
+        with open(path, encoding="utf-8") as f:
+            hits = [line.strip() for line in f if inline.search(line)]
+        if hits:
+            offenders[os.path.basename(path)] = hits
+    assert offenders == {}

@@ -318,6 +318,18 @@ function renderCraftRequests() {
   }).join('');
 }
 
+function setupCraftDialogActions() {
+  document.getElementById('craftRequestAmount').addEventListener('input', updateCraftRequestAmountPreview);
+  delegateActions(document, {
+    'close-craft-request': () => closeCraftRequestModal(),
+    'submit-craft-request': () => submitCraftRequest(),
+    'close-cancel-confirm': () => closeCancelConfirmModal(),
+    'submit-cancel': () => submitCancelConfirm(),
+  });
+  onBackdropClick('craftRequestModal', closeCraftRequestModal);
+  onBackdropClick('cancelConfirmModal', closeCancelConfirmModal);
+}
+
 function setupCraftRequestActions() {
   delegateActions(document.getElementById('craftRequestsSection'), {
     'dismiss-request': (el) => dismissCraftRequest(el.dataset.requestId),

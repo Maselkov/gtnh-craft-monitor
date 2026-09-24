@@ -217,3 +217,9 @@ function renderPower(data) {
     },
   });
 }
+
+function setupPowerActions() {
+  delegateActions(document, {
+    'power-range': (el) => setPowerRange(el.dataset.range),
+  });
+}

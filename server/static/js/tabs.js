@@ -87,3 +87,9 @@ window.addEventListener('popstate', () => {
     closeItemHistory(false);
   }
 });
+
+function setupTabActions() {
+  delegateActions(document, {
+    'switch-tab': (el) => switchTab(el.dataset.tab),
+  });
+}

@@ -62,6 +62,9 @@ let lastData = null;  // cached so pin/unpin can re-render immediately
 let lastFetchAt = null;  // client-side Date.now() of the last successful fetch
 
 function setupCraftsActions() {
+  delegateActions(document, {
+    'enable-notifications': () => requestNotifPermission(),
+  });
   const root = document.getElementById('root');
   delegateActions(root, {
     'toggle-pin': (el) => togglePin(el.dataset.cpu),

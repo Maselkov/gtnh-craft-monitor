@@ -1,11 +1,17 @@
 // Startup - must load last: every other script only declares
 // things, this one runs them.
 
-// Before anything renders: handlers for markup the render functions
-// rebuild via innerHTML.
+// Before anything renders: every event handler on the page. index.html
+// and the render functions only carry data-action attributes.
 setupImageErrorRemoval();
-setupCraftsActions();
+setupAuthControls();
 setupAdminActions();
+setupCraftsActions();
+setupTabActions();
+setupPowerActions();
+setupNetworkActions();
+setupHistoryActions();
+setupCraftDialogActions();
 setupCraftRequestActions();
 
 // Reflect whatever URL the page actually loaded on (/, /crafts,

@@ -134,12 +134,6 @@ async function seed(base) {
     ],
   });
   await game(base, '/api/network/scan/finish', { scan_token: scan.scan_token, chunks_sent: 1, total_errors: 0 });
-
-  // Rotate the bootstrap token the way the UI would, to get a normal admin token.
-  const { response } = await api(base, 'POST', '/api/auth/login', { token: BOOTSTRAP_TOKEN });
-  const cookie = response.headers.get('set-cookie').split(';')[0];
-  const { data: rotated } = await api(base, 'POST', '/api/auth/rotate-bootstrap', {}, { Cookie: cookie });
-  return rotated.token;
 }
 
 // ---------------------------------------------------------------- browser
@@ -268,7 +262,8 @@ const PAGE_LIB = `
 
 async function main() {
   const base = await startServer();
-  const adminToken = await seed(base);
+  await seed(base);
+  let adminToken;  // the bootstrap replacement, created through the UI below
   const cdp = await startBrowser();
   const { errors, evaluate, waitFor } = pageHelpers(cdp);
   await cdp.send('Runtime.enable');
@@ -294,10 +289,32 @@ async function main() {
     await waitFor('broken title icon removed', `!card('W01').querySelector('.craft-title img')`);
   });
 
-  step('sign in with the Enter key', async () => {
+  step('sign in with the bootstrap token and rotate it', async () => {
+    await evaluate(`typeInto('#accessTokenInput', ${JSON.stringify(BOOTSTRAP_TOKEN)})`);
+    await click(`$('#authBtn')`);
+    await waitFor('rotation dialog', `visible($('#bootstrapRotationModal'))`);
+    await click(`$('#bootstrapRotationBtn')`);
+    await waitFor('replacement token', `$('#bootstrapRotationToken').value.startsWith('gcm_')`);
+    adminToken = await evaluate(`$('#bootstrapRotationToken').value`);
+    await click(`$('#bootstrapRotationBtn')`);  // "I saved the replacement token"
+    await waitFor('dialog closed, admin menu available', `!visible($('#bootstrapRotationModal')) && visible($('#settingsWrap'))`);
+  });
+
+  step('sign out, then sign in again with the Enter key', async () => {
+    await click(`$('#settingsBtn')`);
+    await waitFor('menu open', `visible($('#settingsMenu'))`);
+    await click(`byText('#settingsMenu button', 'Sign out')`);
+    await waitFor('signed out', `visible($('#authBtn')) && !visible($('#settingsWrap'))`);
     await evaluate(`typeInto('#accessTokenInput', ${JSON.stringify(adminToken)})`);
     await evaluate(`pressEnter('#accessTokenInput')`);
     await waitFor('signed in', `visible($('#settingsWrap')) && $('#settingsUser').textContent.includes('Administrator')`);
+  });
+
+  step('notifications button asks for permission', async () => {
+    await cdp.send('Browser.grantPermissions', { origin: base, permissions: ['notifications'] });
+    await waitFor('not yet enabled', `$('#notifBtn').textContent === 'Enable notifications'`);
+    await click(`$('#notifBtn')`);
+    await waitFor('enabled', `$('#notifBtn').textContent === 'Notifications on'`);
   });
 
   step('expand ingredients; stays open across a refresh', async () => {
@@ -320,7 +337,11 @@ async function main() {
     await click(`card('W01').querySelector('.cancel-btn')`);
     await waitFor('dialog open', `visible($('#cancelConfirmModal')) && $('#cancelConfirmSub').textContent === 'CPU W01'`);
     await click(`byText('#cancelConfirmModal button', 'Keep going')`);
-    await waitFor('dialog closed', `!visible($('#cancelConfirmModal'))`);
+    await waitFor('closed by button', `!visible($('#cancelConfirmModal'))`);
+    await click(`card('W01').querySelector('.cancel-btn')`);
+    await waitFor('dialog open again', `visible($('#cancelConfirmModal'))`);
+    await click(`$('#cancelConfirmModal')`);
+    await waitFor('closed by backdrop', `!visible($('#cancelConfirmModal'))`);
   });
 
   step('pin a CPU, get its completion, acknowledge it', async () => {
@@ -344,6 +365,17 @@ async function main() {
     await postCrafts(base, true);
   });
 
+  step('confirm a cancel; the game reports it done', async () => {
+    await waitFor('busy W01', `card('W01')?.querySelector('.cancel-btn:not([disabled])')`);
+    await click(`card('W01').querySelector('.cancel-btn')`);
+    await waitFor('dialog open', `visible($('#cancelConfirmModal'))`);
+    await click(`$('#cancelConfirmSubmitBtn')`);
+    await waitFor('pending on the card', `!visible($('#cancelConfirmModal')) && card('W01').querySelector('.cancel-btn[disabled]')`);
+    const { data } = await api(base, 'GET', '/api/craft/cancel/pending', undefined, { 'X-API-Key': API_KEY });
+    await api(base, 'POST', `/api/craft/cancel/${data.requests[0].id}/result`, { success: true }, { 'X-API-Key': API_KEY });
+    await waitFor('reported', `$('#toastContainer').textContent.includes('Craft cancelled')`);
+  });
+
   step('power tab and range buttons', async () => {
     await click(`$('#tabBtnPower')`);
     await waitFor('power tab', `visible($('#powerTab')) && location.pathname === '/power'`);
@@ -364,8 +396,9 @@ async function main() {
     await waitFor('back to 3', `$$('#networkList .network-cell').length === 3`);
   });
 
+  const ironCell = `$$('#networkList .network-cell')[networkShownItems.findIndex(it => it.name === 'Iron Ingot')]`;
+
   step('item history: open, range, pin, craft request with math', async () => {
-    const ironCell = `$$('#networkList .network-cell')[networkShownItems.findIndex(it => it.name === 'Iron Ingot')]`;
     await click(ironCell);
     await waitFor('history open', `visible($('#itemHistoryModal')) && $('#itemHistoryName').textContent === 'Iron Ingot'`);
     await waitFor('url', `location.pathname.startsWith('/network/item/minecraft:iron_ingot')`);
@@ -373,18 +406,26 @@ async function main() {
     await waitFor('week active', `$('#itemHistoryRangeButtons [data-range="week"]').classList.contains('active')`);
     await click(`$('#itemHistoryPinBtn')`);
     await waitFor('item pinned', `$('#itemHistoryPinBtn').classList.contains('pinned')`);
+    // Requesting a craft closes the history popup on the way.
+    await click(`$('#itemHistoryCraftBtn')`);
+    await waitFor('craft dialog', `visible($('#craftRequestModal')) && !visible($('#itemHistoryModal'))`);
+    await click(`byText('#craftRequestModal button', 'Cancel')`);
+    await waitFor('closed by button', `!visible($('#craftRequestModal'))`);
+    await click(ironCell);
+    await click(`$('#itemHistoryCraftBtn')`);
+    await waitFor('craft dialog again', `visible($('#craftRequestModal'))`);
+    await click(`$('#craftRequestModal')`);
+    await waitFor('closed by backdrop', `!visible($('#craftRequestModal'))`);
+    await click(ironCell);
     await click(`$('#itemHistoryCraftBtn')`);
     await waitFor('craft dialog', `visible($('#craftRequestModal')) && $('#craftRequestName').textContent.includes('Iron Ingot')`);
     await evaluate(`typeInto('#craftRequestAmount', '4+3*2')`);
     await waitFor('amount preview', `/\\b10\\b/.test($('#craftRequestAmountPreview').textContent)`);
     await click(`$('#craftRequestSubmitBtn')`);
     await waitFor('craft dialog closed', `!visible($('#craftRequestModal'))`);
-    // Requesting a craft closes the history popup on the way.
-    await waitFor('history closed too', `!visible($('#itemHistoryModal'))`);
   });
 
   step('item history closes via its button and via the backdrop', async () => {
-    const ironCell = `$$('#networkList .network-cell')[networkShownItems.findIndex(it => it.name === 'Iron Ingot')]`;
     await click(ironCell);
     await waitFor('history open', `visible($('#itemHistoryModal'))`);
     await click(`$$('#itemHistoryModal button').find(b => b.textContent.trim() === '×' || b.textContent.trim() === 'Close')`);
@@ -415,10 +456,17 @@ async function main() {
     await waitFor('user created', row);
     await waitFor('token shown', `visible($('#adminTokenResult')) && $('#adminTokenValue').value.startsWith('gcm_')`);
     const firstToken = await evaluate(`$('#adminTokenValue').value`);
+    // Clipboard access may be refused headless; either outcome proves the click ran.
+    await click(`byText('#adminTokenResult button', 'Copy token')`);
+    await waitFor('copied or selected', `$('#toastContainer').textContent.includes('Access token copied.') || document.activeElement === $('#adminTokenValue')`);
     await click(`byText('button', 'History', ${row})`);
     await waitFor('history dialog', `visible($('#userHistoryModal')) && $('#userHistoryTitle').textContent === 'E2E Tester history'`);
-    await click(`$$('#userHistoryModal button').at(-1)`);
-    await waitFor('history closed', `!visible($('#userHistoryModal'))`);
+    await click(`$('#userHistoryModal .history-close-btn')`);
+    await waitFor('closed by button', `!visible($('#userHistoryModal'))`);
+    await click(`byText('button', 'History', ${row})`);
+    await waitFor('history dialog again', `visible($('#userHistoryModal'))`);
+    await click(`$('#userHistoryModal')`);
+    await waitFor('closed by backdrop', `!visible($('#userHistoryModal'))`);
     await click(`byText('button', 'New token', ${row})`);
     await waitFor('new token', `$('#adminTokenValue').value !== ${JSON.stringify(firstToken)}`);
     await waitFor('one token row', `${row}.querySelectorAll('.admin-revoke-btn').length === 2`);
@@ -426,8 +474,13 @@ async function main() {
     await waitFor('token revoked', `${row}?.textContent.includes('No active tokens')`);
     await click(`byText('button', 'Delete', ${row})`);
     await waitFor('user deleted', `!(${row})`);
-    await click(`$$('#adminUsersModal button').find(b => b.textContent.trim() === 'Close' || b.textContent.trim() === '×')`);
-    await waitFor('admin dialog closed', `!visible($('#adminUsersModal'))`);
+    await click(`$('#adminUsersModal .history-close-btn')`);
+    await waitFor('closed by button', `!visible($('#adminUsersModal'))`);
+    await click(`$('#settingsBtn')`);
+    await click(`$('#adminBtn')`);
+    await waitFor('admin dialog again', `visible($('#adminUsersModal'))`);
+    await click(`$('#adminUsersModal')`);
+    await waitFor('closed by backdrop', `!visible($('#adminUsersModal'))`);
   });
 
   step('sign out', async () => {

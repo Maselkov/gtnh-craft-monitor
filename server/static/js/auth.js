@@ -95,6 +95,25 @@ async function refreshAdminUsers() {
   }).join('') || '<div class="admin-user-row">No users yet.</div>';
 }
 
+function setupAuthControls() {
+  document.getElementById('accessTokenInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') submitAccessToken();
+  });
+  delegateActions(document, {
+    'sign-in': () => submitAccessToken(),
+    'toggle-settings': () => toggleSettingsMenu(),
+    'open-admin': () => { closeSettingsMenu(); openAdminUsersModal(); },
+    'sign-out': () => { closeSettingsMenu(); signOut(); },
+    'rotate-bootstrap': () => rotateBootstrapToken(),
+    'close-admin': () => closeAdminUsersModal(),
+    'create-user': () => createAdminUser(),
+    'copy-token': () => copyAdminToken(),
+    'close-user-history': () => closeUserHistoryModal(),
+  });
+  onBackdropClick('adminUsersModal', closeAdminUsersModal);
+  onBackdropClick('userHistoryModal', closeUserHistoryModal);
+}
+
 function setupAdminActions() {
   delegateActions(document.getElementById('adminUsersList'), {
     'revoke-token': (el) => revokeAdminToken(el.dataset.tokenId),
