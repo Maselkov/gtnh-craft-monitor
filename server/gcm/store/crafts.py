@@ -1,4 +1,4 @@
-"""Crafting-CPU jobs (craft_history.db): the permanent craft_events log
+"""Crafting-CPU jobs (app.db): the permanent craft_events log
 of every busy->idle transition, per-user CPU pins, and the completion
 notifications fanned out to whoever had a finished job's CPU pinned."""
 
@@ -8,7 +8,7 @@ from gcm import db
 
 
 def pin_cpu(user_id, cpu_name):
-    with db.transaction(db.craft_db) as conn:
+    with db.transaction(db.app_db) as conn:
         conn.execute(
             "INSERT OR IGNORE INTO user_pins (user_id, cpu_name, pinned_at) VALUES (?, ?, ?)",
             (user_id, cpu_name, time.time()),
@@ -16,7 +16,7 @@ def pin_cpu(user_id, cpu_name):
 
 
 def unpin_cpu(user_id, cpu_name):
-    with db.transaction(db.craft_db) as conn:
+    with db.transaction(db.app_db) as conn:
         conn.execute(
             "DELETE FROM user_pins WHERE user_id = ? AND cpu_name = ?",
             (user_id, cpu_name),
@@ -24,7 +24,7 @@ def unpin_cpu(user_id, cpu_name):
 
 
 def pinned_cpus(user_id):
-    with db.transaction(db.craft_db) as conn:
+    with db.transaction(db.app_db) as conn:
         rows = conn.execute(
             "SELECT cpu_name FROM user_pins WHERE user_id = ?", (user_id,)
         ).fetchall()
@@ -32,7 +32,7 @@ def pinned_cpus(user_id):
 
 
 def drop_cpu_pins(cpu_name):
-    with db.transaction(db.craft_db) as conn:
+    with db.transaction(db.app_db) as conn:
         conn.execute("DELETE FROM user_pins WHERE cpu_name = ?", (cpu_name,))
 
 
@@ -41,7 +41,7 @@ def record_job_end(cpu_name, label, icon, status, progress):
     every user who had that CPU pinned a completion for it, and clears
     those pins - all in one transaction."""
     occurred_at = time.time()
-    with db.transaction(db.craft_db) as conn:
+    with db.transaction(db.app_db) as conn:
         event_id = conn.execute(
             "INSERT INTO craft_events (cpu_name, item_label, item_icon, status, progress_at_end, occurred_at) "
             "VALUES (?, ?, ?, ?, ?, ?)",
@@ -58,7 +58,7 @@ def record_job_end(cpu_name, label, icon, status, progress):
 def completions(user_id, max_age_seconds):
     """The user's unacknowledged completions, newest first. Ones older
     than max_age_seconds (anyone's) are deleted first."""
-    with db.transaction(db.craft_db) as conn:
+    with db.transaction(db.app_db) as conn:
         conn.execute(
             "DELETE FROM user_completions WHERE created_at < ?",
             (time.time() - max_age_seconds,),
@@ -86,7 +86,7 @@ def completions(user_id, max_age_seconds):
 
 
 def acknowledge_completion(user_id, completion_id):
-    with db.transaction(db.craft_db) as conn:
+    with db.transaction(db.app_db) as conn:
         conn.execute(
             "DELETE FROM user_completions WHERE id = ? AND user_id = ?",
             (completion_id, user_id),
@@ -94,5 +94,5 @@ def acknowledge_completion(user_id, completion_id):
 
 
 def acknowledge_all_completions(user_id):
-    with db.transaction(db.craft_db) as conn:
+    with db.transaction(db.app_db) as conn:
         conn.execute("DELETE FROM user_completions WHERE user_id = ?", (user_id,))

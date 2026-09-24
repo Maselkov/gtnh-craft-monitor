@@ -38,7 +38,8 @@ DATA_DIR = None
 IMAGES_ZIP_PATH = None
 POWER_DB_PATH = None
 ITEM_HISTORY_DB_PATH = None
-CRAFT_HISTORY_DB_PATH = None
+APP_DB_PATH = None
+LEGACY_CRAFT_DB_PATH = None
 
 SERVER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -50,14 +51,17 @@ ICONS_LOOKUP_PATH = os.path.join(SERVER_DIR, "reference", "icons_lookup.json")
 
 def configure(data_dir=None, api_key=None):
     global API_KEY, DATA_DIR, IMAGES_ZIP_PATH
-    global POWER_DB_PATH, ITEM_HISTORY_DB_PATH, CRAFT_HISTORY_DB_PATH
+    global POWER_DB_PATH, ITEM_HISTORY_DB_PATH, APP_DB_PATH, LEGACY_CRAFT_DB_PATH
     if api_key is not None:
         API_KEY = api_key
     DATA_DIR = data_dir or os.environ.get("DATA_DIR") or os.path.join(SERVER_DIR, "data")
     IMAGES_ZIP_PATH = os.path.join(DATA_DIR, "images.zip")
     POWER_DB_PATH = os.path.join(DATA_DIR, "power.db")
     ITEM_HISTORY_DB_PATH = os.path.join(DATA_DIR, "item_history.db")
-    CRAFT_HISTORY_DB_PATH = os.path.join(DATA_DIR, "craft_history.db")
+    APP_DB_PATH = os.path.join(DATA_DIR, "app.db")
+    # app.db's name before it held more than craft history; startup
+    # renames it (db.adopt_legacy_app_db()).
+    LEGACY_CRAFT_DB_PATH = os.path.join(DATA_DIR, "craft_history.db")
 
 
 def require_runtime_secrets():

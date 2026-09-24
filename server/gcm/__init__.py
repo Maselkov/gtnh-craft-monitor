@@ -15,7 +15,8 @@ def create_app(data_dir=None, api_key=None):
     variables."""
     config.configure(data_dir, api_key)
     icons.load_lookup()
-    db.init_craft_db()
+    db.adopt_legacy_app_db()
+    db.init_app_db()
     store.requests.close_orphaned()
     store.users.prune_sessions()
     last_craft_id, last_cancel_id = store.requests.last_ids()

@@ -1,10 +1,17 @@
-"""SQLite connections and schemas. One file per major concern
-(craft_history.db, power.db, item_history.db), each opened fresh per
-call - sqlite3 connections aren't safe to share across the server's
-threads, and at this traffic level the cost is irrelevant.
+"""SQLite connections and schemas. Three files, split by kind of data:
+app.db holds everything relational (users, credentials, pins,
+completions, craft events, request audit), linked by foreign keys;
+power.db and item_history.db hold bulk time series. Each connection is
+opened fresh per call - sqlite3 connections aren't safe to share across
+the server's threads, and at this traffic level the cost is irrelevant.
+
+Every file runs in WAL mode, so readers never wait on a writer (a
+network scan's snapshot rewrite, say). That also means a plain file
+copy of a live database can miss recent commits - use backup_all().
 
 Schemas are versioned; see "Schema migrations" at the bottom."""
 
+import os
 import sqlite3
 from contextlib import contextmanager
 
@@ -13,7 +20,7 @@ from gcm import config
 
 @contextmanager
 def transaction(open_db):
-    """`with db.transaction(db.craft_db) as conn:` - one connection,
+    """`with db.transaction(db.app_db) as conn:` - one connection,
     committed if the block finishes, rolled back if it raises, and
     closed either way."""
     conn = open_db()
@@ -24,15 +31,46 @@ def transaction(open_db):
         conn.close()
 
 
-def craft_db():
-    conn = sqlite3.connect(config.CRAFT_HISTORY_DB_PATH, timeout=10)
+def _connect(path):
+    conn = sqlite3.connect(path, timeout=10)
+    # In WAL mode this can't corrupt the file; a power cut can only lose
+    # the last few commits. It saves an fsync on every write.
+    conn.execute("PRAGMA synchronous = NORMAL")
+    return conn
+
+
+def app_db():
+    conn = _connect(config.APP_DB_PATH)
     # Off by default in SQLite, per connection - without it the
     # REFERENCES clauses below are never checked.
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
-def _craft_baseline(conn):
+# A database file's companions: its rollback journal, or its WAL and
+# shared-memory index.
+_SIDECAR_SUFFIXES = ("-journal", "-wal", "-shm")
+
+
+def adopt_legacy_app_db():
+    """Renames craft_history.db - app.db's name from before it held more
+    than craft history - to app.db, along with any journal/WAL files
+    that belong to it. Refuses to guess when both exist."""
+    legacy, current = config.LEGACY_CRAFT_DB_PATH, config.APP_DB_PATH
+    if not os.path.exists(legacy):
+        return
+    if os.path.exists(current):
+        raise RuntimeError(
+            f"Both {legacy} and {current} exist. {current} replaced {legacy}; "
+            "move whichever one is out of date out of the data directory."
+        )
+    for suffix in _SIDECAR_SUFFIXES:
+        if os.path.exists(legacy + suffix):
+            os.replace(legacy + suffix, current + suffix)
+    os.replace(legacy, current)
+
+
+def _app_baseline(conn):
     conn.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id TEXT PRIMARY KEY,
@@ -192,8 +230,7 @@ def power_db():
     # sqlite3 connections aren't safe to share across Flask's threads,
     # and at this traffic level (one insert a minute, occasional reads)
     # the cost of opening a new one each time is irrelevant.
-    conn = sqlite3.connect(config.POWER_DB_PATH, timeout=10)
-    return conn
+    return _connect(config.POWER_DB_PATH)
 
 
 def _power_baseline(conn):
@@ -239,7 +276,7 @@ def _power_baseline(conn):
 
 # ---------------------------------------------------------------------
 # Item/fluid quantity history (SQLite-backed, own db file - separate
-# from power.db and craft_history.db, matching the established "one db
+# from power.db and app.db, matching the established "one db
 # per major concern" pattern rather than growing an existing file with
 # an unrelated table).
 #
@@ -254,8 +291,7 @@ def _power_baseline(conn):
 # most scans, which is what keeps this genuinely small in practice.
 # (store/items.py writes it.)
 def item_history_db():
-    conn = sqlite3.connect(config.ITEM_HISTORY_DB_PATH, timeout=10)
-    return conn
+    return _connect(config.ITEM_HISTORY_DB_PATH)
 
 
 def _item_history_baseline(conn):
@@ -306,14 +342,83 @@ def _item_history_baseline(conn):
 # from before versioning all report version 0 whatever state they're
 # in. Every later step runs exactly once, so it can be a plain change.
 # Never edit a step that has shipped - append a new one.
-def _craft_drop_orphaned_user_rows(conn):
+def _app_drop_orphaned_user_rows(conn):
     # Deleting a user used to leave their pins and pending completions
     # behind, and those pins kept producing completions nobody could read.
     for table in ("user_pins", "user_completions", "user_item_pins", "access_tokens", "sessions"):
         conn.execute(f"DELETE FROM {table} WHERE user_id NOT IN (SELECT id FROM users)")
 
 
-CRAFT_MIGRATIONS = [_craft_baseline, _craft_drop_orphaned_user_rows]
+# The tables whose rows exist only for their user, rebuilt below with
+# user_id ... ON DELETE CASCADE: deleting the users row removes them.
+# The request/cancel audit tables deliberately have no key - their rows
+# outlive the user.
+_USER_OWNED_SCHEMAS = {
+    "user_pins": """
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        cpu_name TEXT NOT NULL,
+        pinned_at REAL NOT NULL,
+        PRIMARY KEY (user_id, cpu_name)
+    """,
+    "user_completions": """
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        craft_event_id INTEGER NOT NULL REFERENCES craft_events(id),
+        created_at REAL NOT NULL
+    """,
+    "user_item_pins": """
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        item_key TEXT NOT NULL,
+        mod TEXT,
+        internal TEXT NOT NULL,
+        damage INTEGER,
+        kind TEXT NOT NULL,
+        pinned_at REAL NOT NULL,
+        PRIMARY KEY (user_id, item_key)
+    """,
+    "access_tokens": """
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        secret_hash TEXT NOT NULL,
+        created_at REAL NOT NULL,
+        last_used_at REAL,
+        revoked_at REAL,
+        is_bootstrap INTEGER NOT NULL DEFAULT 0
+    """,
+    "sessions": """
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        token_hash TEXT NOT NULL UNIQUE,
+        access_token_id TEXT,
+        must_rotate_bootstrap INTEGER NOT NULL DEFAULT 0,
+        created_at REAL NOT NULL,
+        expires_at REAL NOT NULL,
+        revoked_at REAL
+    """,
+}
+
+
+def _app_cascade_user_rows(conn):
+    # SQLite can't add a foreign key to an existing table, so each one is
+    # rebuilt. Safe with foreign_keys on: none of them is another table's
+    # parent, so dropping the old copy checks nothing.
+    for table, columns in _USER_OWNED_SCHEMAS.items():
+        conn.execute(f"DELETE FROM {table} WHERE user_id NOT IN (SELECT id FROM users)")
+        names = ", ".join(row[1] for row in conn.execute(f"PRAGMA table_info({table})"))
+        conn.execute(f"CREATE TABLE {table}_new ({columns})")
+        conn.execute(f"INSERT INTO {table}_new ({names}) SELECT {names} FROM {table}")
+        conn.execute(f"DROP TABLE {table}")
+        conn.execute(f"ALTER TABLE {table}_new RENAME TO {table}")
+    # Indexes went with the old tables.
+    conn.execute("CREATE INDEX idx_access_tokens_user ON access_tokens (user_id)")
+    conn.execute("CREATE INDEX idx_sessions_user ON sessions (user_id)")
+    conn.execute("CREATE INDEX idx_user_completions_user ON user_completions (user_id)")
+    problems = conn.execute("PRAGMA foreign_key_check").fetchall()
+    if problems:
+        raise RuntimeError(f"foreign key violations after rebuilding user tables: {problems}")
+
+
+APP_MIGRATIONS = [_app_baseline, _app_drop_orphaned_user_rows, _app_cascade_user_rows]
 POWER_MIGRATIONS = [_power_baseline]
 ITEM_HISTORY_MIGRATIONS = [_item_history_baseline]
 
@@ -348,13 +453,52 @@ def migrate(open_db, steps):
         conn.close()
 
 
-def init_craft_db():
-    migrate(craft_db, CRAFT_MIGRATIONS)
+def _use_wal(open_db):
+    # A setting of the file itself, so once is enough; it can't change
+    # inside a transaction, so it runs before migrate().
+    conn = open_db()
+    try:
+        conn.execute("PRAGMA journal_mode = WAL")
+    finally:
+        conn.close()
+
+
+def init_app_db():
+    _use_wal(app_db)
+    migrate(app_db, APP_MIGRATIONS)
 
 
 def init_power_db():
+    _use_wal(power_db)
     migrate(power_db, POWER_MIGRATIONS)
 
 
 def init_item_history_db():
+    _use_wal(item_history_db)
     migrate(item_history_db, ITEM_HISTORY_MIGRATIONS)
+
+
+def backup_all(target_dir):
+    """Copies every database into target_dir with SQLite's online backup
+    API - a consistent snapshot even while the server is writing, which
+    copying the files (and their WAL) by hand can't promise. Returns the
+    paths written. Refuses to overwrite an existing file."""
+    sources = (
+        (config.APP_DB_PATH, app_db),
+        (config.POWER_DB_PATH, power_db),
+        (config.ITEM_HISTORY_DB_PATH, item_history_db),
+    )
+    targets = [os.path.join(target_dir, os.path.basename(path)) for path, _ in sources]
+    existing = [path for path in targets if os.path.exists(path)]
+    if existing:
+        raise RuntimeError(f"Backup target already exists: {', '.join(existing)}")
+    os.makedirs(target_dir, exist_ok=True)
+    for (_, open_db), target in zip(sources, targets):
+        source = open_db()
+        destination = sqlite3.connect(target)
+        try:
+            source.backup(destination)
+        finally:
+            destination.close()
+            source.close()
+    return targets

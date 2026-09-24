@@ -25,7 +25,7 @@ static HTML/JS frontend.
 craft_monitor.lua   --POST--> /api/crafts  --\
 power_monitor.lua   --POST--> /api/power   ---> Flask (server/gcm/)   --> browser
 network_browser.lua --POST--> /api/network --/
-                                               SQLite: power.db, craft_history.db,
+                                               SQLite: app.db, power.db,
                                                item_history.db
 ```
 
@@ -254,17 +254,30 @@ caused a `SyntaxWarning` on every test run). It moved to a plain
 `index.html` first, then to `static/` once it was large enough that one
 3,700-line file was its own friction.
 
-The three SQLite files (`power.db`, `craft_history.db`,
-`item_history.db`) were also discussed and deliberately NOT merged into
-one - the case for merging was weak (mostly cosmetic; they already live
-in the same bind-mounted directory, so there's no real backup-story
-benefit) against a real cost (an actual data migration touching
-production history, not just a code reorganization). Revisit only if a
-genuine feature need shows up (e.g. a query that has to join across
-them), not for tidiness alone.
+The three SQLite files are split by kind of data, and that split was
+kept deliberately (discussed twice, both times NOT merged):
+- `app.db` - everything relational: users, tokens, sessions, CPU and
+  item pins, completions, craft events, request/cancel audit. Until
+  schema step 3 it was named `craft_history.db`; startup renames an
+  old one (`db.adopt_legacy_app_db()`, which refuses to run if both
+  names exist).
+- `power.db` and `item_history.db` - bulk time series.
+
+Merging them would gain nothing (no query joins across files) and cost
+something: SQLite has one writer per file, so a network scan rewriting
+`network_snapshot` would hold up sign-ins and pins. Splitting the
+relational tables further would cost more: `user_completions` alone
+points at both `users` and `craft_events`, and foreign keys can't cross
+files. Revisit only if a genuine feature needs a cross-file join.
+
+All three run in WAL mode (`db._use_wal()` at startup; each connection
+sets `synchronous = NORMAL`), so readers never wait on a writer. The
+catch is that a live `.db` file alone isn't a backup - recent commits
+sit in its `-wal` file - so `python app.py backup <dir>`
+(`db.backup_all()`) copies all three with SQLite's online backup API.
 
 **Schema changes are numbered migration steps** (`db.py`,
-`CRAFT_MIGRATIONS` and friends). Each file's `PRAGMA user_version`
+`APP_MIGRATIONS` and friends). Each file's `PRAGMA user_version`
 records how many steps it has had; startup runs the rest, each in one
 transaction with its version bump. To change a schema, append a step -
 never edit one that has shipped. Step 1 is the baseline from before
@@ -272,9 +285,15 @@ versioning and has to stay idempotent: every older install reports
 version 0 whatever state its tables are in (a real one still had the
 retired `craft_keys` table and none of the request-history tables). A
 file at a higher version than the server knows stops startup rather
-than being run by older code. Foreign keys are enforced on
-craft_history.db (`PRAGMA foreign_keys`, set per connection in
-`db.craft_db()`), so parent rows are deleted last.
+than being run by older code. Foreign keys are enforced on app.db
+(`PRAGMA foreign_keys`, set per connection in `db.app_db()`). Every
+table that exists only for its user (`user_pins`, `user_completions`,
+`user_item_pins`, `access_tokens`, `sessions`) has `user_id ...
+ON DELETE CASCADE`, so deleting a user is one `DELETE FROM users`.
+The request/cancel audit tables have no key on purpose - their rows
+outlive the user. SQLite can't add a key to an existing table, so step
+3 rebuilds those five tables; `_USER_OWNED_SCHEMAS` in `db.py` is their
+full current schema.
 
 ## Network scan integrity (why scan/finish looks the way it does)
 

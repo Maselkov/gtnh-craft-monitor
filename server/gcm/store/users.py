@@ -1,5 +1,5 @@
 """Users, their access tokens and their browser sessions
-(craft_history.db). Token secrets and session cookies are stored only
+(app.db). Token secrets and session cookies are stored only
 as SHA-256 hashes.
 
 create_access_token(), find_access_token() and create_session() take a
@@ -90,7 +90,7 @@ def _prune_sessions(conn):
 
 
 def prune_sessions():
-    with db.transaction(db.craft_db) as conn:
+    with db.transaction(db.app_db) as conn:
         _prune_sessions(conn)
 
 
@@ -98,7 +98,7 @@ def sign_in(token, session_lifetime_seconds):
     """Checks an access token and starts a session for its user.
     Returns (user, session_token, must_rotate_bootstrap), or None for a
     bad token or a disabled user."""
-    with db.transaction(db.craft_db) as conn:
+    with db.transaction(db.app_db) as conn:
         access_token = find_access_token(conn, token)
         if not access_token:
             return None
@@ -121,7 +121,7 @@ def sign_in(token, session_lifetime_seconds):
 def session_user(session_token):
     """The user behind a live session cookie, with that session's
     details, or None."""
-    with db.transaction(db.craft_db) as conn:
+    with db.transaction(db.app_db) as conn:
         row = conn.execute(
             "SELECT users.id, users.display_name, users.role, sessions.id, "
             "sessions.access_token_id, sessions.must_rotate_bootstrap FROM sessions "
@@ -143,7 +143,7 @@ def session_user(session_token):
 
 
 def sign_out(session_token):
-    with db.transaction(db.craft_db) as conn:
+    with db.transaction(db.app_db) as conn:
         conn.execute(
             "UPDATE sessions SET revoked_at = ? WHERE token_hash = ?",
             (time.time(), hash_secret(session_token)),
@@ -154,7 +154,7 @@ def rotate_bootstrap_token(user):
     """Replaces the bootstrap token `user` (a session_user() result)
     signed in with: revokes it and every other session made from it,
     and moves this session onto the new token. Returns the new token."""
-    with db.transaction(db.craft_db) as conn:
+    with db.transaction(db.app_db) as conn:
         replacement_token = create_access_token(conn, user["id"])
         replacement_token_id, _ = parse_access_token(replacement_token)
         now = time.time()
@@ -174,13 +174,13 @@ def rotate_bootstrap_token(user):
 
 
 def count():
-    with db.transaction(db.craft_db) as conn:
+    with db.transaction(db.app_db) as conn:
         return conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
 
 
 def display_name(user_id):
     """The user's display name, or None if there's no such user."""
-    with db.transaction(db.craft_db) as conn:
+    with db.transaction(db.app_db) as conn:
         row = conn.execute(
             "SELECT display_name FROM users WHERE id = ?", (user_id,)
         ).fetchone()
@@ -188,7 +188,7 @@ def display_name(user_id):
 
 
 def id_for_display_name(name):
-    with db.transaction(db.craft_db) as conn:
+    with db.transaction(db.app_db) as conn:
         row = conn.execute(
             "SELECT id FROM users WHERE display_name = ?", (name,)
         ).fetchone()
@@ -200,7 +200,7 @@ def create(display_name, role):
     or None if the display name is taken."""
     user_id = f"usr_{uuid.uuid4().hex}"
     try:
-        with db.transaction(db.craft_db) as conn:
+        with db.transaction(db.app_db) as conn:
             conn.execute(
                 "INSERT INTO users (id, display_name, role, created_at) VALUES (?, ?, ?, ?)",
                 (user_id, display_name, role, time.time()),
@@ -213,7 +213,7 @@ def create(display_name, role):
 
 def all_with_tokens():
     """Every user, by display name, each with their unrevoked tokens."""
-    with db.transaction(db.craft_db) as conn:
+    with db.transaction(db.app_db) as conn:
         rows = conn.execute(
             "SELECT users.id, users.display_name, users.role, users.created_at, "
             "users.disabled_at, access_tokens.id, access_tokens.created_at, "
@@ -246,29 +246,22 @@ def all_with_tokens():
     return list(users.values())
 
 
-# Rows that exist only for their user and go when the user is deleted.
-USER_OWNED_TABLES = ("user_pins", "user_completions", "user_item_pins", "sessions", "access_tokens")
-
-
 def delete(user_id):
     """Removes the user with their credentials, pins and pending
     completions. False if there was no such user. Their request/cancel
     history stays as the audit trail."""
-    with db.transaction(db.craft_db) as conn:
-        if not conn.execute("SELECT 1 FROM users WHERE id = ?", (user_id,)).fetchone():
-            return False
-        # Nothing is ON DELETE CASCADE, and foreign keys are enforced, so
-        # everything pointing at the user goes before the users row.
-        for table in USER_OWNED_TABLES:
-            conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
-        conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
-    return True
+    with db.transaction(db.app_db) as conn:
+        # Every table that exists only for its user has user_id ... ON
+        # DELETE CASCADE (see _USER_OWNED_SCHEMAS in db.py); the audit
+        # tables have no key, so their rows stay.
+        cursor = conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    return cursor.rowcount > 0
 
 
 def replace_credentials(user_id):
     """Revokes every token and session the user has and issues one new
     token, which it returns - or None if there's no such user."""
-    with db.transaction(db.craft_db) as conn:
+    with db.transaction(db.app_db) as conn:
         if not conn.execute("SELECT 1 FROM users WHERE id = ?", (user_id,)).fetchone():
             return None
         now = time.time()
@@ -288,7 +281,7 @@ def replace_credentials(user_id):
 def revoke_token(token_id):
     """Revokes one token and the sessions made from it. False if no
     unrevoked token has that id."""
-    with db.transaction(db.craft_db) as conn:
+    with db.transaction(db.app_db) as conn:
         now = time.time()
         cursor = conn.execute(
             "UPDATE access_tokens SET revoked_at = ? "
@@ -310,7 +303,7 @@ def bootstrap_admin(token_id, secret, display_name):
     the given bootstrap token. Later runs: if that token is still a live
     token, re-marks it as a bootstrap token and revokes its user's
     sessions, so signing in with it again forces a rotation."""
-    with db.transaction(db.craft_db) as conn:
+    with db.transaction(db.app_db) as conn:
         if conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]:
             row = conn.execute(
                 "SELECT user_id FROM access_tokens "

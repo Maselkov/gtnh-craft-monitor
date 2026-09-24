@@ -1,6 +1,6 @@
 """ME network items: the network_snapshot mirror and change-only
 item_history (item_history.db), and per-user item pins
-(craft_history.db)."""
+(app.db)."""
 
 import time
 
@@ -163,7 +163,7 @@ def last_recorded(key):
 
 
 def pins(user_id):
-    with db.transaction(db.craft_db) as conn:
+    with db.transaction(db.app_db) as conn:
         rows = conn.execute(
             "SELECT mod, internal, damage, kind FROM user_item_pins WHERE user_id = ?",
             (user_id,),
@@ -172,7 +172,7 @@ def pins(user_id):
 
 
 def pin(user_id, mod, internal, damage, kind):
-    with db.transaction(db.craft_db) as conn:
+    with db.transaction(db.app_db) as conn:
         conn.execute(
             "INSERT OR IGNORE INTO user_item_pins "
             "(user_id, item_key, mod, internal, damage, kind, pinned_at) "
@@ -190,7 +190,7 @@ def pin(user_id, mod, internal, damage, kind):
 
 
 def unpin(user_id, mod, internal, damage, kind):
-    with db.transaction(db.craft_db) as conn:
+    with db.transaction(db.app_db) as conn:
         conn.execute(
             "DELETE FROM user_item_pins WHERE user_id = ? AND item_key = ?",
             (user_id, item_key(mod, internal, damage, kind)),

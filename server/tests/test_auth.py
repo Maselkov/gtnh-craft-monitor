@@ -8,7 +8,7 @@ from gcm import auth, config, db, store
 
 
 def test_access_token_resolves_stable_user_id():
-    conn = db.craft_db()
+    conn = db.app_db()
     try:
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) "
@@ -31,7 +31,7 @@ def test_access_token_resolves_stable_user_id():
 
 
 def test_invalid_access_token_is_rejected():
-    conn = db.craft_db()
+    conn = db.app_db()
     try:
         token = "gcm_tok_unknown_not-a-real-secret"
         assert store.users.find_access_token(conn, token) is None
@@ -40,7 +40,7 @@ def test_invalid_access_token_is_rejected():
 
 
 def test_login_exchanges_access_token_for_session_cookie(client):
-    conn = db.craft_db()
+    conn = db.app_db()
     try:
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) "
@@ -72,7 +72,7 @@ def test_spoofed_user_id_header_does_not_authenticate(client):
 
 
 def test_disabling_a_user_invalidates_existing_sessions(client):
-    conn = db.craft_db()
+    conn = db.app_db()
     try:
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) "
@@ -85,7 +85,7 @@ def test_disabling_a_user_invalidates_existing_sessions(client):
         conn.close()
 
     assert client.post("/api/auth/login", json={"token": token}).status_code == 200
-    conn = db.craft_db()
+    conn = db.app_db()
     try:
         conn.execute(
             "UPDATE users SET disabled_at = ? WHERE id = ?", (time.time(), "usr_alice")
@@ -98,7 +98,7 @@ def test_disabling_a_user_invalidates_existing_sessions(client):
 
 
 def test_only_admins_can_list_or_create_users(client):
-    conn = db.craft_db()
+    conn = db.app_db()
     try:
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) "
@@ -121,7 +121,7 @@ def test_only_admins_can_list_or_create_users(client):
         == 403
     )
 
-    conn = db.craft_db()
+    conn = db.app_db()
     try:
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) "
@@ -158,7 +158,7 @@ def test_initial_admin_is_required_for_direct_server_startup():
 
 
 def test_bootstrap_token_must_be_rotated_before_admin_actions(client, flask_app):
-    conn = db.craft_db()
+    conn = db.app_db()
     try:
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) "
@@ -192,7 +192,7 @@ def test_bootstrap_token_must_be_rotated_before_admin_actions(client, flask_app)
 
 
 def test_existing_bootstrap_session_is_revoked_during_startup_recognition(monkeypatch):
-    conn = db.craft_db()
+    conn = db.app_db()
     try:
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) "
@@ -209,7 +209,7 @@ def test_existing_bootstrap_session_is_revoked_during_startup_recognition(monkey
     monkeypatch.setenv("GCM_BOOTSTRAP_ADMIN_TOKEN", bootstrap_token)
     auth.bootstrap_admin()
 
-    conn = db.craft_db()
+    conn = db.app_db()
     try:
         token_row = conn.execute(
             "SELECT is_bootstrap FROM access_tokens WHERE id = ?", (access_token["id"],)
@@ -238,7 +238,7 @@ def test_default_or_short_service_key_is_rejected(monkeypatch):
 def test_debug_dumps_require_an_operator_session(client):
     assert client.get("/api/debug").status_code == 403
 
-    conn = db.craft_db()
+    conn = db.app_db()
     try:
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) "
@@ -255,7 +255,7 @@ def test_debug_dumps_require_an_operator_session(client):
 
 
 def test_cross_origin_session_writes_are_rejected(client):
-    conn = db.craft_db()
+    conn = db.app_db()
     try:
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) "
@@ -315,7 +315,7 @@ def test_trusted_proxy_can_supply_forwarded_host(client, monkeypatch):
 
 
 def test_admin_can_revoke_a_token_and_its_sessions(client, flask_app):
-    conn = db.craft_db()
+    conn = db.app_db()
     try:
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) "
@@ -359,7 +359,7 @@ def test_admin_can_revoke_a_token_and_its_sessions(client, flask_app):
 
 
 def test_admin_can_view_user_action_history(client):
-    conn = db.craft_db()
+    conn = db.app_db()
     try:
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) "
@@ -402,7 +402,7 @@ def test_admin_can_view_user_action_history(client):
 
 
 def test_revoked_tokens_are_not_listed(client):
-    conn = db.craft_db()
+    conn = db.app_db()
     try:
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) "
@@ -432,7 +432,7 @@ def test_revoked_tokens_are_not_listed(client):
 
 
 def test_admin_can_delete_a_user_and_their_credentials(client, flask_app):
-    conn = db.craft_db()
+    conn = db.app_db()
     try:
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) "
@@ -484,7 +484,7 @@ def test_admin_can_delete_a_user_and_their_credentials(client, flask_app):
         alice_client.post("/api/auth/login", json={"token": alice_token}).status_code
         == 401
     )
-    conn = db.craft_db()
+    conn = db.app_db()
     try:
         for table in ("user_pins", "user_item_pins", "user_completions"):
             assert conn.execute(
@@ -495,7 +495,7 @@ def test_admin_can_delete_a_user_and_their_credentials(client, flask_app):
 
 
 def test_admin_cannot_delete_their_own_account(client):
-    conn = db.craft_db()
+    conn = db.app_db()
     try:
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) "
@@ -515,7 +515,7 @@ def test_admin_cannot_delete_their_own_account(client):
 
 
 def test_admin_can_regenerate_a_users_token(client, flask_app):
-    conn = db.craft_db()
+    conn = db.app_db()
     try:
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) "
@@ -565,7 +565,7 @@ def test_admin_can_regenerate_a_users_token(client, flask_app):
 
 
 def _login_new_admin(client):
-    conn = db.craft_db()
+    conn = db.app_db()
     try:
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) "
@@ -599,7 +599,7 @@ def test_cross_origin_token_revoke_is_rejected(client):
 
 
 def test_cli_new_token_replaces_a_users_tokens(client, capsys):
-    conn = db.craft_db()
+    conn = db.app_db()
     try:
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) "

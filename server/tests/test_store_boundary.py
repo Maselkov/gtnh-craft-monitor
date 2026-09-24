@@ -8,7 +8,7 @@ SERVER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ALLOWED = {os.path.join("gcm", "db.py")}
 ALLOWED_DIRS = (os.path.join("gcm", "store") + os.sep,)
 SQL_ACCESS = re.compile(
-    r"\bsqlite3\b|\.execute(many|script)?\(|\bdb\.(craft_db|power_db|item_history_db|transaction)\b"
+    r"\bsqlite3\b|\.execute(many|script)?\(|\bdb\.(app_db|power_db|item_history_db|transaction)\b"
 )
 
 
