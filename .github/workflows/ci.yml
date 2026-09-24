@@ -44,6 +44,26 @@ jobs:
             luac5.3 -p "$f" || status=1
           done
           exit $status
+      # gcm.lua installs whatever manifest.lua lists, so a renamed or
+      # deleted script would otherwise only fail on someone's computer.
+      - name: Check gcm manifest
+        run: |
+          lua5.3 -e '
+            local m = dofile("oc/manifest.lua")
+            local files = { m.config }
+            for _, f in ipairs(m.shared) do files[#files + 1] = f end
+            for _, c in ipairs(m.components) do
+              for _, f in ipairs(c.files) do files[#files + 1] = f end
+            end
+            local missing = 0
+            for _, f in ipairs(files) do
+              if not io.open("oc/" .. f.src) then
+                print("manifest.lua lists missing file oc/" .. f.src)
+                missing = missing + 1
+              end
+            end
+            os.exit(missing == 0)
+          '
 
   docker:
     name: Docker build

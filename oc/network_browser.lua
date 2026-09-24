@@ -132,6 +132,12 @@ local CONFIG = {
                         -- screen-owning scripts fighting over one terminal
                         -- just flickers, only one should draw
 }
+
+-- Overrides from the network_browser table in config.lua, so local settings
+-- survive `gcm update` replacing this file.
+for key, value in pairs(config.network_browser or {}) do
+  CONFIG[key] = value
+end
 -- ====================================================
 
 local function find_me_component()

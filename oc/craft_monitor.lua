@@ -140,6 +140,12 @@ local CONFIG = {
                                       -- AE2's own background computation,
                                       -- not in anything this loop blocks on
 }
+
+-- Overrides from the craft_monitor table in config.lua, so local settings
+-- survive `gcm update` replacing this file.
+for key, value in pairs(config.craft_monitor or {}) do
+  CONFIG[key] = value
+end
 -- ====================================================
 
 -- Shared by both loops below (the main status loop and the separate

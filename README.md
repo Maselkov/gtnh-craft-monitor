@@ -46,7 +46,8 @@ never connects into the game.
 | `oc/craft_monitor.lua` | Reports crafting CPUs; executes craft requests and cancellations |
 | `oc/power_monitor.lua` | Reports a GregTech machine's stored EU |
 | `oc/network_browser.lua` | Scans ME network contents |
-| `oc/config.lua` | Shared server URL and API key for all scripts |
+| `oc/gcm.lua`, `oc/manifest.lua` | Installer and updater, and the list of files it installs |
+| `oc/config.lua` | Server URL, API key and per-script settings for all scripts |
 | `oc/http.lua`, `oc/json.lua` | Libraries used by the scripts |
 | `oc/item_catalog.txt` | Item ID list used by the network scanner |
 | `oc/sensor_info_dump.lua` | One-off diagnostic: prints a GT machine's full sensor info |
@@ -76,8 +77,8 @@ The page is served at `http://<your-host>:8420/`. It shows "waiting for data"
 until the in-game scripts are running. Sign in with the bootstrap token as
 described in [User accounts](#user-accounts).
 
-`API_KEY` is the shared secret the in-game scripts use; you'll copy it into
-`oc/config.lua` later.
+`API_KEY` is the shared secret the in-game scripts use; `gcm install` asks
+for it later and saves it in `/home/config.lua`.
 
 All persistent data (databases, icons) lives in `server/data/`, which
 `docker-compose.yml` mounts into the container, so rebuilding the image
@@ -135,7 +136,7 @@ which is only appropriate on a trusted LAN. To expose it to the internet:
    `TRUSTED_PROXIES=10.0.1.20/32`) so the client IP, host, and HTTPS headers
    it forwards are honored. Forwarded headers from any other source are
    ignored.
-5. Use an `https://` `SERVER_URL` in `oc/config.lua` so the API key isn't sent
+5. Use an `https://` `SERVER_URL` in `/home/config.lua` so the API key isn't sent
    in cleartext.
 
 HTTPS is also required for desktop notifications when the page is opened from
@@ -232,12 +233,59 @@ without NBT is used, since the in-game scripts don't report NBT.
   casing block).
 - `allowInternet` enabled in the server's `OpenComputers.cfg`, and your
   server's host not blocked by its whitelist. If this is off, the scripts
-  can't POST, and nothing on the Lua side can fix it.
+  can't POST, and nothing on the Lua side can fix it. The installer also
+  needs `raw.githubusercontent.com` and `api.github.com`.
 
-### Install the files
+### Install
 
-Copy these files to the computer (with a floppy and `edit`, or `wget` if
-allowed):
+`gcm` installs the scripts from the latest release and updates them later.
+Download it once, then run it:
+
+```
+wget -f https://raw.githubusercontent.com/Maselkov/gtnh-craft-monitor/main/oc/gcm.lua /usr/bin/gcm.lua
+gcm install
+```
+
+`gcm install` asks which scripts to install, then asks for the server URL
+and API key and writes them to `/home/config.lua`. It can also enable the
+scripts so they start on every boot, and offers to reboot to start them.
+
+To install specific scripts without being asked, name them:
+
+```
+gcm install craft power network
+```
+
+Run `gcm install` again later to add scripts. `/home/config.lua` is only
+written if it doesn't exist yet.
+
+The scripts are independent: they can run on one computer or on separate
+ones.
+
+### Update
+
+```
+gcm update     # install the latest release, then offer to reboot
+gcm status     # installed version, installed scripts, latest release
+```
+
+`gcm update` replaces the scripts and libraries but never
+`/home/config.lua`. Keep your settings there (see
+[Script settings](#script-settings)). All files are downloaded before any
+are replaced, so a failed download leaves the old version in place. The
+reboot is needed because OpenOS keeps the old code loaded until then.
+
+Both commands take `--ref=<tag or branch>` to use something other than the
+latest release, for example `gcm update --ref=main` to try unreleased
+changes. Releases older than `gcm` itself can't be installed with it.
+
+Use a release that matches your server's version: the image tag and the
+scripts come from the same release.
+
+### Manual install
+
+Without `gcm`, copy these files to the computer yourself (with a floppy and
+`edit`, or `wget`):
 
 | File | Destination | Needed for |
 |---|---|---|
@@ -249,24 +297,12 @@ allowed):
 | `oc/network_browser.lua` | `/etc/rc.d/network_browser.lua` | Network tab |
 | `oc/item_catalog.txt` | `/home/item_catalog.txt` | Network browser |
 
-Install only the scripts you want. They're independent and can run on the
-same computer or on separate ones.
+Then set `SERVER_URL` (no trailing slash) and `API_KEY` (the server's
+`API_KEY`) in `/home/config.lua`.
 
 `http.lua` and `json.lua` go in `/usr/lib/` so `require()` finds them from
 any script. `config.lua` is loaded by absolute path; to keep it somewhere
 other than `/home/`, change `CONFIG_PATH` at the top of each script.
-
-### Configure
-
-Edit `/home/config.lua`:
-
-```lua
-SERVER_URL = "http://YOUR-SERVER-HOST:8420",  -- no trailing slash
-API_KEY    = "change-me",                      -- same as the server's API_KEY
-```
-
-Each script also has a `CONFIG` block at the top with its own settings (see
-below). The server URL and API key are never set there.
 
 ### Run the scripts
 
@@ -276,15 +312,34 @@ Each script is an OpenOS `rc` service:
 rc craft_monitor enable     # start automatically on every boot
 rc craft_monitor start      # start now
 rc craft_monitor stop
-rc craft_monitor restart
 rc craft_monitor status
 ```
 
-Use `enable` and `start` together for normal use; `start` alone lasts only
-until the next reboot. The same commands work for `power_monitor` and
-`network_browser`.
+`start` alone lasts only until the next reboot. The same commands work for
+`power_monitor` and `network_browser`.
 
 ### Script settings
+
+Change settings in `/home/config.lua`, not in the scripts, because
+`gcm update` replaces the scripts. Add a table named after the script with
+only the settings you want to change:
+
+```lua
+return {
+  SERVER_URL = "https://monitor.example.com",
+  API_KEY    = "...",
+
+  craft_monitor = {
+    SHOW_STATUS = true,
+  },
+  power_monitor = {
+    POLL_SECONDS = 30,
+  },
+}
+```
+
+Anything not listed keeps the default from the tables below. Changes take
+effect after a reboot.
 
 The scripts don't draw to the screen by default (`SHOW_STATUS = false`). If
 you turn on a status screen, enable it for only one script per screen: each
@@ -303,8 +358,8 @@ one clears the terminal on every cycle, so two would flicker.
 | `DEBUG_CPU_FILTER` | `nil` | Limit `DEBUG_DUMP` to one CPU by name |
 
 `DEBUG_DUMP` is useful on first setup to check what the script sees:
-set it to `true`, run `rc craft_monitor start`, read the output, then set it
-back to `false`.
+set `craft_monitor = { DEBUG_DUMP = true }` in `config.lua`, reboot, read
+the output, then remove it again.
 
 **power_monitor.lua**
 

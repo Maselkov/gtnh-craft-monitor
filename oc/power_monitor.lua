@@ -108,6 +108,12 @@ local CONFIG = {
                                      -- from-a-live-hang stall happens
                                      -- mid-response
 }
+
+-- Overrides from the power_monitor table in config.lua, so local settings
+-- survive `gcm update` replacing this file.
+for key, value in pairs(config.power_monitor or {}) do
+  CONFIG[key] = value
+end
 -- ====================================================
 
 local function find_gt_machine()
