@@ -1,6 +1,9 @@
+# Compose file for running a published image (see README, "Prebuilt
+# image"). On the deployment host it sits in DEPLOY_DIR beside .env and
+# data/; gcm-deploy.sh sets GCM_TAG to the release it deploys.
 services:
   gtnh-craft-monitor:
-    build: ./server
+    image: ghcr.io/maselkov/gtnh-craft-monitor:${GCM_TAG:-latest}
     container_name: gtnh-craft-monitor
     restart: unless-stopped
     ports:
@@ -8,8 +11,8 @@ services:
     environment:
       - API_KEY=${API_KEY:?Set API_KEY to a unique 32+ character secret in .env}
       - STALE_AFTER_SECONDS=30
-      # The direct Compose port is HTTP-only. Keep this at 0 only for a
-      # trusted local/LAN deployment; use HTTPS plus 1 behind a proxy.
+      # The direct port is HTTP-only. Keep this at 0 only for a trusted
+      # local/LAN deployment; use HTTPS plus 1 behind a proxy.
       - SESSION_COOKIE_SECURE=${SESSION_COOKIE_SECURE:-0}
       # Comma-separated proxy IPs/CIDRs allowed to supply X-Forwarded-* headers.
       - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
@@ -17,8 +20,5 @@ services:
       - GCM_BOOTSTRAP_ADMIN_TOKEN=${GCM_BOOTSTRAP_ADMIN_TOKEN:-}
       - GCM_BOOTSTRAP_ADMIN_NAME=${GCM_BOOTSTRAP_ADMIN_NAME:-Administrator}
     volumes:
-      # Databases and images.zip - without this, every
-      # `docker compose up -d --build` would wipe the history. The icon
-      # lookup table isn't here: it's built into the image from
-      # server/reference/.
-      - ./server/data:/app/data
+      # Databases and images.zip. The icon lookup table is in the image.
+      - ./data:/app/data

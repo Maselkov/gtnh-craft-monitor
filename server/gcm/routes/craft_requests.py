@@ -1,5 +1,5 @@
 """Craft requests and cancellations submitted from the browser and
-carried out by craft_monitor.lua, via the queues in gcm/state.py.
+carried out by craft_monitor.lua, via the queues in gcm/commands.py.
 
 Two-sided auth:
   - Lua-facing endpoints (poll pending, report results) use the same
@@ -12,7 +12,7 @@ import time
 
 from flask import Blueprint, g, jsonify, request
 
-from gcm import auth, icons, state, store, tracking
+from gcm import auth, commands, icons, state, store, tracking
 
 
 bp = Blueprint("craft_requests", __name__)
@@ -42,7 +42,7 @@ def craft_request_post():
     icon = icons.resolve_icon(mod, internal, damage, label)
     created_at = time.time()
 
-    req_id = state.craft_requests.add(
+    req_id = commands.craft_requests.add(
         {
             "user_id": user_id,
             "label": label,
@@ -61,10 +61,10 @@ def craft_request_post():
             "reason": None,
             "cpu_name": None,
             "created_at": created_at,
-        }
-    )
-    store.requests.record_request(
-        req_id, user_id, label, mod, internal, damage, amount, kind, created_at
+        },
+        lambda req_id: store.requests.record_request(
+            req_id, user_id, label, mod, internal, damage, amount, kind, created_at
+        ),
     )
     return jsonify({"ok": True, "id": req_id})
 
@@ -77,7 +77,7 @@ def craft_requests_get():
     # is accepted, a real pin is created and it's the pin (existing
     # infrastructure) that represents it from then on, not this
     # ephemeral request record.
-    mine = state.craft_requests.select(
+    mine = commands.craft_requests.select(
         lambda r: r["user_id"] == user_id and r["status"] in ("pending", "failed")
     )
     mine.sort(key=lambda r: r["created_at"], reverse=True)
@@ -87,7 +87,7 @@ def craft_requests_get():
 @bp.route("/api/craft/requests/<int:req_id>/dismiss", methods=["POST"])
 @auth.login_required
 def craft_request_dismiss(req_id):
-    state.craft_requests.dismiss(req_id, g.user["id"])
+    commands.craft_requests.dismiss(req_id, g.user["id"])
     return jsonify({"ok": True})
 
 
@@ -95,7 +95,7 @@ def craft_request_dismiss(req_id):
 @auth.api_key_required
 def craft_requests_pending():
     # Lua polling for work - every user's pending requests at once.
-    return jsonify({"requests": state.craft_requests.claim_pending()})
+    return jsonify({"requests": commands.craft_requests.claim_pending()})
 
 
 @bp.route("/api/craft/requests/<int:req_id>/result", methods=["POST"])
@@ -107,13 +107,17 @@ def craft_request_result(req_id):
         return jsonify({"error": "status must be accepted or failed"}), 400
 
     cpu_name = payload.get("cpu_name")
+    reason = None if status == "accepted" else payload.get("reason") or "request failed"
+
+    # The audit row first: if writing it fails, the request stays pending
+    # in memory and its expiry still gets to close the row.
+    store.requests.resolve_request(req_id, status, reason, cpu_name)
+
     if status == "accepted":
         # Accepted requests leave the queue: the CPU pin takes over.
-        req = state.craft_requests.resolve(req_id, status, remove=True, cpu_name=cpu_name)
-        reason = None
+        req = commands.craft_requests.resolve(req_id, status, remove=True, cpu_name=cpu_name)
     else:
-        reason = payload.get("reason") or "request failed"
-        req = state.craft_requests.resolve(req_id, status, reason=reason)
+        req = commands.craft_requests.resolve(req_id, status, reason=reason)
     if req is None:
         return jsonify({"error": "unknown request id"}), 404
 
@@ -121,8 +125,6 @@ def craft_request_result(req_id):
         tracking.start_requested_job(
             req["user_id"], cpu_name, req.get("label"), req.get("icon"), req["created_at"]
         )
-
-    store.requests.resolve_request(req_id, status, reason, cpu_name)
 
     return jsonify({"ok": True})
 
@@ -150,18 +152,32 @@ def craft_cancel_post():
     if not job.get("busy"):
         return jsonify({"error": "CPU is not currently busy - nothing to cancel"}), 400
 
+    # A CPU runs one job after another, so the cancel names the job too:
+    # what it's making, as the browser showed it and as the latest status
+    # report has it. If those already differ, the job the user meant to
+    # cancel is gone. Lua checks it once more against the CPU itself
+    # right before cancelling. None when the CPU has no Crafting Monitor
+    # to report its output - then only the CPU name is known.
+    expected_output = tracking.output_identity(job)
+    shown = payload.get("expected_output")
+    if isinstance(shown, dict) and expected_output and not tracking.same_output(
+        expected_output, shown
+    ):
+        return jsonify({"error": "a different job is now running on this CPU - not cancelled"}), 409
+
     created_at = time.time()
-    req_id = state.cancel_requests.add(
+    req_id = commands.cancel_requests.add(
         {
             "user_id": user_id,
             "cpu_name": cpu_name,
+            "expected_output": expected_output,
             # status: pending -> resolved
             "success": None,
             "reason": None,
             "created_at": created_at,
-        }
+        },
+        lambda req_id: store.requests.record_cancel(req_id, user_id, cpu_name, created_at),
     )
-    store.requests.record_cancel(req_id, user_id, cpu_name, created_at)
     return jsonify({"ok": True, "id": req_id})
 
 
@@ -169,7 +185,7 @@ def craft_cancel_post():
 @auth.login_required
 def craft_cancel_get(req_id):
     user_id = g.user["id"]
-    found = state.cancel_requests.select(
+    found = commands.cancel_requests.select(
         lambda r: r["id"] == req_id and r["user_id"] == user_id
     )
     if not found:
@@ -180,7 +196,7 @@ def craft_cancel_get(req_id):
 @bp.route("/api/craft/cancel/pending", methods=["GET"])
 @auth.api_key_required
 def craft_cancel_pending():
-    return jsonify({"requests": state.cancel_requests.claim_pending()})
+    return jsonify({"requests": commands.cancel_requests.claim_pending()})
 
 
 @bp.route("/api/craft/cancel/<int:req_id>/result", methods=["POST"])
@@ -190,10 +206,10 @@ def craft_cancel_result(req_id):
     success = bool(payload.get("success"))
     reason = payload.get("reason")
 
-    req = state.cancel_requests.resolve(req_id, "resolved", success=success, reason=reason)
+    store.requests.resolve_cancel(req_id, success, reason)
+
+    req = commands.cancel_requests.resolve(req_id, "resolved", success=success, reason=reason)
     if req is None:
         return jsonify({"error": "unknown request id"}), 404
-
-    store.requests.resolve_cancel(req_id, success, reason)
 
     return jsonify({"ok": True})

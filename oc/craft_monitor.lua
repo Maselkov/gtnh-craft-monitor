@@ -388,13 +388,59 @@ local function snapshot_cpu_busy(me)
   return snap
 end
 
-local function find_newly_busy_cpu(before, after)
-  for name, isBusy in pairs(after) do
-    if isBusy and not before[name] then
-      return name
+-- What a CPU's job is making, as split_mod_name() pieces - or nil when
+-- the CPU has no Crafting Monitor to ask (or isn't running anything).
+local function cpu_output(cpuProxy)
+  local ok, stack = pcall(cpuProxy.finalOutput)
+  if not ok or not stack then return nil end
+  local mod, internal = split_mod_name(stack.name)
+  return { mod = mod, internal = internal, damage = stack.damage }
+end
+
+-- Which CPU an accepted request went to. AE2's request() doesn't say,
+-- so it's found by elimination: a CPU busy now that was idle when the
+-- request was submitted and isn't already credited to another request.
+-- Planning can take minutes, so other jobs (a player's, or another
+-- request's) can start in that window too - a candidate whose final
+-- output is known and isn't the requested item is ruled out. Fluids
+-- compare the same way: finalOutput() reports a fluid job as the fluid
+-- itself (name "molten.neutronium", no mod or damage - confirmed on a
+-- real Molten Neutronium craft), the same form the browser sends.
+-- Without a match, a lone remaining candidate is taken only if its
+-- output is unknown (no Crafting Monitor to ask). nil when none can be
+-- told apart - the request is still accepted, just without a pin,
+-- rather than pinning its user to someone else's job.
+local function find_request_cpu(me, entry, claimed)
+  local ok, cpus = pcall(me.getCpus)
+  if not ok then return nil end
+  local unknown = {}
+  for _, c in ipairs(cpus) do
+    if c.busy and not entry.before[c.name] and not claimed[c.name] then
+      local output = c.cpu and cpu_output(c.cpu)
+      if output then
+        if output.mod == entry.mod and output.internal == entry.internal
+            and (entry.damage == nil or output.damage == entry.damage) then
+          return c.name
+        end
+      else
+        unknown[#unknown + 1] = c.name
+      end
     end
   end
+  if #unknown == 1 then return unknown[1] end
   return nil
+end
+
+-- Whether the job on a CPU is still the one a cancel was meant for.
+-- expected is what the server last saw the CPU making; nil when that
+-- wasn't reported, and then there's nothing to compare.
+local function is_expected_job(cpuProxy, expected)
+  if not expected or not expected.internal then return true end
+  local output = cpu_output(cpuProxy)
+  return output ~= nil
+    and output.mod == expected.mod
+    and output.internal == expected.internal
+    and (expected.damage == nil or output.damage == expected.damage)
 end
 
 -- Finds a specific CPU's own callable proxy (the same `.cpu` field used
@@ -412,14 +458,17 @@ local function find_cpu_proxy_by_name(me, cpuName)
   return nil, "no CPU named " .. tostring(cpuName) .. " found"
 end
 
--- One tracked in-flight request: { id, status (CraftingStatus handle),
--- cpuSnapshotBefore }. Lives only in this thread's own memory - if
+-- One tracked in-flight request: { status (CraftingStatus handle),
+-- before (CPU busy snapshot), kind, mod, internal, damage }. Lives only in this thread's own memory - if
 -- craft_monitor.lua restarts mid-request, whatever was in flight is
 -- lost track of. A known, accepted limitation (same category as the
 -- network browser's non-persistent state) rather than something this
 -- version tries to solve.
 local function run_craft_request_loop(me)
-  local tracked = {}  -- request id -> { status = <CraftingStatus>, before = <snapshot> }
+  local tracked = {}  -- request id -> { status = <CraftingStatus>, before = <snapshot>, ... }
+  -- CPUs already credited to an accepted request, until they go idle -
+  -- so a second request finishing planning can't claim the same one.
+  local claimed = {}
 
   while running do
     -- Pick up any new pending requests.
@@ -448,7 +497,14 @@ local function run_craft_request_loop(me)
                   reason = tostring(status),
                 })
               else
-                tracked[reqData.id] = { status = status, before = before }
+                tracked[reqData.id] = {
+                  status = status,
+                  before = before,
+                  kind = reqData.kind,
+                  mod = reqData.mod,
+                  internal = reqData.internal,
+                  damage = reqData.damage,
+                }
               end
             end
           end
@@ -468,6 +524,13 @@ local function run_craft_request_loop(me)
           craft_post_json("/cancel/" .. cancelData.id .. "/result", {
             success = false,
             reason = findErr,
+          })
+        elseif not is_expected_job(cpuProxy, cancelData.expected_output) then
+          -- The job the user saw has ended since; cancelling now would
+          -- hit whatever the CPU moved on to.
+          craft_post_json("/cancel/" .. cancelData.id .. "/result", {
+            success = false,
+            reason = "that job already ended - nothing was cancelled",
           })
         else
           local cancelOk, cancelResult = pcall(cpuProxy.cancel)
@@ -491,6 +554,10 @@ local function run_craft_request_loop(me)
     end
 
     -- Check on everything currently in flight.
+    local busyNow = snapshot_cpu_busy(me)
+    for name in pairs(claimed) do
+      if not busyNow[name] then claimed[name] = nil end
+    end
     for reqId, entry in pairs(tracked) do
       local computingOk, computing = pcall(entry.status.isComputing)
       if computingOk and not computing then
@@ -501,8 +568,8 @@ local function run_craft_request_loop(me)
             reason = tostring(failReason or "request failed"),
           })
         else
-          local after = snapshot_cpu_busy(me)
-          local cpuName = find_newly_busy_cpu(entry.before, after)
+          local cpuName = find_request_cpu(me, entry, claimed)
+          if cpuName then claimed[cpuName] = true end
           craft_post_json("/requests/" .. reqId .. "/result", {
             status = "accepted",
             cpu_name = cpuName,

@@ -59,6 +59,20 @@ def get_images_zip():
     return _images_zip
 
 
+def read_image(path):
+    """The PNG at path inside images.zip, or None if it isn't there (or
+    there's no images.zip)."""
+    zf = get_images_zip()
+    if zf is None:
+        return None
+    # ZipFile reads share one file handle, so they're serialized.
+    with _zip_lock:
+        try:
+            return zf.read(path)
+        except KeyError:
+            return None
+
+
 def damage_str(damage):
     if damage is None:
         return None

@@ -1,4 +1,4 @@
-from gcm import state
+from gcm import commands, state
 from conftest import login_as
 
 
@@ -187,7 +187,7 @@ class TestAcceptedRequestTracking:
             "/api/craft/request",
             json={"label": "Gold Ingot", "internal": "gold", "amount": 1},
         ).get_json()["id"]
-        state.craft_requests.requests[req_id]["created_at"] -= 10
+        commands.craft_requests.requests[req_id]["created_at"] -= 10
         client.get("/api/craft/requests/pending", headers=api_headers)
         if poll_sees_job_first:
             post_job(client, api_headers, "Gold Ingot", progress=10)

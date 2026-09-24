@@ -9,8 +9,7 @@ from urllib.parse import unquote
 
 from flask import abort, Blueprint, request, Response
 
-from gcm import auth, charts, config, icons, security, state, store
-from gcm.routes import network
+from gcm import auth, charts, config, icons, inventory, security, state, store
 
 
 bp = Blueprint("pages", __name__)
@@ -28,14 +27,9 @@ def icon():
     img_path = request.args.get("path", "")
     if not img_path:
         abort(404)
-    zf = icons.get_images_zip()
-    if zf is None:
+    data = icons.read_image(img_path)
+    if data is None:
         abort(404)
-    with icons._zip_lock:
-        try:
-            data = zf.read(img_path)
-        except KeyError:
-            abort(404)
     return Response(
         data,
         mimetype="image/png",
@@ -109,7 +103,7 @@ def _build_og_tags(path, args):
         damage = parsed.get("damage")
         kind = parsed.get("kind") or "item"
         if internal:
-            label, size = network.lookup_item_display_info(mod, internal, damage, kind)
+            label, size = inventory.item_display_info(mod, internal, damage, kind)
             title = label if label else "Item"
             unit = " mB" if kind == "fluid" else ""
             desc = (

@@ -1,7 +1,7 @@
 import sqlite3
 
 from gcm import config, icons, state
-from gcm.routes import network
+from gcm import inventory
 from conftest import login_as
 
 
@@ -121,7 +121,7 @@ class TestSnapshotRestartRecovery:
         state.network["item_count"] = 0
         state.network["is_reconstructed"] = False
 
-        network.load_network_snapshot()
+        inventory.load_snapshot()
 
         data = client.get("/api/network").get_json()
         assert data["is_reconstructed"] is True
@@ -131,8 +131,8 @@ class TestSnapshotRestartRecovery:
         assert restored["isCraftable"] is True
         # The actual bug this regression guards: icons are resolved at
         # LIVE ingestion time (scan/batch), a path reconstructed items
-        # never go through - _load_network_snapshot() has to call
-        # _attach_item_icons() itself, or this comes back None.
+        # never go through - inventory.load_snapshot() has to call
+        # icons.attach_item_icons() itself, or this comes back None.
         assert restored["icon"] == "item/minecraft/iron_ingot.png"
 
     def test_is_reconstructed_clears_once_a_real_scan_completes(
@@ -513,7 +513,7 @@ class TestScanTokenMechanism:
 
         # Simulate a server restart: directly reset the in-memory scan
         # token the way a fresh process would start with (nil), exactly
-        # like _load_network_snapshot() is the real equivalent for the
+        # like inventory.load_snapshot() is the real equivalent for the
         # item snapshot itself after a real restart.
         state.network["current_scan_token"] = (
             "some-other-token-a-fresh-process-would-never-know-about"

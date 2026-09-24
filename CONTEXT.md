@@ -102,14 +102,21 @@ gcm/store/*.py      ALL other SQL, one module per domain: power, items,
                     crafts, requests, users
 gcm/auth.py         API key, signed-in user, roles, bootstrap, route decorators
 gcm/security.py     trusted-proxy wrapper, bootstrap/cross-origin hooks, headers
-gcm/state.py        ALL in-memory live state (crafts, network scan, request
-                    queues, CPU transition tracking) + reset()
+gcm/state.py        in-memory live state (crafts, network scan, CPU
+                    transition tracking) + reset() - plain data, no SQL
+gcm/commands.py     craft/cancel request queues + their history rows
 gcm/tracking.py     CPU job ends -> craft events + completions
+gcm/inventory.py    network scan protocol, snapshot reload, item history
 gcm/icons.py        icon lookup + images.zip access
 gcm/charts.py       matplotlib PNGs for OpenGraph, with cache + rate limit
 gcm/routes/*.py     one Flask Blueprint per area: crafts, craft_requests,
                     network, power, users, pages
 ```
+
+Routes handle HTTP only; the logic behind them lives in the service
+modules above (`tracking`, `commands`, `inventory`), and no route module
+imports another. `state.py` holds data and nothing else, so it doesn't
+import `store`.
 
 Four rules keep this layout honest:
 - **Importing any `gcm` module has no side effects.** Schema creation,
@@ -146,7 +153,7 @@ public is always a visible, reviewed change. A view that reads
 `g.user` without its decorator crashes rather than serving anonymously.
 
 Craft requests and cancellations share one `CommandQueue` class
-(`state.py`) - they used to be two hand-copied implementations of the
+(`commands.py`) - they used to be two hand-copied implementations of the
 same pickup-timeout/result-timeout/retention lifecycle, differing only
 in their numbers and messages. Two guarantees matter to the game side:
 - **Each command is handed out at most once.** `/pending` returns only
@@ -158,6 +165,23 @@ in their numbers and messages. Two guarantees matter to the game side:
   craft_monitor.lua reports results by id and may still hold one from
   before a restart; with a reused id, that late result landed on an
   unrelated new request.
+
+- **A command is queued only once its history row exists.** `add()`
+  takes a `persist` callback and runs it before the record becomes
+  visible to `/pending`. If the SQLite write fails, the browser gets an
+  error and the game never sees the request, so a user who retries
+  can't end up with two crafts. The result endpoints also write the
+  history row first: if that fails, the record is still pending and
+  its expiry closes the row.
+- **A cancel names the job, not just the CPU.** A CPU runs one job
+  after another, and the job the user saw may end before the game picks
+  the cancel up. The request carries `expected_output` (mod, internal,
+  damage from the latest status report). The server answers 409 if the
+  browser's copy already differs, and craft_monitor.lua compares it with
+  the CPU's live `finalOutput()` before calling `cancel()`. A CPU without
+  a Crafting Monitor reports no output, so for it only the name is
+  checked. Two back-to-back jobs making the same item still can't be
+  told apart.
 
 Every change to a queued record goes through a `CommandQueue` method
 (`add`, `claim_pending`, `resolve`, `dismiss`, `select`); routes only
@@ -256,8 +280,8 @@ craft_history.db (`PRAGMA foreign_keys`, set per connection in
 
 This ended up being the single most-iterated-on piece of server logic
 in the whole project, across multiple real bugs found in production -
-worth understanding as a whole before touching `network_scan_finish()`,
-`network_scan_batch()`, or `network_scan_start()`.
+worth understanding as a whole before touching `finish_scan()`,
+`add_batch()`, or `start_scan()` in `gcm/inventory.py`.
 
 **The original mystery**: network_browser.lua's scans would occasionally
 just stop dead, with zero explanation, for a long time. Multiple wrong
@@ -339,14 +363,14 @@ to send data nobody's listening for.
 Separately: `network_snapshot` (in `item_history.db`) is a full mirror
 of the live network state, rewritten wholesale on every real scan (not
 change-only, unlike `item_history`) - loaded back into memory once at
-server startup (`load_network_snapshot()`) so a server restart doesn't
+server startup (`inventory.load_snapshot()`) so a server restart doesn't
 leave the Network tab empty until the next scan completes. Marked
 `is_reconstructed: true` until the first real post-restart scan
 completes, so the frontend can show "data from before the restart"
 rather than presenting it as fresh. A real bug caught here during
 testing: icon resolution only ever happened at LIVE scan ingestion time
-(`network_scan_batch()`), a path reconstructed items never go through -
-`load_network_snapshot()` has to call `icons.attach_item_icons()` itself,
+(`inventory.add_batch()`), a path reconstructed items never go through -
+`load_snapshot()` has to call `icons.attach_item_icons()` itself,
 confirmed by testing (every icon was silently missing after a restart
 until this was added).
 
@@ -633,7 +657,7 @@ browser notifications (headless Chrome denies the permission).
    `SELECT * FROM Item` / `SELECT * FROM Fluid` to CSV, deliberately not
    picking specific columns (avoids guessing Hibernate's physical column
    naming - just reads the real header row back).
-3. Those CSVs were turned into `server/data/icons_lookup.json`
+3. Those CSVs were turned into `server/reference/icons_lookup.json`
    (`by_key`, `fluids_by_key`, `by_label`) - this step was done manually
    during the original build, not by a script currently in the repo.
 4. `image.zip` itself is NOT in the repo (too large, and specific to one

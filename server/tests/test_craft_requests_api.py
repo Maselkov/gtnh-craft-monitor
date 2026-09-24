@@ -1,4 +1,6 @@
-from gcm import db, state
+import pytest
+
+from gcm import commands, db, state, store
 from conftest import login_as
 
 
@@ -187,3 +189,42 @@ class TestCraftRequestLifecycle:
         client.post(f"/api/craft/requests/{req_id}/dismiss")
         res = client.get("/api/craft/requests")
         assert [r["id"] for r in res.get_json()["requests"]] == [req_id]
+
+
+class TestHistoryWrittenFirst:
+    def test_request_is_not_queued_when_its_history_row_fails(
+        self, client, api_headers, monkeypatch
+    ):
+        # The browser sees an error, so the game must not run the craft -
+        # a retry would otherwise craft twice.
+        def fail(*args):
+            raise RuntimeError("database is locked")
+
+        monkeypatch.setattr(store.requests, "record_request", fail)
+        login_as(client, "usr_operator", role="operator")
+        with pytest.raises(RuntimeError):
+            client.post("/api/craft/request", json=valid_request_payload())
+
+        res = client.get("/api/craft/requests/pending", headers=api_headers)
+        assert res.get_json()["requests"] == []
+
+    def test_result_is_not_applied_when_its_history_row_fails(
+        self, client, api_headers, monkeypatch
+    ):
+        # The record stays pending, so its expiry can still close the row.
+        login_as(client, "usr_operator", role="operator")
+        req_id = client.post("/api/craft/request", json=valid_request_payload()).get_json()["id"]
+
+        def fail(*args, **kwargs):
+            raise RuntimeError("database is locked")
+
+        monkeypatch.setattr(store.requests, "resolve_request", fail)
+        with pytest.raises(RuntimeError):
+            client.post(
+                f"/api/craft/requests/{req_id}/result",
+                json={"status": "failed", "reason": "no pattern"},
+                headers=api_headers,
+            )
+
+        (req,) = commands.craft_requests.select(lambda r: r["id"] == req_id)
+        assert req["status"] == "pending"

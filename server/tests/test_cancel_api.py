@@ -1,4 +1,6 @@
-from gcm import db
+import pytest
+
+from gcm import db, store
 
 from conftest import login_as
 
@@ -127,3 +129,86 @@ class TestCancelLifecycle:
             headers=api_headers,
         )
         assert res.status_code == 404
+
+
+def post_job_making(client, api_headers, internal, cpu_name="W01"):
+    client.post(
+        "/api/crafts",
+        json={
+            "source": "me_controller",
+            "jobs": [
+                {
+                    "name": cpu_name,
+                    "busy": True,
+                    "final_output": "Some Item",
+                    "final_output_mod": "gregtech",
+                    "final_output_internal": internal,
+                    "final_output_damage": 32,
+                }
+            ],
+        },
+        headers=api_headers,
+    )
+
+
+def shown(internal):
+    return {"mod": "gregtech", "internal": internal, "damage": 32}
+
+
+class TestCancelNamesTheJob:
+    def test_lua_is_told_which_job_to_cancel(self, client, api_headers):
+        post_job_making(client, api_headers, "gt.metaitem.01")
+        login_as(client, "usr_alice", role="operator")
+        res = client.post(
+            "/api/craft/cancel",
+            json={"cpu_name": "W01", "expected_output": shown("gt.metaitem.01")},
+        )
+        assert res.status_code == 200
+
+        (pending,) = client.get(
+            "/api/craft/cancel/pending", headers=api_headers
+        ).get_json()["requests"]
+        assert pending["expected_output"] == shown("gt.metaitem.01")
+
+    def test_refused_when_the_cpu_moved_on_to_another_job(self, client, api_headers):
+        # The browser still shows the job it rendered; the latest status
+        # report already has a different one on that CPU.
+        post_job_making(client, api_headers, "gt.metaitem.02")
+        login_as(client, "usr_alice", role="operator")
+        res = client.post(
+            "/api/craft/cancel",
+            json={"cpu_name": "W01", "expected_output": shown("gt.metaitem.01")},
+        )
+        assert res.status_code == 409
+
+        res = client.get("/api/craft/cancel/pending", headers=api_headers)
+        assert res.get_json()["requests"] == []
+
+    def test_cpu_without_a_crafting_monitor_has_no_expected_output(
+        self, client, api_headers
+    ):
+        post_busy_job(client, api_headers)
+        login_as(client, "usr_alice", role="operator")
+        client.post("/api/craft/cancel", json={"cpu_name": "W01", "expected_output": None})
+
+        (pending,) = client.get(
+            "/api/craft/cancel/pending", headers=api_headers
+        ).get_json()["requests"]
+        assert pending["expected_output"] is None
+
+
+class TestCancelHistoryWrittenFirst:
+    def test_cancel_is_not_queued_when_its_history_row_fails(
+        self, client, api_headers, monkeypatch
+    ):
+        def fail(*args):
+            raise RuntimeError("database is locked")
+
+        monkeypatch.setattr(store.requests, "record_cancel", fail)
+        post_busy_job(client, api_headers)
+        login_as(client, "usr_alice", role="operator")
+        with pytest.raises(RuntimeError):
+            client.post("/api/craft/cancel", json={"cpu_name": "W01"})
+
+        res = client.get("/api/craft/cancel/pending", headers=api_headers)
+        assert res.get_json()["requests"] == []

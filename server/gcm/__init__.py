@@ -3,7 +3,7 @@ startup work happens - importing any gcm module has no side effects."""
 
 from flask import Flask
 
-from gcm import auth, charts, config, db, icons, security, state, store
+from gcm import auth, charts, commands, config, db, icons, inventory, security, state, store
 from gcm.routes import craft_requests, crafts, network, pages, power, users
 
 
@@ -19,12 +19,12 @@ def create_app(data_dir=None, api_key=None):
     store.requests.close_orphaned()
     store.users.prune_sessions()
     last_craft_id, last_cancel_id = store.requests.last_ids()
-    state.craft_requests.start_after(last_craft_id)
-    state.cancel_requests.start_after(last_cancel_id)
+    commands.craft_requests.start_after(last_craft_id)
+    commands.cancel_requests.start_after(last_cancel_id)
     auth.bootstrap_admin()
     db.init_power_db()
     db.init_item_history_db()
-    network.load_network_snapshot()
+    inventory.load_snapshot()
     pages.load_index_html()
 
     app = Flask(__name__, root_path=config.SERVER_DIR)
@@ -46,4 +46,5 @@ def reset_runtime_state():
     """Clears every piece of in-memory state back to a fresh process.
     Used by the test suite between tests."""
     state.reset()
+    commands.reset()
     charts.reset()
