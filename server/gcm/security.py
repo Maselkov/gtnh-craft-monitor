@@ -5,8 +5,10 @@ checks on session writes, and browser security headers.
 Endpoint names are blueprint-qualified ("crafts.pins_post");
 tests/test_security_endpoints.py checks each one exists."""
 
-import os
+import base64
+import hashlib
 import ipaddress
+import os
 
 from flask import Blueprint, jsonify, request
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -149,3 +151,31 @@ def add_browser_security_headers(response):
     if request.endpoint in NO_STORE_ENDPOINTS:
         response.headers["Cache-Control"] = "no-store"
     return response
+
+
+def content_security_policy(external_scripts, inline_style_values):
+    """The page's Content-Security-Policy. Scripts only from this origin
+    plus the exact external script URLs index.html loads (not the whole
+    CDN, which would let an injected tag pull any package from it); no
+    inline script or event handlers at all. The only inline styles
+    allowed are the exact style="..." attribute values index.html itself
+    uses, by hash - they're listed under style-src rather than
+    style-src-attr so a browser without style-src-attr support falls
+    back to the same rule instead of hiding nothing."""
+    style_hashes = " ".join(
+        "'sha256-%s'" % base64.b64encode(hashlib.sha256(value.encode("utf-8")).digest()).decode()
+        for value in sorted(set(inline_style_values))
+    )
+    directives = [
+        "default-src 'self'",
+        "script-src 'self' " + " ".join(sorted(set(external_scripts))),
+        "style-src 'self'" + (f" 'unsafe-hashes' {style_hashes}" if style_hashes else ""),
+        "img-src 'self'",
+        "connect-src 'self'",
+        "object-src 'none'",
+        "base-uri 'none'",
+        "form-action 'self'",
+        "frame-ancestors 'none'",
+    ]
+    return "; ".join(directives)
+

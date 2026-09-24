@@ -323,7 +323,7 @@ function renderCard(job) {
   // of being decided independently per-field.
   const hasProgress = job.busy && job.progress_percent != null;
   const progressBar = hasProgress ? `
-    <div class="progress-track"><div class="progress-fill" style="width:${job.progress_percent}%"></div></div>
+    <div class="progress-track"><div class="progress-fill" data-progress="${escapeHtml(job.progress_percent)}"></div></div>
     <div class="progress-label">${job.progress_percent}% by items stored vs. pending</div>
   ` : '';
 
@@ -337,8 +337,8 @@ function renderCard(job) {
   const title = job.busy
     ? (job.final_output
         ? `${job.final_output_icon ? `<img class="craft-icon" src="/icons?path=${encodeURIComponent(job.final_output_icon)}" alt="" loading="lazy" data-remove-on-error>` : ''}<span class="item-history-link" data-mod="${escapeHtml(job.final_output_mod || '')}" data-internal="${escapeHtml(job.final_output_internal || '')}" data-damage="${job.final_output_damage != null ? job.final_output_damage : ''}" data-name="${escapeHtml(job.final_output)}" data-icon="${escapeHtml(job.final_output_icon || '')}">${escapeHtml(job.final_output)}</span>`
-        : `<span style="color:var(--muted); font-weight:500;">Crafting job (no monitor tile)</span>`)
-    : `<span style="color:var(--muted); font-weight:500;">Idle</span>`;
+        : `<span class="craft-title-muted">Crafting job (no monitor tile)</span>`)
+    : `<span class="craft-title-muted">Idle</span>`;
 
   const ingredientsBlock = (job.busy && itemCount > 0) ? `
     <details class="ingredients" ${isOpen ? 'open' : ''} data-key="${escapeHtml(key)}">
@@ -457,4 +457,11 @@ export function render(data) {
   ` : '';
 
   root.innerHTML = completedSection + pinnedSection + activeSection + idleSection;
+  // Widths are set through the DOM rather than an inline style attribute in
+  // the markup, which the Content-Security-Policy blocks. Done in the
+  // same task as the innerHTML, so the new bars' first computed width
+  // is already right and the width transition doesn't animate.
+  for (const bar of root.querySelectorAll('.progress-fill[data-progress]')) {
+    bar.style.width = `${Number(bar.dataset.progress)}%`;
+  }
 }

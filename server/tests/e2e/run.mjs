@@ -291,6 +291,28 @@ async function main() {
     await waitFor('W02 in idle group', `$('details.idle-group') && card('W02')`);
   });
 
+  step('allowed inline styles apply; the progress bar is sized', async () => {
+    // Every dialog starts hidden via style="display:none;" - which only
+    // works if the CSP's style hashes match index.html.
+    await waitFor('all dialogs hidden', `$$('.modal-overlay').length >= 5 && $$('.modal-overlay').every((m) => !visible(m))`);
+    await waitFor('progress 40%', `card('W01').querySelector('.progress-fill').style.width === '40%'`);
+  });
+
+  step('Content-Security-Policy blocks injected script and style', async () => {
+    const before = errors.length;
+    await evaluate(`document.body.insertAdjacentHTML('beforeend',
+      '<img id="xssImg" src="/icons?path=missing.png" onerror="window.__xss = 1">'
+      + '<div id="xssStyle" style="color: rgb(255, 0, 0)">x</div>'), true`);
+    await sleep(1000);
+    await waitFor('inline handler did not run', `window.__xss === undefined`);
+    await waitFor('inline style ignored', `getComputedStyle($('#xssStyle')).color !== 'rgb(255, 0, 0)'`);
+    await evaluate(`$('#xssImg').remove(), $('#xssStyle').remove(), true`);
+    const reported = errors.splice(before);
+    if (!reported.some((e) => /Content Security Policy/i.test(e))) {
+      throw new Error('expected a CSP violation report, got:\n  ' + reported.join('\n  '));
+    }
+  });
+
   step('icons that fail to load are removed', async () => {
     // The test data dir has no images.zip, so every resolved icon 404s.
     // (Icons inside collapsed <details> are lazy and never load at all.)
@@ -544,11 +566,14 @@ async function main() {
   });
 
   let failed = 0;
+  // Errors are checked from where the previous step's check left off, so
+  // anything logged while the page first loads counts against step one.
+  let checked = 0;
   for (const { name, fn } of steps) {
-    const before = errors.length;
     try {
       await fn();
-      if (errors.length > before) throw new Error('page errors:\n  ' + errors.slice(before).join('\n  '));
+      if (errors.length > checked) throw new Error('page errors:\n  ' + errors.slice(checked).join('\n  '));
+      checked = errors.length;
       console.log(`✔ ${name}`);
     } catch (e) {
       failed++;
