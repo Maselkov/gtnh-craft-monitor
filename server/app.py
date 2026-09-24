@@ -3128,4 +3128,8 @@ if __name__ == "__main__":
     # Single process on purpose: crafts, network scans, and craft/cancel
     # requests are held in module-level memory, so multiple worker
     # processes would each see a different copy.
-    serve(app, host="0.0.0.0", port=port, threads=8)
+    # clear_untrusted_proxy_headers=False: waitress otherwise strips every
+    # X-Forwarded-* header (its own trusted_proxy is unset), so ProxyFix
+    # never sees them and TRUSTED_PROXIES has no effect. The app already
+    # decides which peers to trust in _trusted_proxy_wsgi_app().
+    serve(app, host="0.0.0.0", port=port, threads=8, clear_untrusted_proxy_headers=False)
