@@ -17,13 +17,13 @@ Two OpenComputers Lua scripts POST to a Flask server (a third submits
 craft-status data too); the server stores state (in-memory for live
 crafting/network status, SQLite for power history, item history, network
 snapshot persistence, and craft completion tracking) and serves a
-self-contained HTML/JS page.
+static HTML/JS frontend.
 
 ## Architecture
 
 ```
 craft_monitor.lua   --POST--> /api/crafts  --\
-power_monitor.lua   --POST--> /api/power   ---> Flask (server/app.py) --> browser
+power_monitor.lua   --POST--> /api/power   ---> Flask (server/gcm/)   --> browser
 network_browser.lua --POST--> /api/network --/
                                                SQLite: power.db, craft_history.db,
                                                item_history.db
@@ -90,31 +90,65 @@ them; consolidating means a fix like the json_encode-crash pcall fix
 separately to multiple call sites across multiple files - only needs
 to happen once from here on.
 
-**File organization, server side**: the frontend used to be a multi-
-thousand-line Python string (`INDEX_HTML`) embedded directly in
-`app.py`. Moved out to `server/index.html`, read from disk at startup
-(`INDEX_HTML = open(...).read()`) - the app.py code that USES that
-string (`INDEX_HTML.replace("<!--OG_TAGS-->", ...)`) is unchanged, only
-where the string comes from changed. This was real, repeatedly-paid
-friction throughout this project's own development, not a hypothetical
-concern: every JS change needed a regex extraction of the `<script>`
-block just to run a syntax checker on it, and every "find this line"
-needed accounting for app.py's own offset. As a side effect, this also
-resolved a `SyntaxWarning: invalid escape sequence` that showed up on
-every single `ast.parse`/test run for most of this project - caused by
-a JS regex (`/\s+/`) sitting inside a Python string literal, which
-doesn't exist anymore once that content is a plain text file instead.
+**File organization, server side**: `server/app.py` is only the
+entrypoint (`python app.py` to serve, `python app.py new-token <name>`
+for admin recovery). The server itself is the `server/gcm/` package:
 
-`app.py` itself is still one large Python file - splitting it into
-Flask Blueprints (`routes/crafts.py`, `routes/power.py`,
-`routes/network.py`, plus shared helpers for DB/icons/charts/OG-tags)
-was discussed and deliberately deferred, not forgotten. Unlike the
-frontend extraction (pure move, zero logic risk) this touches real
-route logic and the test suite reaches directly into `app`'s internals
-(`app_module._network_state` etc.), so it needs to happen incrementally
-against that suite rather than as one big restructuring - a good
-candidate for right after this project moves into git, so the change is
-reviewable as a diff rather than another full-file handoff.
+```
+gcm/__init__.py     create_app() - the ONLY place startup work happens
+gcm/config.py       env settings + data paths (read as config.X at call time)
+gcm/db.py           SQLite connections + schemas/migrations for all 3 files
+gcm/auth.py         API key, access tokens, sessions, roles, admin bootstrap
+gcm/security.py     trusted-proxy wrapper, bootstrap/cross-origin hooks, headers
+gcm/state.py        ALL in-memory live state (crafts, network scan, request
+                    queues, CPU transition tracking) + reset()
+gcm/history.py      craft request/cancel history rows
+gcm/icons.py        icon lookup + images.zip access
+gcm/charts.py       matplotlib PNGs for OpenGraph, with cache + rate limit
+gcm/routes/*.py     one Flask Blueprint per area: crafts, craft_requests,
+                    network, power, users, pages
+```
+
+Three rules keep this layout honest:
+- **Importing any `gcm` module has no side effects.** Schema creation,
+  migrations, restart cleanup, admin bootstrap and the network snapshot
+  reload all run inside `create_app()`. The test suite relies on this -
+  it points `create_app()` at a temp directory instead of juggling env
+  vars before import.
+- **Other modules read settings as `config.NAME` at call time**, never
+  `from gcm.config import NAME` - otherwise `configure()` (and tests'
+  monkeypatching) would silently not reach them.
+- **Security hooks match on blueprint-qualified endpoint names**
+  (`crafts.pins_post`). `tests/test_security_endpoints.py` fails if any
+  name in `security.py`'s sets doesn't exist, so renaming or moving a
+  route can't silently drop its bootstrap/cross-origin protection.
+
+Craft requests and cancellations share one `CommandQueue` class
+(`state.py`) - they used to be two hand-copied implementations of the
+same pickup-timeout/result-timeout/retention lifecycle, differing only
+in their numbers and messages.
+
+**File organization, frontend**: `server/index.html` is a small shell;
+styles are `server/static/app.css` and the code is split per area under
+`server/static/js/` (`crafts.js`, `network.js`, `power.js`, ...). They
+are deliberately CLASSIC scripts, not ES modules: dozens of inline
+`onclick=` handlers, plus the HTML strings the render functions build,
+call global functions by name, and classic scripts loaded in order share
+one global scope exactly like the original single inline script did.
+The consequence: every script except `main.js` must only DECLARE things
+at top level (functions, `let`/`const`, event listener registration) -
+`main.js` loads last and is the one place startup actually runs. A top-
+level call into a function from a later file would throw at load time.
+Asset URLs carry `?v=<content hash>` (`pages.load_index_html()`), so a
+deploy never runs stale cached JS against a newer page.
+
+History, for context: the frontend started life as a multi-thousand-
+line Python string (`INDEX_HTML`) embedded directly in `app.py`, which
+meant every JS change needed a regex extraction of the `<script>` block
+just to syntax-check it (and a JS regex inside a Python string literal
+caused a `SyntaxWarning` on every test run). It moved to a plain
+`index.html` first, then to `static/` once it was large enough that one
+3,700-line file was its own friction.
 
 The three SQLite files (`power.db`, `craft_history.db`,
 `item_history.db`) were also discussed and deliberately NOT merged into
@@ -171,7 +205,7 @@ this:
    larger snapshot it could never update past).
 
 2. Current approach, no threshold to tune: `scan/start` mints a fresh
-   random token (`current_scan_token` in `_network_state`), required
+   random token (`current_scan_token` in `state.network`), required
    back on every `scan/batch`/`scan/finish` call. A mismatch means the
    data doesn't belong to the scan currently considered active - either
    the server restarted mid-scan (a fresh process has no memory of any
@@ -212,14 +246,14 @@ to send data nobody's listening for.
 Separately: `network_snapshot` (in `item_history.db`) is a full mirror
 of the live network state, rewritten wholesale on every real scan (not
 change-only, unlike `item_history`) - loaded back into memory once at
-server startup (`_load_network_snapshot()`) so a server restart doesn't
+server startup (`load_network_snapshot()`) so a server restart doesn't
 leave the Network tab empty until the next scan completes. Marked
 `is_reconstructed: true` until the first real post-restart scan
 completes, so the frontend can show "data from before the restart"
 rather than presenting it as fresh. A real bug caught here during
 testing: icon resolution only ever happened at LIVE scan ingestion time
 (`network_scan_batch()`), a path reconstructed items never go through -
-`_load_network_snapshot()` has to call `_attach_item_icons()` itself,
+`load_network_snapshot()` has to call `icons.attach_item_icons()` itself,
 confirmed by testing (every icon was silently missing after a restart
 until this was added).
 
@@ -259,7 +293,7 @@ colon at all - `name` is just the bare Forge fluid registry name (e.g.
 `"molten.mutatedlivingsolder"`), and critically `hasTag=false` on these -
 the fluid identity is NOT NBT-encoded (that was an early wrong guess,
 disproven empirically). The presence/absence of a colon in `name` is what
-`server/app.py`'s `resolve_icon()` uses to decide whether to look up the
+`gcm/icons.py`'s `resolve_icon()` uses to decide whether to look up the
 `by_key` (item) or `fluids_by_key` (fluid) lookup table - and the same
 colon-presence heuristic is reused elsewhere for the same item/fluid
 distinction (clean item URL paths, `/network/item/mod:internal:damage`
@@ -407,7 +441,7 @@ job), "which item" is what the user actually cares about, and a CPU
 immediately starting a new job after finishing shouldn't silently
 continue being tracked under the old pin. Pinning an idle CPU is
 rejected server-side (`POST /api/pins` checks the CPU's live `busy` state
-against `_state["jobs"]`), not just disabled in the UI - the UI disabling
+against `state.crafts["jobs"]`), not just disabled in the UI - the UI disabling
 the button is a courtesy, not the enforcement.
 
 **`user_completions` rows are deleted on acknowledge**, not flagged with
@@ -440,26 +474,30 @@ keypad a `type="number"` input gives on mobile, which is better UX
 there - detected via `pointer: coarse`, matching how "is this really a
 touch-primary device" is decided elsewhere in this project too.
 
-## Test suite (server/tests/, pytest)
+## Test suite (server/tests/)
 
-126 tests across 8 files, covering `server/app.py`'s pure helpers and
-every endpoint - crafts, CPU pins, craft requests, cancellation, network
-scanning (including the scan-integrity mechanism above), item history,
-network item pins, power readings (including the DB migration), and
-OpenGraph tags. Run with:
+166 pytest tests across 13 files, covering every endpoint - crafts, CPU
+pins, craft requests, cancellation, network scanning (including the
+scan-integrity mechanism above), item history, network item pins,
+power readings (including the DB migration), auth/admin, OpenGraph
+tags - plus the pure helpers, the security endpoint lists and the
+frontend asset wiring. Plus 15 node:test tests (`server/tests/js/`)
+for the frontend's pure functions: the NEI-style search tokenizer and
+matcher, the craft amount evaluator, `formatQty` and `jsArg`. They load
+the real `static/js/` files into a VM context the same way the browser
+does (classic scripts sharing one scope). Run with:
 ```
-cd server && pip install -r tests/requirements-test.txt && pytest tests/
+cd server && pip install -r tests/requirements-test.txt && pytest
+node --test 'server/tests/js/*.test.js'   # from the repo root
 ```
 
-Fully isolated from real data: `conftest.py` sets `DATA_DIR`/`API_KEY`
-env vars to a fresh temp directory BEFORE `app.py` is ever imported (it
-runs real module-level side effects on import - SQLite init, icon
-lookup loading - that would otherwise touch `server/data/` directly),
-imports `app` exactly once per session (re-importing a Flask app mid-
-session risks route-registration errors), and an autouse fixture resets
-every known in-memory global and wipes every SQLite table before each
-test. `app.test_client()` talks to the real Flask routes in-process -
-no live server or Docker container needs to be running.
+Fully isolated from real data: `conftest.py` calls `gcm.create_app()`
+once per session with a fresh temp directory as `data_dir`, an autouse
+fixture calls `gcm.reset_runtime_state()` and empties every SQLite table
+(discovered from `sqlite_master`) before each test, and the `flask_app`
+fixture's test client talks to the real routes in-process - no live
+server or Docker container needs to be running. New module-level state
+needs adding to `state.reset()`; new tables need nothing.
 
 Two genuinely worth knowing about, not just "tests exist": a regression
 test for the scan-integrity mechanism initially PASSED even with the
@@ -473,11 +511,7 @@ actually catch the regression it claims to guard against - worth
 verifying the second thing specifically for anything non-trivial.
 
 Not covered: the `oc/*.lua` scripts (no Lua test harness exists), and
-DOM-interactive frontend JS (event wiring, rendering) - the parts of
-the frontend that are pure functions (tokenizers, parsers, the math
-evaluator) were tested extensively during development via ad hoc
-Node scripts, but that coverage isn't preserved as a persisted suite
-the way the Python side is.
+DOM-interactive frontend JS (event wiring, rendering, modals).
 
 ## Icon pipeline (if it ever needs redoing)
 
@@ -507,12 +541,13 @@ the way the Python side is.
 - No pre-submission craft preview (ingredients/missing items before
   confirming) - not just unbuilt, genuinely not achievable through AE2's
   OC API surface at all (see "Gotchas" above).
-- `app.py` is still one large file (routes not yet split into Flask
-  Blueprints) and the three SQLite files remain separate - both
-  deliberate, discussed, and deferred, not oversights (see
-  "Architecture" above for the reasoning on each).
+- The three SQLite files remain separate - deliberate, discussed, and
+  deferred, not an oversight (see "Architecture" above).
+- API-key and session checks are still written inline at the top of
+  each route rather than as decorators - consistent, but a new route
+  has to remember them by hand.
 - The `oc/*.lua` scripts have no automated test coverage at all (the
-  126-test suite covers `server/app.py` only) - anything Lua-side is
+  test suites cover the server and frontend only) - anything Lua-side is
   still verified via manual `luac -p` syntax checks and live-server/
   in-game smoke tests during development.
 - Single power-source assumption: `power_monitor.lua` targets one
