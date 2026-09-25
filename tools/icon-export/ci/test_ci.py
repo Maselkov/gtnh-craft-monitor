@@ -216,3 +216,52 @@ def test_finish_images_writes_apngs_and_drops_unused_icons(tmp_path):
         image.seek(0)
         assert (image.convert("RGBA").tobytes()
                 == Image.open(BytesIO(still)).convert("RGBA").tobytes())
+
+
+def test_near_loop_ends_where_a_spin_comes_back_round():
+    from PIL import Image
+    # Frame brightness stands in for the angle: out to 200, back to ~0.
+    # f8 is already close enough, but f9 is closer still: the loop ends
+    # there so the seam is smallest.
+    levels = [0, 50, 100, 150, 200, 150, 100, 50, 3, 1, 50]
+    ticks = [f"f{i}" for i in range(len(levels))]
+    images = {f"f{i}": Image.new("RGBA", (4, 4), (int(v), 0, 0, 255))
+              for i, v in enumerate(levels)}
+    assert export.near_loop(ticks, images.__getitem__) == ticks[:9]
+
+
+def test_near_loop_needs_the_animation_to_move_away_first():
+    from PIL import Image
+    # Barely changing at all: no loop point, keep the whole capture.
+    images = {f"f{i}": Image.new("RGBA", (4, 4), (i % 2, 0, 0, 255))
+              for i in range(6)}
+    assert export.near_loop(list(images), images.__getitem__) is None
+
+
+def test_merge_runs_keeps_the_speed_at_lower_frame_rates():
+    ticks = list("AABBCCDD")
+    assert export.merge_runs(ticks) == [["A", 2], ["B", 2], ["C", 2], ["D", 2]]
+    assert export.merge_runs(ticks, 2) == [["A", 2], ["B", 2], ["C", 2], ["D", 2]]
+    assert export.merge_runs(list("ABCDEFG"), 2) == [["A", 2], ["C", 2], ["E", 2], ["G", 1]]
+
+
+def test_oversized_animations_drop_frames_until_they_fit(tmp_path, monkeypatch):
+    from PIL import Image
+    ticks = [f"f{i}" for i in range(16)]
+    frames = {f"p/{t}.png": png({(i % 4, i // 4): (255, 0, 0, 255)})
+              for i, t in enumerate(ticks)}
+    write_zip(tmp_path / "a.zip", frames)
+    with zipfile.ZipFile(tmp_path / "a.zip") as zf:
+        full = export.build_within_budget(zf, "p", ticks, 50)
+        assert Image.open(BytesIO(full)).n_frames == 16
+        # Budget that only a quarter of the frames fit in.
+        monkeypatch.setattr(export, "APNG_MAX_BYTES", len(full) // 3)
+        smaller = export.build_within_budget(zf, "p", ticks, 50)
+        image = Image.open(BytesIO(smaller))
+        assert image.n_frames < 16
+        # Same total length: the animation keeps its speed.
+        total = 0
+        for i in range(image.n_frames):
+            image.seek(i)
+            total += image.info["duration"]
+        assert total == 16 * 50
