@@ -188,6 +188,22 @@ new token:
 docker compose exec gtnh-craft-monitor python app.py new-token "Administrator"
 ```
 
+### Backups
+
+The databases are in `server/data/` (`app.db` for accounts, pins and craft
+history; `power.db`; `item_history.db`). They run in SQLite's WAL mode, so
+recent changes can sit in the `*.db-wal` files for a while: copying the `.db`
+files from a running server can miss data. Back up with the built-in command
+instead, which takes a consistent copy while the server keeps running:
+
+```bash
+docker compose exec gtnh-craft-monitor python app.py backup "/app/data/backup-$(date +%F)"
+```
+
+To restore, stop the container, replace the `.db` file in `server/data/`,
+delete that file's `-wal` and `-shm` files if present, and start it again.
+WAL mode needs `server/data/` on a local disk, not a network share.
+
 ### Item icons
 
 The page shows item icons taken from a [NESQL](https://github.com/ShadowTheAge/nesql-exporter)

@@ -1,4 +1,4 @@
-"""craft_request_history / craft_cancel_history rows (craft_history.db):
+"""craft_request_history / craft_cancel_history rows (app.db):
 an audit trail of every browser-submitted craft request and
 cancellation, shown in the admin user-history view. The live requests
 themselves are in memory (state.py); these rows share their ids."""
@@ -11,7 +11,7 @@ from gcm import db
 def record_request(
     request_id, user_id, label, mod, internal, damage, amount, kind, created_at
 ):
-    with db.transaction(db.craft_db) as conn:
+    with db.transaction(db.app_db) as conn:
         conn.execute(
             "INSERT INTO craft_request_history "
             "(request_id, user_id, label, mod, internal, damage, amount, kind, status, created_at) "
@@ -34,7 +34,7 @@ def record_request(
 # while the game's own result always wins - it can arrive after the
 # request expired, and it's what actually happened in-game.
 def resolve_request(request_id, status, reason, cpu_name, only_if_open=False):
-    with db.transaction(db.craft_db) as conn:
+    with db.transaction(db.app_db) as conn:
         conn.execute(
             "UPDATE craft_request_history "
             "SET status = ?, reason = ?, cpu_name = ?, resolved_at = ? "
@@ -44,7 +44,7 @@ def resolve_request(request_id, status, reason, cpu_name, only_if_open=False):
 
 
 def record_cancel(request_id, user_id, cpu_name, created_at):
-    with db.transaction(db.craft_db) as conn:
+    with db.transaction(db.app_db) as conn:
         conn.execute(
             "INSERT INTO craft_cancel_history "
             "(request_id, user_id, cpu_name, status, created_at) "
@@ -54,7 +54,7 @@ def record_cancel(request_id, user_id, cpu_name, created_at):
 
 
 def resolve_cancel(request_id, success, reason, only_if_open=False):
-    with db.transaction(db.craft_db) as conn:
+    with db.transaction(db.app_db) as conn:
         conn.execute(
             "UPDATE craft_cancel_history "
             "SET status = 'resolved', success = ?, reason = ?, resolved_at = ? "
@@ -66,7 +66,7 @@ def resolve_cancel(request_id, success, reason, only_if_open=False):
 def last_ids():
     """(highest craft request id, highest cancel id) ever recorded, so a
     new process can carry on numbering above them."""
-    with db.transaction(db.craft_db) as conn:
+    with db.transaction(db.app_db) as conn:
         craft = conn.execute(
             "SELECT COALESCE(MAX(request_id), 0) FROM craft_request_history"
         ).fetchone()[0]
@@ -80,7 +80,7 @@ def close_orphaned():
     # Craft and cancel requests live in memory, so any history row still
     # open at startup belongs to a request the previous process lost.
     now = time.time()
-    with db.transaction(db.craft_db) as conn:
+    with db.transaction(db.app_db) as conn:
         conn.execute(
             "UPDATE craft_request_history SET status = 'failed', "
             "reason = 'server restarted', resolved_at = ? WHERE resolved_at IS NULL",
@@ -95,7 +95,7 @@ def close_orphaned():
 
 def user_activity(user_id, limit=100):
     """A user's latest craft requests and cancellations, newest first."""
-    with db.transaction(db.craft_db) as conn:
+    with db.transaction(db.app_db) as conn:
         rows = conn.execute(
             "SELECT 'request', label, status, reason, cpu_name, created_at, resolved_at "
             "FROM craft_request_history WHERE user_id = ? "

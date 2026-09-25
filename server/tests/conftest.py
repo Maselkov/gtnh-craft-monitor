@@ -69,7 +69,7 @@ def api_headers(api_key):
 
 
 def login_as(client, user_id, role="viewer"):
-    conn = db.craft_db()
+    conn = db.app_db()
     try:
         conn.execute(
             "INSERT OR IGNORE INTO users (id, display_name, role, created_at) "
@@ -94,7 +94,7 @@ def reset_state():
     # slate). Tables are read from sqlite_master so new ones are covered
     # automatically.
     for db_path in (
-        config.CRAFT_HISTORY_DB_PATH,
+        config.APP_DB_PATH,
         config.POWER_DB_PATH,
         config.ITEM_HISTORY_DB_PATH,
     ):

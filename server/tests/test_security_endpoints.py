@@ -28,7 +28,7 @@ def every_route(flask_app):
 
 
 def login_with_bootstrap_token(client):
-    conn = db.craft_db()
+    conn = db.app_db()
     try:
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) "

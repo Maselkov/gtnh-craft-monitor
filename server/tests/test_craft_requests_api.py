@@ -139,7 +139,7 @@ class TestCraftRequestLifecycle:
             json={"status": "accepted", "cpu_name": "W01"},
             headers=api_headers,
         )
-        conn = db.craft_db()
+        conn = db.app_db()
         try:
             row = conn.execute(
                 "SELECT status, cpu_name FROM craft_request_history "

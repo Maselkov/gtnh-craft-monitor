@@ -111,7 +111,7 @@ class TestCancelLifecycle:
             json={"success": False, "reason": "already finished"},
             headers=api_headers,
         )
-        conn = db.craft_db()
+        conn = db.app_db()
         try:
             row = conn.execute(
                 "SELECT status, success, reason FROM craft_cancel_history "

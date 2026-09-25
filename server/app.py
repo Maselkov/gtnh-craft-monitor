@@ -13,13 +13,16 @@ Run directly (see README for the required environment variables):
 Recover a lost admin token (revokes the user's existing tokens/sessions):
     python app.py new-token <display name>
 
+Back up every database, consistently, while the server keeps running:
+    python app.py backup <directory>
+
 Or via Docker (see Dockerfile / docker-compose.yml in this project).
 """
 
 import os
 import sys
 
-from gcm import auth, config, create_app, store
+from gcm import auth, config, create_app, db, store
 
 
 def _cli_new_token(display_name):
@@ -35,6 +38,10 @@ if __name__ == "__main__":
     app = create_app()
     if len(sys.argv) == 3 and sys.argv[1] == "new-token":
         _cli_new_token(sys.argv[2])
+        sys.exit(0)
+    if len(sys.argv) == 3 and sys.argv[1] == "backup":
+        for path in db.backup_all(sys.argv[2]):
+            print(path)
         sys.exit(0)
     config.require_runtime_secrets()
     auth.require_initial_admin()
