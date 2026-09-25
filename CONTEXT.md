@@ -870,7 +870,11 @@ whole capture loops. An APNG over 400 KB is rebuilt at half the frame rate
 (each frame shown twice as long, so the speed stays), repeatedly, and kept
 still if it doesn't fit even at 4 frames: big 3D renders that change
 completely every tick (Tectech's Forge of the Gods) came out at 1.5 MB. It's written with Pillow (frames after the
-first store only what changed). APNG keeps the `.png` path and frame 0 is
+first store only what changed). The image pins Pillow 11.3 from pip: jammy's
+python3-pil (9.0) compared APNG frames without alpha and merged the ones
+that differed only in it, so the Raw Tesseract (a black wireframe turning
+on a transparent background) came out still. `build_apng` now fails the
+export if Pillow writes fewer frames than it was given. APNG keeps the `.png` path and frame 0 is
 the still icon, so the lookup, `/icons`, stored craft-history paths and
 anything that can't animate all work unchanged. `/icons?still=1` returns
 frame 0 (`icons.read_still_image`); the frontend asks for it when the

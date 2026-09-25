@@ -482,7 +482,12 @@ def near_loop(ticks, image):
 def build_apng(frames, runs, tick_millis):
     """APNG bytes for [(frame image, ticks)] runs; frames maps frame -> PNG
     bytes. Pillow stores each frame after the first as just what changed.
-    None if the frames aren't all the same size."""
+    None if the frames aren't all the same size.
+
+    Consecutive runs are distinct renders, so Pillow must keep every one. It
+    merges frames it sees as identical, and Pillow before 10 compared them
+    without alpha, silently turning alpha-only animations into stills."""
+    import PIL
     from PIL import Image
     images = [Image.open(BytesIO(frames[frame])).convert("RGBA")
               for frame, _ in runs]
@@ -495,6 +500,10 @@ def build_apng(frames, runs, tick_millis):
                    append_images=images[1:], loop=0,
                    duration=[ticks * tick_millis for _, ticks in runs],
                    disposal=0, blend=0)
+    written = getattr(Image.open(out), "n_frames", 1)
+    if written != len(runs):
+        raise RuntimeError(f"Pillow {PIL.__version__} wrote {written} of "
+                           f"{len(runs)} animation frames")
     return out.getvalue()
 
 
