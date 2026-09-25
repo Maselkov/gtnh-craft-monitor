@@ -16,8 +16,8 @@ paths rendered with the pack's own textures, and with the GTNH Faithful
 x32 resource pack. Only the chosen set's zip is downloaded; the lookup and
 catalog are shared.
 
-With no bundle installed, the lookup that ships in reference/ and
-DATA_DIR/images.zip are used, as before bundles existed."""
+With no bundle installed there are no icons, and the scanner has no
+catalog to download."""
 
 import hashlib
 import json
@@ -183,8 +183,8 @@ def installed():
 
 
 def activate():
-    """Makes the selected bundle live, or the pre-bundle files if there's
-    none. Called at startup and after an install."""
+    """Makes the selected bundle live, or no icons if there's none. Called
+    at startup and after an install."""
     version, textures = selected()
     if version:
         # The icon URL prefix busts browser caches when any of these changes.
@@ -196,7 +196,7 @@ def activate():
             prefix,
         )
     else:
-        icons.load(config.ICONS_LOOKUP_PATH, config.IMAGES_ZIP_PATH)
+        icons.load(None, None)
 
 
 def catalog_version():

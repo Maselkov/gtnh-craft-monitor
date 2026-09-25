@@ -886,8 +886,7 @@ release), in which case the whole bundle is fetched again. The selected and
 previously selected versions are kept, with whatever texture sets they
 have. The pack is credited in the data repo's README, each release's
 notes, `CREDITS.txt` in the zip, `data.json` and the Game data dialog. With
-no bundle, the
-old `reference/icons_lookup.json` + `DATA_DIR/images.zip` pair is used.
+no bundle there are no icons.
 
 **Rebuilt releases.** CI's forced rebuild replaces a release under the same
 tag. Each install records the release's `data.json` asset id in
@@ -912,11 +911,13 @@ The OC scanner gets the catalog from the server: `scan/start` returns
 `/home/item_catalog.server.txt.version` `network_browser.lua` streams
 `/api/network/catalog` to disk (`http.download_to_file`, which checks the
 HTTP status - OC's request iterator doesn't) as
-`/home/item_catalog.server.txt`, which scans then prefer over the
-`gcm`-installed `item_catalog.txt`. It's a separate file because every
-`gcm` update reinstalls the bundled catalog: overwriting that one would let
-an update swap the old list back in while the version file still claimed
-the server's.
+`/home/item_catalog.server.txt`, which scans then prefer over
+`CATALOG_PATH` (`/home/item_catalog.txt`). `gcm` no longer installs a
+catalog, since a bundled one goes stale with every GTNH release; that path
+is only a fallback for a hand-placed list (or one an older `gcm`
+installed), and a scan with neither fails, asking for a version to be
+picked. The server's copy is a separate file so a hand-placed list is
+never overwritten.
 
 Image paths inside the zip keep NESQL's scheme
 (`item/<mod>/<name>~<damage>[~<nbt>].png`, `fluid/<mod>/<name>.png`), so

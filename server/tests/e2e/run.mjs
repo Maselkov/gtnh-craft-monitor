@@ -95,7 +95,7 @@ async function startServer(extraEnv = {}) {
 // The Game data page lists gtnh-data-* releases from GitHub's API and
 // downloads their assets. This serves one small but real bundle (a 16px
 // icon for Iron Ingot, and a 32px one standing in for its Faithful
-// render), made with Python so its zips and checksums are exactly what the
+// render; Neutronium Ingot's is in the lookup but not the zips), made with Python so its zips and checksums are exactly what the
 // server expects.
 const E2E_DATA_VERSION = '2.9.0-e2e';
 const MAKE_BUNDLE = `
@@ -111,7 +111,9 @@ for name, size in (("images.zip", 16), ("images-faithful32.zip", 32)):
     with zipfile.ZipFile(out + "/" + name, "w") as zf:
         zf.writestr("item/minecraft/iron_ingot~0.png", png(size))
 open(out + "/icons_lookup.json", "w").write(json.dumps(
-    {"by_key": {"minecraft:iron_ingot:0": "item/minecraft/iron_ingot~0.png"}, "fluids_by_key": {}, "by_label": {}}))
+    {"by_key": {"minecraft:iron_ingot:0": "item/minecraft/iron_ingot~0.png",
+                "gregtech:gt.metaitem.01:11028": "item/gregtech/gt.metaitem.01~11028.png"},
+     "fluids_by_key": {}, "by_label": {}}))
 open(out + "/item_catalog.txt", "w").write("minecraft:iron_ingot\\n")
 files = {}
 for name in ("images.zip", "images-faithful32.zip", "icons_lookup.json", "item_catalog.txt"):
@@ -380,13 +382,6 @@ async function main() {
     }
   });
 
-  step('icons that fail to load are removed', async () => {
-    // The test data dir has no images.zip, so every resolved icon 404s.
-    // (Icons inside collapsed <details> are lazy and never load at all.)
-    await waitFor('an icon was resolved', `card('W01').querySelector('.craft-title .item-history-link').dataset.icon`);
-    await waitFor('broken title icon removed', `!card('W01').querySelector('.craft-title img')`);
-  });
-
   step('sign in with the bootstrap token and rotate it', async () => {
     await evaluate(`typeInto('#accessTokenInput', ${JSON.stringify(BOOTSTRAP_TOKEN)})`);
     await click(`$('#authBtn')`);
@@ -611,7 +606,7 @@ async function main() {
     await click(`$('#settingsBtn')`);
     await waitFor('menu open', `visible($('#settingsMenu'))`);
     await click(`$('#gamedataBtn')`);
-    await waitFor('game data dialog', `visible($('#gamedataModal')) && $('#gamedataCurrent').textContent.includes('came with the server')`);
+    await waitFor('game data dialog', `visible($('#gamedataModal')) && $('#gamedataCurrent').textContent.includes('no game data')`);
     await waitFor('version listed', `$$('#gamedataVersion option').some((o) => o.value === '${E2E_DATA_VERSION}')`);
     await evaluate(`$('#gamedataVersion').value = '${E2E_DATA_VERSION}', true`);
     await click(`$('#gamedataInstallBtn')`);
@@ -629,6 +624,10 @@ async function main() {
     await click(`$('#tabBtnCrafts')`);
     await click(`$('#tabBtnNetwork')`);
     await waitFor('icon from the bundle', `$$('#networkList img.network-cell-icon').some((i) => i.src.includes('${E2E_DATA_VERSION}') && i.complete && i.naturalWidth === 16)`);
+    // Neutronium Ingot (5 of them) resolves to an image the zip lacks: the
+    // failed <img> removes itself rather than showing a broken glyph.
+    await waitFor('neutronium icon resolved', `fetch('/api/network').then((r) => r.json()).then((d) => JSON.stringify(d).includes('gt.metaitem.01~11028.png'))`);
+    await waitFor('broken icon removed', `$$('#networkList .network-cell').some((c) => c.querySelector('.network-cell-qty').textContent === '5' && !c.querySelector('img'))`);
 
     // Same version, Faithful textures: only their zip is fetched, and the
     // dialog credits the pack.

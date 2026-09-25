@@ -45,7 +45,6 @@ GTNH_TEXTURES = os.environ.get("GTNH_TEXTURES", "").strip()
 
 DATA_DIR = None
 GAMEDATA_DIR = None
-IMAGES_ZIP_PATH = None
 POWER_DB_PATH = None
 ITEM_HISTORY_DB_PATH = None
 APP_DB_PATH = None
@@ -53,21 +52,14 @@ LEGACY_CRAFT_DB_PATH = None
 
 SERVER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# Read-only data that ships with the server, kept out of DATA_DIR: in
-# Docker DATA_DIR is a volume mounted over the image, which would hide
-# anything a release puts there. Used, with IMAGES_ZIP_PATH, only until a
-# game data bundle is installed.
-ICONS_LOOKUP_PATH = os.path.join(SERVER_DIR, "reference", "icons_lookup.json")
-
 
 def configure(data_dir=None, api_key=None):
-    global API_KEY, DATA_DIR, GAMEDATA_DIR, IMAGES_ZIP_PATH
+    global API_KEY, DATA_DIR, GAMEDATA_DIR
     global POWER_DB_PATH, ITEM_HISTORY_DB_PATH, APP_DB_PATH, LEGACY_CRAFT_DB_PATH
     if api_key is not None:
         API_KEY = api_key
     DATA_DIR = data_dir or os.environ.get("DATA_DIR") or os.path.join(SERVER_DIR, "data")
     GAMEDATA_DIR = os.path.join(DATA_DIR, "gamedata")
-    IMAGES_ZIP_PATH = os.path.join(DATA_DIR, "images.zip")
     POWER_DB_PATH = os.path.join(DATA_DIR, "power.db")
     ITEM_HISTORY_DB_PATH = os.path.join(DATA_DIR, "item_history.db")
     APP_DB_PATH = os.path.join(DATA_DIR, "app.db")
