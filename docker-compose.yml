@@ -17,8 +17,6 @@ services:
       - GCM_BOOTSTRAP_ADMIN_TOKEN=${GCM_BOOTSTRAP_ADMIN_TOKEN:-}
       - GCM_BOOTSTRAP_ADMIN_NAME=${GCM_BOOTSTRAP_ADMIN_NAME:-Administrator}
     volumes:
-      # Databases and images.zip - without this, every
-      # `docker compose up -d --build` would wipe the history. The icon
-      # lookup table isn't here: it's built into the image from
-      # server/reference/.
+      # Databases and downloaded game data (item icons, catalog) - without
+      # this, every `docker compose up -d --build` would wipe the history.
       - ./server/data:/app/data

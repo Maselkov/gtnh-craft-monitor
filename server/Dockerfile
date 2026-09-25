@@ -8,7 +8,7 @@ COPY gcm ./gcm
 COPY index.html .
 COPY static ./static
 COPY reference ./reference
-# The mount point for the data volume (databases and images.zip).
+# The mount point for the data volume (databases and game data).
 RUN mkdir -p data
 
 ENV PORT=8420

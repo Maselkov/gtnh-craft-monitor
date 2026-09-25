@@ -63,6 +63,7 @@
 local component = require("component")
 local computer = require("computer")
 local event = require("event")
+local filesystem = require("filesystem")
 local term = require("term")
 local thread = require("thread")
 
@@ -338,6 +339,51 @@ local function set_phase(msg)
   end
 end
 
+-- The catalog follows the GTNH version picked on the server's Game data
+-- page. scan/start reports that version (catalog_version); when it isn't
+-- the one downloaded last, the server's catalog replaces the local file.
+-- A failed download keeps the current catalog: scanning with a slightly
+-- stale list beats not scanning. Servers without game data send no
+-- version, and the catalog gcm installed stays in use.
+local CATALOG_VERSION_PATH = CONFIG.CATALOG_PATH .. ".version"
+
+local function read_catalog_version()
+  local f = io.open(CATALOG_VERSION_PATH, "r")
+  if not f then
+    return nil
+  end
+  local version = f:read("*l")
+  f:close()
+  return version
+end
+
+local function sync_catalog(version)
+  if not version or version == read_catalog_version() then
+    return
+  end
+  set_phase("Downloading the item catalog for GTNH " .. version .. "...")
+  local tmp = CONFIG.CATALOG_PATH .. ".tmp"
+  local ok, err = http.download_to_file(CONFIG.URL .. "/catalog", tmp, {
+    ["X-API-Key"] = CONFIG.API_KEY,
+  }, CONFIG.HTTP_TIMEOUT_SECONDS)
+  if not ok then
+    debug_log("catalog download failed, keeping the current one: " .. tostring(err))
+    filesystem.remove(tmp)
+    return
+  end
+  filesystem.remove(CONFIG.CATALOG_PATH)
+  if not filesystem.rename(tmp, CONFIG.CATALOG_PATH) then
+    debug_log("couldn't move the new catalog into place")
+    return
+  end
+  local f = io.open(CATALOG_VERSION_PATH, "w")
+  if f then
+    f:write(version)
+    f:close()
+  end
+  debug_log("item catalog updated to " .. version)
+end
+
 -- Returns ok, result-or-error-message. On success, result is
 -- {total_items=, total_errors=}.
 local function run_scan(me)
@@ -359,6 +405,7 @@ local function run_scan(me)
     return false, "scan/start response missing a scan_token - can't safely proceed"
   end
   debug_log("scan/start OK, token=" .. scanToken)
+  sync_catalog(decoded1.catalog_version)
 
   set_phase("Opening item catalog...")
   local f = io.open(CONFIG.CATALOG_PATH, "r")

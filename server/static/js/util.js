@@ -10,6 +10,15 @@ export function removeLegacyStorageKeys() {
     .forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
 }
 
+// Animated icons are APNGs. Viewers who've asked their browser for reduced
+// motion get each one's first frame instead (the server's ?still=1).
+const REDUCED_MOTION = typeof matchMedia === 'function'
+  && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+export function iconUrl(path) {
+  return `/icons?path=${encodeURIComponent(path)}${REDUCED_MOTION ? '&still=1' : ''}`;
+}
+
 export function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }

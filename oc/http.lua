@@ -19,6 +19,7 @@
 -- holding this much real transport logic was the wrong shape.
 
 local internet = require("internet")
+local component = require("component")
 local computer = require("computer")
 
 -- IMPORTANT - do not "improve" this by wrapping it in thread.create() +
@@ -91,6 +92,78 @@ local function request_with_timeout(url, body, headers, timeoutSeconds)
   return ok, result
 end
 
+-- Downloads url into the file at path, writing each chunk as it arrives
+-- instead of building the body in memory - for the item catalog (~330KB),
+-- which a low-memory computer can't hold as one string. Unlike the
+-- internet library's request iterator, this checks the HTTP status, so an
+-- error page is never saved as if it were the file. Same approach as
+-- gcm.lua's download(). Gives up if connecting, or any gap between
+-- chunks, takes longer than timeoutSeconds. Returns true, or false and an
+-- error message (the file at path may then be partial).
+local function download_to_file(url, path, headers, timeoutSeconds)
+  local ok, handle, reason = pcall(component.internet.request, url, nil, headers)
+  if not ok or not handle then
+    return false, tostring(ok and reason or handle)
+  end
+  local started = computer.uptime()
+  local code
+  repeat
+    local okConnect, connected, err = pcall(handle.finishConnect)
+    if not okConnect or connected == nil then
+      handle.close()
+      return false, tostring(okConnect and err or connected)
+    end
+    if connected then
+      code = handle.response()
+    end
+    if not code then
+      if real_seconds_elapsed(started) > timeoutSeconds then
+        handle.close()
+        return false, "timed out connecting"
+      end
+      os.sleep(0.05)
+    end
+  until code
+  if code ~= 200 then
+    handle.close()
+    return false, "HTTP " .. tostring(code)
+  end
+
+  local file, openErr = io.open(path, "wb")
+  if not file then
+    handle.close()
+    return false, tostring(openErr)
+  end
+  local total = 0
+  local lastData = computer.uptime()
+  while true do
+    local okRead, data, readErr = pcall(handle.read, 8192)
+    if not okRead or data == nil then
+      handle.close()
+      file:close()
+      if not okRead or readErr then
+        return false, tostring(okRead and readErr or data)
+      end
+      if total == 0 then
+        return false, "empty response"
+      end
+      return true
+    end
+    if #data > 0 then
+      file:write(data)
+      total = total + #data
+      lastData = computer.uptime()
+    elseif real_seconds_elapsed(lastData) > timeoutSeconds then
+      handle.close()
+      file:close()
+      return false, "timed out waiting for data"
+    else
+      os.sleep(0.05)
+    end
+  end
+end
+
 return {
   request_with_timeout = request_with_timeout,
+  download_to_file = download_to_file,
 }

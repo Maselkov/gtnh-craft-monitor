@@ -64,6 +64,19 @@ jobs:
         env:
           PYTHON: python
 
+  icon-export:
+    name: Icon export tools
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - run: pip install pytest pillow
+      - run: python -m py_compile tools/icon-export/export.py
+      # detect.py and validate.py gate what the GTNH data workflow publishes.
+      - run: python -m pytest -q tools/icon-export/ci
+
   lua:
     name: Lua syntax check
     runs-on: ubuntu-latest

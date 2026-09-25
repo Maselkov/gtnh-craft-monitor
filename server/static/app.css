@@ -684,6 +684,11 @@ h1 {
 .admin-revoke-btn { margin-left: auto; border: 1px solid rgba(128,128,128,0.3); border-radius: 5px; background: none; color: var(--stale); cursor: pointer; font-size: 11px; padding: 3px 6px; }
 .admin-form-grid { display: grid; grid-template-columns: minmax(0, 1fr) 120px; gap: 8px; }
 .admin-token-result { margin-top: 14px; }
+.gamedata-current { font-size: 13px; margin-bottom: 10px; }
+.gamedata-progress { margin-top: 12px; }
+.gamedata-label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
+.gamedata-credit { margin-top: 6px; color: var(--muted); font-size: 11px; }
+.gamedata-credit a { color: inherit; }
 .admin-token-value { width: 100%; min-height: 70px; resize: vertical; font-family: monospace; font-size: 12px; }
 .user-history-list { max-height: 360px; overflow-y: auto; border: 1px solid rgba(128,128,128,0.2); border-radius: 8px; }
 .user-history-row { padding: 10px 11px; border-bottom: 1px solid rgba(128,128,128,0.15); }

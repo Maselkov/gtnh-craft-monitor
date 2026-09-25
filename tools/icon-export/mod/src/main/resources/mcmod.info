@@ -1,0 +1,11 @@
+[
+  {
+    "modid": "${modId}",
+    "name": "${modName}",
+    "description": "Headless export of item/fluid icons and the item catalog for gtnh-craft-monitor.",
+    "version": "${modVersion}",
+    "mcversion": "${minecraftVersion}",
+    "authorList": ["gtnh-craft-monitor"],
+    "dependencies": ["NotEnoughItems"]
+  }
+]

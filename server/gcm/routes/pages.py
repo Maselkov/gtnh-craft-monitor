@@ -27,7 +27,11 @@ def icon():
     img_path = request.args.get("path", "")
     if not img_path:
         abort(404)
-    data = icons.read_image(img_path)
+    # Animated icons are APNGs; ?still=1 asks for just the first frame.
+    if request.args.get("still") == "1":
+        data = icons.read_still_image(img_path)
+    else:
+        data = icons.read_image(img_path)
     if data is None:
         abort(404)
     return Response(

@@ -17,7 +17,9 @@ function updateAuthenticationControl() {
   document.getElementById('settingsWrap').style.display = AUTH_USER ? '' : 'none';
   document.getElementById('settingsUser').textContent = AUTH_USER ? `Signed in as ${AUTH_USER.display_name}` : '';
   if (!AUTH_USER) closeSettingsMenu();
-  adminButton.style.display = AUTH_USER && AUTH_USER.role === 'admin' && !AUTH_MUST_ROTATE_BOOTSTRAP ? '' : 'none';
+  const adminVisible = AUTH_USER && AUTH_USER.role === 'admin' && !AUTH_MUST_ROTATE_BOOTSTRAP;
+  adminButton.style.display = adminVisible ? '' : 'none';
+  document.getElementById('gamedataBtn').style.display = adminVisible ? '' : 'none';
 }
 
 export async function loadAuthentication() {
