@@ -4,8 +4,10 @@ import java.awt.image.BufferedImage;
 import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.Collections;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.entity.EntityClientPlayerMP;
 import net.minecraft.client.gui.Gui;
 import net.minecraft.client.renderer.EntityRenderer;
 import net.minecraft.client.renderer.OpenGlHelper;
@@ -49,6 +51,7 @@ final class IconRenderer {
     private final int[] pixels;
     private final Gui gui = new Gui();
     private final ItemStackSet neiRenderErrors = neiRenderErrors();
+    private final EntityClientPlayerMP standInPlayer = standInPlayer();
     private Framebuffer framebuffer;
     private int attribDepth;
 
@@ -114,6 +117,28 @@ final class IconRenderer {
      *         world this is mostly renderers that read the player or the world (the bow, for one).
      */
     BufferedImage renderItem(ItemStack stack) {
+        try {
+            return renderItemOnce(stack);
+        } catch (IllegalStateException failed) {
+            if (standInPlayer == null) {
+                throw failed;
+            }
+        }
+        // Some renderers only fail because there's no player at the main menu. GTNHLib's cosmic
+        // shader (Eternal Singularity, Avaritia's infinity gear) reads the player's tick count,
+        // for one. Give those a second try with a blank player object in place. Renderers that
+        // need more than that still fail; nothing else sees the stand-in.
+        Minecraft mc = Minecraft.getMinecraft();
+        neiRenderErrors.removeAll(Collections.singletonList(stack));
+        mc.thePlayer = standInPlayer;
+        try {
+            return renderItemOnce(stack);
+        } finally {
+            mc.thePlayer = null;
+        }
+    }
+
+    private BufferedImage renderItemOnce(ItemStack stack) {
         resetState();
         clear();
         try {
@@ -254,6 +279,24 @@ final class IconRenderer {
             image.setRGB(0, y, size, 1, pixels, (size - 1 - y) * size, size);
         }
         return image;
+    }
+
+    /**
+     * A player object with every field at its default, made without running a constructor (a
+     * real one needs a world and a network connection). Null if the JVM won't allow that.
+     */
+    private static EntityClientPlayerMP standInPlayer() {
+        try {
+            Field unsafeField = Class.forName("sun.misc.Unsafe").getDeclaredField("theUnsafe");
+            unsafeField.setAccessible(true);
+            Object unsafe = unsafeField.get(null);
+            return (EntityClientPlayerMP) unsafe.getClass()
+                    .getMethod("allocateInstance", Class.class)
+                    .invoke(unsafe, EntityClientPlayerMP.class);
+        } catch (Throwable t) {
+            IconExportMod.LOG.warn("Can't make a stand-in player; items that need one won't render.", t);
+            return null;
+        }
     }
 
     /** NEI's private record of stacks whose rendering threw; null if this NEI version lacks it. */

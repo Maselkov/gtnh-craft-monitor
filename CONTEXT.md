@@ -473,6 +473,15 @@ a full run to find:
   what preceded them. That also made every fluid fail the animation
   stability check, so none animated. `renderFluid` now turns lighting off
   and sets normal alpha blending, and the colours match the raw textures.
+- Some renderers need nothing from the player but its existence. GTNHLib's
+  cosmic shader (`UniversiumShader`, used by Eternal Singularity, Avaritia's
+  infinity gear and GT's Infinity material) reads `thePlayer.ticksExisted`
+  and threw at the menu, so none of those had icons. A stack whose render
+  throws is retried once with a stand-in player (allocated without a
+  constructor, every field default) in `mc.thePlayer`, after removing it
+  from NEI's error set, which otherwise skips it. That recovers ~200
+  stacks. The stand-in is only set during that one retry, so nothing else
+  ever sees it.
 - Avaritia's infinity items leave their GLSL shader bound; every later icon
   rendered as a flat single colour (and 5x slower) until `glUseProgram(0)`
   per icon.
