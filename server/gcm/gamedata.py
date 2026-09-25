@@ -43,6 +43,10 @@ TEXTURES = {
     },
 }
 SELECTED_FILE = "selected.json"
+# Written next to a downloaded bundle: which upload of the release it came
+# from. CI replaces a release when it rebuilds a version, which gives its
+# data.json asset a new id.
+RELEASE_FILE = "release.json"
 AVAILABLE_TTL_SECONDS = 600
 # Versions become directory names, so keep them to tag-safe characters.
 _VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
@@ -126,6 +130,37 @@ def selected_version():
     return selected()[0]
 
 
+def build_id(version):
+    """Short id of the installed build of version (from its data.json), so
+    a rebuilt release under the same version name gets new icon URLs and a
+    new catalog version: browsers cache icons for a week, and the scanner
+    only refetches its catalog when the version it's told changes."""
+    try:
+        return hashlib.sha256(_read_bytes(os.path.join(_bundle_dir(version), "data.json"))).hexdigest()[:8]
+    except OSError:
+        return None
+
+
+def _installed_asset_id(version):
+    try:
+        with open(os.path.join(_bundle_dir(version), RELEASE_FILE), encoding="utf-8") as f:
+            return json.load(f).get("data_asset_id")
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def update_available(release):
+    """Whether release is a newer build of a version that's on disk. Bundles
+    that didn't come from a release (run.sh --install) record none, so they
+    never count as outdated."""
+    installed_id = _installed_asset_id(release["version"])
+    return (
+        installed_id is not None
+        and _has_base(release["version"])
+        and release.get("data_asset_id") != installed_id
+    )
+
+
 def installed():
     """Bundles on disk, newest first, with their data.json details and the
     texture sets downloaded for them."""
@@ -152,8 +187,9 @@ def activate():
     none. Called at startup and after an install."""
     version, textures = selected()
     if version:
-        # The icon URL prefix busts browser caches when either changes.
-        prefix = version if textures == "default" else f"{version}~{textures}"
+        # The icon URL prefix busts browser caches when any of these changes.
+        build = build_id(version)
+        prefix = f"{version}~{build}" if textures == "default" else f"{version}~{textures}~{build}"
         icons.load(
             os.path.join(_bundle_dir(version), "icons_lookup.json"),
             os.path.join(_bundle_dir(version), TEXTURES[textures]["file"]),
@@ -165,8 +201,9 @@ def activate():
 
 def catalog_version():
     # Same catalog whatever the textures, so the scanner only refetches it
-    # when the GTNH version changes.
-    return selected_version()
+    # when the GTNH version or its build changes.
+    version = selected_version()
+    return f"{version}~{build_id(version)}" if version else None
 
 
 def catalog_path():
@@ -214,6 +251,7 @@ def available(refresh=False):
                     "published_at": release.get("published_at"),
                     "base_size": sum(assets[name]["size"] for name in BASE_FILES),
                     "textures": textures,
+                    "data_asset_id": assets["data.json"].get("id"),
                     "assets": {name: a["browser_download_url"] for name, a in assets.items()},
                 }
             )
@@ -232,8 +270,9 @@ def status():
 
 def start_install(version, textures="default"):
     """Selects version with the given textures, downloading whatever isn't
-    on disk yet first. Returns an error message, or None once it's
-    selected or downloading."""
+    on disk yet first, or the whole bundle again if the release has been
+    rebuilt since it was downloaded. Returns an error message, or None once
+    it's selected or downloading."""
     if not valid_version(version):
         return "Unknown version."
     if textures not in TEXTURES:
@@ -241,21 +280,22 @@ def start_install(version, textures="default"):
     with _lock:
         if _status["state"] == "installing":
             return f"Already installing {_status['version']}."
-    if textures in _textures_on_disk(version):
+    releases, error = available()
+    release = next((r for r in releases if r["version"] == version), None)
+    outdated = release is not None and update_available(release)
+    if textures in _textures_on_disk(version) and not outdated:
         _select(version, textures)
         with _lock:
             _status.update(
                 state="idle", version=None, textures=None, done_bytes=0, total_bytes=0, error=None
             )
         return None
-    releases, error = available()
-    release = next((r for r in releases if r["version"] == version), None)
     if release is None:
         return error or f"No game data published for {version}."
     if textures not in release["textures"]:
         return f"GTNH {version} has no {TEXTURES[textures]['name']} icons."
     total = release["textures"][textures]
-    if not _has_base(version):
+    if not _has_base(version) or outdated:
         total += release["base_size"]
     with _lock:
         if _status["state"] == "installing":
@@ -340,9 +380,12 @@ def _install(release, textures):
             digest = _download(release["assets"][name], os.path.join(part, name))
             if digest != expected[name]["sha256"]:
                 raise ValueError(f"{name} doesn't match its checksum in data.json")
+        record = os.path.join(part, RELEASE_FILE)
+        with open(record, "w", encoding="utf-8") as f:
+            json.dump({"data_asset_id": release.get("data_asset_id")}, f)
         if reuse_base:
-            name = TEXTURES[textures]["file"]
-            os.replace(os.path.join(part, name), os.path.join(final, name))
+            for name in (TEXTURES[textures]["file"], RELEASE_FILE):
+                os.replace(os.path.join(part, name), os.path.join(final, name))
             shutil.rmtree(part, ignore_errors=True)
         else:
             shutil.rmtree(final, ignore_errors=True)

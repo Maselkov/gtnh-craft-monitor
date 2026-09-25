@@ -134,8 +134,9 @@ async function startFakeGitHub() {
       res.end(JSON.stringify([{
         tag_name: `gtnh-data-${E2E_DATA_VERSION}`,
         published_at: '2026-09-25T00:00:00Z',
-        assets: BUNDLE_FILES.map((name) => ({
+        assets: BUNDLE_FILES.map((name, index) => ({
           name,
+          id: 1000 + index,
           size: fs.statSync(path.join(dir, name)).size,
           browser_download_url: `${base}/assets/${name}`,
         })),

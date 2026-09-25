@@ -852,12 +852,23 @@ notes, `CREDITS.txt` in the zip, `data.json` and the Game data dialog. With
 no bundle, the
 old `reference/icons_lookup.json` + `DATA_DIR/images.zip` pair is used.
 
-Resolved icon paths are prefixed with the data version
-(`2.9.0-beta-3/item/...`, or `2.9.0-beta-3~faithful32/item/...`) because `/icons` responses are cached as
-immutable: without it, browsers would keep the previous version's image for
-any path both versions share. `read_image()` strips any prefix, so paths
-stored before a switch (`craft_events.item_icon`) still resolve. The
-version is also part of `/api/network`'s ETag.
+**Rebuilt releases.** CI's forced rebuild replaces a release under the same
+tag. Each install records the release's `data.json` asset id in
+`<version>/release.json`; a published release whose id differs is an
+update (`update_available()`, shown on the Game data page), and picking
+the version again downloads the whole bundle rather than switching to the
+copy on disk. Bundles from `run.sh --install` record no id and are never
+flagged.
+
+Resolved icon paths are prefixed with the version, texture set and build
+(`2.9.0-beta-3~a1b2c3d4/item/...`, `2.9.0-beta-3~faithful32~a1b2c3d4/...`;
+the build is the start of `data.json`'s SHA-256, `build_id()`) because
+`/icons` responses are cached as immutable: without it, browsers would keep
+the previous image for any path two builds share, including a rebuild of
+the same version. `read_image()` strips any prefix, so paths stored before
+a switch (`craft_events.item_icon`) still resolve. The prefix is also part
+of `/api/network`'s ETag, and `catalog_version` is `<version>~<build>`, so
+the scanner refetches a rebuilt catalog too.
 
 The OC scanner gets the catalog from the server: `scan/start` returns
 `catalog_version`, and when it differs from
