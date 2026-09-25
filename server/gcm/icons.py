@@ -31,6 +31,12 @@ _fluids_by_key = {}
 # (they're served with an immutable cache header).
 _version = None
 _images_zip_path = None
+# Image path -> how far the icon is drawn past the item box on each side, in
+# 1/16ths of it (a cosmic halo, for one): the lookup's "bleed" table. Those
+# images are (16 + 2 * bleed) / 16 times the box's size, the box in their
+# middle, and their resolved paths say so (_prefix()) for the page to size
+# them by.
+_bleed = {}
 
 _images_zip = None
 _images_zip_missing_logged = False
@@ -44,7 +50,7 @@ _ZIP_ROOTS = ("item", "fluid")
 def load(lookup_path, images_zip_path, version=None):
     """Makes the given lookup and zip the live ones."""
     global _icons_by_key, _icons_by_label, _fluids_by_key
-    global _images_zip, _images_zip_missing_logged, _images_zip_path, _version
+    global _images_zip, _images_zip_missing_logged, _images_zip_path, _version, _bleed
     icon_data = {}
     if lookup_path and os.path.exists(lookup_path):
         with open(lookup_path, "r", encoding="utf-8") as f:
@@ -58,6 +64,7 @@ def load(lookup_path, images_zip_path, version=None):
         _icons_by_key = icon_data.get("by_key", {})
         _icons_by_label = icon_data.get("by_label", {})
         _fluids_by_key = icon_data.get("fluids_by_key", {})
+        _bleed = icon_data.get("bleed", {})
         _version = version
 
 
@@ -137,10 +144,25 @@ def damage_str(damage):
 def resolve_icon(mod, internal, damage, label):
     """Returns the image path inside images.zip for an item or fluid,
     prefixed with the data version if a bundle is live, or None."""
-    path = _lookup(mod, internal, damage, label)
-    if path and _version:
-        return f"{_version}/{path}"
-    return path
+    return _prefixed(_lookup(mod, internal, damage, label))
+
+
+def current_path(path):
+    """A stored icon path (craft history keeps whatever was current when it
+    was recorded) with the live bundle's prefix, so it's sized and cached
+    like a freshly resolved one."""
+    if not path:
+        return path
+    head, sep, rest = path.partition("/")
+    return _prefixed(rest if sep and head not in _ZIP_ROOTS else path)
+
+
+def _prefixed(path):
+    # <version>[~<textures>]~<build>[~bleed<n>]/<path in the zip>
+    if not path or not _version:
+        return path
+    bleed = _bleed.get(path)
+    return f"{_version}~bleed{bleed}/{path}" if bleed else f"{_version}/{path}"
 
 
 def _lookup(mod, internal, damage, label):

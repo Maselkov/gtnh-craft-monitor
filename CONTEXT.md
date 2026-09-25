@@ -477,6 +477,34 @@ a full run to find:
   a second time over opaque white; with the first pass as "over black",
   opacity = 1 - (white - black) and colour = black / opacity. Fully
   opaque/clear icons skip the second pass; it costs ~20 s a full export.
+- Halos are drawn past the item's 16x16 box on purpose, over neighbouring
+  slots: GT's cosmic halo spans -10 to 27, Avaritia's and Universal
+  Singularities' reach 4-10 units out. Rendering exactly the box cut them
+  to a hard-edged square. The FBO now covers `IconRenderer.BLEED` (12)
+  units past each side, and most icons are cropped back to the box
+  (byte-identical to before). Plenty else lands outside it: NEI's overlay
+  text (Draconic's "100%", IC2's debug item), text item renderers draw
+  themselves (TConstruct projectiles' ammo counts) and 3D models
+  overhanging by a pixel or two - about 1,000 icons in a first attempt
+  that kept anything spilling. So an icon keeps the canvas only if its
+  partly transparent pixels reach `MIN_BLEED` (3) units out (glows are
+  translucent; text and models are opaque), measured on a second render
+  without NEI's overlay (`safeItemRenderContext` by reflection, drawing
+  just `renderItemAndEffectIntoGUI`), done only for icons whose first
+  render spills. Outside the box the icon then takes that overlay-free
+  render, inside it the usual one. Such an icon keeps the whole canvas,
+  2.5x the box with it in the middle. Those paths go in the
+  lookup's `bleed` table (path -> 12). The server marks their resolved
+  paths (`<prefix>~bleed12/item/...`, `icons.resolve_icon`), so every API
+  field and stored craft-history path carries it without a schema change;
+  `icons.current_path()` re-resolves stored paths on the way out
+  (completions). The page gives those images `.icon-bleed`
+  (`iconClass()` in `util.js`): `transform: scale(2.5)` keeps the layout
+  box, so the item fills the usual space and the halo spills over what's
+  around it, above neighbouring cells' backgrounds and below their icons,
+  ignoring clicks. `export.py` keeps a Faithful render only if it's the
+  default render's size (the bleed table describes the default one), and
+  keeps an animation still if its frames differ in size.
 - Fluid icons are drawn by the exporter itself (a textured quad), not
   NEI, so they inherited whatever the previous item left enabled. With
   the item lighting on they came out ~25% darker, or not, depending on

@@ -5,7 +5,7 @@ import { AUTH_USER, closeAdminUsersModal, closeSettingsMenu } from './auth.js';
 import { lastData, render } from './crafts.js';
 import { closeGameDataModal } from './gamedata.js';
 import { closeItemHistory } from './history.js';
-import { delegateActions, escapeHtml, iconUrl, onBackdropClick } from './util.js';
+import { delegateActions, escapeHtml, iconClass, iconUrl, onBackdropClick } from './util.js';
 
 // ---------- Craft request modal ----------
 let craftRequestTarget = null;
@@ -16,6 +16,7 @@ export function openCraftRequestModal(it) {
   const iconEl = document.getElementById('craftRequestIcon');
   if (it.icon) {
     iconEl.src = iconUrl(it.icon);
+    iconEl.className = iconClass('modal-icon', it.icon);
     iconEl.style.display = '';
   } else {
     iconEl.style.display = 'none';
@@ -276,7 +277,7 @@ function renderCraftRequests() {
   }
   el.innerHTML = craftRequests.map(r => {
     const icon = r.icon
-      ? `<img class="craft-request-icon" src="${iconUrl(r.icon)}" alt="" loading="lazy" data-remove-on-error>`
+      ? `<img class="${iconClass('craft-request-icon', r.icon)}" src="${iconUrl(r.icon)}" alt="" loading="lazy" data-remove-on-error>`
       : '';
     const isFailed = r.status === 'failed';
     const statusText = isFailed

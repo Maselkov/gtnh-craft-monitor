@@ -4,7 +4,7 @@ import { openCraftRequestModal } from './craft-actions.js';
 import { openItemHistory, tryOpenItemFromUrl, updateItemHistoryPinButton } from './history.js';
 import { buildSearchHighlightHtml, itemMatchesSearch, parseSearchQuery } from './search.js';
 import { activeTab } from './tabs.js';
-import { delegateActions, escapeHtml, formatQty, iconUrl } from './util.js';
+import { delegateActions, escapeHtml, formatQty, iconClass, iconUrl } from './util.js';
 
 // ---------- Network browser ----------
 export let lastNetworkData = null;
@@ -282,7 +282,7 @@ let lastNetworkSort = null;
 
 function buildNetworkCellHtml(it, idx) {
   const icon = it.icon
-    ? `<img class="network-cell-icon" src="${iconUrl(it.icon)}" alt="" loading="lazy" data-remove-on-error>`
+    ? `<img class="${iconClass('network-cell-icon', it.icon)}" src="${iconUrl(it.icon)}" alt="" loading="lazy" data-remove-on-error>`
     : '';
   const qty = `<span class="network-cell-qty">${formatQty(it.size)}</span>`;
   // Blank Pattern icon (appliedenergistics2:item.ItemMultiMaterial

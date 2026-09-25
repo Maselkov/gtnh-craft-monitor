@@ -95,7 +95,8 @@ async function startServer(extraEnv = {}) {
 // The Game data page lists gtnh-data-* releases from GitHub's API and
 // downloads their assets. This serves one small but real bundle (a 16px
 // icon for Iron Ingot, and a 32px one standing in for its Faithful
-// render; Neutronium Ingot's is in the lookup but not the zips), made with Python so its zips and checksums are exactly what the
+// render, and marked as drawn past the item box like a halo; Neutronium
+// Ingot's is in the lookup but not the zips), made with Python so its zips and checksums are exactly what the
 // server expects.
 const E2E_DATA_VERSION = '2.9.0-e2e';
 const MAKE_BUNDLE = `
@@ -113,7 +114,7 @@ for name, size in (("images.zip", 16), ("images-faithful32.zip", 32)):
 open(out + "/icons_lookup.json", "w").write(json.dumps(
     {"by_key": {"minecraft:iron_ingot:0": "item/minecraft/iron_ingot~0.png",
                 "gregtech:gt.metaitem.01:11028": "item/gregtech/gt.metaitem.01~11028.png"},
-     "fluids_by_key": {}, "by_label": {}}))
+     "fluids_by_key": {}, "by_label": {}, "bleed": {"item/minecraft/iron_ingot~0.png": 12}}))
 open(out + "/item_catalog.txt", "w").write("minecraft:iron_ingot\\n")
 files = {}
 for name in ("images.zip", "images-faithful32.zip", "icons_lookup.json", "item_catalog.txt"):
@@ -624,6 +625,8 @@ async function main() {
     await click(`$('#tabBtnCrafts')`);
     await click(`$('#tabBtnNetwork')`);
     await waitFor('icon from the bundle', `$$('#networkList img.network-cell-icon').some((i) => i.src.includes('${E2E_DATA_VERSION}') && i.complete && i.naturalWidth === 16)`);
+    // A halo icon is scaled up past its cell (.icon-bleed).
+    await waitFor('halo icon enlarged', `$$('#networkList img.network-cell-icon.icon-bleed').some((i) => i.src.includes('bleed12') && getComputedStyle(i).transform !== 'none')`);
     // Neutronium Ingot (5 of them) resolves to an image the zip lacks: the
     // failed <img> removes itself rather than showing a broken glyph.
     await waitFor('neutronium icon resolved', `fetch('/api/network').then((r) => r.json()).then((d) => JSON.stringify(d).includes('gt.metaitem.01~11028.png'))`);

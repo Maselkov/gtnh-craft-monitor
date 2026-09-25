@@ -81,8 +81,8 @@ def test_manual_version_without_a_zip_fails():
         detect.plan(GTNH, [], lambda url: False, version="9.9.9")
 
 
-def png(pixels):
-    image = Image.new("RGBA", (4, 4), (0, 0, 0, 0))
+def png(pixels, size=4):
+    image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     for (x, y), colour in pixels.items():
         image.putpixel((x, y), colour)
     buffer = BytesIO()
@@ -265,3 +265,47 @@ def test_oversized_animations_drop_frames_until_they_fit(tmp_path, monkeypatch):
             image.seek(i)
             total += image.info["duration"]
         assert total == 16 * 50
+
+
+def test_faithful_icon_of_another_size_falls_back(tmp_path):
+    # Drawn past the item box in one pass only: the lookup's bleed table
+    # describes the default render, so that's the one kept.
+    lookup = {"by_key": {"a:b:0": "item/a/b~0.png"},
+              "bleed": {"item/a/b~0.png": 12}}
+    (tmp_path / "lookup.json").write_text(json.dumps(lookup))
+    halo = png({(0, 0): (200, 10, 10, 255)}, size=10)
+    write_zip(tmp_path / "default.zip", {"item/a/b~0.png": halo})
+    write_zip(tmp_path / "textured.zip", {"item/a/b~0.png": BLUE})
+
+    fell_back = export.merge_textures(
+        tmp_path / "default.zip", tmp_path / "textured.zip",
+        tmp_path / "lookup.json", tmp_path / "out.zip", "Thanks\n")
+
+    assert fell_back == 1
+    with zipfile.ZipFile(tmp_path / "out.zip") as zf:
+        assert zf.read("item/a/b~0.png") == halo
+
+
+def test_lookup_paths_leaves_out_the_bleed_table(tmp_path):
+    (tmp_path / "lookup.json").write_text(json.dumps(
+        {"by_key": {"a:b:0": "item/a/b~0.png"}, "fluids_by_key": {},
+         "by_label": {}, "bleed": {"item/a/b~0.png": 12}}))
+    assert export.lookup_paths(tmp_path / "lookup.json") == {"item/a/b~0.png"}
+
+
+def test_animation_with_frames_of_different_sizes_stays_still(tmp_path):
+    write_zip(tmp_path / "a.zip", {
+        "p/f0.png": png({(0, 0): (255, 0, 0, 255)}),
+        "p/f1.png": png({(0, 0): (0, 255, 0, 255)}, size=10),
+    })
+    with zipfile.ZipFile(tmp_path / "a.zip") as zf:
+        assert export.build_within_budget(zf, "p", ["f0", "f1"], 50) is None
+
+
+def test_bleed_entries_missing_from_the_zip_fail(tmp_path):
+    export_dir = faithful_export(tmp_path, BLUE)
+    lookup = json.loads((export_dir / "icons_lookup.json").read_text())
+    lookup["bleed"] = {"item/a/gone~0.png": 12}
+    (export_dir / "icons_lookup.json").write_text(json.dumps(lookup))
+    problems, _, _ = validate.check(export_dir)
+    assert any("bleed table" in p for p in problems)

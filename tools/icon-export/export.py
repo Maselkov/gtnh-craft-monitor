@@ -41,6 +41,7 @@ import os
 import re
 import shutil
 import signal
+import struct
 import subprocess
 import sys
 import time
@@ -55,6 +56,9 @@ GAME_OUTPUTS = (
     "images.zip", "icons_lookup.json", "item_catalog.txt",
     "export-report.json",
 )
+# icons_lookup.json's key -> image path tables. Its "bleed" table maps the
+# paths of icons drawn past the item box to how far, in 1/16ths of it.
+LOOKUP_TABLES = ("by_key", "fluids_by_key", "by_label")
 
 # Loading errors put FML's error screen up and wait for a click that never
 # comes, so these have to be caught from the log rather than the exit code.
@@ -477,10 +481,15 @@ def near_loop(ticks, image):
 
 def build_apng(frames, runs, tick_millis):
     """APNG bytes for [(frame image, ticks)] runs; frames maps frame -> PNG
-    bytes. Pillow stores each frame after the first as just what changed."""
+    bytes. Pillow stores each frame after the first as just what changed.
+    None if the frames aren't all the same size."""
     from PIL import Image
     images = [Image.open(BytesIO(frames[frame])).convert("RGBA")
               for frame, _ in runs]
+    if len({image.size for image in images}) > 1:
+        # Drawn past the item box in some frames only (IconRenderer.BLEED):
+        # an APNG's frames must all be one size.
+        return None
     out = BytesIO()
     images[0].save(out, format="PNG", save_all=True,
                    append_images=images[1:], loop=0,
@@ -492,7 +501,12 @@ def build_apng(frames, runs, tick_millis):
 def lookup_paths(lookup_path):
     """Every image path icons_lookup.json points at."""
     lookup = json.loads(lookup_path.read_text())
-    return set().union(*(table.values() for table in lookup.values()))
+    return set().union(*(lookup.get(table, {}).values() for table in LOOKUP_TABLES))
+
+
+def png_size(data):
+    """(width, height) from a PNG's (or APNG's) header."""
+    return struct.unpack(">II", data[16:24])
 
 
 def finish_images(out_dir):
@@ -537,6 +551,9 @@ def build_within_budget(frames_zip, path, loop, tick_millis):
         frames = {frame: frames_zip.read(f"{path}/{frame}.png")
                   for frame, _ in runs}
         apng = build_apng(frames, runs, tick_millis)
+        if apng is None:
+            log(f"{path}: frames of different sizes; keeping it still.")
+            return None
         if len(apng) <= APNG_MAX_BYTES:
             return apng
         if len(runs) <= APNG_MIN_FRAMES:
@@ -586,7 +603,9 @@ def summary(report):
 def merge_textures(default_zip, textured_zip, lookup_path, dest, credit):
     """images-<textures>.zip: the textured renders of every icon the
     lookup points at, falling back to the default render where the
-    textured pass couldn't render one. Returns how many fell back."""
+    textured pass couldn't render one, or rendered it a different size (drawn
+    past the item box in one pass only), which the lookup's bleed table
+    wouldn't match. Returns how many fell back."""
     wanted = lookup_paths(lookup_path)
     fell_back = 0
     tmp = dest.with_name(dest.name + ".part")
@@ -596,10 +615,12 @@ def merge_textures(default_zip, textured_zip, lookup_path, dest, credit):
         have = set(textured.namelist())
         out.writestr("CREDITS.txt", credit)
         for name in sorted(wanted):
-            if name in have:
-                out.writestr(name, textured.read(name))
+            default = base.read(name)
+            data = textured.read(name) if name in have else None
+            if data and png_size(data) == png_size(default):
+                out.writestr(name, data)
             else:
-                out.writestr(name, base.read(name))
+                out.writestr(name, default)
                 fell_back += 1
     tmp.replace(dest)
     return fell_back

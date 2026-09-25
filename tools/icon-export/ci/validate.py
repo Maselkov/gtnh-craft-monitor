@@ -76,6 +76,12 @@ def check(out_dir):
         problems.append(f"{biggest.filename} is {biggest.file_size} bytes")
 
     lookup = json.loads((out_dir / "icons_lookup.json").read_text())
+    with zipfile.ZipFile(out_dir / "images.zip") as zf:
+        names = set(zf.namelist())
+    missing = [p for p in lookup.get("bleed", {}) if p not in names]
+    if missing:
+        problems.append(f"{len(missing)} icons in the lookup's bleed table "
+                        f"aren't in images.zip, e.g. {missing[0]}")
     paths = sorted(set(lookup["by_key"].values()))
     sample = random.Random(0).sample(paths, min(FLAT_SAMPLE, len(paths)))
     with zipfile.ZipFile(out_dir / "images.zip") as zf:

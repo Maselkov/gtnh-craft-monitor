@@ -227,7 +227,8 @@ one made for your GTNH version.
 
 Icons that animate in game (GT materials and fluids, lava, many magic
 items) are animated on the page too. Browsers set to reduce motion get
-still icons.
+still icons. Halos (GT's cosmic items, Avaritia's singularities and
+infinity items) spill past their slot the way they do in game.
 
 The list comes from the releases of a separate repo,
 [gtnh-craft-monitor-data](https://github.com/Maselkov/gtnh-craft-monitor-data):

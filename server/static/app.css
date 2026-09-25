@@ -535,7 +535,6 @@ h1 {
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
 }
 .network-cell.craftable {
   border-color: color-mix(in srgb, var(--accent) 40%, transparent);
@@ -545,6 +544,9 @@ h1 {
   width: 62%;
   height: 62%;
   image-rendering: pixelated;
+  /* Above neighbouring cells' halos (.icon-bleed), as in NEI's grid. */
+  position: relative;
+  z-index: 2;
 }
 .network-cell-qty {
   position: absolute;
@@ -555,6 +557,7 @@ h1 {
   color: var(--text);
   text-shadow: 0 0 3px rgba(0,0,0,0.9), 0 0 3px rgba(0,0,0,0.9);
   font-variant-numeric: tabular-nums;
+  z-index: 3;
 }
 .network-cell-pattern-badge {
   position: absolute;
@@ -1021,4 +1024,19 @@ details.idle-group[open] summary::before {
 }
 details.idle-group .grid {
   margin-top: 12px;
+}
+
+/* An icon drawn past the item box (util.js iconClass()): the image is
+   (16 + 2 * 12) / 16 = 2.5 times the box, so scaled by that around its
+   centre, the item fills the usual space and the halo spills over what's
+   around it - over neighbouring cells' backgrounds, under their icons.
+   Clicks go through it to whatever is underneath. */
+.icon-bleed {
+  transform: scale(2.5);
+  position: relative;
+  z-index: 1;
+  pointer-events: none;
+}
+.network-cell-icon.icon-bleed {
+  z-index: 1;
 }

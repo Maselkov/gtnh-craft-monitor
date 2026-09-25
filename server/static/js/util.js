@@ -19,6 +19,16 @@ export function iconUrl(path) {
   return `/icons?path=${encodeURIComponent(path)}${REDUCED_MOTION ? '&still=1' : ''}`;
 }
 
+// Icons drawn past the item box (a cosmic halo) are bigger images with the
+// box in their middle, and the server marks their paths with how much
+// bigger: <prefix>~bleed<n>/item/... (gcm/icons.py). Given the class
+// .icon-bleed, such an image is scaled up around its centre, so the item
+// fills the usual space and the halo spills over what's around it. Every
+// bundle so far uses n = 12, which is all the CSS knows.
+export function iconClass(base, path) {
+  return /^[^/]*~bleed12\//.test(path || '') ? `${base} icon-bleed` : base;
+}
+
 export function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
