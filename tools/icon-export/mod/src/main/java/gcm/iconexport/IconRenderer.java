@@ -3,8 +3,14 @@ package gcm.iconexport;
 import java.awt.image.BufferedImage;
 import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
+import java.lang.reflect.Modifier;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityClientPlayerMP;
@@ -19,6 +25,8 @@ import net.minecraft.client.renderer.tileentity.TileEntityRendererDispatcher;
 import net.minecraft.client.shader.Framebuffer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.IIcon;
+import net.minecraftforge.client.IItemRenderer;
+import net.minecraftforge.client.MinecraftForgeClient;
 import net.minecraftforge.fluids.FluidStack;
 
 import org.lwjgl.BufferUtils;
@@ -130,6 +138,8 @@ final class IconRenderer {
         // need more than that still fail; nothing else sees the stand-in.
         Minecraft mc = Minecraft.getMinecraft();
         neiRenderErrors.removeAll(Collections.singletonList(stack));
+        // The cosmic shader steps its texture animation by this; AnimationClock sets the rest.
+        standInPlayer.ticksExisted = ExportClock.tick();
         mc.thePlayer = standInPlayer;
         try {
             return renderItemOnce(stack);
@@ -141,6 +151,7 @@ final class IconRenderer {
     private BufferedImage renderItemOnce(ItemStack stack) {
         resetState();
         clear();
+        reseedRenderer(stack);
         try {
             GuiContainerManager.drawItem(0, 0, stack);
         } finally {
@@ -297,6 +308,46 @@ final class IconRenderer {
             IconExportMod.LOG.warn("Can't make a stand-in player; items that need one won't render.", t);
             return null;
         }
+    }
+
+    /** Random fields of each item renderer class (and its superclasses), found once. */
+    private static final Map<Class<?>, List<Field>> RANDOM_FIELDS = new HashMap<>();
+
+    /**
+     * Item renderers that jitter with {@code java.util.Random} on every draw (the halos of Avaritia
+     * and Universal Singularities, GT's Infinity and glitch effects) come out different every time,
+     * so the export couldn't tell them from each other or capture their animated textures. Their
+     * Random fields get the same seed before every render, which holds the jitter still.
+     */
+    private static void reseedRenderer(ItemStack stack) {
+        IItemRenderer renderer = MinecraftForgeClient.getItemRenderer(stack, IItemRenderer.ItemRenderType.INVENTORY);
+        if (renderer == null) {
+            return;
+        }
+        List<Field> fields = RANDOM_FIELDS.computeIfAbsent(renderer.getClass(), IconRenderer::randomFields);
+        for (Field field : fields) {
+            try {
+                Object random = field.get(Modifier.isStatic(field.getModifiers()) ? null : renderer);
+                if (random != null) {
+                    ((Random) random).setSeed(0x6763_6D00L);
+                }
+            } catch (Throwable ignored) {}
+        }
+    }
+
+    private static List<Field> randomFields(Class<?> type) {
+        List<Field> fields = new ArrayList<>();
+        for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
+            for (Field field : c.getDeclaredFields()) {
+                if (Random.class.isAssignableFrom(field.getType())) {
+                    try {
+                        field.setAccessible(true);
+                        fields.add(field);
+                    } catch (Throwable ignored) {}
+                }
+            }
+        }
+        return fields;
     }
 
     /** NEI's private record of stacks whose rendering threw; null if this NEI version lacks it. */
