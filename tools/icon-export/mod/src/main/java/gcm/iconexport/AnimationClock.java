@@ -2,12 +2,17 @@ package gcm.iconexport;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.OpenGlHelper;
 import net.minecraft.client.renderer.texture.ITextureObject;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.client.renderer.texture.TextureClock;
+import net.minecraft.client.renderer.texture.TextureCompass;
 import net.minecraft.client.renderer.texture.TextureMap;
 import net.minecraft.client.renderer.texture.TextureUtil;
 import net.minecraft.client.resources.data.AnimationMetadataSection;
@@ -32,9 +37,10 @@ import cpw.mods.fml.relauncher.ReflectionHelper;
  * transcendent metal and colour-cycling materials. It's set to the same tick, so those are captured
  * as animations too instead of coming out at whatever angle or colour the menu had reached.
  *
- * <p>Only sprites of the vanilla class are handled. Subclasses (the compass and clock, which spin
- * at random without a world, and a few mods' own) animate however they like and are left alone;
- * {@link ExportDriver} notices when those make an icon change and keeps it still.
+ * <p>Sprite subclasses animate their own way (Botania's InterpolatedIcon blends between frames),
+ * so for those the sprite is set one tick short and its own {@code updateAnimation()} takes the
+ * last step. The compass and clock are left alone: without a world they spin at random, and
+ * {@link ExportDriver} notices that and keeps their icons still.
  */
 final class AnimationClock {
 
@@ -47,20 +53,19 @@ final class AnimationClock {
         final List<int[][]> frames;
         final AnimationMetadataSection meta;
         final int[] frameTimes;
-        final int cycle;
+        /** A subclass: stepped onto each tick by its own updateAnimation(). */
+        final boolean ownStep;
 
         Anim(TextureAtlasSprite sprite, List<int[][]> frames, AnimationMetadataSection meta) {
+            this.ownStep = sprite.getClass() != TextureAtlasSprite.class;
             this.sprite = sprite;
             this.frames = frames;
             this.meta = meta;
             int count = meta.getFrameCount() == 0 ? frames.size() : meta.getFrameCount();
             frameTimes = new int[count];
-            int total = 0;
             for (int i = 0; i < count; i++) {
                 frameTimes[i] = Math.max(1, meta.getFrameTimeSingle(i));
-                total += frameTimes[i];
             }
-            cycle = total;
         }
     }
 
@@ -70,6 +75,12 @@ final class AnimationClock {
     private Object gtClient;
     private Field gtAnimationTick;
     private Field gtRenderTickTime;
+    /** GTNHLib's cosmic shader texture atlas and its per-sprite animation state; null without it. */
+    private Object cosmicAtlas;
+    private Field cosmicLastUpdate;
+    private final List<Object> cosmicSprites = new ArrayList<>();
+    private final List<int[]> cosmicFrameTimes = new ArrayList<>();
+    private Field cosmicTickCounter, cosmicFrameCounter, cosmicIndex;
     private final Field frameCounter;
     private final Field tickCounter;
     private int spriteCount;
@@ -98,7 +109,7 @@ final class AnimationClock {
                     List<TextureAtlasSprite> sprites = ReflectionHelper
                             .getPrivateValue(TextureMap.class, (TextureMap) texture, "listAnimatedSprites", "field_94258_i");
                     for (TextureAtlasSprite sprite : sprites) {
-                        if (sprite.getClass() != TextureAtlasSprite.class) {
+                        if (sprite instanceof TextureCompass || sprite instanceof TextureClock) {
                             continue;
                         }
                         List<int[][]> frames = (List<int[][]>) framesField.get(sprite);
@@ -112,11 +123,21 @@ final class AnimationClock {
                 clock.spriteCount += anims.size();
             }
             clock.findGregTechClock();
+            clock.findCosmicClock();
+            Map<String, Integer> subclasses = new TreeMap<>();
+            for (List<Anim> anims : clock.atlases) {
+                for (Anim anim : anims) {
+                    if (anim.ownStep) {
+                        subclasses.merge(anim.sprite.getClass().getName(), 1, Integer::sum);
+                    }
+                }
+            }
             IconExportMod.LOG.info(
-                    "{} animated textures ({} blocks, {} items).",
+                    "{} animated textures ({} blocks, {} items; stepped by their own class: {}).",
                     clock.spriteCount,
                     clock.atlases.get(0).size(),
-                    clock.atlases.get(1).size());
+                    clock.atlases.get(1).size(),
+                    subclasses);
             return clock;
         } catch (Throwable t) {
             IconExportMod.LOG.warn("Can't control texture animations; animated icons will be still frames.", t);
@@ -145,6 +166,136 @@ final class AnimationClock {
         }
     }
 
+    /**
+     * GTNHLib's cosmic shader animates its own texture atlas, one step whenever the player's
+     * {@code ticksExisted} changes (the stand-in player's follows ExportClock). Its per-sprite
+     * state ({@code SpriteAnimationMetadata}) is set to the tick before the one wanted, and the
+     * atlas made to update once more, which steps it onto that tick.
+     */
+    private void findCosmicClock() {
+        try {
+            ClassLoader loader = AnimationClock.class.getClassLoader();
+            Class<?> shader = Class.forName(
+                    "com.gtnewhorizon.gtnhlib.client.renderer.postprocessing.shaders.UniversiumShader",
+                    false,
+                    loader);
+            Object instance = shader.getMethod("getInstance").invoke(null);
+            Field atlasField = shader.getDeclaredField("textureAtlas");
+            atlasField.setAccessible(true);
+            Object atlas = atlasField.get(instance);
+            Field metadataField = atlas.getClass().getDeclaredField("animationMetadata");
+            Field lastUpdate = atlas.getClass().getDeclaredField("lastTextureUpdate");
+            metadataField.setAccessible(true);
+            lastUpdate.setAccessible(true);
+            Class<?> sprite = Class.forName(
+                    "com.gtnewhorizon.gtnhlib.client.renderer.textures.SpriteAnimationMetadata",
+                    false,
+                    loader);
+            cosmicTickCounter = sprite.getField("tickCounter");
+            cosmicFrameCounter = sprite.getField("frameCounter");
+            cosmicIndex = sprite.getField("index");
+            Field meta = sprite.getField("metadata");
+            for (Object animation : (Object[]) metadataField.get(atlas)) {
+                AnimationMetadataSection section = (AnimationMetadataSection) meta.get(animation);
+                int[] times = new int[Math.max(1, section.getFrameCount())];
+                for (int i = 0; i < times.length; i++) {
+                    times[i] = Math.max(1, section.getFrameTimeSingle(i));
+                }
+                cosmicSprites.add(animation);
+                cosmicFrameTimes.add(times);
+            }
+            cosmicAtlas = atlas;
+            cosmicLastUpdate = lastUpdate;
+            IconExportMod.LOG.info("Controlling the cosmic shader's {} animated textures too.", cosmicSprites.size());
+        } catch (Throwable t) {
+            IconExportMod.LOG.info("No cosmic shader animation to control ({}).", t.toString());
+        }
+    }
+
+    private void setCosmicTick(int tick) {
+        if (cosmicAtlas == null) {
+            return;
+        }
+        try {
+            for (int i = 0; i < cosmicSprites.size(); i++) {
+                int[] times = cosmicFrameTimes.get(i);
+                Object animation = cosmicSprites.get(i);
+                int[] at = frameAt(times, tick - 1);
+                AnimationMetadataSection section = (AnimationMetadataSection) animation.getClass()
+                        .getField("metadata")
+                        .get(animation);
+                cosmicFrameCounter.setInt(animation, at[0]);
+                cosmicTickCounter.setInt(animation, at[1]);
+                cosmicIndex.setInt(animation, section.getFrameIndex(at[0]));
+            }
+            cosmicLastUpdate.setInt(cosmicAtlas, Integer.MIN_VALUE);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /** {frame, ticks into it} for an animation with these frame times, tick ticks in (any sign). */
+    private static int[] frameAt(int[] frameTimes, int tick) {
+        int cycle = 0;
+        for (int time : frameTimes) {
+            cycle += time;
+        }
+        int remaining = ((tick % cycle) + cycle) % cycle;
+        int frame = 0;
+        while (remaining >= frameTimes[frame]) {
+            remaining -= frameTimes[frame];
+            frame++;
+        }
+        return new int[] { frame, remaining };
+    }
+
+    /**
+     * The clocks that aren't texture animations: GT's, Botania's, the cosmic shader's and the
+     * system clock's.
+     */
+    private void setOtherClocks(int tick) {
+        ExportClock.set(tick);
+        setGregTechTick(tick);
+        setBotaniaTick(tick);
+        setCosmicTick(tick);
+    }
+
+    private Field botaniaTicks, botaniaPartial, botaniaTotal;
+    private boolean botaniaLooked;
+
+    /**
+     * Botania keeps a client tick counter of its own ({@code ClientTickHandler.ticksInGame}, plus
+     * the partial tick, summed in {@code total}), which its rainbow blocks (bifrost, prismarine,
+     * shimmerrock) colour themselves by.
+     */
+    private void setBotaniaTick(int tick) {
+        if (!botaniaLooked) {
+            botaniaLooked = true;
+            try {
+                Class<?> handler = Class.forName(
+                        "vazkii.botania.client.core.handler.ClientTickHandler",
+                        false,
+                        AnimationClock.class.getClassLoader());
+                botaniaTicks = handler.getField("ticksInGame");
+                botaniaPartial = handler.getField("partialTicks");
+                botaniaTotal = handler.getField("total");
+                IconExportMod.LOG.info("Controlling Botania's animation ticks too.");
+            } catch (Throwable t) {
+                IconExportMod.LOG.info("No Botania animation clock ({}).", t.toString());
+            }
+        }
+        if (botaniaTicks == null) {
+            return;
+        }
+        try {
+            botaniaTicks.setInt(null, tick);
+            botaniaPartial.setFloat(null, 0f);
+            botaniaTotal.setFloat(null, tick);
+        } catch (IllegalAccessException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     private void setGregTechTick(long tick) {
         if (gtClient == null) {
             return;
@@ -163,16 +314,8 @@ final class AnimationClock {
 
     /** Every animated texture as it is {@code tick} ticks into its animation. */
     void seek(int tick) {
-        setGregTechTick(tick);
-        apply(anim -> {
-            int remaining = tick % anim.cycle;
-            int frame = 0;
-            while (remaining >= anim.frameTimes[frame]) {
-                remaining -= anim.frameTimes[frame];
-                frame++;
-            }
-            return new int[] { frame, remaining };
-        });
+        setOtherClocks(tick);
+        apply(anim -> frameAt(anim.frameTimes, tick));
     }
 
     /**
@@ -181,8 +324,9 @@ final class AnimationClock {
      * its {@code seek(0)} render, which is how the driver finds animated icons.
      */
     void seekChanged() {
-        // 10 ticks turns a spinning ingot 35 degrees; any GT colour cycle moves on visibly too.
-        setGregTechTick(10);
+        // 10 ticks turns a spinning ingot 35 degrees; GT's colour cycles and the cosmic shader
+        // move on visibly too.
+        setOtherClocks(10);
         apply(anim -> {
             int first = anim.meta.getFrameIndex(0);
             for (int frame = 1; frame < anim.frameTimes.length; frame++) {
@@ -194,6 +338,41 @@ final class AnimationClock {
         });
     }
 
+    /**
+     * A subclass sprite onto {frame, ticks}: its counters one tick short of that (the frame's
+     * image uploaded, as vanilla keeps it), then its own updateAnimation() for the last tick.
+     * False if its updateAnimation() threw; it's then left to itself.
+     */
+    private boolean stepOnto(Anim anim, int[] want) throws IllegalAccessException {
+        int frame = want[0];
+        int ticks = want[1] - 1;
+        if (ticks < 0) {
+            frame = (frame + anim.frameTimes.length - 1) % anim.frameTimes.length;
+            ticks = anim.frameTimes[frame] - 1;
+        }
+        int index = anim.meta.getFrameIndex(frame);
+        if (index >= 0 && index < anim.frames.size()) {
+            TextureAtlasSprite s = anim.sprite;
+            TextureUtil.uploadTextureMipmap(
+                    anim.frames.get(index),
+                    s.getIconWidth(),
+                    s.getIconHeight(),
+                    s.getOriginX(),
+                    s.getOriginY(),
+                    false,
+                    false);
+        }
+        frameCounter.setInt(anim.sprite, frame);
+        tickCounter.setInt(anim.sprite, ticks);
+        try {
+            anim.sprite.updateAnimation();
+            return true;
+        } catch (Throwable t) {
+            IconExportMod.LOG.warn("{} can't be stepped; its animation stays uncontrolled.", anim.sprite.getIconName(), t);
+            return false;
+        }
+    }
+
     private interface Target {
 
         /** {frame counter, tick counter} for the sprite. */
@@ -201,10 +380,8 @@ final class AnimationClock {
     }
 
     /**
-     * Binds each atlas with GL directly and puts the previous binding back afterwards. Going
-     * through TextureManager.bindTexture isn't safe here: something in the pack caches the bound
-     * texture, and a bind it thinks is redundant gets skipped, which sent the block atlas's
-     * frames (lava, every fluid, animated blocks) to whatever texture happened to be bound.
+     * Binds each atlas with GL directly and puts the previous binding back afterwards, so the
+     * renderers that run next find the texture state as they left it.
      */
     private void apply(Target target) {
         OpenGlHelper.setActiveTexture(OpenGlHelper.defaultTexUnit);
@@ -216,8 +393,15 @@ final class AnimationClock {
                     continue;
                 }
                 GL11.glBindTexture(GL11.GL_TEXTURE_2D, maps.get(i).getGlTextureId());
-                for (Anim anim : anims) {
+                for (Iterator<Anim> it = anims.iterator(); it.hasNext();) {
+                    Anim anim = it.next();
                     int[] want = target.of(anim);
+                    if (anim.ownStep) {
+                        if (!stepOnto(anim, want)) {
+                            it.remove();
+                        }
+                        continue;
+                    }
                     int current = frameCounter.getInt(anim.sprite);
                     // updateAnimation() keeps the uploaded image in step with the frame counter,
                     // so only upload when the image has to change.

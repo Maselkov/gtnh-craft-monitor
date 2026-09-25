@@ -760,10 +760,12 @@ separately from app releases.
 (GT materials and fluids above all, lava, Thaumcraft, Botania...). The
 game ticks them in real time even at the main menu, so before this every
 export caught each one at a random frame and `images.zip` churned between
-identical runs. `AnimationClock` sets every animated sprite (vanilla
-`TextureAtlasSprite` class only: the compass, clock and a few mods'
-subclasses are left alone) to a chosen tick, uploading the frame and
-setting its counters as `updateAnimation()` would. It also sets GT's own
+identical runs. `AnimationClock` sets every animated sprite to a chosen
+tick, uploading the frame and setting its counters as `updateAnimation()`
+would. Sprite subclasses (Botania's `InterpolatedIcon`, which blends
+between frames, ExtraUtils' lava) are set one tick short, frame uploaded,
+and stepped onto the tick by their own `updateAnimation()`; the compass
+and clock are left alone. It also sets GT's own
 client animation counter (`GTClient.mAnimationTick`, with `renderTickTime`
 zeroed), read through `getAnimationRenderTicks()` by GT's spinning
 transcendent metal and its colour-cycling materials; without that they
@@ -785,13 +787,38 @@ since the game ticks in between. Stages:
   VERIFYING; captured tick by tick (each tick is ~1.5 s of real time in a
   full run) they'd play back far too fast, so these stay still too.
 
-What stays nondeterministic: icons drawn from the system clock, mainly the
-enchantment glint (potions, golden apples, Forestry queens, via
-`Minecraft.getSystemTime()`) and GTNHLib's cosmic shader
-(`System.currentTimeMillis()`), plus renderers that use `Random` (halos,
-GT's glitch effect). ~1.4k of ~117k still icons differed between otherwise
-identical runs before GT's counter was controlled. Fixing the clock ones
-would mean redirecting those calls with a class transformer (a coremod).
+**The system clock.** Some renderers animate by the wall clock, which the
+mod can't set, so the jar is also a coremod (`core.ExportCorePlugin`,
+registered only with `-Dgcm.iconexport=true`). Its `ClockTransformer`
+redirects clock calls (`System.currentTimeMillis()`/`nanoTime()`,
+`Minecraft.getSystemTime()`, LWJGL `Sys.getTime()`) to `ExportClock`, which
+passes through to the real clock until the export sets a tick, then gives
+tick x 50 ms. Classes touched:
+- GTNHLib's `UniversiumShader`: the cosmic starfield on Eternal
+  Singularity, Avaritia's infinity gear and GT's Infinity material. The
+  shader's own texture atlas steps whenever the player's `ticksExisted`
+  changes, so `AnimationClock` also sets its `SpriteAnimationMetadata`
+  state and the stand-in player's tick count follows `ExportClock`.
+- mod item renderers: classes that implement `IItemRenderer` themselves,
+  and GT's `gregtech.common.render.items` (which mostly inherit it). That
+  spins Galacticraft/GalaxySpace rockets and GT's wireframe tesseract,
+  steadies GT's glitch effect, and more (the transformer logs each class
+  and how many calls it redirected; ~30 in GTNH 2.9).
+- vanilla `RenderItem`: the enchantment glint is frozen at one position
+  rather than animated; glinting items are many and a glint changes the
+  whole icon every frame, which would add hundreds of MB.
+Nothing else in Minecraft is touched, so the game loop's own timing is
+unaffected. A class that moves or renames its clock call just keeps the
+real clock.
+
+Other clocks: Botania's `ClientTickHandler.ticksInGame`/`partialTicks`/
+`total` are set like GT's counter. And renderers that jitter with
+`java.util.Random` on every draw (Avaritia and Universal Singularities
+halos, GT's Infinity and glitch effects) get their `Random` fields
+(instance and static, found by type on the item's `IItemRenderer` class and
+its superclasses) re-seeded to a constant before every render
+(`IconRenderer.reseedRenderer`), which holds the jitter still.
+
 Only icons the lookup references go through these stages. The mod renders
 every stack (~215k), but NBT variants that share a key never get shown,
 and `export.py` (`finish_images`) drops them from `images.zip` too, which
