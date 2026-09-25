@@ -341,11 +341,17 @@ end
 
 -- The catalog follows the GTNH version picked on the server's Game data
 -- page. scan/start reports that version (catalog_version); when it isn't
--- the one downloaded last, the server's catalog replaces the local file.
+-- the one downloaded last, the server's catalog is downloaded again.
 -- A failed download keeps the current catalog: scanning with a slightly
 -- stale list beats not scanning. Servers without game data send no
 -- version, and the catalog gcm installed stays in use.
-local CATALOG_VERSION_PATH = CONFIG.CATALOG_PATH .. ".version"
+--
+-- The server's copy has its own file next to CONFIG.CATALOG_PATH: every
+-- gcm update reinstalls the bundled catalog there, and if the download
+-- replaced that file, an update would quietly swap the old list back in
+-- while the version file still claimed the server's.
+local SERVER_CATALOG_PATH = (CONFIG.CATALOG_PATH:gsub("%.txt$", "")) .. ".server.txt"
+local CATALOG_VERSION_PATH = SERVER_CATALOG_PATH .. ".version"
 
 local function read_catalog_version()
   local f = io.open(CATALOG_VERSION_PATH, "r")
@@ -362,7 +368,7 @@ local function sync_catalog(version)
     return
   end
   set_phase("Downloading the item catalog for GTNH " .. version .. "...")
-  local tmp = CONFIG.CATALOG_PATH .. ".tmp"
+  local tmp = SERVER_CATALOG_PATH .. ".tmp"
   local ok, err = http.download_to_file(CONFIG.URL .. "/catalog", tmp, {
     ["X-API-Key"] = CONFIG.API_KEY,
   }, CONFIG.HTTP_TIMEOUT_SECONDS)
@@ -371,8 +377,8 @@ local function sync_catalog(version)
     filesystem.remove(tmp)
     return
   end
-  filesystem.remove(CONFIG.CATALOG_PATH)
-  if not filesystem.rename(tmp, CONFIG.CATALOG_PATH) then
+  filesystem.remove(SERVER_CATALOG_PATH)
+  if not filesystem.rename(tmp, SERVER_CATALOG_PATH) then
     debug_log("couldn't move the new catalog into place")
     return
   end
@@ -408,10 +414,12 @@ local function run_scan(me)
   sync_catalog(decoded1.catalog_version)
 
   set_phase("Opening item catalog...")
-  local f = io.open(CONFIG.CATALOG_PATH, "r")
+  local catalogPath = filesystem.exists(SERVER_CATALOG_PATH) and SERVER_CATALOG_PATH
+    or CONFIG.CATALOG_PATH
+  local f = io.open(catalogPath, "r")
   if not f then
     debug_log("couldn't open catalog")
-    return false, "couldn't open " .. CONFIG.CATALOG_PATH
+    return false, "couldn't open " .. catalogPath
   end
 
   local totalItems = 0

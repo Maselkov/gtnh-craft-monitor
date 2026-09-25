@@ -837,10 +837,15 @@ stored before a switch (`craft_events.item_icon`) still resolve. The
 version is also part of `/api/network`'s ETag.
 
 The OC scanner gets the catalog from the server: `scan/start` returns
-`catalog_version`, and when it differs from `/home/item_catalog.txt.version`
-`network_browser.lua` streams `/api/network/catalog` to disk
-(`http.download_to_file`, which checks the HTTP status - OC's request
-iterator doesn't) and swaps it in.
+`catalog_version`, and when it differs from
+`/home/item_catalog.server.txt.version` `network_browser.lua` streams
+`/api/network/catalog` to disk (`http.download_to_file`, which checks the
+HTTP status - OC's request iterator doesn't) as
+`/home/item_catalog.server.txt`, which scans then prefer over the
+`gcm`-installed `item_catalog.txt`. It's a separate file because every
+`gcm` update reinstalls the bundled catalog: overwriting that one would let
+an update swap the old list back in while the version file still claimed
+the server's.
 
 Image paths inside the zip keep NESQL's scheme
 (`item/<mod>/<name>~<damage>[~<nbt>].png`, `fluid/<mod>/<name>.png`), so

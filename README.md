@@ -468,9 +468,11 @@ values merged): everything in NEI's item list, including items NEI hides,
 plus anything in the ore dictionary or a recipe. `gcm` installs a default
 one; once a GTNH version is picked on the server's [Game data](#item-icons)
 page, the scanner downloads that version's catalog at the start of its next
-scan and keeps it until the version changes again (it notes the version in
-`/home/item_catalog.txt.version`). If the download fails it keeps scanning
-with the catalog it has.
+scan into `/home/item_catalog.server.txt` and uses that from then on,
+until the version changes again (the version is noted in
+`/home/item_catalog.server.txt.version`). The file `gcm` installs stays as
+the fallback, so a `gcm` update doesn't undo it. If the download fails it
+keeps scanning with the catalog it has.
 
 ## Using the web page
 

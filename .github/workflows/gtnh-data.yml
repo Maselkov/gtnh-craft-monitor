@@ -139,10 +139,15 @@ jobs:
             -v "$HOME/.cache/gcm-icon-export:/cache" \
             gcm-icon-export
 
+      # The runner's system Python refuses pip installs (PEP 668).
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
       - name: Validate
         run: |
-          pip install --quiet pillow
-          python3 tools/icon-export/ci/validate.py out
+          python -m pip install --quiet pillow
+          python tools/icon-export/ci/validate.py out
 
       - name: Publish
         env:
