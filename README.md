@@ -215,7 +215,9 @@ the version and the icon textures, **Use these icons**. The server downloads
 that version's game data (about 300 MB: the icons, the icon lookup and the
 item catalog), switches to it without a restart, and the in-game scanner
 fetches the new item catalog on its next scan. Versions and textures
-downloaded before can be switched back to instantly.
+downloaded before can be switched back to instantly. When a version is
+rebuilt (say, with better icons), the page marks it **update available**;
+picking it again downloads the new build.
 
 Icons come in two texture sets: the pack's own (**Default**), and
 **Faithful 32x**, rendered with the

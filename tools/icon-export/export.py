@@ -429,6 +429,52 @@ def animation_period(ticks):
     return ticks
 
 
+# An animated icon bigger than this plays at half the frame rate (again
+# if need be) until it fits. Big 3D renders that change completely every
+# tick (Tectech's Forge of the Gods) came out at 1.5 MB otherwise.
+APNG_MAX_BYTES = 400_000
+APNG_MIN_FRAMES = 4
+
+# Mean per-channel difference (0-255) under which a frame counts as back
+# at frame 0, and how far the animation must have moved away before that.
+NEAR_LOOP_MAX_DIFF = 1.0
+NEAR_LOOP_MIN_TRAVEL = 8.0
+
+
+def frame_difference(a, b):
+    from PIL import ImageChops, ImageStat
+    return sum(ImageStat.Stat(ImageChops.difference(a, b)).mean) / 4
+
+
+def near_loop(ticks, image):
+    """For captures that never repeat exactly (GT's transcendent metal
+    turns 3.5 degrees a tick, so it's only exactly back after 720 ticks,
+    but within half a degree after 103): the shortest prefix that ends
+    where a frame is nearly frame 0 again, after moving well away from it.
+    image(frame) gives a frame's RGBA image. None if there's no such
+    point."""
+    first = image(ticks[0])
+    cache = {}
+
+    def difference(frame):
+        if frame not in cache:
+            cache[frame] = frame_difference(first, image(frame))
+        return cache[frame]
+
+    travelled = 0.0
+    for tick in range(1, len(ticks)):
+        diff = difference(ticks[tick])
+        if travelled >= NEAR_LOOP_MIN_TRAVEL and diff <= NEAR_LOOP_MAX_DIFF:
+            # Close enough; carry on while it gets closer still, so the
+            # seam is as small as the capture allows.
+            while tick + 1 < len(ticks) and difference(ticks[tick + 1]) < diff:
+                tick += 1
+                diff = difference(ticks[tick])
+            return ticks[:tick]
+        travelled = max(travelled, diff)
+    return None
+
+
 def build_apng(frames, runs, tick_millis):
     """APNG bytes for [(frame image, ticks)] runs; frames maps frame -> PNG
     bytes. Pillow stores each frame after the first as just what changed."""
@@ -467,6 +513,39 @@ def finish_images(out_dir):
     return len(animated)
 
 
+def merge_runs(ticks, step=1):
+    """[[frame, ticks]] runs, showing every step-th tick's frame for step
+    ticks, so the animation keeps its speed at a lower frame rate."""
+    runs = []
+    for i in range(0, len(ticks), step):
+        length = min(step, len(ticks) - i)
+        if runs and runs[-1][0] == ticks[i]:
+            runs[-1][1] += length
+        else:
+            runs.append([ticks[i], length])
+    return runs
+
+
+def build_within_budget(frames_zip, path, loop, tick_millis):
+    """The loop as APNG bytes, at a lower frame rate if it's too big; None
+    if it doesn't animate, or doesn't fit even with few frames."""
+    step = 1
+    while True:
+        runs = merge_runs(loop, step)
+        if len(runs) < 2:
+            return None
+        frames = {frame: frames_zip.read(f"{path}/{frame}.png")
+                  for frame, _ in runs}
+        apng = build_apng(frames, runs, tick_millis)
+        if len(apng) <= APNG_MAX_BYTES:
+            return apng
+        if len(runs) <= APNG_MIN_FRAMES:
+            log(f"{path}: {len(apng)} bytes animated even at "
+                f"{len(runs)} frames; keeping it still.")
+            return None
+        step *= 2
+
+
 def build_animations(out_dir):
     """APNGs for the icons the mod captured animations for (animations.zip
     + animations.json, which are removed): {path: APNG bytes}."""
@@ -474,6 +553,7 @@ def build_animations(out_dir):
     anim_json = out_dir / "animations.json"
     if not (anim_zip.exists() and anim_json.exists()):
         return {}
+    from PIL import Image
     spec = json.loads(anim_json.read_text())
     tick_millis = spec["tickMillis"]
     animated = {}
@@ -481,17 +561,19 @@ def build_animations(out_dir):
         for path, runs in spec["icons"].items():
             ticks = [frame for frame, count in runs for _ in range(count)]
             loop = animation_period(ticks)
-            merged = []
-            for frame in loop:
-                if merged and merged[-1][0] == frame:
-                    merged[-1][1] += 1
-                else:
-                    merged.append([frame, 1])
-            if len(merged) < 2:
-                continue
-            frames = {frame: frames_zip.read(f"{path}/{frame}.png")
-                      for frame, _ in merged}
-            animated[path] = build_apng(frames, merged, tick_millis)
+            if len(loop) == len(ticks):
+                images = {}
+
+                def image(frame, path=path):
+                    if frame not in images:
+                        images[frame] = Image.open(BytesIO(frames_zip.read(
+                            f"{path}/{frame}.png"))).convert("RGBA")
+                    return images[frame]
+
+                loop = near_loop(ticks, image) or ticks
+            apng = build_within_budget(frames_zip, path, loop, tick_millis)
+            if apng:
+                animated[path] = apng
     anim_zip.unlink()
     anim_json.unlink()
     return animated

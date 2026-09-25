@@ -8,7 +8,8 @@ import { delegateActions, escapeHtml, onBackdropClick } from './util.js';
 let pollTimer = null;
 // The last listing: texture set details, and per version what can be
 // picked ({version, published_at, base_size, sizes: {textures: bytes},
-// installed: Set of textures on disk}).
+// installed: Set of textures on disk, update_available: a newer build of
+// the version was published since it was downloaded}).
 let textureSets = [];
 let versions = [];
 let current = { version: null, textures: null };
@@ -24,6 +25,11 @@ function formatMb(bytes) {
 }
 
 function versionLabel(entry) {
+  if (entry.update_available) {
+    return entry.version === current.version
+      ? `${entry.version} (in use, update available)`
+      : `${entry.version} (update available)`;
+  }
   if (entry.version === current.version) return `${entry.version} (in use)`;
   if (entry.installed.size) return `${entry.version} (downloaded)`;
   return entry.published_at
@@ -32,11 +38,17 @@ function versionLabel(entry) {
 }
 
 function texturesLabel(set, entry) {
-  if (entry.version === current.version && set.id === current.textures) return `${set.name} (in use)`;
-  if (entry.installed.has(set.id)) return `${set.name} (downloaded)`;
+  const inUse = entry.version === current.version && set.id === current.textures;
+  // An update downloads the whole bundle again, whatever's on disk.
+  if (!entry.update_available) {
+    if (inUse) return `${set.name} (in use)`;
+    if (entry.installed.has(set.id)) return `${set.name} (downloaded)`;
+  }
   // The lookup and catalog come along only with the version's first set.
-  const size = entry.sizes[set.id] + (entry.installed.size ? 0 : entry.base_size || 0);
-  return size ? `${set.name} - ${formatMb(size)}` : set.name;
+  const withBase = entry.update_available || !entry.installed.size;
+  const size = entry.sizes[set.id] + (withBase ? entry.base_size || 0 : 0);
+  const label = size ? `${set.name} - ${formatMb(size)}` : set.name;
+  return inUse ? `${label} (in use, update available)` : label;
 }
 
 function renderCredit() {
@@ -95,8 +107,11 @@ async function loadGameData(refresh) {
   textureSets = data.textures;
   current = { version: data.selected, textures: data.selected_textures };
   const inUse = textureSets.find((t) => t.id === data.selected_textures);
+  const selectedRelease = data.available.find((r) => r.version === data.selected);
   currentLine.textContent = data.selected
     ? `In use: GTNH ${data.selected}, ${inUse ? inUse.name : data.selected_textures} textures`
+      + (selectedRelease && selectedRelease.update_available
+        ? '. A newer build has been published: pick it again to update.' : '')
     : 'In use: the icons that came with the server. Pick your GTNH version below.';
 
   // Bundles built locally (tools/icon-export/run.sh --install) aren't

@@ -22,7 +22,10 @@ def admin_gamedata_get():
             "textures": gamedata.texture_sets(),
             "installed": gamedata.installed(),
             "available": [
-                {k: r[k] for k in ("version", "published_at", "base_size", "textures")}
+                {
+                    **{k: r[k] for k in ("version", "published_at", "base_size", "textures")},
+                    "update_available": gamedata.update_available(r),
+                }
                 for r in releases
             ],
             "available_error": error,

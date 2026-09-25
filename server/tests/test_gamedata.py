@@ -100,6 +100,8 @@ class FakeGitHub:
                         "name": name,
                         "size": len(data),
                         "browser_download_url": f"{self.url}/{version}/{name}",
+                        # A new id for every upload, as GitHub does.
+                        "id": int(hashlib.sha256(data).hexdigest()[:8], 16),
                     }
                     for name, data in files.items()
                 ],
@@ -122,6 +124,12 @@ def github(monkeypatch):
 @pytest.fixture()
 def admin(client):
     return login_as(client, "admin-user", role="admin")
+
+
+def prefix(version, textures=None):
+    """The icon path prefix: version, texture set and build."""
+    parts = [version] + ([textures] if textures else []) + [gamedata.build_id(version)]
+    return "~".join(parts)
 
 
 def wait_for_install():
@@ -177,15 +185,15 @@ def test_install_makes_the_bundle_live(admin, github, api_headers):
 
     assert gamedata.selected_version() == "2.9.0-beta-3"
     path = icons.resolve_icon("test", "thing", 0, "Thing")
-    assert path == "2.9.0-beta-3/item/test/thing~0.png"
+    assert path == f"{prefix('2.9.0-beta-3')}/item/test/thing~0.png"
     assert admin.get(f"/icons?path={path}").data == PNG
-    assert icons.resolve_icon(None, "goo", None, None) == "2.9.0-beta-3/fluid/test/goo.png"
+    assert icons.resolve_icon(None, "goo", None, None) == f"{prefix('2.9.0-beta-3')}/fluid/test/goo.png"
 
     catalog = admin.get("/api/network/catalog", headers=api_headers)
     assert catalog.data == b"test:thing\n"
-    assert catalog.headers["X-Catalog-Version"] == "2.9.0-beta-3"
+    assert catalog.headers["X-Catalog-Version"] == prefix("2.9.0-beta-3")
     start = admin.post("/api/network/scan/start", headers=api_headers, json={})
-    assert start.get_json()["catalog_version"] == "2.9.0-beta-3"
+    assert start.get_json()["catalog_version"] == prefix("2.9.0-beta-3")
 
 
 def test_checksum_mismatch_fails_and_keeps_the_old_data(admin, github):
@@ -214,7 +222,7 @@ def test_switching_back_to_an_installed_version_needs_no_download(admin, github)
 
     assert response.status_code == 202
     assert response.get_json()["selected"] == "2.9.0-beta-3"
-    assert icons.data_version() == "2.9.0-beta-3"
+    assert icons.data_version() == prefix("2.9.0-beta-3")
 
 
 def test_only_the_selected_and_previous_bundles_are_kept(admin, github):
@@ -243,7 +251,7 @@ def test_install_refreshes_icons_on_the_live_snapshot(admin, github):
     wait_for_install()
 
     response = admin.get("/api/network")
-    assert response.get_json()["items"][0]["icon"] == "2.9.0-beta-3/item/test/thing~0.png"
+    assert response.get_json()["items"][0]["icon"] == f"{prefix('2.9.0-beta-3')}/item/test/thing~0.png"
     assert response.headers["ETag"] != etag_before
 
 
@@ -295,7 +303,7 @@ def test_faithful_textures_are_served(admin, github):
     assert gamedata.selected() == ("2.9.0-beta-3", "faithful32")
     assert "images.zip" not in github.downloads
     path = icons.resolve_icon("test", "thing", 0, "Thing")
-    assert path == "2.9.0-beta-3~faithful32/item/test/thing~0.png"
+    assert path == f"{prefix('2.9.0-beta-3', 'faithful32')}/item/test/thing~0.png"
     assert admin.get(f"/icons?path={path}").data == FAITHFUL_PNG
 
 
@@ -315,7 +323,7 @@ def test_adding_textures_to_an_installed_version_fetches_only_their_zip(admin, g
         "/api/admin/gamedata/install", json={"version": "2.9.0-beta-3", "textures": "default"}
     )
     assert response.get_json()["selected_textures"] == "default"
-    assert icons.data_version() == "2.9.0-beta-3"
+    assert icons.data_version() == prefix("2.9.0-beta-3")
 
 
 def test_a_rebuilt_release_is_downloaded_again_in_full(admin, github):
@@ -409,3 +417,51 @@ def test_animated_icons_can_be_fetched_as_a_still_frame(admin, github, monkeypat
     # Plain PNGs come back untouched.
     goo = icons.resolve_icon(None, "goo", None, None)
     assert admin.get(f"/icons?path={goo}&still=1").data == PNG
+
+
+def test_a_rebuilt_release_is_offered_as_an_update_and_reinstalled(admin, github, api_headers):
+    github.bundles["2.9.0-beta-3"] = make_bundle("2.9.0-beta-3")
+    install(admin, "2.9.0-beta-3")
+    old_prefix = prefix("2.9.0-beta-3")
+    listing = admin.get("/api/admin/gamedata").get_json()
+    assert listing["available"][0]["update_available"] is False
+
+    # CI rebuilt the version: same name, new upload.
+    github.bundles["2.9.0-beta-3"] = make_bundle(
+        "2.9.0-beta-3", catalog="test:thing\ntest:new\n", generated_at="2026-09-26T00:00:00Z"
+    )
+    listing = admin.get("/api/admin/gamedata?refresh=1").get_json()
+    assert listing["available"][0]["update_available"] is True
+    github.downloads.clear()
+
+    # Picking it again downloads it again rather than switching to the old copy.
+    assert install(admin, "2.9.0-beta-3")["state"] == "done"
+
+    assert "images.zip" in github.downloads
+    listing = admin.get("/api/admin/gamedata").get_json()
+    assert listing["available"][0]["update_available"] is False
+    # New build, new icon URLs and catalog version, so browsers and the
+    # scanner fetch them again.
+    assert prefix("2.9.0-beta-3") != old_prefix
+    assert icons.resolve_icon("test", "thing", 0, None).startswith(prefix("2.9.0-beta-3") + "/")
+    start = admin.post("/api/network/scan/start", headers=api_headers, json={})
+    assert start.get_json()["catalog_version"] == prefix("2.9.0-beta-3")
+    assert admin.get("/api/network/catalog", headers=api_headers).data == b"test:thing\ntest:new\n"
+
+
+def test_locally_built_bundles_are_never_flagged_as_outdated(admin, github):
+    # run.sh --install writes a bundle without a release record.
+    bundle = make_bundle("2.9.0-beta-3")
+    target = os.path.join(config.GAMEDATA_DIR, "2.9.0-beta-3")
+    os.makedirs(target)
+    for name, data in bundle.items():
+        with open(os.path.join(target, name), "wb") as f:
+            f.write(data)
+    github.bundles["2.9.0-beta-3"] = make_bundle("2.9.0-beta-3", generated_at="2026-09-27T00:00:00Z")
+
+    listing = admin.get("/api/admin/gamedata").get_json()
+    assert listing["available"][0]["update_available"] is False
+    github.downloads.clear()
+    response = admin.post("/api/admin/gamedata/install", json={"version": "2.9.0-beta-3"})
+    assert response.get_json()["selected"] == "2.9.0-beta-3"
+    assert github.downloads == []

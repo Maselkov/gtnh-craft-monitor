@@ -763,8 +763,13 @@ export caught each one at a random frame and `images.zip` churned between
 identical runs. `AnimationClock` sets every animated sprite (vanilla
 `TextureAtlasSprite` class only: the compass, clock and a few mods'
 subclasses are left alone) to a chosen tick, uploading the frame and
-setting its counters as `updateAnimation()` would. The driver seeks before
-every batch, since the game ticks in between. Stages:
+setting its counters as `updateAnimation()` would. It also sets GT's own
+client animation counter (`GTClient.mAnimationTick`, with `renderTickTime`
+zeroed), read through `getAnimationRenderTicks()` by GT's spinning
+transcendent metal and its colour-cycling materials; without that they
+came out at whatever angle or colour the menu had reached, differed
+between runs, and never animated. The driver seeks before every batch,
+since the game ticks in between. Stages:
 - still pass at tick 0, so still icons are deterministic;
 - DETECTING: everything again with each sprite on its first different
   frame; icons whose pixels changed are candidates;
@@ -776,21 +781,30 @@ every batch, since the game ticks in between. Stages:
   the p90 texture cycle; longer ones are cut and loop).
 - RECHECKING: the captured icons at tick 0 again, minutes after the still
   pass. Renderers that follow the system clock rather than animation
-  ticks (GT's colour-cycling materials) can move slowly enough to pass
+  ticks can move slowly enough to pass
   VERIFYING; captured tick by tick (each tick is ~1.5 s of real time in a
   full run) they'd play back far too fast, so these stay still too.
 
 What stays nondeterministic: icons drawn from the system clock, mainly the
-enchantment glint (potions, golden apples, Forestry queens) and those GT
-materials. ~1.4k of ~117k still icons differ between otherwise identical
-runs. Fixing that would mean controlling `Minecraft.getSystemTime()` (a
-mixin).
+enchantment glint (potions, golden apples, Forestry queens, via
+`Minecraft.getSystemTime()`) and GTNHLib's cosmic shader
+(`System.currentTimeMillis()`), plus renderers that use `Random` (halos,
+GT's glitch effect). ~1.4k of ~117k still icons differed between otherwise
+identical runs before GT's counter was controlled. Fixing the clock ones
+would mean redirecting those calls with a class transformer (a coremod).
 Only icons the lookup references go through these stages. The mod renders
 every stack (~215k), but NBT variants that share a key never get shown,
 and `export.py` (`finish_images`) drops them from `images.zip` too, which
 leaves ~117k icons. That roughly offsets what the APNGs add.
 `build_animations` takes the shortest period the sequence repeats at least
-twice (else the whole capture) and writes it with Pillow (frames after the
+twice. Failing that, `near_loop` looks for a frame that's nearly frame 0
+again after moving well away (mean channel difference under 1), taking the
+closest one: the transcendent ingot turns 3.5 degrees a tick, so it's only
+exactly back after 720 ticks but within half a degree after 103. Else the
+whole capture loops. An APNG over 400 KB is rebuilt at half the frame rate
+(each frame shown twice as long, so the speed stays), repeatedly, and kept
+still if it doesn't fit even at 4 frames: big 3D renders that change
+completely every tick (Tectech's Forge of the Gods) came out at 1.5 MB. It's written with Pillow (frames after the
 first store only what changed). APNG keeps the `.png` path and frame 0 is
 the still icon, so the lookup, `/icons`, stored craft-history paths and
 anything that can't animate all work unchanged. `/icons?still=1` returns
@@ -838,12 +852,23 @@ notes, `CREDITS.txt` in the zip, `data.json` and the Game data dialog. With
 no bundle, the
 old `reference/icons_lookup.json` + `DATA_DIR/images.zip` pair is used.
 
-Resolved icon paths are prefixed with the data version
-(`2.9.0-beta-3/item/...`, or `2.9.0-beta-3~faithful32/item/...`) because `/icons` responses are cached as
-immutable: without it, browsers would keep the previous version's image for
-any path both versions share. `read_image()` strips any prefix, so paths
-stored before a switch (`craft_events.item_icon`) still resolve. The
-version is also part of `/api/network`'s ETag.
+**Rebuilt releases.** CI's forced rebuild replaces a release under the same
+tag. Each install records the release's `data.json` asset id in
+`<version>/release.json`; a published release whose id differs is an
+update (`update_available()`, shown on the Game data page), and picking
+the version again downloads the whole bundle rather than switching to the
+copy on disk. Bundles from `run.sh --install` record no id and are never
+flagged.
+
+Resolved icon paths are prefixed with the version, texture set and build
+(`2.9.0-beta-3~a1b2c3d4/item/...`, `2.9.0-beta-3~faithful32~a1b2c3d4/...`;
+the build is the start of `data.json`'s SHA-256, `build_id()`) because
+`/icons` responses are cached as immutable: without it, browsers would keep
+the previous image for any path two builds share, including a rebuild of
+the same version. `read_image()` strips any prefix, so paths stored before
+a switch (`craft_events.item_icon`) still resolve. The prefix is also part
+of `/api/network`'s ETag, and `catalog_version` is `<version>~<build>`, so
+the scanner refetches a rebuilt catalog too.
 
 The OC scanner gets the catalog from the server: `scan/start` returns
 `catalog_version`, and when it differs from
