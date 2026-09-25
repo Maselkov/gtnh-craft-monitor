@@ -309,3 +309,16 @@ def test_bleed_entries_missing_from_the_zip_fail(tmp_path):
     (export_dir / "icons_lookup.json").write_text(json.dumps(lookup))
     problems, _, _ = validate.check(export_dir)
     assert any("bleed table" in p for p in problems)
+
+
+def test_animation_that_only_changes_alpha_keeps_its_frames(tmp_path):
+    # The Raw Tesseract: a black wireframe turning on a transparent
+    # background. Every frame is black in RGB; only alpha moves.
+    frames = {"a": png({(0, 0): (0, 0, 0, 255)}),
+              "b": png({(1, 1): (0, 0, 0, 255)}),
+              "c": png({(2, 2): (0, 0, 0, 128)})}
+    apng = export.build_apng(frames, [["a", 1], ["b", 1], ["c", 1]], 50)
+    image = Image.open(BytesIO(apng))
+    assert image.n_frames == 3
+    image.seek(1)
+    assert image.convert("RGBA").getpixel((1, 1)) == (0, 0, 0, 255)
