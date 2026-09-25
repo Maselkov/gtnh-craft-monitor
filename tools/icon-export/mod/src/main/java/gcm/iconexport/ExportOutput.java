@@ -30,8 +30,8 @@ import com.google.gson.GsonBuilder;
  * only once complete, so a crashed run never leaves a half-written file under the real name:
  * <ul>
  * <li>{@code images.zip} - the icons (server/data/images.zip)</li>
- * <li>{@code icons_lookup.json} - key -> path tables (server/reference/icons_lookup.json)</li>
- * <li>{@code item_catalog.txt} - {@code mod:internal} IDs for the OC scanner (oc/item_catalog.txt)</li>
+ * <li>{@code icons_lookup.json} - key -> path tables</li>
+ * <li>{@code item_catalog.txt} - {@code mod:internal} IDs for the OC scanner</li>
  * </ul>
  * plus {@code export-report.json} with counts and failures, and for animated icons
  * {@code animations.zip} (each icon's distinct frames) with {@code animations.json} (which frame

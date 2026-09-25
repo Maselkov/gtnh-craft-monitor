@@ -49,7 +49,6 @@ never connects into the game.
 | `oc/gcm.lua`, `oc/manifest.lua` | Installer and updater, and the list of files it installs |
 | `oc/config.lua` | Server URL, API key and per-script settings for all scripts |
 | `oc/http.lua`, `oc/json.lua` | Libraries used by the scripts |
-| `oc/item_catalog.txt` | Default item ID list for the network scanner (replaced by the server's, once a GTNH version is picked) |
 | `oc/sensor_info_dump.lua` | One-off diagnostic: prints a GT machine's full sensor info |
 | `tools/icon-export/` | Builds game data (item icons, icon lookup, item catalog) from a GTNH pack; CI runs it for each GTNH release |
 
@@ -246,8 +245,8 @@ the workflow. That needs a fine-grained token with Contents: read and write
 on that repo, stored as the `GAMEDATA_TOKEN` Actions secret. Point your
 servers at it with `GAMEDATA_REPO`.
 
-Until a version is picked, the server uses the icon lookup that ships in
-`server/reference/` plus `server/data/images.zip` if you've put one there.
+Until a version is picked, the server has no item icons and the network
+scanner has no item list, so the Network tab stays empty.
 
 To pin the version without the page, set `GTNH_VERSION` (e.g.
 `2.9.0-beta-3`), and optionally `GTNH_TEXTURES=faithful32`; the server
@@ -377,7 +376,6 @@ Without `gcm`, copy these files to the computer yourself (with a floppy and
 | `oc/craft_monitor.lua` | `/etc/rc.d/craft_monitor.lua` | Crafts tab, remote crafting |
 | `oc/power_monitor.lua` | `/etc/rc.d/power_monitor.lua` | Power tab |
 | `oc/network_browser.lua` | `/etc/rc.d/network_browser.lua` | Network tab |
-| `oc/item_catalog.txt` | `/home/item_catalog.txt` | Network browser |
 
 Then set `SERVER_URL` (no trailing slash) and `API_KEY` (the server's
 `API_KEY`) in `/home/config.lua`.
@@ -456,25 +454,26 @@ the output, then remove it again.
 | Setting | Default | Description |
 |---|---|---|
 | `SCAN_INTERVAL_SECONDS` | `600` | Time between full network scans |
-| `CATALOG_PATH` | `/home/item_catalog.txt` | Location of the item catalog |
+| `CATALOG_PATH` | `/home/item_catalog.txt` | Item catalog to use when the server has no game data |
 | `BATCH_SIZE` | `300` | Item IDs queried per call |
 | `RESULT_CHUNK_SIZE` | `100` | Items sent to the server per POST |
 | `DELAY_BETWEEN_BATCHES_SECONDS` | `0.1` | Pause between batches |
 | `SHOW_STATUS` | `false` | Draw a status screen |
 
-A full scan takes about 37 batches with the bundled catalog and runs every
+A full scan takes about 37 batches with the GTNH catalog and runs every
 10 minutes by default.
 
 `item_catalog.txt` lists about 11,000 item IDs (`modid:internalname`, damage
 values merged): everything in NEI's item list, including items NEI hides,
-plus anything in the ore dictionary or a recipe. `gcm` installs a default
-one; once a GTNH version is picked on the server's [Game data](#item-icons)
-page, the scanner downloads that version's catalog at the start of its next
-scan into `/home/item_catalog.server.txt` and uses that from then on,
-until the version changes again (the version is noted in
-`/home/item_catalog.server.txt.version`). The file `gcm` installs stays as
-the fallback, so a `gcm` update doesn't undo it. If the download fails it
-keeps scanning with the catalog it has.
+plus anything in the ore dictionary or a recipe. It comes from the server:
+once a GTNH version is picked on the [Game data](#item-icons) page, the
+scanner downloads that version's catalog at the start of its next scan
+into `/home/item_catalog.server.txt` and uses that from then on, until the
+version changes again (the version is noted in
+`/home/item_catalog.server.txt.version`). If the download fails it keeps
+scanning with the catalog it has. A server without game data sends no
+catalog; the scanner then uses `CATALOG_PATH` if you've put one there, and
+otherwise reports that no version is picked.
 
 ## Using the web page
 

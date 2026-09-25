@@ -112,7 +112,7 @@ async function loadGameData(refresh) {
     ? `In use: GTNH ${data.selected}, ${inUse ? inUse.name : data.selected_textures} textures`
       + (selectedRelease && selectedRelease.update_available
         ? '. A newer build has been published: pick it again to update.' : '')
-    : 'In use: the icons that came with the server. Pick your GTNH version below.';
+    : 'In use: no game data, so there are no item icons and the network scanner has no item list. Pick your GTNH version below.';
 
   // Bundles built locally (tools/icon-export/run.sh --install) aren't
   // published, but can still be switched to.

@@ -35,7 +35,6 @@ return {
       description = "Network tab",
       files = {
         { src = "network_browser.lua", dst = "/etc/rc.d/network_browser.lua" },
-        { src = "item_catalog.txt",    dst = "/home/item_catalog.txt" },
       },
     },
   },

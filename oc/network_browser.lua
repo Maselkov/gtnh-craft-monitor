@@ -344,12 +344,11 @@ end
 -- the one downloaded last, the server's catalog is downloaded again.
 -- A failed download keeps the current catalog: scanning with a slightly
 -- stale list beats not scanning. Servers without game data send no
--- version, and the catalog gcm installed stays in use.
+-- version; scans then use CONFIG.CATALOG_PATH if there's a catalog there
+-- (placed by hand, or installed by an older gcm), and fail otherwise.
 --
--- The server's copy has its own file next to CONFIG.CATALOG_PATH: every
--- gcm update reinstalls the bundled catalog there, and if the download
--- replaced that file, an update would quietly swap the old list back in
--- while the version file still claimed the server's.
+-- The server's copy has its own file next to CONFIG.CATALOG_PATH, so a
+-- hand-placed catalog is never overwritten.
 local SERVER_CATALOG_PATH = (CONFIG.CATALOG_PATH:gsub("%.txt$", "")) .. ".server.txt"
 local CATALOG_VERSION_PATH = SERVER_CATALOG_PATH .. ".version"
 
@@ -419,7 +418,7 @@ local function run_scan(me)
   local f = io.open(catalogPath, "r")
   if not f then
     debug_log("couldn't open catalog")
-    return false, "couldn't open " .. catalogPath
+    return false, "no item catalog: pick a GTNH version on the server's Game data page"
   end
 
   local totalItems = 0
