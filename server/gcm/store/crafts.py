@@ -4,7 +4,7 @@ notifications fanned out to whoever had a finished job's CPU pinned."""
 
 import time
 
-from gcm import db
+from gcm import db, icons
 
 
 def pin_cpu(user_id, cpu_name):
@@ -77,7 +77,7 @@ def completions(user_id, max_age_seconds):
         {
             "id": r[0],
             "itemName": r[1],
-            "icon": r[2],
+            "icon": icons.current_path(r[2]),
             "status": r[3],
             "finishedAt": r[4],
         }

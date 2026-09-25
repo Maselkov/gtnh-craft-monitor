@@ -43,6 +43,8 @@ final class ExportJob {
     final boolean hasNbt;
 
     boolean rendered;
+    /** Its icon covers more than the item box (IconRenderer.BLEED): a halo, for one. */
+    boolean bleeds;
     /** Hash of the still render's pixels (see ExportDriver.hash). */
     long stillHash;
 

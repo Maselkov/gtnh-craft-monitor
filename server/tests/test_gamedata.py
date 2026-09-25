@@ -25,17 +25,20 @@ def images_zip(png):
     return zip_buffer.getvalue()
 
 
-def make_bundle(version, catalog="test:thing\n", faithful=True, generated_at="2026-09-25T00:00:00Z"):
+def make_bundle(
+    version, catalog="test:thing\n", faithful=True, generated_at="2026-09-25T00:00:00Z", bleed=None
+):
     """The files CI publishes for one GTNH version, as {name: bytes}."""
+    lookup = {
+        "by_key": {"test:thing:0": "item/test/thing~0.png"},
+        "fluids_by_key": {"goo": "fluid/test/goo.png"},
+        "by_label": {"Thing": "item/test/thing~0.png"},
+    }
+    if bleed is not None:
+        lookup["bleed"] = bleed
     files = {
         "images.zip": images_zip(PNG),
-        "icons_lookup.json": json.dumps(
-            {
-                "by_key": {"test:thing:0": "item/test/thing~0.png"},
-                "fluids_by_key": {"goo": "fluid/test/goo.png"},
-                "by_label": {"Thing": "item/test/thing~0.png"},
-            }
-        ).encode(),
+        "icons_lookup.json": json.dumps(lookup).encode(),
         "item_catalog.txt": catalog.encode(),
     }
     if faithful:
@@ -275,6 +278,22 @@ def test_read_image_accepts_old_unprefixed_paths(admin, github):
     # Craft history keeps whatever path was current when it was recorded.
     assert icons.read_image("item/test/thing~0.png") == PNG
     assert icons.read_image("2.8.4/item/test/thing~0.png") == PNG
+
+
+def test_icons_drawn_past_the_item_box_are_marked_in_their_paths(admin, github):
+    github.bundles["2.9.0-beta-3"] = make_bundle(
+        "2.9.0-beta-3", bleed={"item/test/thing~0.png": 12}
+    )
+    install(admin, "2.9.0-beta-3")
+
+    marked = f"{prefix('2.9.0-beta-3')}~bleed12/item/test/thing~0.png"
+    assert icons.resolve_icon("test", "thing", 0, None) == marked
+    assert icons.resolve_icon(None, "goo", None, None) == f"{prefix('2.9.0-beta-3')}/fluid/test/goo.png"
+    assert icons.read_image(marked) == PNG
+    # Stored paths (craft history) get the live prefix and marker back.
+    assert icons.current_path("2.8.4/item/test/thing~0.png") == marked
+    assert icons.current_path("item/test/thing~0.png") == marked
+    assert icons.current_path(None) is None
 
 
 def test_configured_version_is_installed_at_startup(github, monkeypatch):

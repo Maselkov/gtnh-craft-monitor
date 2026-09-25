@@ -8,7 +8,7 @@ import {
   toggleNetworkItemPin,
 } from './network.js';
 import { activeTab, switchTab } from './tabs.js';
-import { delegateActions, formatQty, iconUrl, onBackdropClick } from './util.js';
+import { delegateActions, formatQty, iconClass, iconUrl, onBackdropClick } from './util.js';
 
 // ---------- Item history popup ----------
 let itemHistoryTarget = null;
@@ -179,6 +179,7 @@ export function openItemHistory(it, pushUrl) {
   const iconEl = document.getElementById('itemHistoryIcon');
   if (it.icon) {
     iconEl.src = iconUrl(it.icon);
+    iconEl.className = iconClass('modal-icon', it.icon);
     iconEl.style.display = '';
   } else {
     iconEl.style.display = 'none';

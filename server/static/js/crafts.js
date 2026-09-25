@@ -3,7 +3,7 @@
 
 import { AUTH_USER } from './auth.js';
 import { openCancelConfirmModal, pendingCancelCpus } from './craft-actions.js';
-import { delegateActions, escapeHtml, iconUrl } from './util.js';
+import { delegateActions, escapeHtml, iconClass, iconUrl } from './util.js';
 
 // Toggle-open state survives across the 3s auto-refresh (which
 // rebuilds the DOM from scratch), keyed by CPU name for ingredient
@@ -296,7 +296,7 @@ function renderItemList(label, list) {
   if (!Array.isArray(list) || list.length === 0) return '';
   const rows = list.map(it => {
     const icon = it.icon
-      ? `<img class="item-icon" src="${iconUrl(it.icon)}" alt="" loading="lazy" data-remove-on-error>`
+      ? `<img class="${iconClass('item-icon', it.icon)}" src="${iconUrl(it.icon)}" alt="" loading="lazy" data-remove-on-error>`
       : '';
     const linkAttrs = `data-mod="${escapeHtml(it.mod || '')}" data-internal="${escapeHtml(it.internal || '')}" `
       + `data-damage="${it.damage != null ? it.damage : ''}" data-name="${escapeHtml(it.name || '?')}" `
@@ -336,7 +336,7 @@ function renderCard(job) {
 
   const title = job.busy
     ? (job.final_output
-        ? `${job.final_output_icon ? `<img class="craft-icon" src="${iconUrl(job.final_output_icon)}" alt="" loading="lazy" data-remove-on-error>` : ''}<span class="item-history-link" data-mod="${escapeHtml(job.final_output_mod || '')}" data-internal="${escapeHtml(job.final_output_internal || '')}" data-damage="${job.final_output_damage != null ? job.final_output_damage : ''}" data-name="${escapeHtml(job.final_output)}" data-icon="${escapeHtml(job.final_output_icon || '')}">${escapeHtml(job.final_output)}</span>`
+        ? `${job.final_output_icon ? `<img class="${iconClass('craft-icon', job.final_output_icon)}" src="${iconUrl(job.final_output_icon)}" alt="" loading="lazy" data-remove-on-error>` : ''}<span class="item-history-link" data-mod="${escapeHtml(job.final_output_mod || '')}" data-internal="${escapeHtml(job.final_output_internal || '')}" data-damage="${job.final_output_damage != null ? job.final_output_damage : ''}" data-name="${escapeHtml(job.final_output)}" data-icon="${escapeHtml(job.final_output_icon || '')}">${escapeHtml(job.final_output)}</span>`
         : `<span class="craft-title-muted">Crafting job (no monitor tile)</span>`)
     : `<span class="craft-title-muted">Idle</span>`;
 
@@ -376,7 +376,7 @@ function renderCard(job) {
 
 function renderCompletedCard(entry) {
   const icon = entry.icon
-    ? `<img class="craft-icon" src="${iconUrl(entry.icon)}" alt="" loading="lazy" data-remove-on-error>`
+    ? `<img class="${iconClass('craft-icon', entry.icon)}" src="${iconUrl(entry.icon)}" alt="" loading="lazy" data-remove-on-error>`
     : '';
   // Deliberately item-first, no CPU reference - which CPU happened to
   // run this is irrelevant to what you're acknowledging.

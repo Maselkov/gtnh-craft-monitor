@@ -2,6 +2,7 @@ package gcm.iconexport;
 
 import java.awt.image.BufferedImage;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
@@ -14,12 +15,14 @@ import java.util.Random;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityClientPlayerMP;
+import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.gui.Gui;
 import net.minecraft.client.renderer.EntityRenderer;
 import net.minecraft.client.renderer.OpenGlHelper;
 import net.minecraft.client.renderer.RenderHelper;
 import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.client.renderer.texture.DynamicTexture;
+import net.minecraft.client.renderer.texture.TextureManager;
 import net.minecraft.client.renderer.texture.TextureMap;
 import net.minecraft.client.renderer.tileentity.TileEntityRendererDispatcher;
 import net.minecraft.client.shader.Framebuffer;
@@ -54,10 +57,29 @@ import codechicken.nei.guihook.GuiContainerManager;
  */
 final class IconRenderer {
 
+    /**
+     * How far past each side of the item's 16x16 box renders are captured, in the same units.
+     * Some renderers draw outside the box on purpose, as they do over neighbouring slots in the
+     * game: GT's cosmic halo spans -10 to 27, Avaritia's and Universal Singularities' halos a
+     * similar area. All but those icons are cropped back to the box (see MIN_BLEED).
+     */
+    static final int BLEED = 12;
+    /**
+     * How far past the box an item's glow (partly transparent pixels) must reach for its icon to
+     * keep the canvas; the halos this is for reach 4-10. Opaque things past the box are 3D
+     * models overhanging it by a pixel or two, and text (TConstruct's projectiles draw their
+     * ammo count themselves): those icons are cropped to the box, as they always were.
+     */
+    static final int MIN_BLEED = 3;
+
     private final int size;
+    /** The framebuffer's side: the item box plus BLEED on each side. */
+    private final int canvas;
+    private final int bleedPixels;
     private final ByteBuffer pixelBuffer;
     private final int[] pixels;
     private final int[] onWhite;
+    private final int[] itemOnly;
     private int translucentRenders;
     private final Gui gui = new Gui();
     private final ItemStackSet neiRenderErrors = neiRenderErrors();
@@ -66,10 +88,16 @@ final class IconRenderer {
     private int attribDepth;
 
     IconRenderer(int size) {
+        if (size * BLEED % 16 != 0) {
+            throw new IllegalArgumentException("icon size must be a multiple of 4, got " + size);
+        }
         this.size = size;
-        this.pixelBuffer = BufferUtils.createByteBuffer(size * size * 4);
-        this.pixels = new int[size * size];
-        this.onWhite = new int[size * size];
+        this.bleedPixels = size * BLEED / 16;
+        this.canvas = size + 2 * bleedPixels;
+        this.pixelBuffer = BufferUtils.createByteBuffer(canvas * canvas * 4);
+        this.pixels = new int[canvas * canvas];
+        this.onWhite = new int[canvas * canvas];
+        this.itemOnly = new int[canvas * canvas];
     }
 
     static boolean framebuffersAvailable() {
@@ -78,7 +106,7 @@ final class IconRenderer {
 
     void begin() {
         if (framebuffer == null) {
-            framebuffer = new Framebuffer(size, size, true);
+            framebuffer = new Framebuffer(canvas, canvas, true);
             whiteOutLightmap();
         }
         giveTileEntityRenderersTextures();
@@ -89,8 +117,9 @@ final class IconRenderer {
         GL11.glPushMatrix();
         GL11.glLoadIdentity();
         GL11.glOrtho(0.0, 1.0, 1.0, 0.0, -100.0, 100.0);
-        double scale = 1 / 16.0;
+        double scale = 1.0 / (16 + 2 * BLEED);
         GL11.glScaled(scale, scale, scale);
+        GL11.glTranslated(BLEED, BLEED, 0);
         GL11.glMatrixMode(GL11.GL_MODELVIEW);
         GL11.glPushMatrix();
         GL11.glLoadIdentity();
@@ -151,20 +180,78 @@ final class IconRenderer {
         }
     }
 
+    /**
+     * The icon is NEI's drawItem: the item, then its overlay (stack size, durability, and text
+     * some mods add, such as TConstruct's ammo count or Draconic Evolution's charge). Overlay
+     * text often runs past the box, so when anything does, the item is drawn again without the
+     * overlay to see how far the item's own glow reaches. Only one reaching MIN_BLEED or more
+     * keeps the canvas, with the item-only render outside the box and the usual one inside it.
+     */
     private BufferedImage renderItemOnce(ItemStack stack) {
-        return capture(() -> {
-            resetState();
-            reseedRenderer(stack);
-            try {
+        capture(() -> drawItem(stack, true), pixels);
+        if (glowReach(pixels) < size * MIN_BLEED / 16 || drawItemOnly == null) {
+            return toImage(pixels, false);
+        }
+        try {
+            capture(() -> drawItem(stack, false), itemOnly);
+        } catch (IllegalStateException failed) {
+            if (neiRenderErrors != null) {
+                neiRenderErrors.removeAll(Collections.singletonList(stack));
+            }
+            return toImage(pixels, false);
+        }
+        if (glowReach(itemOnly) < size * MIN_BLEED / 16) {
+            return toImage(pixels, false);
+        }
+        int boxEnd = bleedPixels + size;
+        for (int y = 0; y < canvas; y++) {
+            for (int x = 0; x < canvas; x++) {
+                if (y < bleedPixels || y >= boxEnd || x < bleedPixels || x >= boxEnd) {
+                    pixels[y * canvas + x] = itemOnly[y * canvas + x];
+                }
+            }
+        }
+        return toImage(pixels, true);
+    }
+
+    private void drawItem(ItemStack stack, boolean overlay) {
+        resetState();
+        reseedRenderer(stack);
+        try {
+            if (overlay) {
                 GuiContainerManager.drawItem(0, 0, stack);
-            } finally {
-                resetTessellator();
-                unwindAttribStack();
+            } else {
+                // NEI's drawItem minus the overlay, in its same error-catching context.
+                FontRenderer font = GuiContainerManager.getFontRenderer(stack);
+                TextureManager textures = Minecraft.getMinecraft().getTextureManager();
+                Runnable item = () -> GuiContainerManager.drawItems.renderItemAndEffectIntoGUI(font, textures, stack, 0, 0);
+                drawItemOnly.invoke(null, stack, 0, 0, font, item);
             }
-            if (neiRenderErrors != null && neiRenderErrors.contains(stack)) {
-                throw new IllegalStateException("its renderer threw (NEI drew its error placeholder)");
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("couldn't draw it without its overlay", e);
+        } finally {
+            resetTessellator();
+            unwindAttribStack();
+        }
+        if (neiRenderErrors != null && neiRenderErrors.contains(stack)) {
+            throw new IllegalStateException("its renderer threw (NEI drew its error placeholder)");
+        }
+    }
+
+    /** How many pixels past the item box anything partly transparent was drawn, furthest side. */
+    private int glowReach(int[] argb) {
+        int reach = 0;
+        int boxEnd = bleedPixels + size;
+        for (int y = 0; y < canvas; y++) {
+            for (int x = 0; x < canvas; x++) {
+                int alpha = argb[y * canvas + x] >>> 24;
+                if (alpha != 0 && alpha != 255) {
+                    int out = Math.max(Math.max(bleedPixels - x, x - boxEnd + 1), Math.max(bleedPixels - y, y - boxEnd + 1));
+                    reach = Math.max(reach, out);
+                }
             }
-        });
+        }
+        return reach;
     }
 
     /** Returns null if the fluid has no icon or nothing visible was drawn. */
@@ -173,7 +260,7 @@ final class IconRenderer {
         if (icon == null) {
             return null;
         }
-        return capture(() -> {
+        capture(() -> {
             resetState();
             // A flat, unlit quad, whatever the previous item left enabled: with the item lighting
             // still on, a fluid came out darker or not depending on what was drawn before it.
@@ -191,7 +278,8 @@ final class IconRenderer {
                 resetTessellator();
                 RenderHelper.enableGUIStandardItemLighting();
             }
-        });
+        }, pixels);
+        return toImage(pixels, false);
     }
 
     /** How many renders needed the second, white-background pass. */
@@ -212,18 +300,17 @@ final class IconRenderer {
      * colour = black / opacity. Icons with only fully opaque and fully clear pixels (most of
      * them) are exact after the first pass and skip the second.
      */
-    private BufferedImage capture(Runnable draw) {
+    private void capture(Runnable draw, int[] into) {
         clear(0f);
         draw.run();
-        readPixels(pixels);
-        if (hasPartialAlpha(pixels)) {
+        readPixels(into);
+        if (hasPartialAlpha(into)) {
             clear(1f);
             draw.run();
             readPixels(onWhite);
-            unmix(pixels, onWhite);
+            unmix(into, onWhite);
             translucentRenders++;
         }
-        return toImage(pixels);
     }
 
     private static boolean hasPartialAlpha(int[] argb) {
@@ -336,27 +423,34 @@ final class IconRenderer {
 
     private void readPixels(int[] into) {
         pixelBuffer.clear();
-        GL11.glReadPixels(0, 0, size, size, GL12.GL_BGRA, GL11.GL_UNSIGNED_BYTE, pixelBuffer);
+        GL11.glReadPixels(0, 0, canvas, canvas, GL12.GL_BGRA, GL11.GL_UNSIGNED_BYTE, pixelBuffer);
         // BGRA bytes in a native (little-endian) buffer read back as ARGB ints.
         pixelBuffer.asIntBuffer().get(into);
     }
 
-    private BufferedImage toImage(int[] pixels) {
+    /**
+     * The item box, or with wholeCanvas the whole canvas ({@code size * (16 + 2 * BLEED) / 16}
+     * square, the box in its middle); null if nothing visible is in it.
+     */
+    private BufferedImage toImage(int[] pixels, boolean wholeCanvas) {
+        int side = wholeCanvas ? canvas : size;
+        int offset = wholeCanvas ? 0 : bleedPixels;
         boolean visible = false;
-        for (int p : pixels) {
-            if ((p >>> 24) != 0) {
-                visible = true;
-                break;
+        for (int y = offset; y < offset + side && !visible; y++) {
+            for (int x = offset; x < offset + side; x++) {
+                if ((pixels[y * canvas + x] >>> 24) != 0) {
+                    visible = true;
+                    break;
+                }
             }
         }
         if (!visible) {
             return null;
         }
-
         // GL's origin is bottom-left; flip rows while copying out.
-        BufferedImage image = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
-        for (int y = 0; y < size; y++) {
-            image.setRGB(0, y, size, 1, pixels, (size - 1 - y) * size, size);
+        BufferedImage image = new BufferedImage(side, side, BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < side; y++) {
+            image.setRGB(0, y, side, 1, pixels, (canvas - 1 - offset - y) * canvas + offset, canvas);
         }
         return image;
     }
@@ -417,6 +511,21 @@ final class IconRenderer {
             }
         }
         return fields;
+    }
+
+    private static final Method drawItemOnly = neiSafeRenderContext();
+
+    /** NEI's private safeItemRenderContext, which drawItem draws in; null if it's gone. */
+    private static Method neiSafeRenderContext() {
+        try {
+            Method m = GuiContainerManager.class.getDeclaredMethod("safeItemRenderContext", ItemStack.class, int.class,
+                    int.class, FontRenderer.class, Runnable.class);
+            m.setAccessible(true);
+            return m;
+        } catch (Throwable t) {
+            IconExportMod.LOG.warn("Can't draw items without their overlay; no icon will extend past its box.", t);
+            return null;
+        }
     }
 
     /** NEI's private record of stacks whose rendering threw; null if this NEI version lacks it. */

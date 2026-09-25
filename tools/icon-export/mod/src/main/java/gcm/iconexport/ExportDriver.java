@@ -300,6 +300,7 @@ public final class ExportDriver {
         }
         output.writeImage(job.imagePath, image);
         job.rendered = true;
+        job.bleeds = image.getWidth() > config.iconSize;
         job.stillHash = hash(image);
         if (item) itemsRendered++;
         else fluidsRendered++;

@@ -11,6 +11,7 @@ import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -145,6 +146,18 @@ final class ExportOutput {
         lookup.put("by_key", paths(byKey));
         lookup.put("fluids_by_key", paths(fluidsByKey));
         lookup.put("by_label", paths(byLabel));
+        // Icons drawn past the item box, and by how much on each side, in 1/16ths of the box:
+        // they're that much bigger than the rest, the box in their middle.
+        // Only the icons the tables point at: export.py drops the rest from images.zip.
+        Map<String, Integer> bleed = new TreeMap<>();
+        for (Map<String, ExportJob> table : Arrays.asList(byKey, fluidsByKey, byLabel)) {
+            for (ExportJob job : table.values()) {
+                if (job.bleeds) {
+                    bleed.put(job.imagePath, IconRenderer.BLEED);
+                }
+            }
+        }
+        lookup.put("bleed", bleed);
         return lookup;
     }
 
