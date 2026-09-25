@@ -1,0 +1,198 @@
+name: GTNH data
+
+# Builds item icons, the icon lookup and the item catalog for GTNH
+# releases with tools/icon-export/, and publishes each version as a GitHub
+# Release tagged gtnh-data-<version> in a separate data repo (DATA_REPO).
+# Servers list and install these from the Game data admin page
+# (server/gcm/gamedata.py).
+#
+# The icons are renders of Minecraft's, the mods' and the Faithful pack's
+# textures, so they're kept out of this repo: a removal request only ever
+# touches the data repo. Publishing there needs the GAMEDATA_TOKEN secret,
+# a fine-grained token with Contents: read and write on the data repo.
+#
+# Icons are rendered twice: with the pack's own textures (images.zip) and
+# with the latest GTNH Faithful x32 resource pack by Ethryan and
+# contributors (images-faithful32.zip,
+# https://github.com/Ethryan/GTNH-Faithful-Textures). The Faithful release
+# doesn't have to match the GTNH version; the newest one is used.
+#
+# The daily run picks up stable, beta and RC releases that don't have data
+# yet (tools/icon-export/ci/detect.py). Run it by hand to build a specific
+# version, give a pack URL the detection can't guess, or rebuild one.
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "GTNH version, e.g. 2.9.0-beta-3 (blank: build any new releases)"
+        required: false
+      pack_url:
+        description: "MultiMC client zip URL, if it can't be found automatically"
+        required: false
+      force:
+        description: "Rebuild even if this version is already published"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gtnh-data
+  cancel-in-progress: false
+
+env:
+  DATA_REPO: Maselkov/gtnh-craft-monitor-data
+
+jobs:
+  detect:
+    name: Find versions to build
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.detect.outputs.matrix }}
+      count: ${{ steps.detect.outputs.count }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: detect
+        run: python3 tools/icon-export/ci/detect.py
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_PACK_URL: ${{ inputs.pack_url }}
+          INPUT_FORCE: ${{ inputs.force }}
+
+  build:
+    name: Build ${{ matrix.version }}
+    needs: detect
+    if: needs.detect.outputs.count != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix: ${{ fromJson(needs.detect.outputs.matrix) }}
+    env:
+      VERSION: ${{ matrix.version }}
+      PACK_URL: ${{ matrix.pack_url }}
+    steps:
+      - name: Check the publishing token
+        env:
+          GAMEDATA_TOKEN: ${{ secrets.GAMEDATA_TOKEN }}
+        run: |
+          if [ -z "$GAMEDATA_TOKEN" ]; then
+            echo "::error::The GAMEDATA_TOKEN secret isn't set: add a fine-grained token with Contents: read and write on $DATA_REPO."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7
+
+      - name: Download pack
+        run: curl -fsSL --retry 3 -o "$RUNNER_TEMP/pack.zip" "$PACK_URL"
+
+      - name: Download Faithful textures
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FAITHFUL_REPO: Ethryan/GTNH-Faithful-Textures
+        run: |
+          tag=$(gh release view --repo "$FAITHFUL_REPO" --json tagName --jq .tagName)
+          gh release download "$tag" --repo "$FAITHFUL_REPO" \
+            --pattern 'GTNH-Faithful-x32*.zip' --dir "$RUNNER_TEMP/faithful"
+          zip=$(ls "$RUNNER_TEMP"/faithful/*.zip | head -n 1)
+          echo "FAITHFUL_ZIP=$zip" >> "$GITHUB_ENV"
+          echo "FAITHFUL_VERSION=${tag#v}" >> "$GITHUB_ENV"
+
+      # The image build compiles the export mod with Gradle; the gha cache
+      # skips that unless tools/icon-export/mod/ changed.
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: tools/icon-export
+          load: true
+          tags: gcm-icon-export
+          cache-from: type=gha,scope=icon-export
+          cache-to: type=gha,scope=icon-export,mode=max
+
+      # Minecraft's libraries and assets (~250 MB), the same for every pack.
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/gcm-icon-export
+          key: gcm-icon-export-mojang-${{ github.run_id }}
+          restore-keys: gcm-icon-export-mojang-
+
+      - name: Export
+        run: |
+          mkdir -p out ~/.cache/gcm-icon-export
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -e HOME=/tmp \
+            -e GCM_VERSION_LABEL="$VERSION" \
+            -e GCM_EXPORTER_COMMIT="$GITHUB_SHA" \
+            -e GCM_FAITHFUL_PACK="/faithful/$(basename "$FAITHFUL_ZIP")" \
+            -e GCM_FAITHFUL_VERSION="$FAITHFUL_VERSION" \
+            --shm-size=2g \
+            -v "$RUNNER_TEMP/pack.zip:/pack/pack.zip:ro" \
+            -v "$FAITHFUL_ZIP:/faithful/$(basename "$FAITHFUL_ZIP"):ro" \
+            -v "$PWD/out:/out" \
+            -v "$HOME/.cache/gcm-icon-export:/cache" \
+            gcm-icon-export
+
+      # The runner's system Python refuses pip installs (PEP 668).
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Validate
+        run: |
+          python -m pip install --quiet pillow
+          python tools/icon-export/ci/validate.py out
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ secrets.GAMEDATA_TOKEN }}
+        run: |
+          tag="gtnh-data-$VERSION"
+          notes=$(python3 - <<'EOF'
+          import json
+          d = json.load(open("out/data.json"))
+          c = d["counts"]
+          print(f"Game data for GTNH {d['gtnh_version']}: "
+                f"{c['by_keyEntries']} item icons, {c['fluids_by_keyEntries']} "
+                f"fluid icons, {c['catalogIds']} catalog IDs. "
+                f"{c['itemsFailed']} item stacks couldn't be rendered.\n\n"
+                "Install it from the Game data page in the server's admin menu.\n")
+          f = d["textures"].get("faithful32")
+          if f:
+              print(f"`{f['file']}` has the same icons rendered with the "
+                    f"[GTNH Faithful x32 textures]({f['url']}) {f['version']}, "
+                    "by Ethryan and contributors. Thanks to them for the "
+                    "textures.\n")
+          print("Not affiliated with or endorsed by Mojang, Microsoft or the "
+                "GTNH team. The icons are renders of textures that belong to "
+                "their owners (Minecraft, the GTNH mods' authors and, for "
+                "Faithful 32x, the Faithful authors), not covered by "
+                "gtnh-craft-monitor's license. To have something removed, "
+                "open an issue in this repo.")
+          EOF
+          )
+          # A forced rebuild replaces the old release.
+          gh release delete "$tag" --repo "$DATA_REPO" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$tag" \
+            --repo "$DATA_REPO" \
+            --title "GTNH $VERSION data" \
+            --notes "$notes" \
+            out/data.json out/images.zip out/images-faithful32.zip \
+            out/icons_lookup.json out/item_catalog.txt out/export-report.json
+
+      - name: Keep logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: export-logs-${{ matrix.version }}
+          path: |
+            out/logs/
+            out/client-stdout*.log
+            out/export-report.json
+          if-no-files-found: ignore

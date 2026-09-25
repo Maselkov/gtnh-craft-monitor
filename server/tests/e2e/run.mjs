@@ -9,8 +9,9 @@
 // Needs Python with server/requirements.txt installed, Node 22+, and
 // Chrome/Chromium (set CHROME=/path/to/binary if it isn't found).
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import http from 'node:http';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -56,7 +57,7 @@ function findChrome() {
 
 // ---------------------------------------------------------------- server
 
-async function startServer() {
+async function startServer(extraEnv = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcm-e2e-data-'));
   tempDirs.push(dataDir);
   const port = await freePort();
@@ -70,6 +71,7 @@ async function startServer() {
       GCM_BOOTSTRAP_ADMIN_NAME: 'Administrator',
       SESSION_COOKIE_SECURE: '0',
       PORT: String(port),
+      ...extraEnv,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -86,6 +88,71 @@ async function startServer() {
     await sleep(100);
   }
   throw new Error('server did not start:\n' + log);
+}
+
+// ---------------------------------------------------------------- fake GitHub
+
+// The Game data page lists gtnh-data-* releases from GitHub's API and
+// downloads their assets. This serves one small but real bundle (a 16px
+// icon for Iron Ingot, and a 32px one standing in for its Faithful
+// render), made with Python so its zips and checksums are exactly what the
+// server expects.
+const E2E_DATA_VERSION = '2.9.0-e2e';
+const MAKE_BUNDLE = `
+import hashlib, json, struct, sys, zipfile, zlib
+out = sys.argv[1]
+def chunk(kind, data):
+    return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+def png(size):
+    rows = b"".join(b"\\x00" + b"\\xcc\\x44\\x22\\xff" * size for _ in range(size))
+    return (b"\\x89PNG\\r\\n\\x1a\\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
+for name, size in (("images.zip", 16), ("images-faithful32.zip", 32)):
+    with zipfile.ZipFile(out + "/" + name, "w") as zf:
+        zf.writestr("item/minecraft/iron_ingot~0.png", png(size))
+open(out + "/icons_lookup.json", "w").write(json.dumps(
+    {"by_key": {"minecraft:iron_ingot:0": "item/minecraft/iron_ingot~0.png"}, "fluids_by_key": {}, "by_label": {}}))
+open(out + "/item_catalog.txt", "w").write("minecraft:iron_ingot\\n")
+files = {}
+for name in ("images.zip", "images-faithful32.zip", "icons_lookup.json", "item_catalog.txt"):
+    data = open(out + "/" + name, "rb").read()
+    files[name] = {"size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+open(out + "/data.json", "w").write(json.dumps({"format": 1, "files": files, "generated_at": "2026-09-25T00:00:00Z"}))
+`;
+const BUNDLE_FILES = ['data.json', 'images.zip', 'images-faithful32.zip', 'icons_lookup.json', 'item_catalog.txt'];
+
+async function startFakeGitHub() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcm-e2e-gamedata-'));
+  tempDirs.push(dir);
+  const made = spawnSync(process.env.PYTHON || 'python3', ['-c', MAKE_BUNDLE, dir], { encoding: 'utf8' });
+  if (made.status !== 0) throw new Error('making the game data bundle failed:\n' + made.stderr);
+  const port = await freePort();
+  const base = `http://127.0.0.1:${port}`;
+  const server = http.createServer((req, res) => {
+    if (req.url.startsWith('/repos/')) {
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify([{
+        tag_name: `gtnh-data-${E2E_DATA_VERSION}`,
+        published_at: '2026-09-25T00:00:00Z',
+        assets: BUNDLE_FILES.map((name) => ({
+          name,
+          size: fs.statSync(path.join(dir, name)).size,
+          browser_download_url: `${base}/assets/${name}`,
+        })),
+      }]));
+      return;
+    }
+    const name = req.url.replace('/assets/', '');
+    if (!BUNDLE_FILES.includes(name)) {
+      res.statusCode = 404;
+      res.end();
+      return;
+    }
+    res.end(fs.readFileSync(path.join(dir, name)));
+  });
+  await new Promise((resolve) => server.listen(port, '127.0.0.1', resolve));
+  server.unref();
+  return base;
 }
 
 async function api(base, method, urlPath, body, headers = {}) {
@@ -268,7 +335,8 @@ const PAGE_LIB = `
 // ---------------------------------------------------------------- tests
 
 async function main() {
-  const base = await startServer();
+  const github = await startFakeGitHub();
+  const base = await startServer({ GAMEDATA_API_URL: github, GAMEDATA_REPO: 'e2e/repo' });
   await seed(base);
   let adminToken;  // the bootstrap replacement, created through the UI below
   const cdp = await startBrowser();
@@ -536,6 +604,44 @@ async function main() {
     await waitFor('admin dialog again', `visible($('#adminUsersModal'))`);
     await click(`$('#adminUsersModal')`);
     await waitFor('closed by backdrop', `!visible($('#adminUsersModal'))`);
+  });
+
+  step('admin: switch game data version and textures; the new icons show', async () => {
+    await click(`$('#settingsBtn')`);
+    await waitFor('menu open', `visible($('#settingsMenu'))`);
+    await click(`$('#gamedataBtn')`);
+    await waitFor('game data dialog', `visible($('#gamedataModal')) && $('#gamedataCurrent').textContent.includes('came with the server')`);
+    await waitFor('version listed', `$$('#gamedataVersion option').some((o) => o.value === '${E2E_DATA_VERSION}')`);
+    await evaluate(`$('#gamedataVersion').value = '${E2E_DATA_VERSION}', true`);
+    await click(`$('#gamedataInstallBtn')`);
+    await waitFor('installed', `$('#gamedataCurrent').textContent === 'In use: GTNH ${E2E_DATA_VERSION}, Default textures'`);
+    await waitFor('listed as in use', `$('#gamedataVersion').selectedOptions[0].textContent.includes('(in use)')`);
+    await click(`$('#gamedataModal')`);
+    await waitFor('closed by backdrop', `!visible($('#gamedataModal'))`);
+    await click(`$('#settingsBtn')`);
+    await click(`$('#gamedataBtn')`);
+    await waitFor('open again', `visible($('#gamedataModal'))`);
+    await evaluate(`pressKey('Escape'), true`);
+    await waitFor('closed by Escape', `!visible($('#gamedataModal'))`);
+    // Switching tabs re-fetches the item list; its icons now carry the
+    // new version and load from the downloaded bundle.
+    await click(`$('#tabBtnCrafts')`);
+    await click(`$('#tabBtnNetwork')`);
+    await waitFor('icon from the bundle', `$$('#networkList img.network-cell-icon').some((i) => i.src.includes('${E2E_DATA_VERSION}') && i.complete && i.naturalWidth === 16)`);
+
+    // Same version, Faithful textures: only their zip is fetched, and the
+    // dialog credits the pack.
+    await click(`$('#settingsBtn')`);
+    await click(`$('#gamedataBtn')`);
+    await waitFor('textures listed', `$$('#gamedataTextures option').some((o) => o.value === 'faithful32')`);
+    await evaluate(`$('#gamedataTextures').value = 'faithful32', $('#gamedataTextures').dispatchEvent(new Event('change')), true`);
+    await waitFor('credit in dialog', `visible($('#gamedataCredit')) && $('#gamedataCredit a').href.includes('Ethryan/GTNH-Faithful-Textures')`);
+    await click(`$('#gamedataInstallBtn')`);
+    await waitFor('faithful installed', `$('#gamedataCurrent').textContent === 'In use: GTNH ${E2E_DATA_VERSION}, Faithful 32x textures'`);
+    await evaluate(`pressKey('Escape'), true`);
+    await click(`$('#tabBtnCrafts')`);
+    await click(`$('#tabBtnNetwork')`);
+    await waitFor('faithful icon', `$$('#networkList img.network-cell-icon').some((i) => i.src.includes('~faithful32') && i.complete && i.naturalWidth === 32)`);
   });
 
   step('sign out', async () => {

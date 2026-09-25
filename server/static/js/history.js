@@ -8,7 +8,7 @@ import {
   toggleNetworkItemPin,
 } from './network.js';
 import { activeTab, switchTab } from './tabs.js';
-import { delegateActions, formatQty, onBackdropClick } from './util.js';
+import { delegateActions, formatQty, iconUrl, onBackdropClick } from './util.js';
 
 // ---------- Item history popup ----------
 let itemHistoryTarget = null;
@@ -178,7 +178,7 @@ export function openItemHistory(it, pushUrl) {
   document.getElementById('itemHistoryName').textContent = it.name || '?';
   const iconEl = document.getElementById('itemHistoryIcon');
   if (it.icon) {
-    iconEl.src = '/icons?path=' + encodeURIComponent(it.icon);
+    iconEl.src = iconUrl(it.icon);
     iconEl.style.display = '';
   } else {
     iconEl.style.display = 'none';

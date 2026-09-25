@@ -1,0 +1,4 @@
+out/
+mod/build/
+mod/.gradle/
+mod/run/

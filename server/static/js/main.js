@@ -9,6 +9,7 @@ import {
   setupCraftRequestActions,
 } from './craft-actions.js';
 import { refresh, setupCraftsActions, tickSourceLine, updateNotifButton } from './crafts.js';
+import { setupGameDataActions } from './gamedata.js';
 import {
   parseItemUrlPath,
   setPendingItemFromUrl,
@@ -30,6 +31,7 @@ removeLegacyStorageKeys();
 setupImageErrorRemoval();
 setupAuthControls();
 setupAdminActions();
+setupGameDataActions();
 setupCraftsActions();
 setupTabActions();
 setupPowerActions();

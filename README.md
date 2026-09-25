@@ -49,9 +49,9 @@ never connects into the game.
 | `oc/gcm.lua`, `oc/manifest.lua` | Installer and updater, and the list of files it installs |
 | `oc/config.lua` | Server URL, API key and per-script settings for all scripts |
 | `oc/http.lua`, `oc/json.lua` | Libraries used by the scripts |
-| `oc/item_catalog.txt` | Item ID list used by the network scanner |
+| `oc/item_catalog.txt` | Default item ID list for the network scanner (replaced by the server's, once a GTNH version is picked) |
 | `oc/sensor_info_dump.lua` | One-off diagnostic: prints a GT machine's full sensor info |
-| `tools/` | Regenerates the icon lookup from a NESQL export |
+| `tools/icon-export/` | Builds game data (item icons, icon lookup, item catalog) from a GTNH pack; CI runs it for each GTNH release |
 
 ## Server setup
 
@@ -80,17 +80,16 @@ described in [User accounts](#user-accounts).
 `API_KEY` is the shared secret the in-game scripts use; `gcm install` asks
 for it later and saves it in `/home/config.lua`.
 
-All persistent data (databases, `images.zip`) lives in `server/data/`, which
+All persistent data (databases, game data) lives in `server/data/`, which
 `docker-compose.yml` mounts into the container, so rebuilding the image
-doesn't lose history. The icon lookup table ships inside the image
-(`server/reference/`), so each release brings its own.
+doesn't lose history or the downloaded game data.
 
 ### Prebuilt image
 
 Tagged releases are published to `ghcr.io/maselkov/gtnh-craft-monitor` for
 amd64 and arm64. [`deploy/docker-compose.yml`](deploy/docker-compose.yml)
 runs it: copy it and `.env` into a directory of their own, add a `data/`
-directory beside them (with `images.zip`, if you have it), and run
+directory beside them, and run
 `docker compose up -d`. It runs `latest` unless `GCM_TAG` names a version;
 `deploy/gcm-deploy.sh` sets it on each release deploy.
 
@@ -124,7 +123,11 @@ Environment variables (set in `.env` for Docker):
 | `CHART_CACHE_TTL_SECONDS` | `60` | Cache time for chart PNGs. |
 | `CHART_RATE_LIMIT_PER_MINUTE` | `30` | Chart PNG requests allowed per client per minute. |
 | `PORT` | `8420` | Listening port. |
-| `DATA_DIR` | `server/data` | Where the databases are written and `images.zip` is read from. |
+| `DATA_DIR` | `server/data` | Where the databases and game data are kept. |
+| `GTNH_VERSION` | empty | Game data version to install at startup; see [Item icons](#item-icons). |
+| `GTNH_TEXTURES` | empty | Icon textures for `GTNH_VERSION`: `default` or `faithful32`. Empty keeps what was picked on the page. |
+| `GAMEDATA_REPO` | `Maselkov/gtnh-craft-monitor-data` | Repo whose `gtnh-data-*` releases the Game data page offers. |
+| `GAMEDATA_API_URL` | `https://api.github.com` | GitHub API base for that list (for mirrors). |
 
 ### Exposing it beyond your LAN
 
@@ -206,30 +209,86 @@ WAL mode needs `server/data/` on a local disk, not a network share.
 
 ### Item icons
 
-The page shows item icons taken from a [NESQL](https://github.com/ShadowTheAge/nesql-exporter)
-export. The icon lookup table (`server/reference/icons_lookup.json`) is
-included in the repo and the image; the images are not.
+Item icons and the network scanner's item list depend on the GTNH version
+your players run. An admin picks it once: **Settings (⚙) → Game data**, choose
+the version and the icon textures, **Use these icons**. The server downloads
+that version's game data (about 300 MB: the icons, the icon lookup and the
+item catalog), switches to it without a restart, and the in-game scanner
+fetches the new item catalog on its next scan. Versions and textures
+downloaded before can be switched back to instantly.
 
-To enable icons, copy NESQL's `image.zip` unmodified to
-`server/data/images.zip` and restart the server. Images are read from the zip
-on demand and never extracted. Without the zip, the page works normally but
-shows no icons.
+Icons come in two texture sets: the pack's own (**Default**), and
+**Faithful 32x**, rendered with the
+[GTNH Faithful x32 resource pack](https://github.com/Ethryan/GTNH-Faithful-Textures)
+by Ethryan and contributors. Faithful icons are rendered with the newest
+release of that pack when the data is built, which may be newer than the
+one made for your GTNH version.
 
-#### Regenerating the icon lookup
+Icons that animate in game (GT materials and fluids, lava, many magic
+items) are animated on the page too. Browsers set to reduce motion get
+still icons.
 
-Needed after a modpack update or for a different pack. Requires a JDK
-(`javac` and `java` on `PATH`).
+The list comes from the releases of a separate repo,
+[gtnh-craft-monitor-data](https://github.com/Maselkov/gtnh-craft-monitor-data):
+a workflow here ([`gtnh-data.yml`](.github/workflows/gtnh-data.yml)) checks
+GTNH's releases daily and publishes game data there for every new stable,
+beta and RC release, tagged `gtnh-data-<version>`. The icons are renders of
+Minecraft's and the mods' textures, which aren't this project's, so they're
+kept apart from the code; requests to remove something go to that repo's
+issues. The server needs to reach `api.github.com` and `github.com` to list
+and download them. If you'd rather not use prebuilt data, build it yourself
+(below).
 
-1. In-game, run `/nesql` to export. This produces
-   `.minecraft/nesql/<repo>/nesql-db.*` and `.minecraft/nesql/<repo>/image.zip`.
-2. Run the generator, passing the database path without its extension:
+A fork that runs the workflow publishes to the repo named by `DATA_REPO` in
+the workflow. That needs a fine-grained token with Contents: read and write
+on that repo, stored as the `GAMEDATA_TOKEN` Actions secret. Point your
+servers at it with `GAMEDATA_REPO`.
+
+Until a version is picked, the server uses the icon lookup that ships in
+`server/reference/` plus `server/data/images.zip` if you've put one there.
+
+To pin the version without the page, set `GTNH_VERSION` (e.g.
+`2.9.0-beta-3`), and optionally `GTNH_TEXTURES=faithful32`; the server
+installs it at startup if it isn't already.
+
+#### Game data for other packs
+
+For a pack CI doesn't cover (a nightly, a modified pack), build the game data
+yourself. `tools/icon-export/` starts the GTNH client headlessly in Docker
+(Xvfb, software rendering, no Minecraft account), renders every item and
+fluid, and writes the same bundle CI publishes. It takes about 7 minutes
+(most of it capturing animated icons; `GCM_ANIMATION_TICKS=0` skips that),
+plus a one-time ~250 MB download of Minecraft's libraries and assets.
+
+1. Download the **MultiMC/Prism** client zip from
+   <https://downloads.gtnewhorizons.com/Multi_mc_downloads/> (not the server
+   pack), or use your own pack's MultiMC export.
+2. Run:
    ```bash
-   python3 tools/generate_icons_lookup.py --nesql-db "/path/to/nesql-repository/nesql-db"
+   tools/icon-export/run.sh ~/Downloads/GT_New_Horizons_2.9.0_Java_17-25.zip --install
    ```
-   It downloads the HSQLDB driver if needed, exports the `Item` and `Fluid`
-   tables to CSV with `tools/ExportItems.java` and `tools/ExportFluids.java`,
-   and writes `server/reference/icons_lookup.json`.
-3. Replace `server/data/images.zip` with the new `image.zip`.
+   Output goes to `tools/icon-export/out/`. `--install` also puts it in
+   `server/data/gamedata/<version>/` and selects it; add `--data-dir DIR`
+   when the server's data directory is elsewhere (the prebuilt image's
+   `data/`). The version name comes from the file name; set
+   `GCM_VERSION_LABEL` to override it.
+
+   For Faithful icons too, add `--faithful` with a release zip from
+   [GTNH-Faithful-Textures](https://github.com/Ethryan/GTNH-Faithful-Textures/releases)
+   (`--faithful ~/Downloads/GTNH-Faithful-x32.v2.2.0.zip`). The game is
+   launched a second time with the pack on, which doubles the time.
+   `--install` selects the default textures; switch on the Game data page.
+3. Restart the server, or pick the version on the Game data page.
+
+`out/export-report.json` lists the counts and any items that failed to
+render. A few hundred always do: items whose renderer needs a player or a
+world (the bow, Thaumcraft devices, some Botania and Chisel blocks), since the
+export never loads one. They fall back to `by_label` or show no icon.
+
+Settings: `GCM_MAX_MEMORY` (default `6G`), `GCM_ICON_SIZE` (default 64 px),
+`GCM_ANIMATION_TICKS` (default 160, i.e. 8 s of animation; 0 for still icons only),
+`GCM_TIMEOUT` (seconds, default 3600) and `GCM_CACHE_DIR` (default
+`~/.cache/gcm-icon-export`).
 
 The lookup contains three tables, tried in order:
 
@@ -239,7 +298,7 @@ The lookup contains three tables, tried in order:
 - `by_label` — display name → icon. Least reliable fallback, because about 8%
   of labels collide across mods.
 
-When several NESQL rows share a key (NBT variants of one item), the variant
+When several stacks share a key (NBT variants of one item), the variant
 without NBT is used, since the in-game scripts don't report NBT.
 
 ## In-game setup
@@ -401,12 +460,19 @@ the output, then remove it again.
 | `DELAY_BETWEEN_BATCHES_SECONDS` | `0.1` | Pause between batches |
 | `SHOW_STATUS` | `false` | Draw a status screen |
 
-A full scan takes 37 batches with the bundled catalog and runs every 10
-minutes by default.
+A full scan takes about 37 batches with the bundled catalog and runs every
+10 minutes by default.
 
-`item_catalog.txt` lists about 10,900 item IDs (`modid:internalname`, damage
-values merged) from the same NESQL export used for icons. Regenerate it
-alongside the icon lookup if you switch modpack versions.
+`item_catalog.txt` lists about 11,000 item IDs (`modid:internalname`, damage
+values merged): everything in NEI's item list, including items NEI hides,
+plus anything in the ore dictionary or a recipe. `gcm` installs a default
+one; once a GTNH version is picked on the server's [Game data](#item-icons)
+page, the scanner downloads that version's catalog at the start of its next
+scan into `/home/item_catalog.server.txt` and uses that from then on,
+until the version changes again (the version is noted in
+`/home/item_catalog.server.txt.version`). The file `gcm` installs stays as
+the fallback, so a `gcm` update doesn't undo it. If the download fails it
+keeps scanning with the catalog it has.
 
 ## Using the web page
 
@@ -543,9 +609,8 @@ never shows a half-finished scan.
 ### Fluid items
 
 Fluid pseudo-items report `name` as a bare Forge fluid registry name with no
-colon, e.g. `molten.mutatedlivingsolder`. They aren't in NESQL's `Item` table
-because they're generated at runtime, so their icons come from the `Fluid`
-table.
+colon, e.g. `molten.mutatedlivingsolder`. They aren't registered items, so
+their icons come from the exported fluids (`fluids_by_key`), not the items.
 
 ### Reading EU
 
@@ -592,3 +657,17 @@ Pushing a `v*` tag publishes the image to GHCR (`.github/workflows/publish.yml`)
 
 Licensed under the GNU General Public License v3.0 or later. See
 [LICENSE](LICENSE).
+
+### Credits
+
+The Faithful 32x item icons in the published game data are rendered with the
+[GTNH Faithful x32 textures](https://github.com/Ethryan/GTNH-Faithful-Textures)
+by Ethryan and contributors, which build on the
+[Faithful](https://faithfulpack.net/) team's Classic Faithful 32x textures
+and Magnetanide's Stellar Fusion. The textures are theirs, not covered by
+this project's license. Thanks to all of them. See the
+[data repo's notice](https://github.com/Maselkov/gtnh-craft-monitor-data#notice)
+for the rest of the published game data.
+
+The headless client launch in `tools/icon-export/` follows
+[gtnh-factory-flow](https://github.com/jackwrichards/gtnh-factory-flow) (MIT).

@@ -10,8 +10,8 @@ A homelab dashboard for GTNH (GregTech New Horizons) that shows:
 - A GregTech machine's stored energy over time (built for a Lapotronic
   Super Capacitor, works for any GT multiblock), including a live net
   in/out trend indicator read straight from the battery's own tracking
-- Item/fluid icons pulled from a one-time NESQL export of the actual
-  modpack
+- Item/fluid icons rendered from the actual modpack by a headless
+  export (`tools/icon-export/`)
 
 Two OpenComputers Lua scripts POST to a Flask server (a third submits
 craft-status data too); the server stores state (in-memory for live
@@ -107,10 +107,12 @@ gcm/state.py        in-memory live state (crafts, network scan, CPU
 gcm/commands.py     craft/cancel request queues + their history rows
 gcm/tracking.py     CPU job ends -> craft events + completions
 gcm/inventory.py    network scan protocol, snapshot reload, item history
-gcm/icons.py        icon lookup + images.zip access
+gcm/icons.py        icon lookup + images.zip access (versioned paths)
+gcm/gamedata.py     per-GTNH-version game data bundles: list, download,
+                    select, and which one icons.py uses
 gcm/charts.py       matplotlib PNGs for OpenGraph, with cache + rate limit
 gcm/routes/*.py     one Flask Blueprint per area: crafts, craft_requests,
-                    network, power, users, pages
+                    network, power, users, gamedata, pages
 ```
 
 Routes handle HTTP only; the logic behind them lives in the service
@@ -438,29 +440,64 @@ vs bare `/network/item/internal` for a fluid).
 **GT5's item-icon "meta items" are rendered procedurally, not shipped as
 static files.** There's no way to get correct icons for most GTNH items
 (ingots, dusts, plates, circuits) by copying texture files out of mod
-jars - GT composites them at runtime from material+shape layers. The only
-practical solution was running `NESQL-Exporter` (a mod that renders every
-item once in a real game client and exports the result) and building a
-lookup table from that. See "Icon pipeline" below if this ever needs
-redoing.
+jars - GT composites them at runtime from material+shape layers. Icons
+have to be rendered by a real game client; `tools/icon-export/` does that
+headlessly (see "Icon pipeline" below). It replaced a manual
+NESQL-Exporter export (`/nesql` in-game, HSQLDB dump, JDBC-to-CSV tools),
+which is where the image path scheme and the lookup's tie-breaking rules
+came from.
 
-**`nesql-exporter`'s original release (D-Cysteine) doesn't build against
-current GTNH.** Used `ShadowTheAge/nesql-exporter` fork instead - chosen
-over the official `GTNewHorizons/nesql-exporter` org fork because
-ShadowTheAge's GT5-Unofficial version pin (`5.09.54.20`) was much closer
-to what's actually shipping than the org fork's (`5.09.52.342`). Neither
-fork publishes prebuilt jars - has to be built from source
-(`./gradlew build`). Building it hit two further issues, both actual bugs
-in the fork's dependency pins, not anything environment-specific:
-- The pinned RetroFuturaGradle plugin version (`1.3.35`) had been purged
-  from GTNH's Maven repo. Bumped to `1.4.9` (the latest `1.4.x` - avoided
-  jumping to `2.0.x`, which requires Gradle 9 + Java 25, a much bigger
-  ask for an unrelated fix).
-- A transitive dependency chain (`GTNH-Intergalactic` → `Galaxy-Space-GTNH`
-  → `Galacticraft` → `ironchest:6.0.86`) pointed at an `ironchest` version
-  that no longer exists anywhere. Fixed with an `exclude(group=...,
-  module="ironchest")` on the `GTNH-Intergalactic` `compileOnly`
-  dependency, since it's not needed at runtime for this tool anyway.
+**NEI's item list is not "every item".** GTNH hides thousands of items
+players do hold (GT ores in other stone types, tiny/impure dusts, crushed
+ores), and GregTech doesn't put many of its items in NEI at all, hidden or
+not (centrifuged ores, many tool heads). The export therefore ignores NEI's
+hidden filter and adds everything in the ore dictionary, vanilla
+crafting/smelting and GT's recipe maps. Without that, `by_key` lost ~15k
+keys against the old NESQL export (which also collected recipe items).
+
+**Rendering icons at the main menu (no world) needs a world's GL setup
+faked.** Each of these produced plausible-looking but wrong icons and took
+a full run to find:
+- The lightmap texture is only computed in a world. Lit item renderers
+  sample it, so icons came out as dark silhouettes until it's filled
+  white.
+- Items drawn by a TileEntitySpecialRenderer (chests, ender chests,
+  skulls, Iron Chests, Cooking for Blockheads counters, ...) bind their
+  texture through `TileEntityRendererDispatcher.field_147553_e`, which is
+  only set when a world renders (`cacheActiveRenderInfo`); `bindTexture`
+  silently skips a null one. They came out wearing the block atlas (noise)
+  until the export sets it to the game's texture manager.
+- Fluid icons are drawn by the exporter itself (a textured quad), not
+  NEI, so they inherited whatever the previous item left enabled. With
+  the item lighting on they came out ~25% darker, or not, depending on
+  what preceded them. That also made every fluid fail the animation
+  stability check, so none animated. `renderFluid` now turns lighting off
+  and sets normal alpha blending, and the colours match the raw textures.
+- Avaritia's infinity items leave their GLSL shader bound; every later icon
+  rendered as a flat single colour (and 5x slower) until `glUseProgram(0)`
+  per icon.
+- NEI catches renderer exceptions and draws a **fire block** instead, so a
+  "fire" icon means that item failed. ~4k stacks (mostly ExtraUtilities NBT
+  variants; ~265 lookup keys: the bow, Thaumcraft devices, some Botania and
+  Chisel blocks) have renderers that read the player or world and can't be
+  rendered without one; they're reported as failed rather than written.
+- Angelica (GTNH's renderer) emulates the GL attribute stack. Renderers
+  that throw leak entries on it that can't be popped from outside, until
+  it overflows and ~7.5k unrelated items fail. The export disables
+  Angelica; nothing requires it.
+A real world avoids all of this, but creating one runs every mod's
+worldgen at server start (Galacticraft generates its planets then, and a
+Bartworks ruin crashed on the first attempt), which is a worse failure
+mode than a few hundred missing icons.
+
+**The old reference `images.zip` was made with texture packs.** The NESQL
+export came from an instance running GTNH-Faithful 32x and others, so
+pixel-diffing new icons against it is meaningless for anything a pack
+retextures (stone, machine casings, GT fluids). Compare against the
+default textures, or eyeball.
+
+**Forge's Maven rejects Python's default User-Agent with a 403.** The
+export's downloader sets its own.
 
 **A `%2F` inside a URL *path segment* gets mangled by reverse proxies.**
 This is why icons are served as `/icons?path=<encoded>` (query string)
@@ -667,22 +704,159 @@ verifying the second thing specifically for anything non-trivial.
 Not covered: the `oc/*.lua` scripts (no Lua test harness exists), and
 browser notifications (headless Chrome denies the permission).
 
-## Icon pipeline (if it ever needs redoing)
+## Icon pipeline
 
-1. Run `NESQL-Exporter` in-game (`/nesql`) → produces an HSQLDB database
-   plus `image.zip` (all rendered icons) under `.minecraft/nesql/<repo>/`.
-2. `ExportItems.java` / `ExportFluids.java` (standalone JDBC dump tools,
-   not part of the running app - one-off use) connect read-only and
-   `SELECT * FROM Item` / `SELECT * FROM Fluid` to CSV, deliberately not
-   picking specific columns (avoids guessing Hibernate's physical column
-   naming - just reads the real header row back).
-3. Those CSVs were turned into `server/reference/icons_lookup.json`
-   (`by_key`, `fluids_by_key`, `by_label`) - this step was done manually
-   during the original build, not by a script currently in the repo.
-4. `image.zip` itself is NOT in the repo (too large, and specific to one
-   person's modpack export) - it has to be dropped into
-   `server/data/images.zip` manually. The server reads icons out of it
-   on demand via `zipfile`, never unpacking it to disk.
+Game data - item icons, the icon lookup and the scanner's item catalog -
+belongs to a GTNH *pack* version, not an app version, so it's distributed
+separately from app releases.
+
+`tools/icon-export/run.sh <GTNH MultiMC zip> [--install]` builds one bundle
+(see README):
+
+1. `Dockerfile` builds the `gcmiconexport` Forge mod (`mod/`, GTNH
+   buildscript, needs JDK 25 for Gradle) and a Temurin 21 + Xvfb + Mesa
+   runtime image.
+2. `export.py` unpacks the pack, resolves the pack's own MultiMC patch
+   files (`patches/*.json` list every library with its URL) into a Java
+   command line, and starts the client offline under Xvfb - no launcher,
+   no account. The launch approach follows gtnh-factory-flow's dataset
+   pipeline.
+3. At the main menu the mod boots NEI's configs (`NEIClientConfig.loadWorld`
+   only needs a directory, not a world), builds the item list (NEI's rules
+   minus its hidden filter, plus ore dictionary and recipes), renders each
+   stack through NEI's `drawItem` into an FBO (NESQL's projection and
+   lighting), and writes `images.zip`, `icons_lookup.json`,
+   `item_catalog.txt` and `export-report.json`, then exits. About 1.5
+   minutes for ~215k icons; the animation stages add about 4 more.
+4. Animated icons (see "Animated icons" below): after the still pass the
+   mod finds which icons animate and renders those tick by tick, writing
+   each one's distinct frames to `animations.zip` and their order and
+   timing to `animations.json`. `export.py` (`build_animations`) finds each
+   sequence's loop and replaces the still icon in `images.zip` with an
+   APNG at the same path.
+5. With `--faithful <zip>`, `export.py` enables that resource pack in
+   `options.txt` (the pack ships none) and launches the game again into a
+   scratch directory. It then writes `images-faithful32.zip` with every
+   path the first run's lookup references, taking the default render
+   where the Faithful run didn't render one, plus a `CREDITS.txt`. One
+   lookup and catalog serve both texture sets because paths depend only on
+   the item. Doing a second launch instead of reloading resources in
+   place keeps the renderer's state fresh; the second pass takes as long
+   as the first (about 6.5 minutes with animations).
+6. `export.py` adds `data.json`: format version, GTNH version, counts, the
+   texture sets (`textures.faithful32` carries the pack version, credit
+   and URL), and each file's size and SHA-256.
+
+**Animated icons.** ~2.7k atlas textures in the pack animate via `.mcmeta`
+(GT materials and fluids above all, lava, Thaumcraft, Botania...). The
+game ticks them in real time even at the main menu, so before this every
+export caught each one at a random frame and `images.zip` churned between
+identical runs. `AnimationClock` sets every animated sprite (vanilla
+`TextureAtlasSprite` class only: the compass, clock and a few mods'
+subclasses are left alone) to a chosen tick, uploading the frame and
+setting its counters as `updateAnimation()` would. The driver seeks before
+every batch, since the game ticks in between. Stages:
+- still pass at tick 0, so still icons are deterministic;
+- DETECTING: everything again with each sprite on its first different
+  frame; icons whose pixels changed are candidates;
+- VERIFYING: candidates again at tick 0; those that don't match their
+  still render change on every draw (Avaritia/Universal Singularities
+  halos jitter with `Random`, the compass spins without a world) and stay
+  still;
+- CAPTURING: the rest at every tick up to `maxAnimationTicks` (160 = 8 s,
+  the p90 texture cycle; longer ones are cut and loop).
+- RECHECKING: the captured icons at tick 0 again, minutes after the still
+  pass. Renderers that follow the system clock rather than animation
+  ticks (GT's colour-cycling materials) can move slowly enough to pass
+  VERIFYING; captured tick by tick (each tick is ~1.5 s of real time in a
+  full run) they'd play back far too fast, so these stay still too.
+
+What stays nondeterministic: icons drawn from the system clock, mainly the
+enchantment glint (potions, golden apples, Forestry queens) and those GT
+materials. ~1.4k of ~117k still icons differ between otherwise identical
+runs. Fixing that would mean controlling `Minecraft.getSystemTime()` (a
+mixin).
+Only icons the lookup references go through these stages. The mod renders
+every stack (~215k), but NBT variants that share a key never get shown,
+and `export.py` (`finish_images`) drops them from `images.zip` too, which
+leaves ~117k icons. That roughly offsets what the APNGs add.
+`build_animations` takes the shortest period the sequence repeats at least
+twice (else the whole capture) and writes it with Pillow (frames after the
+first store only what changed). APNG keeps the `.png` path and frame 0 is
+the still icon, so the lookup, `/icons`, stored craft-history paths and
+anything that can't animate all work unchanged. `/icons?still=1` returns
+frame 0 (`icons.read_still_image`); the frontend asks for it when the
+browser prefers reduced motion (`iconUrl()` in `util.js`).
+
+**Distribution.** `.github/workflows/gtnh-data.yml` runs daily:
+`ci/detect.py` lists GTNH's stable/beta/RC tags (GT-New-Horizons-Modpack
+releases, nightlies skipped), drops those that already have a
+`gtnh-data-<version>` release in the data repo, and finds each one's client zip on
+downloads.gtnewhorizons.com (the folder and `Java_17-2x` suffix vary, so it
+tries candidates). Each is exported twice, with default textures and with
+the latest GTNH Faithful x32 release (Ethryan/GTNH-Faithful-Textures; it
+doesn't need to match the GTNH version). It is then checked by
+`ci/validate.py`: count floors, <5% flat single-colour icons (the
+signature of the broken-GL failures above), and at least 20% of sampled
+Faithful icons differing from the default ones (so a pack that silently
+didn't load fails). The result is published as a release with the files
+plus `data.json`, with the Faithful credit and an ownership notice in the
+notes. A new Faithful release doesn't rebuild published versions; run the
+workflow with `force` for that.
+
+Releases go to a separate public repo, `Maselkov/gtnh-craft-monitor-data`
+(`DATA_REPO` in the workflow, `GAMEDATA_REPO` on the server), not this one.
+The icons are renders of Minecraft, mod and Faithful textures, which aren't
+ours; keeping them apart means a removal request only touches data, never
+the code or the app's releases. The data repo's README carries the notice.
+`GITHUB_TOKEN` can't write to another repo, so publishing uses the
+`GAMEDATA_TOKEN` secret (a fine-grained token with Contents: read and
+write on the data repo); the build fails at its first step without it.
+`detect.py` falls back to this repo when `DATA_REPO` is unset.
+
+**Server side** (`gcm/gamedata.py`): the Game data admin page lists those
+releases (GitHub API, cached 10 min), downloads the chosen one into
+`DATA_DIR/gamedata/<version>/` with checksums checked against `data.json`,
+records it in `gamedata/selected.json` (`{version, textures, previous}`),
+and makes it live without a restart (`icons.load()`, then
+`inventory.refresh_icons()` for the live snapshot). Only the chosen texture
+set's zip is downloaded. Adding another set to an installed version fetches
+`data.json` and that zip alone, unless `data.json` changed (a rebuilt
+release), in which case the whole bundle is fetched again. The selected and
+previously selected versions are kept, with whatever texture sets they
+have. The pack is credited in the data repo's README, each release's
+notes, `CREDITS.txt` in the zip, `data.json` and the Game data dialog. With
+no bundle, the
+old `reference/icons_lookup.json` + `DATA_DIR/images.zip` pair is used.
+
+Resolved icon paths are prefixed with the data version
+(`2.9.0-beta-3/item/...`, or `2.9.0-beta-3~faithful32/item/...`) because `/icons` responses are cached as
+immutable: without it, browsers would keep the previous version's image for
+any path both versions share. `read_image()` strips any prefix, so paths
+stored before a switch (`craft_events.item_icon`) still resolve. The
+version is also part of `/api/network`'s ETag.
+
+The OC scanner gets the catalog from the server: `scan/start` returns
+`catalog_version`, and when it differs from
+`/home/item_catalog.server.txt.version` `network_browser.lua` streams
+`/api/network/catalog` to disk (`http.download_to_file`, which checks the
+HTTP status - OC's request iterator doesn't) as
+`/home/item_catalog.server.txt`, which scans then prefer over the
+`gcm`-installed `item_catalog.txt`. It's a separate file because every
+`gcm` update reinstalls the bundled catalog: overwriting that one would let
+an update swap the old list back in while the version file still claimed
+the server's.
+
+Image paths inside the zip keep NESQL's scheme
+(`item/<mod>/<name>~<damage>[~<nbt>].png`, `fluid/<mod>/<name>.png`), so
+old and new zips can be diffed. `images.zip` is ~250 MB per version
+(`images-faithful32.zip` ~300 MB), so
+it's never in git; the server reads icons out of it on demand via
+`zipfile`, never unpacking it to disk.
+
+For debugging, `-Dgcm.iconexport.only=<regex>` and
+`-Dgcm.iconexport.limit=<n>` (passed via `JAVA_TOOL_OPTIONS` to the
+container) render a subset in about a minute.
 
 ## Known limitations
 
@@ -690,10 +864,11 @@ browser notifications (headless Chrome denies the permission).
   starts another job making the same item between two polls, or any
   job switch on a CPU without an AE2 Crafting Monitor (no final output
   is reported at all). A pin there carries over to the next job.
-- Fluid icon matching only covers items/fluids that actually appear in
-  NESQL's static export - anything created dynamically with no NEI-visible
-  registration (rare, but the Fluid Discretizer pattern is an example of
-  the general risk) could still come up blank.
+- Fluid icons only cover fluids registered by the time the main menu
+  loads - a handful registered on world load (Galacticraft's fallback
+  oil/fuel, Witchery brews) come up blank.
+- ~265 item keys have no icon because their renderer needs a player or a
+  world (see "Rendering icons at the main menu" above).
 - `craft_events` has no cleanup at all by design (see above) - fine for a
   long time given low write volume, but worth knowing it's unbounded.
 - No pre-submission craft preview (ingredients/missing items before

@@ -1,14 +1,17 @@
-"""Item/fluid icon lookup, built from a NESQL export, and on-demand
-reads out of images.zip (never unpacked to disk)."""
+"""Item/fluid icon lookup and on-demand reads out of images.zip (never
+unpacked to disk). Which lookup and zip are live is decided by
+gcm/gamedata.py: an installed game data bundle, or the files that shipped
+before bundles existed."""
 
+import functools
+import io
 import json
 import os
 import threading
 import zipfile
 
-from gcm import config
 
-# Built from a NESQL export (see oc/README notes). Two separate keyspaces:
+# Written by tools/icon-export/. Two separate keyspaces:
 # - by_key: "modid:internalname:damage" -> image path, for ordinary items.
 #   AE2 gives us `name` as "modid:internalname" for these (colon present).
 # - fluids_by_key: raw Forge fluid registry name -> image path. Confirmed
@@ -22,25 +25,44 @@ from gcm import config
 _icons_by_key = {}
 _icons_by_label = {}
 _fluids_by_key = {}
-
-
-def load_lookup():
-    global _icons_by_key, _icons_by_label, _fluids_by_key
-    global _images_zip, _images_zip_missing_logged
-    _images_zip = None
-    _images_zip_missing_logged = False
-    icon_data = {}
-    if os.path.exists(config.ICONS_LOOKUP_PATH):
-        with open(config.ICONS_LOOKUP_PATH, "r", encoding="utf-8") as f:
-            icon_data = json.load(f)
-    _icons_by_key = icon_data.get("by_key", {})
-    _icons_by_label = icon_data.get("by_label", {})
-    _fluids_by_key = icon_data.get("fluids_by_key", {})
-
+# The GTNH version of the live bundle, or None for the pre-bundle files.
+# Resolved icon paths are prefixed with it, so switching versions changes
+# every icon URL and browsers don't keep showing the old version's images
+# (they're served with an immutable cache header).
+_version = None
+_images_zip_path = None
 
 _images_zip = None
 _images_zip_missing_logged = False
 _zip_lock = threading.Lock()
+
+# Top-level folders inside images.zip. A path starting with anything else
+# carries a version prefix.
+_ZIP_ROOTS = ("item", "fluid")
+
+
+def load(lookup_path, images_zip_path, version=None):
+    """Makes the given lookup and zip the live ones."""
+    global _icons_by_key, _icons_by_label, _fluids_by_key
+    global _images_zip, _images_zip_missing_logged, _images_zip_path, _version
+    icon_data = {}
+    if lookup_path and os.path.exists(lookup_path):
+        with open(lookup_path, "r", encoding="utf-8") as f:
+            icon_data = json.load(f)
+    with _zip_lock:
+        if _images_zip is not None:
+            _images_zip.close()
+        _images_zip = None
+        _images_zip_missing_logged = False
+        _images_zip_path = images_zip_path
+        _icons_by_key = icon_data.get("by_key", {})
+        _icons_by_label = icon_data.get("by_label", {})
+        _fluids_by_key = icon_data.get("fluids_by_key", {})
+        _version = version
+
+
+def data_version():
+    return _version
 
 
 def get_images_zip():
@@ -48,12 +70,12 @@ def get_images_zip():
     if _images_zip is not None:
         return _images_zip
     with _zip_lock:
-        if _images_zip is None:
-            if os.path.exists(config.IMAGES_ZIP_PATH):
-                _images_zip = zipfile.ZipFile(config.IMAGES_ZIP_PATH, "r")
+        if _images_zip is None and _images_zip_path:
+            if os.path.exists(_images_zip_path):
+                _images_zip = zipfile.ZipFile(_images_zip_path, "r")
             elif not _images_zip_missing_logged:
                 print(
-                    f"[icons] {config.IMAGES_ZIP_PATH} not found - icons will be blank until it's added."
+                    f"[icons] {_images_zip_path} not found - icons will be blank until it's added."
                 )
                 _images_zip_missing_logged = True
     return _images_zip
@@ -61,7 +83,11 @@ def get_images_zip():
 
 def read_image(path):
     """The PNG at path inside images.zip, or None if it isn't there (or
-    there's no images.zip)."""
+    there's no images.zip). Accepts paths with or without a version prefix:
+    craft history stores whatever path was current when it was recorded."""
+    head, sep, rest = path.partition("/")
+    if sep and head not in _ZIP_ROOTS:
+        path = rest
     zf = get_images_zip()
     if zf is None:
         return None
@@ -71,6 +97,33 @@ def read_image(path):
             return zf.read(path)
         except KeyError:
             return None
+        except ValueError:
+            # load() closed this zip for a new version between
+            # get_images_zip() and here.
+            return None
+
+
+def is_animated(png):
+    """APNGs carry an acTL chunk ahead of the image data; plain PNGs don't."""
+    return b"acTL" in png[:4096].split(b"IDAT", 1)[0]
+
+
+@functools.lru_cache(maxsize=4096)
+def _still(png):
+    from PIL import Image
+
+    out = io.BytesIO()
+    Image.open(io.BytesIO(png)).save(out, format="PNG")
+    return out.getvalue()
+
+
+def read_still_image(path):
+    """read_image(), but an animated icon's first frame only: for viewers
+    who've asked their browser for reduced motion."""
+    data = read_image(path)
+    if data is None or not is_animated(data):
+        return data
+    return _still(data)
 
 
 def damage_str(damage):
@@ -82,7 +135,15 @@ def damage_str(damage):
 
 
 def resolve_icon(mod, internal, damage, label):
-    """Returns the image path inside images.zip for an item or fluid, or None."""
+    """Returns the image path inside images.zip for an item or fluid,
+    prefixed with the data version if a bundle is live, or None."""
+    path = _lookup(mod, internal, damage, label)
+    if path and _version:
+        return f"{_version}/{path}"
+    return path
+
+
+def _lookup(mod, internal, damage, label):
     if mod and internal:
         dmg = damage_str(damage)
         if dmg is not None:

@@ -1,0 +1,5 @@
+// NEI is only compiled against: every GTNH pack ships it, and the export
+// uses its item list and item renderer so the output matches what NEI shows.
+dependencies {
+    compileOnly("com.github.GTNewHorizons:NotEnoughItems:2.8.130-GTNH:dev")
+}

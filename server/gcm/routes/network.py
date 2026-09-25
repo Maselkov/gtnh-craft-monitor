@@ -4,9 +4,9 @@ and item pins. The logic behind them is in gcm/inventory.py."""
 
 import secrets
 
-from flask import abort, Blueprint, g, jsonify, request, Response
+from flask import abort, Blueprint, g, jsonify, request, Response, send_file
 
-from gcm import auth, charts, inventory, state, store
+from gcm import auth, charts, gamedata, icons, inventory, state, store
 
 
 bp = Blueprint("network", __name__)
@@ -15,7 +15,26 @@ bp = Blueprint("network", __name__)
 @bp.route("/api/network/scan/start", methods=["POST"])
 @auth.api_key_required
 def network_scan_start():
-    return jsonify({"ok": True, "scan_token": inventory.start_scan()})
+    # catalog_version tells network_browser.lua to fetch
+    # /api/network/catalog when it doesn't have that version's catalog yet.
+    return jsonify(
+        {
+            "ok": True,
+            "scan_token": inventory.start_scan(),
+            "catalog_version": gamedata.catalog_version(),
+        }
+    )
+
+
+@bp.route("/api/network/catalog", methods=["GET"])
+@auth.api_key_required
+def network_catalog_get():
+    path = gamedata.catalog_path()
+    if not path:
+        abort(404)
+    response = send_file(path, mimetype="text/plain")
+    response.headers["X-Catalog-Version"] = gamedata.catalog_version()
+    return response
 
 
 @bp.route("/api/network/scan/batch", methods=["POST"])
@@ -59,7 +78,8 @@ def network_scan_finish():
 
 
 # Changes whenever the served snapshot could: a new process (icons are
-# re-resolved on reload) or any of the fields below.
+# re-resolved on reload), new game data (icons re-resolved again) or any
+# of the fields below.
 _PROCESS_TAG = secrets.token_hex(4)
 
 
@@ -74,6 +94,7 @@ def network_get():
             str(v)
             for v in (
                 _PROCESS_TAG,
+                icons.data_version(),
                 state.network["updated_at"],
                 state.network["in_progress"],
                 state.network["scan_started_at"],

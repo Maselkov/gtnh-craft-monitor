@@ -3,8 +3,9 @@ startup work happens - importing any gcm module has no side effects."""
 
 from flask import Flask
 
-from gcm import auth, charts, commands, config, db, icons, inventory, security, state, store
+from gcm import auth, charts, commands, config, db, gamedata, inventory, security, state, store
 from gcm.routes import craft_requests, crafts, network, pages, power, users
+from gcm.routes import gamedata as gamedata_routes
 
 
 def create_app(data_dir=None, api_key=None):
@@ -14,7 +15,7 @@ def create_app(data_dir=None, api_key=None):
     data_dir/api_key default to the DATA_DIR/API_KEY environment
     variables."""
     config.configure(data_dir, api_key)
-    icons.load_lookup()
+    gamedata.activate()
     db.adopt_legacy_app_db()
     db.init_app_db()
     store.requests.close_orphaned()
@@ -37,9 +38,11 @@ def create_app(data_dir=None, api_key=None):
         network.bp,
         power.bp,
         users.bp,
+        gamedata_routes.bp,
         pages.bp,
     ):
         app.register_blueprint(blueprint)
+    gamedata.install_configured_version()
     return app
 
 
@@ -49,3 +52,4 @@ def reset_runtime_state():
     state.reset()
     commands.reset()
     charts.reset()
+    gamedata.reset()

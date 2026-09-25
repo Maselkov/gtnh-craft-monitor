@@ -3,8 +3,9 @@
 import { evaluateAmountExpression } from './amount.js';
 import { AUTH_USER, closeAdminUsersModal, closeSettingsMenu } from './auth.js';
 import { lastData, render } from './crafts.js';
+import { closeGameDataModal } from './gamedata.js';
 import { closeItemHistory } from './history.js';
-import { delegateActions, escapeHtml, onBackdropClick } from './util.js';
+import { delegateActions, escapeHtml, iconUrl, onBackdropClick } from './util.js';
 
 // ---------- Craft request modal ----------
 let craftRequestTarget = null;
@@ -14,7 +15,7 @@ export function openCraftRequestModal(it) {
   document.getElementById('craftRequestName').textContent = it.name || '?';
   const iconEl = document.getElementById('craftRequestIcon');
   if (it.icon) {
-    iconEl.src = '/icons?path=' + encodeURIComponent(it.icon);
+    iconEl.src = iconUrl(it.icon);
     iconEl.style.display = '';
   } else {
     iconEl.style.display = 'none';
@@ -275,7 +276,7 @@ function renderCraftRequests() {
   }
   el.innerHTML = craftRequests.map(r => {
     const icon = r.icon
-      ? `<img class="craft-request-icon" src="/icons?path=${encodeURIComponent(r.icon)}" alt="" loading="lazy" data-remove-on-error>`
+      ? `<img class="craft-request-icon" src="${iconUrl(r.icon)}" alt="" loading="lazy" data-remove-on-error>`
       : '';
     const isFailed = r.status === 'failed';
     const statusText = isFailed
@@ -325,6 +326,8 @@ export function setupCraftDialogActions() {
         closeItemHistory();
       } else if (document.getElementById('adminUsersModal').style.display !== 'none') {
         closeAdminUsersModal();
+      } else if (document.getElementById('gamedataModal').style.display !== 'none') {
+        closeGameDataModal();
       }
     } else if (e.key === 'Enter') {
       // Only the craft-request modal - cancelConfirm's primary action

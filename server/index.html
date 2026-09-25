@@ -36,6 +36,8 @@
           <div class="settings-menu-user" id="settingsUser"></div>
           <button class="settings-menu-item" id="adminBtn" role="menuitem" style="display:none;"
             data-action="open-admin">Manage users</button>
+          <button class="settings-menu-item" id="gamedataBtn" role="menuitem" style="display:none;"
+            data-action="open-gamedata">Game data</button>
           <button class="settings-menu-item danger" role="menuitem"
             data-action="sign-out">Sign out</button>
         </div>
@@ -175,6 +177,31 @@
         </div>
       </div>
       <div id="adminUsersList" class="admin-users"></div>
+    </div>
+  </div>
+
+  <div id="gamedataModal" class="modal-overlay" style="display:none;">
+    <div class="modal-box admin-box">
+      <div class="modal-header">
+        <div class="modal-item-name">Game data</div>
+        <button class="history-close-btn" data-action="close-gamedata" title="Close">&times;</button>
+      </div>
+      <div class="modal-note">Item icons and the network scanner's item list, for the GTNH version your server runs. The download is about 300 MB and is used without a restart; the scanner switches on its next scan.</div>
+      <div id="gamedataCurrent" class="gamedata-current"></div>
+      <label class="gamedata-label" for="gamedataVersion">GTNH version</label>
+      <select id="gamedataVersion" class="modal-amount-input"></select>
+      <label class="gamedata-label" for="gamedataTextures">Icon textures</label>
+      <select id="gamedataTextures" class="modal-amount-input"></select>
+      <div id="gamedataCredit" class="gamedata-credit" style="display:none;"></div>
+      <div id="gamedataError" class="modal-error" style="display:none;"></div>
+      <div id="gamedataProgress" class="gamedata-progress" style="display:none;">
+        <div class="progress-track"><div class="progress-fill" id="gamedataProgressFill"></div></div>
+        <div class="progress-label" id="gamedataProgressLabel"></div>
+      </div>
+      <div class="modal-buttons" style="margin-top:12px;">
+        <button class="modal-btn secondary" data-action="refresh-gamedata">Check for new versions</button>
+        <button class="modal-btn primary" id="gamedataInstallBtn" data-action="install-gamedata">Use these icons</button>
+      </div>
     </div>
   </div>
 

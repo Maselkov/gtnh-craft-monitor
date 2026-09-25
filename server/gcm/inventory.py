@@ -189,6 +189,18 @@ def load_snapshot():
         state.network["is_reconstructed"] = True
 
 
+def refresh_icons():
+    """Re-resolves every icon in the live snapshot and any scan in
+    progress, after the game data changed (gcm/gamedata.py). New icon paths
+    also change the data version in /api/network's ETag, so open tabs
+    re-fetch."""
+    with state.network_lock:
+        for item in state.network["items"] + state.network_buffer:
+            item.pop("icon", None)
+        icons.attach_item_icons(state.network["items"])
+        icons.attach_item_icons(state.network_buffer)
+
+
 def item_display_info(mod, internal, damage, kind):
     """Returns (label, size) for OG-tag purposes. Tries the live network
     snapshot first (freshest); falls back to item_history's most recent
