@@ -505,6 +505,7 @@ public final class ExportDriver {
 
     private void finish() throws Exception {
         enterStage(Stage.DONE);
+        int translucentRenders = renderer.translucentRenders();
         renderer.destroy();
 
         Map<String, Object> report = new LinkedHashMap<>();
@@ -517,6 +518,7 @@ public final class ExportDriver {
         report.put("fluidsRendered", fluidsRendered);
         report.put("fluidsBlank", fluidsBlank);
         report.put("fluidsFailed", fluidsFailed);
+        report.put("translucentRenders", translucentRenders);
         Map<String, List<Object[]>> sequences = animationSequences();
         report.put("animatedTextures", clock != null ? clock.spriteCount() : 0);
         report.put("animatedIcons", sequences.size());

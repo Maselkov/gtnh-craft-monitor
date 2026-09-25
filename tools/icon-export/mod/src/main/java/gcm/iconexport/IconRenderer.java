@@ -57,6 +57,8 @@ final class IconRenderer {
     private final int size;
     private final ByteBuffer pixelBuffer;
     private final int[] pixels;
+    private final int[] onWhite;
+    private int translucentRenders;
     private final Gui gui = new Gui();
     private final ItemStackSet neiRenderErrors = neiRenderErrors();
     private final EntityClientPlayerMP standInPlayer = standInPlayer();
@@ -67,6 +69,7 @@ final class IconRenderer {
         this.size = size;
         this.pixelBuffer = BufferUtils.createByteBuffer(size * size * 4);
         this.pixels = new int[size * size];
+        this.onWhite = new int[size * size];
     }
 
     static boolean framebuffersAvailable() {
@@ -149,19 +152,19 @@ final class IconRenderer {
     }
 
     private BufferedImage renderItemOnce(ItemStack stack) {
-        resetState();
-        clear();
-        reseedRenderer(stack);
-        try {
-            GuiContainerManager.drawItem(0, 0, stack);
-        } finally {
-            resetTessellator();
-            unwindAttribStack();
-        }
-        if (neiRenderErrors != null && neiRenderErrors.contains(stack)) {
-            throw new IllegalStateException("its renderer threw (NEI drew its error placeholder)");
-        }
-        return readImage();
+        return capture(() -> {
+            resetState();
+            reseedRenderer(stack);
+            try {
+                GuiContainerManager.drawItem(0, 0, stack);
+            } finally {
+                resetTessellator();
+                unwindAttribStack();
+            }
+            if (neiRenderErrors != null && neiRenderErrors.contains(stack)) {
+                throw new IllegalStateException("its renderer threw (NEI drew its error placeholder)");
+            }
+        });
     }
 
     /** Returns null if the fluid has no icon or nothing visible was drawn. */
@@ -170,25 +173,88 @@ final class IconRenderer {
         if (icon == null) {
             return null;
         }
-        resetState();
-        clear();
-        // A flat, unlit quad, whatever the previous item left enabled: with the item lighting
-        // still on, a fluid came out darker or not depending on what was drawn before it.
-        GL11.glDisable(GL11.GL_LIGHTING);
-        GL11.glEnable(GL11.GL_BLEND);
-        OpenGlHelper.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ONE, GL11.GL_ZERO);
-        try {
-            // Some fluids don't bake their colour into the icon, so blend it in.
-            int colour = stack.getFluid().getColor(stack);
-            GL11.glColor3ub((byte) ((colour >> 16) & 0xFF), (byte) ((colour >> 8) & 0xFF), (byte) (colour & 0xFF));
-            Minecraft.getMinecraft().getTextureManager().bindTexture(TextureMap.locationBlocksTexture);
-            gui.drawTexturedModelRectFromIcon(0, 0, icon, 16, 16);
-        } finally {
-            GL11.glColor4f(1f, 1f, 1f, 1f);
-            resetTessellator();
-            RenderHelper.enableGUIStandardItemLighting();
+        return capture(() -> {
+            resetState();
+            // A flat, unlit quad, whatever the previous item left enabled: with the item lighting
+            // still on, a fluid came out darker or not depending on what was drawn before it.
+            GL11.glDisable(GL11.GL_LIGHTING);
+            GL11.glEnable(GL11.GL_BLEND);
+            OpenGlHelper.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ONE, GL11.GL_ZERO);
+            try {
+                // Some fluids don't bake their colour into the icon, so blend it in.
+                int colour = stack.getFluid().getColor(stack);
+                GL11.glColor3ub((byte) ((colour >> 16) & 0xFF), (byte) ((colour >> 8) & 0xFF), (byte) (colour & 0xFF));
+                Minecraft.getMinecraft().getTextureManager().bindTexture(TextureMap.locationBlocksTexture);
+                gui.drawTexturedModelRectFromIcon(0, 0, icon, 16, 16);
+            } finally {
+                GL11.glColor4f(1f, 1f, 1f, 1f);
+                resetTessellator();
+                RenderHelper.enableGUIStandardItemLighting();
+            }
+        });
+    }
+
+    /** How many renders needed the second, white-background pass. */
+    int translucentRenders() {
+        return translucentRenders;
+    }
+
+    /**
+     * Draws an icon and reads it back with correct colour and opacity; null if nothing visible
+     * was drawn.
+     *
+     * <p>Renderers blend as if over an opaque inventory background. Drawn onto a transparent
+     * framebuffer instead, a translucent layer's alpha gets multiplied by itself and its colour
+     * darkened towards black: GT's cosmic halo, 14% opaque grey in the game, came out 2% opaque
+     * and near black. So an icon with any partly transparent pixel is drawn again over opaque
+     * white. The first pass is the icon over black (its colour channels don't depend on the
+     * background's alpha), and the two pin down each pixel: opacity = 1 - (white - black),
+     * colour = black / opacity. Icons with only fully opaque and fully clear pixels (most of
+     * them) are exact after the first pass and skip the second.
+     */
+    private BufferedImage capture(Runnable draw) {
+        clear(0f);
+        draw.run();
+        readPixels(pixels);
+        if (hasPartialAlpha(pixels)) {
+            clear(1f);
+            draw.run();
+            readPixels(onWhite);
+            unmix(pixels, onWhite);
+            translucentRenders++;
         }
-        return readImage();
+        return toImage(pixels);
+    }
+
+    private static boolean hasPartialAlpha(int[] argb) {
+        for (int p : argb) {
+            int alpha = p >>> 24;
+            if (alpha != 0 && alpha != 255) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** onBlack becomes the icon, from the same icon drawn over black and over white. */
+    static void unmix(int[] onBlack, int[] onWhite) {
+        for (int i = 0; i < onBlack.length; i++) {
+            int b = onBlack[i], w = onWhite[i];
+            int br = (b >> 16) & 0xFF, bg = (b >> 8) & 0xFF, bb = b & 0xFF;
+            int gap = Math.max(0, ((w >> 16) & 0xFF) - br) + Math.max(0, ((w >> 8) & 0xFF) - bg)
+                    + Math.max(0, (w & 0xFF) - bb);
+            int alpha = 255 - Math.round(gap / 3f);
+            if (alpha <= 0) {
+                onBlack[i] = 0;
+                continue;
+            }
+            onBlack[i] = alpha << 24 | unpremultiply(br, alpha) << 16 | unpremultiply(bg, alpha) << 8
+                    | unpremultiply(bb, alpha);
+        }
+    }
+
+    private static int unpremultiply(int channel, int alpha) {
+        return Math.min(255, Math.round(channel * 255f / alpha));
     }
 
     /**
@@ -261,18 +327,21 @@ final class IconRenderer {
         }
     }
 
-    private void clear() {
-        GL11.glClearColor(0f, 0f, 0f, 0f);
+    /** Clears to black with alpha 0, or to opaque white. */
+    private void clear(float white) {
+        GL11.glClearColor(white, white, white, white);
         GL11.glClearDepth(1D);
         GL11.glClear(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT);
     }
 
-    private BufferedImage readImage() {
+    private void readPixels(int[] into) {
         pixelBuffer.clear();
         GL11.glReadPixels(0, 0, size, size, GL12.GL_BGRA, GL11.GL_UNSIGNED_BYTE, pixelBuffer);
         // BGRA bytes in a native (little-endian) buffer read back as ARGB ints.
-        pixelBuffer.asIntBuffer().get(pixels);
+        pixelBuffer.asIntBuffer().get(into);
+    }
 
+    private BufferedImage toImage(int[] pixels) {
         boolean visible = false;
         for (int p : pixels) {
             if ((p >>> 24) != 0) {

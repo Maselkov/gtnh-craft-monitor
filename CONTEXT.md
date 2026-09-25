@@ -467,6 +467,16 @@ a full run to find:
   only set when a world renders (`cacheActiveRenderInfo`); `bindTexture`
   silently skips a null one. They came out wearing the block atlas (noise)
   until the export sets it to the game's texture manager.
+- Renderers blend as if over the opaque inventory background. Drawn onto
+  a transparent framebuffer, a translucent layer's alpha got multiplied by
+  itself and its colour darkened towards black: GT's cosmic halo (14%
+  opaque grey in game) came out 2% opaque and near black, and GT's ore
+  overlays, blended over the stone, left see-through dark holes where the
+  ore specks should be (~18k icons, mostly ores and layered GT items).
+  `IconRenderer.capture` now draws any icon with a partly transparent pixel
+  a second time over opaque white; with the first pass as "over black",
+  opacity = 1 - (white - black) and colour = black / opacity. Fully
+  opaque/clear icons skip the second pass; it costs ~20 s a full export.
 - Fluid icons are drawn by the exporter itself (a textured quad), not
   NEI, so they inherited whatever the previous item left enabled. With
   the item lighting on they came out ~25% darker, or not, depending on
