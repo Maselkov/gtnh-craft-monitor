@@ -55,13 +55,12 @@ def test_generated_markup_has_no_inline_styles():
             assert not re.search(r'\sstyle="', f.read()), name
 
 
-def test_external_scripts_are_pinned_and_integrity_checked():
-    # The CSP allows each CDN URL; an exact version plus an integrity
-    # hash makes it allow exactly one file's contents, too.
+def test_vendored_scripts_are_version_named():
+    # Vendored files are served immutable, so the version must be in the
+    # filename for an upgrade to bust caches.
     with open(pages.INDEX_HTML_PATH, encoding="utf-8") as f:
-        tags = re.findall(r'<script\b[^>]*\bsrc="https://[^>]*>', f.read())
-    assert tags
-    for tag in tags:
-        assert re.search(r'@\d+\.\d+\.\d+/', tag), tag
-        assert re.search(r'\bintegrity="sha384-[A-Za-z0-9+/=]+"', tag), tag
-        assert 'crossorigin="anonymous"' in tag, tag
+        srcs = re.findall(r'<script\b[^>]*\bsrc="/static/(vendor/[^"]+)"', f.read())
+    assert srcs
+    for src in srcs:
+        assert re.search(r"-\d+\.\d+\.\d+[.-]", src), src
+        assert os.path.exists(os.path.join(pages.STATIC_DIR, src)), src

@@ -109,6 +109,9 @@ def add_browser_security_headers(response):
         # hash index.html puts on main.js - so every static file must be
         # revalidated (a cheap 304) rather than reused stale from cache.
         response.headers["Cache-Control"] = "no-cache"
+        if request.path.startswith("/static/vendor/"):
+            # Version is in the filename, so it never changes in place.
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
     if request.endpoint in NO_STORE_ENDPOINTS:
         response.headers["Cache-Control"] = "no-store"
     return response

@@ -26,7 +26,9 @@ IMPORT = re.compile(r"""^import\s[^;]*?from\s+'\./([\w-]+\.js)';""", re.MULTILIN
 def test_main_is_the_only_script_and_reaches_every_module(client):
     html = client.get("/").get_data(as_text=True)
     local_scripts = re.findall(r'<script([^>]*)src="/static/([^"?]+)', html)
-    assert local_scripts == [(' type="module" ', "js/main.js")]
+    assert [s for s in local_scripts if not s[1].startswith("vendor/")] == [
+        (' type="module" ', "js/main.js")
+    ]
 
     # Walk the import graph from main.js: a module nothing imports would
     # never load, and would only fail in the browser.
