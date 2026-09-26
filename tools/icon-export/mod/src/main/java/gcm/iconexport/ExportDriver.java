@@ -68,6 +68,8 @@ public final class ExportDriver {
     private int itemsRendered, itemsBlank, itemsFailed, fluidsRendered, fluidsBlank, fluidsFailed;
     private final List<String> blank = new ArrayList<>();
     private final List<String> failed = new ArrayList<>();
+    /** Icons that changed between two renders at the same tick; they stay still. */
+    private final List<String> random = new ArrayList<>();
     private long renderStartedAt;
 
     private AnimationClock clock;
@@ -382,6 +384,7 @@ public final class ExportDriver {
                         captures.add(new Capture(job, config.maxAnimationTicks));
                     } else {
                         randomIcons++;
+                        note(random, job.imagePath);
                     }
                 }
             }
@@ -532,6 +535,7 @@ public final class ExportDriver {
                 animationStartedAt > 0 ? (System.currentTimeMillis() - animationStartedAt) / 1000 : 0);
         report.put("failed", failed);
         report.put("blank", blank);
+        report.put("random", random);
         output.finishAnimations(sequences, 50);
         output.finish(jobs, report);
 
