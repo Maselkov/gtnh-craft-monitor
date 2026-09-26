@@ -18,7 +18,7 @@
 #
 # Environment: GCM_VERSION_LABEL (default: from the pack's file name),
 # GCM_MAX_MEMORY (default 6G), GCM_ICON_SIZE (default 64),
-# GCM_ANIMATION_TICKS (default 160: 8 s of animation; 0 = still icons), GCM_TIMEOUT
+# GCM_ANIMATION_TICKS (default 400: up to 20 s of animation; 0 = still icons), GCM_TIMEOUT
 # (seconds, default 3600), GCM_CACHE_DIR (default ~/.cache/gcm-icon-export -
 # libraries and Minecraft assets, ~250 MB).
 set -euo pipefail

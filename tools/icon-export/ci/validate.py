@@ -43,7 +43,7 @@ MIN_RETEXTURED_SHARE = 0.2
 MAX_FALLBACK_SHARE = 0.05
 # A full GTNH export has a few thousand; see CONTEXT.md, "Animated icons".
 MIN_ANIMATED_ICONS = 1000
-MAX_ICON_BYTES = 1_000_000
+MAX_ICON_BYTES = 2_000_000
 
 
 def is_flat(png):

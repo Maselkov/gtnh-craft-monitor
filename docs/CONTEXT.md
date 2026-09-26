@@ -816,8 +816,11 @@ since the game ticks in between. Stages:
 - VERIFYING: candidates again at tick 0; those that don't match their
   still render change on every draw (the compass spins without a world)
   and stay still;
-- CAPTURING: the rest at every tick up to `maxAnimationTicks` (160 = 8 s,
-  the p90 texture cycle; longer ones are cut and loop).
+- CAPTURING: the rest at every tick up to `maxAnimationTicks` (400 = 20 s,
+  covering 99% of texture cycles, up to 384 ticks; longer ones are cut and
+  loop). From tick 160, every 40 ticks, icons whose frames have repeated
+  in full at least twice stop (`ExportDriver.repeats`), so only long
+  cycles run on: most loop within 160.
 - RECHECKING: the captured icons at tick 0 again, minutes after the still
   pass. Renderers that follow the system clock rather than animation
   ticks can move slowly enough to pass
@@ -847,6 +850,18 @@ tick x 50 ms. Classes touched:
 Nothing else in Minecraft is touched, so the game loop's own timing is
 unaffected. A class that moves or renames its clock call just keeps the
 real clock.
+
+Interpolated textures: ~230 animated textures (212 GT, mostly GT++
+materials like Chromatic Glass, plus Avaritia's infinity ingot, AE2's QE
+singularity, a few EnderIO/Et Futurum/bartworks blocks) set
+`"interpolate": true` in their `.mcmeta`, and in game each frame fades into
+the next every tick. 1.7.10's `AnimationMetadataSection` doesn't read the
+flag, so `AnimationClock` re-reads each sprite's `.mcmeta` through the
+resource manager (leniently: some have unquoted keys) and, for those,
+uploads Minecraft 1.8's blend on every seek: the frame's colour channels
+mixed towards the next frame's by ticks-into-frame / frame length, alpha
+from the current frame, every mipmap level. Before, they jumped from colour
+to colour once a frame (every 20 ticks for Chromatic Glass).
 
 Other clocks: Botania's `ClientTickHandler.ticksInGame`/`partialTicks`/
 `total` are set like GT's counter. And renderers that jitter with
@@ -894,10 +909,10 @@ twice. Failing that, `near_loop` looks for a frame that's nearly frame 0
 again after moving well away (mean channel difference under 1), taking the
 closest one: the transcendent ingot turns 3.5 degrees a tick, so it's only
 exactly back after 720 ticks but within half a degree after 103. Else the
-whole capture loops. An APNG over 400 KB is rebuilt at half the frame rate
+whole capture loops. An APNG over 1 MB is rebuilt at half the frame rate
 (each frame shown twice as long, so the speed stays), repeatedly, and kept
 still if it doesn't fit even at 4 frames: big 3D renders that change
-completely every tick (Tectech's Forge of the Gods) came out at 1.5 MB. It's written with Pillow (frames after the
+completely every tick (Tectech's Forge of the Gods) came out at several MB. It's written with Pillow (frames after the
 first store only what changed). The image pins Pillow 11.3 from pip: jammy's
 python3-pil (9.0) compared APNG frames without alpha and merged the ones
 that differed only in it, so the Raw Tesseract (a black wireframe turning

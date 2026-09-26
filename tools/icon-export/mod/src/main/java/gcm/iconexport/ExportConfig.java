@@ -50,7 +50,8 @@ final class ExportConfig {
                 Integer.getInteger("gcm.iconexport.neiTimeoutSeconds", 600),
                 Integer.getInteger("gcm.iconexport.limit", 0),
                 System.getProperty("gcm.iconexport.only"),
-                // 160 ticks (8 s) covers 90% of the pack's animated textures in full.
-                Integer.getInteger("gcm.iconexport.maxAnimationTicks", 160));
+                // 400 ticks (20 s) sees 99% of the pack's texture cycles (up to 384 ticks) once;
+                // icons stop earlier once they've repeated (ExportDriver.repeats).
+                Integer.getInteger("gcm.iconexport.maxAnimationTicks", 400));
     }
 }
