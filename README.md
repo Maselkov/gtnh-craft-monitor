@@ -290,7 +290,7 @@ world (the bow, Thaumcraft devices, some Botania and Chisel blocks), since the
 export never loads one. They fall back to `by_label` or show no icon.
 
 Settings: `GCM_MAX_MEMORY` (default `6G`), `GCM_ICON_SIZE` (default 64 px),
-`GCM_ANIMATION_TICKS` (default 160, i.e. 8 s of animation; 0 for still icons only),
+`GCM_ANIMATION_TICKS` (default 400, i.e. up to 20 s of animation; 0 for still icons only),
 `GCM_TIMEOUT` (seconds, default 3600) and `GCM_CACHE_DIR` (default
 `~/.cache/gcm-icon-export`).
 

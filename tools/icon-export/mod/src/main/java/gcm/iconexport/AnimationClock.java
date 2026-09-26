@@ -1,6 +1,9 @@
 package gcm.iconexport;
 
+import java.io.InputStreamReader;
+import java.io.Reader;
 import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -15,8 +18,13 @@ import net.minecraft.client.renderer.texture.TextureClock;
 import net.minecraft.client.renderer.texture.TextureCompass;
 import net.minecraft.client.renderer.texture.TextureMap;
 import net.minecraft.client.renderer.texture.TextureUtil;
+import net.minecraft.client.resources.IResource;
 import net.minecraft.client.resources.data.AnimationMetadataSection;
 import net.minecraft.util.ResourceLocation;
+
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 
 import org.lwjgl.opengl.GL11;
 
@@ -37,6 +45,11 @@ import cpw.mods.fml.relauncher.ReflectionHelper;
  * transcendent metal and colour-cycling materials. It's set to the same tick, so those are captured
  * as animations too instead of coming out at whatever angle or colour the menu had reached.
  *
+ * <p>Textures whose {@code .mcmeta} says {@code "interpolate": true} (Chromatic Glass and ~240
+ * others, mostly GT materials) fade from each frame into the next, blended every tick, as the pack
+ * shows them in game; 1.7.10's own animation code only steps from frame to frame. See
+ * {@link #uploadBlend}.
+ *
  * <p>Sprite subclasses animate their own way (Botania's InterpolatedIcon blends between frames),
  * so for those the sprite is set one tick short and its own {@code updateAnimation()} takes the
  * last step. The compass and clock are left alone: without a world they spin at random, and
@@ -46,6 +59,8 @@ final class AnimationClock {
 
     private static final ResourceLocation[] ATLASES = { TextureMap.locationBlocksTexture,
             TextureMap.locationItemsTexture };
+    /** Where each atlas's sprites' images live, as TextureMap.completeResourceLocation has it. */
+    private static final String[] BASE_PATHS = { "textures/blocks", "textures/items" };
 
     private static final class Anim {
 
@@ -55,9 +70,14 @@ final class AnimationClock {
         final int[] frameTimes;
         /** A subclass: stepped onto each tick by its own updateAnimation(). */
         final boolean ownStep;
+        /** Fades from each frame into the next ({@code "interpolate": true}). */
+        final boolean interpolate;
+        /** The blend uploaded last, per mipmap level; reused. */
+        int[][] blend;
 
-        Anim(TextureAtlasSprite sprite, List<int[][]> frames, AnimationMetadataSection meta) {
+        Anim(TextureAtlasSprite sprite, List<int[][]> frames, AnimationMetadataSection meta, boolean interpolate) {
             this.ownStep = sprite.getClass() != TextureAtlasSprite.class;
+            this.interpolate = interpolate && !ownStep;
             this.sprite = sprite;
             this.frames = frames;
             this.meta = meta;
@@ -101,7 +121,9 @@ final class AnimationClock {
             AnimationClock clock = new AnimationClock(
                     ReflectionHelper.findField(TextureAtlasSprite.class, "frameCounter", "field_110973_g"),
                     ReflectionHelper.findField(TextureAtlasSprite.class, "tickCounter", "field_110983_h"));
-            for (ResourceLocation location : ATLASES) {
+            int interpolated = 0;
+            for (int atlas = 0; atlas < ATLASES.length; atlas++) {
+                ResourceLocation location = ATLASES[atlas];
                 ITextureObject texture = Minecraft.getMinecraft().getTextureManager().getTexture(location);
                 List<Anim> anims = new ArrayList<>();
                 clock.maps.add(texture instanceof TextureMap ? (TextureMap) texture : null);
@@ -115,7 +137,11 @@ final class AnimationClock {
                         List<int[][]> frames = (List<int[][]>) framesField.get(sprite);
                         AnimationMetadataSection meta = (AnimationMetadataSection) metaField.get(sprite);
                         if (meta != null && frames != null && frames.size() > 1) {
-                            anims.add(new Anim(sprite, frames, meta));
+                            Anim anim = new Anim(sprite, frames, meta, interpolates(BASE_PATHS[atlas], sprite));
+                            anims.add(anim);
+                            if (anim.interpolate) {
+                                interpolated++;
+                            }
                         }
                     }
                 }
@@ -133,15 +159,43 @@ final class AnimationClock {
                 }
             }
             IconExportMod.LOG.info(
-                    "{} animated textures ({} blocks, {} items; stepped by their own class: {}).",
+                    "{} animated textures ({} blocks, {} items; {} interpolated; stepped by their own class: {}).",
                     clock.spriteCount,
                     clock.atlases.get(0).size(),
                     clock.atlases.get(1).size(),
+                    interpolated,
                     subclasses);
             return clock;
         } catch (Throwable t) {
             IconExportMod.LOG.warn("Can't control texture animations; animated icons will be still frames.", t);
             return null;
+        }
+    }
+
+    /**
+     * Whether the sprite's {@code .mcmeta} has {@code "interpolate": true}. 1.7.10's
+     * AnimationMetadataSection doesn't read the flag, so the file is read again, through the
+     * resource manager so a resource pack's own .mcmeta wins, as it does for the frames. Parsed
+     * leniently: some mods' files have unquoted keys.
+     */
+    private static boolean interpolates(String basePath, TextureAtlasSprite sprite) {
+        ResourceLocation name = new ResourceLocation(sprite.getIconName());
+        ResourceLocation mcmeta = new ResourceLocation(
+                name.getResourceDomain(),
+                basePath + "/" + name.getResourcePath() + ".png.mcmeta");
+        try {
+            IResource resource = Minecraft.getMinecraft().getResourceManager().getResource(mcmeta);
+            try (Reader reader = new InputStreamReader(resource.getInputStream(), StandardCharsets.UTF_8)) {
+                JsonElement root = new JsonParser().parse(reader);
+                JsonElement animation = root.isJsonObject() ? root.getAsJsonObject().get("animation") : null;
+                if (animation == null || !animation.isJsonObject()) {
+                    return false;
+                }
+                JsonObject section = animation.getAsJsonObject();
+                return section.has("interpolate") && section.get("interpolate").getAsBoolean();
+            }
+        } catch (Throwable t) {
+            return false;
         }
     }
 
@@ -373,6 +427,52 @@ final class AnimationClock {
         }
     }
 
+    /**
+     * An interpolated sprite at {frame, ticks into it}: that frame's image faded towards the next
+     * frame's by ticks / the frame's length, each colour channel on its own and the alpha kept
+     * from the current frame, as Minecraft 1.8+ blends them. Every mipmap level is blended alike.
+     */
+    private static void uploadBlend(Anim anim, int[] want) {
+        int frame = want[0];
+        int from = anim.meta.getFrameIndex(frame);
+        int to = anim.meta.getFrameIndex((frame + 1) % anim.frameTimes.length);
+        if (from < 0 || from >= anim.frames.size() || to < 0 || to >= anim.frames.size()) {
+            return;
+        }
+        int[][] a = anim.frames.get(from);
+        int[][] b = anim.frames.get(to);
+        int[][] upload = a;
+        if (want[1] > 0 && from != to) {
+            double keep = 1.0 - (double) want[1] / anim.frameTimes[frame];
+            if (anim.blend == null) {
+                anim.blend = new int[a.length][];
+            }
+            for (int level = 0; level < a.length; level++) {
+                if (a[level] == null || b.length <= level || b[level] == null) {
+                    anim.blend[level] = a[level];
+                    continue;
+                }
+                if (anim.blend[level] == null || anim.blend[level].length != a[level].length) {
+                    anim.blend[level] = new int[a[level].length];
+                }
+                int[] out = anim.blend[level];
+                int[] x = a[level], y = b[level];
+                for (int i = 0; i < out.length; i++) {
+                    int p = x[i], q = y[i];
+                    out[i] = (p & 0xFF000000) | mix(keep, p >> 16 & 0xFF, q >> 16 & 0xFF) << 16
+                            | mix(keep, p >> 8 & 0xFF, q >> 8 & 0xFF) << 8 | mix(keep, p & 0xFF, q & 0xFF);
+                }
+            }
+            upload = anim.blend;
+        }
+        TextureAtlasSprite s = anim.sprite;
+        TextureUtil.uploadTextureMipmap(upload, s.getIconWidth(), s.getIconHeight(), s.getOriginX(), s.getOriginY(), false, false);
+    }
+
+    private static int mix(double keep, int from, int to) {
+        return (int) (keep * from + (1.0 - keep) * to);
+    }
+
     private interface Target {
 
         /** {frame counter, tick counter} for the sprite. */
@@ -400,6 +500,12 @@ final class AnimationClock {
                         if (!stepOnto(anim, want)) {
                             it.remove();
                         }
+                        continue;
+                    }
+                    if (anim.interpolate) {
+                        uploadBlend(anim, want);
+                        frameCounter.setInt(anim.sprite, want[0]);
+                        tickCounter.setInt(anim.sprite, want[1]);
                         continue;
                     }
                     int current = frameCounter.getInt(anim.sprite);

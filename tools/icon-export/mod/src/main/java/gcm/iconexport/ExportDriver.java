@@ -40,6 +40,8 @@ import cpw.mods.fml.common.gameevent.TickEvent;
 public final class ExportDriver {
 
     private static final int MAX_REPORTED_PROBLEMS = 500;
+    private static final int LOOP_CHECK_FROM = 160;
+    private static final int LOOP_CHECK_EVERY = 40;
 
     private enum Stage {
         WAIT_MENU,
@@ -90,6 +92,10 @@ public final class ExportDriver {
         final Set<Long> written = new HashSet<>();
         /** Failed to render, or follows the clock rather than the animation ticks. */
         boolean failed;
+        /** How many ticks were captured: all of them, or up to where it was seen to loop. */
+        int length;
+        /** Seen to repeat in full; no more ticks needed. */
+        boolean looped;
 
         Capture(ExportJob job, int ticks) {
             this.job = job;
@@ -423,7 +429,7 @@ public final class ExportDriver {
             int end = Math.min(captures.size(), passNext + config.renderBatchSize);
             for (; passNext < end; passNext++) {
                 Capture capture = captures.get(passNext);
-                if (capture.failed) {
+                if (capture.failed || capture.looped) {
                     continue;
                 }
                 BufferedImage image = renderQuietly(capture.job);
@@ -433,6 +439,7 @@ public final class ExportDriver {
                 }
                 long frame = hash(image);
                 capture.ticks[captureTick] = frame;
+                capture.length = captureTick + 1;
                 if (capture.written.add(frame)) {
                     output.writeFrame(capture.job.imagePath, Long.toHexString(frame), image);
                     animationFrames++;
@@ -446,17 +453,51 @@ public final class ExportDriver {
         }
         passNext = 0;
         captureTick++;
+        boolean check = captureTick >= LOOP_CHECK_FROM && captureTick % LOOP_CHECK_EVERY == 0;
+        int capturing = 0;
+        for (Capture capture : captures) {
+            if (capture.failed || capture.looped) {
+                continue;
+            }
+            if (check) {
+                capture.looped = repeats(capture.ticks, capture.length);
+            }
+            if (!capture.looped) {
+                capturing++;
+            }
+        }
         if (captureTick % 20 == 0 || captureTick == config.maxAnimationTicks) {
             IconExportMod.LOG.info(
-                    "Captured {}/{} ticks of {} animated icons.",
+                    "Captured {}/{} ticks of {} animated icons ({} not yet seen to loop).",
                     captureTick,
                     config.maxAnimationTicks,
-                    captures.size());
+                    captures.size(),
+                    capturing);
         }
-        if (captureTick >= config.maxAnimationTicks) {
+        if (captureTick >= config.maxAnimationTicks || capturing == 0) {
             passNext = 0;
             enterStage(Stage.RECHECKING);
         }
+    }
+
+    /**
+     * Whether the first {@code length} frames repeat in full at least twice (some period p with
+     * {@code 2p <= length}). Checked from LOOP_CHECK_FROM ticks on, every LOOP_CHECK_EVERY: most
+     * animations loop well within 160 ticks and stop there, and only long cycles (Chromatic Glass
+     * fades over 160 ticks, so it needs 320 to be seen twice) run on to maxAnimationTicks.
+     * export.py finds the same period again.
+     */
+    static boolean repeats(long[] ticks, int length) {
+        for (int period = 1; period * 2 <= length; period++) {
+            boolean all = true;
+            for (int i = period; i < length && all; i++) {
+                all = ticks[i] == ticks[i - period];
+            }
+            if (all) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** RECHECKING: animated icons at the first frame again, minutes after their still render. */
@@ -493,7 +534,8 @@ public final class ExportDriver {
                 continue;
             }
             List<Object[]> runs = new ArrayList<>();
-            for (long frame : capture.ticks) {
+            for (int i = 0; i < capture.length; i++) {
+                long frame = capture.ticks[i];
                 Object[] last = runs.isEmpty() ? null : runs.get(runs.size() - 1);
                 String id = Long.toHexString(frame);
                 if (last != null && last[0].equals(id)) {

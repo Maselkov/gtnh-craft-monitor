@@ -435,8 +435,9 @@ def animation_period(ticks):
 
 # An animated icon bigger than this plays at half the frame rate (again
 # if need be) until it fits. Big 3D renders that change completely every
-# tick (Tectech's Forge of the Gods) came out at 1.5 MB otherwise.
-APNG_MAX_BYTES = 400_000
+# tick (Tectech's Forge of the Gods) came out at several MB otherwise.
+# Generous: smooth fades (interpolated textures) need every tick's frame.
+APNG_MAX_BYTES = 1_000_000
 APNG_MIN_FRAMES = 4
 
 # Mean per-channel difference (0-255) under which a frame counts as back
@@ -674,7 +675,7 @@ def main():
     parser.add_argument("--icon-size", type=int,
                         default=int(env("GCM_ICON_SIZE", "64")))
     parser.add_argument("--animation-ticks", type=int,
-                        default=int(env("GCM_ANIMATION_TICKS", "160")),
+                        default=int(env("GCM_ANIMATION_TICKS", "400")),
                         help="game ticks of animation to capture (20/s); "
                         "0 = still icons only")
     parser.add_argument("--timeout", type=int,
