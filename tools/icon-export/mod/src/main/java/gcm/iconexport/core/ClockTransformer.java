@@ -19,7 +19,10 @@ import org.objectweb.asm.tree.MethodNode;
  * <p>Touched: GTNHLib's cosmic shader, vanilla's RenderItem (the glint, frozen), and item renderers
  * from mods: classes that implement {@code IItemRenderer} themselves, and GT's item renderer
  * package (its renderers mostly inherit the interface). Nothing else in Minecraft, so the game
- * loop's own timing is untouched. Only calls to the clock are changed.
+ * loop's own timing is untouched. Only calls to the clock are changed, and in those item renderers
+ * calls to {@code java.util.Random} and {@code Math.random()}: renderers that jitter on every draw
+ * then draw the same jitter for the same tick, wherever their Random lives (GT keeps some in
+ * per-material renderers that can't be reached to re-seed them).
  */
 public final class ClockTransformer implements IClassTransformer {
 
@@ -71,6 +74,34 @@ public final class ClockTransformer implements IClassTransformer {
     private static final Redirect LWJGL_TIME = new Redirect("org/lwjgl/Sys", "animationSysTime", "getTime");
 
     private static final Redirect[] ANIMATION = { SYSTEM_MILLIS, SYSTEM_NANOS, MC_TIME_ANIMATION, LWJGL_TIME };
+
+    /** Random's methods renderers call, by name and descriptor; each goes to ExportClock.random*. */
+    private static final String[][] RANDOM_CALLS = {
+            { "nextGaussian", "()D", "randomGaussian" },
+            { "nextDouble", "()D", "randomDouble" },
+            { "nextFloat", "()F", "randomFloat" },
+            { "nextInt", "()I", "randomInt" },
+            { "nextInt", "(I)I", "randomInt" },
+            { "nextLong", "()J", "randomLong" },
+            { "nextBoolean", "()Z", "randomBoolean" },
+    };
+
+    /** ExportClock's replacement for a Random or Math.random() call, or null. */
+    private static String randomReplacement(MethodInsnNode call) {
+        if (call.getOpcode() == Opcodes.INVOKESTATIC && call.owner.equals("java/lang/Math")
+                && call.name.equals("random") && call.desc.equals("()D")) {
+            return "mathRandom";
+        }
+        if (call.getOpcode() != Opcodes.INVOKEVIRTUAL || !call.owner.equals("java/util/Random")) {
+            return null;
+        }
+        for (String[] random : RANDOM_CALLS) {
+            if (call.name.equals(random[0]) && call.desc.equals(random[1])) {
+                return random[2];
+            }
+        }
+        return null;
+    }
     private static final Redirect[] GLINT = { MC_TIME_GLINT };
 
     private static final String ITEM_RENDERER = "net/minecraftforge/client/IItemRenderer";
@@ -115,6 +146,19 @@ public final class ClockTransformer implements IClassTransformer {
                         continue;
                     }
                     MethodInsnNode call = (MethodInsnNode) insn;
+                    String random = redirects == ANIMATION ? randomReplacement(call) : null;
+                    if (random != null) {
+                        // The Random becomes the first argument of a static call: same stack.
+                        if (call.getOpcode() == Opcodes.INVOKEVIRTUAL) {
+                            call.desc = "(Ljava/util/Random;" + call.desc.substring(1);
+                        }
+                        call.setOpcode(Opcodes.INVOKESTATIC);
+                        call.owner = CLOCK;
+                        call.name = random;
+                        call.itf = false;
+                        count++;
+                        continue;
+                    }
                     for (Redirect redirect : redirects) {
                         if (redirect.matches(call)) {
                             call.owner = CLOCK;
@@ -129,7 +173,7 @@ public final class ClockTransformer implements IClassTransformer {
             if (count == 0) {
                 return bytes;
             }
-            LOG.info("Export clock: redirected {} clock call(s) in {}.", count, transformedName);
+            LOG.info("Export clock: redirected {} clock/random call(s) in {}.", count, transformedName);
             ClassWriter writer = new ClassWriter(0);
             node.accept(writer);
             return writer.toByteArray();

@@ -814,9 +814,8 @@ since the game ticks in between. Stages:
 - DETECTING: everything again with each sprite on its first different
   frame; icons whose pixels changed are candidates;
 - VERIFYING: candidates again at tick 0; those that don't match their
-  still render change on every draw (Avaritia/Universal Singularities
-  halos jitter with `Random`, the compass spins without a world) and stay
-  still;
+  still render change on every draw (the compass spins without a world)
+  and stay still;
 - CAPTURING: the rest at every tick up to `maxAnimationTicks` (160 = 8 s,
   the p90 texture cycle; longer ones are cut and loop).
 - RECHECKING: the captured icons at tick 0 again, minutes after the still
@@ -854,8 +853,37 @@ Other clocks: Botania's `ClientTickHandler.ticksInGame`/`partialTicks`/
 `java.util.Random` on every draw (Avaritia and Universal Singularities
 halos, GT's Infinity and glitch effects) get their `Random` fields
 (instance and static, found by type on the item's `IItemRenderer` class and
-its superclasses) re-seeded to a constant before every render
-(`IconRenderer.reseedRenderer`), which holds the jitter still.
+its superclasses) re-seeded from the animation tick before every render
+(`IconRenderer.reseedRenderer`): the same tick always draws the same
+jitter, so they pass VERIFYING and are captured like any other animation.
+It never repeats, so the whole capture loops; at 20 fps it's close enough
+to the per-frame shimmer in game. Avaritia's halo itself is a static quad;
+what moves is its "pulse", a 60%-opacity copy of the icon scaled by
+`nextGaussian() * 0.15 + 0.95` on every draw.
+
+Re-seeding fields only reaches a renderer's own `Random`s. GT registers
+one wrapper (`MetaGeneratedItemRenderer`) that hands each draw to a
+per-material renderer (`GlitchEffectRenderer`, `InfinityRenderer`) the
+wrapper doesn't hold, so Eternity, Magmatter, Infinity, Six-Phased Copper
+and Exo-Halkonite items (~190 icons) never matched themselves. So
+`ClockTransformer` also rewrites `java.util.Random` calls (`nextGaussian`,
+`nextDouble`, ...) and `Math.random()` in the classes it already
+transforms into `ExportClock.random*`, which draw from one sequence
+restarted before every draw with the tick's seed (`beginDraw()`, from
+`IconRenderer.resetState`): the n-th random number of a draw at tick t is
+always the same, whichever Random the renderer holds. GT's glitch effect
+also keeps state between draws (new colour offsets in the first 0.4 s of
+every 2 s, held after), which now comes from those same draws.
+
+Two other things made icons "random". Avaritia turns on GUI item lighting
+and draws its pulse quad without a normal, taking the current one, which
+was whatever the previous item left: its still came out up to a third
+darker depending on its neighbour in the batch. `resetState` now sets the
+normal to face the viewer. And the report lists the icons still classed
+random (`random`, up to 500), for finding the next one: ~35 remain
+(amazingtrophies' trophies, Galacticraft rockets, Forestry bees, a few
+Thaumcraft/BuildCraft blocks), drawing from state outside the item
+renderers.
 
 Only icons the lookup references go through these stages. The mod renders
 every stack (~215k), but NBT variants that share a key never get shown,

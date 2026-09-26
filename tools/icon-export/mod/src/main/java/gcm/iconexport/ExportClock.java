@@ -1,5 +1,7 @@
 package gcm.iconexport;
 
+import java.util.Random;
+
 import net.minecraft.client.Minecraft;
 
 import org.lwjgl.Sys;
@@ -14,6 +16,11 @@ import org.lwjgl.Sys;
  * animations. The enchantment glint also follows the system clock; it's frozen instead, since
  * glinting items are many and a glint changes the whole icon every frame (hundreds of MB as
  * animations). Until the export sets a tick, everything passes through to the real clock.
+ *
+ * <p>Randomness in those renderers is redirected here too. Each draw starts a fresh sequence seeded
+ * by the tick ({@link #beginDraw()}), so a renderer that jitters on every draw draws the same
+ * jitter for the same tick and a different one each tick: a shimmer the export captures like any
+ * animation, instead of an icon that never matches itself.
  */
 public final class ExportClock {
 
@@ -22,6 +29,7 @@ public final class ExportClock {
 
     private static volatile boolean active;
     private static volatile int tick;
+    private static final Random DRAW = new Random();
 
     private ExportClock() {}
 
@@ -32,6 +40,44 @@ public final class ExportClock {
 
     static int tick() {
         return tick;
+    }
+
+    /** Called before every draw: the random calls it makes start from the tick's own seed. */
+    static void beginDraw() {
+        DRAW.setSeed(0x6763_6D00L ^ tick);
+    }
+
+    public static double randomGaussian(Random own) {
+        return active ? DRAW.nextGaussian() : own.nextGaussian();
+    }
+
+    public static double randomDouble(Random own) {
+        return active ? DRAW.nextDouble() : own.nextDouble();
+    }
+
+    public static float randomFloat(Random own) {
+        return active ? DRAW.nextFloat() : own.nextFloat();
+    }
+
+    public static int randomInt(Random own) {
+        return active ? DRAW.nextInt() : own.nextInt();
+    }
+
+    public static int randomInt(Random own, int bound) {
+        return active ? DRAW.nextInt(bound) : own.nextInt(bound);
+    }
+
+    public static long randomLong(Random own) {
+        return active ? DRAW.nextLong() : own.nextLong();
+    }
+
+    public static boolean randomBoolean(Random own) {
+        return active ? DRAW.nextBoolean() : own.nextBoolean();
+    }
+
+    /** Replaces {@code Math.random()}. */
+    public static double mathRandom() {
+        return active ? DRAW.nextDouble() : Math.random();
     }
 
     /** Replaces {@code System.currentTimeMillis()} for animations. */

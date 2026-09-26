@@ -365,6 +365,11 @@ final class IconRenderer {
         GL11.glDisable(GL11.GL_FOG);
         GL11.glEnable(GL11.GL_TEXTURE_2D);
         GL11.glColor4f(1f, 1f, 1f, 1f);
+        // Lit quads drawn without a normal of their own (Avaritia's halo pulse, for one) take the
+        // current one, which is otherwise whatever the previous item drew last: the same icon came
+        // out brighter or darker depending on its neighbour, and never matched itself.
+        GL11.glNormal3f(0f, 0f, 1f);
+        ExportClock.beginDraw();
     }
 
     /**
@@ -480,7 +485,9 @@ final class IconRenderer {
      * Item renderers that jitter with {@code java.util.Random} on every draw (the halos of Avaritia
      * and Universal Singularities, GT's Infinity and glitch effects) come out different every time,
      * so the export couldn't tell them from each other or capture their animated textures. Their
-     * Random fields get the same seed before every render, which holds the jitter still.
+     * Random fields are seeded from the animation tick before every render: the same tick always
+     * draws the same jitter, and each tick a different one, so the shimmer is captured as an
+     * animation like any other (it never repeats, so the whole capture loops).
      */
     private static void reseedRenderer(ItemStack stack) {
         IItemRenderer renderer = MinecraftForgeClient.getItemRenderer(stack, IItemRenderer.ItemRenderType.INVENTORY);
@@ -492,7 +499,7 @@ final class IconRenderer {
             try {
                 Object random = field.get(Modifier.isStatic(field.getModifiers()) ? null : renderer);
                 if (random != null) {
-                    ((Random) random).setSeed(0x6763_6D00L);
+                    ((Random) random).setSeed(0x6763_6D00L ^ ExportClock.tick());
                 }
             } catch (Throwable ignored) {}
         }
