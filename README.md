@@ -4,7 +4,7 @@ A web dashboard for a GregTech: New Horizons base. OpenComputers scripts
 running in-game read your AE2 network and GregTech machines and report to a
 small Flask server, which serves a live page you can open from any browser.
 
-<video src="assets/demo.webm" controls width="100%"></video>
+<video src="docs/media/demo.webm" controls width="100%"></video>
 
 Features:
 
