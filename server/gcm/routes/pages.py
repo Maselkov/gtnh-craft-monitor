@@ -28,7 +28,10 @@ def icon():
     if not img_path:
         abort(404)
     # Animated icons are APNGs; ?still=1 asks for just the first frame.
-    if request.args.get("still") == "1":
+    # ?notification=1 is that, scaled up for a notification.
+    if request.args.get("notification") == "1":
+        data = icons.read_notification_image(img_path)
+    elif request.args.get("still") == "1":
         data = icons.read_still_image(img_path)
     else:
         data = icons.read_image(img_path)

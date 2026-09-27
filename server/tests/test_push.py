@@ -133,7 +133,7 @@ def test_gone_subscription_is_deleted(client, monkeypatch):
         raise WebPushException("gone", response=Gone())
 
     monkeypatch.setattr(push, "_send", refuse)
-    push.deliver([("alice", 1)], "Iron Ingot", "finished")
+    push.deliver([("alice", 1)], "Iron Ingot", None, "finished")
     assert store.push.subscriptions_for(["alice"]) == []
 
 
@@ -145,16 +145,22 @@ def test_other_failures_keep_the_subscription(client, monkeypatch):
         raise OSError("network unreachable")
 
     monkeypatch.setattr(push, "_send", fail)
-    push.deliver([("alice", 1)], "Iron Ingot", "finished")
+    push.deliver([("alice", 1)], "Iron Ingot", None, "finished")
     assert len(store.push.subscriptions_for(["alice"])) == 1
 
 
 def test_stopped_craft_message():
-    assert push.message(7, None, "incomplete") == {
+    assert push.message(7, None, None, "incomplete") == {
         "title": "Craft stopped",
         "body": "A pinned craft stopped before finishing (cancelled or interrupted).",
         "tag": "craft-completion-7",
     }
+
+
+def test_message_carries_the_item_icon():
+    payload = push.message(7, "Thing", "item/test/thing~0.png", "finished")
+    assert payload["icon"] == "/icons?path=item%2Ftest%2Fthing~0.png&notification=1"
+    assert "icon" not in push.message(7, "Thing", None, "finished")
 
 
 def test_service_worker_served_from_root(client):

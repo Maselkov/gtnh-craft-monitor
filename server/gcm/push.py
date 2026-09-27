@@ -20,7 +20,7 @@ from cryptography.hazmat.primitives import serialization
 from py_vapid import Vapid
 from pywebpush import WebPushException, webpush
 
-from gcm import config, store
+from gcm import config, icons, store
 
 log = logging.getLogger(__name__)
 
@@ -83,25 +83,29 @@ def endpoint_allowed(endpoint):
     )
 
 
-def message(completion_id, label, status):
-    """What the notification says. The page shows the same text when it
-    notices the completion itself, under the same tag, so a device
-    getting both shows it once."""
+def message(completion_id, label, icon, status):
+    """What the notification says, and the item's icon. The page shows
+    the same when it notices the completion itself, under the same tag,
+    so a device getting both shows it once."""
     what = label or "A pinned craft"
     if status == "incomplete":
         title, body = "Craft stopped", what + " stopped before finishing (cancelled or interrupted)."
     else:
         title, body = "Craft finished", what + " is done crafting."
-    return {"title": title, "body": body, "tag": f"craft-completion-{completion_id}"}
+    payload = {"title": title, "body": body, "tag": f"craft-completion-{completion_id}"}
+    icon_url = icons.notification_icon_url(icon)
+    if icon_url:
+        payload["icon"] = icon_url
+    return payload
 
 
-def notify_completions(completions, label, status):
+def notify_completions(completions, label, icon, status):
     """Queues a push to every device of each user in completions, a list
     of (user_id, completion_id). Returns immediately."""
     if not completions:
         return
     _ensure_worker()
-    _queue.put((list(completions), label, status))
+    _queue.put((list(completions), label, icon, status))
 
 
 def _ensure_worker():
@@ -123,10 +127,10 @@ def _run():
             _queue.task_done()
 
 
-def deliver(completions, label, status):
+def deliver(completions, label, icon, status):
     completion_by_user = dict(completions)
     for subscription in store.push.subscriptions_for(list(completion_by_user)):
-        payload = message(completion_by_user[subscription["user_id"]], label, status)
+        payload = message(completion_by_user[subscription["user_id"]], label, icon, status)
         try:
             _send(subscription, json.dumps(payload))
         except WebPushException as error:
