@@ -294,16 +294,17 @@ Settings: `GCM_MAX_MEMORY` (default `6G`), `GCM_ICON_SIZE` (default 64 px),
 `GCM_TIMEOUT` (seconds, default 3600) and `GCM_CACHE_DIR` (default
 `~/.cache/gcm-icon-export`).
 
-The lookup contains three tables, tried in order:
+The lookup contains four tables:
 
-- `by_key` — `modid:internalname:damage` → icon, for ordinary items.
+- `by_key` — `modid:internalname:damage` → icon, for ordinary items. When
+  several stacks share a key (NBT variants of one item), the one without NBT.
+- `by_key_label` — `modid:internalname:damage|label` → icon, from NBT stacks
+  only: tells those variants apart (each crop's seeds, each bee species).
+  Tried first for items the scan reports with NBT.
 - `fluids_by_key` — Forge fluid registry name → icon, for fluid pseudo-items
   (see [Fluid items](#fluid-items)).
 - `by_label` — display name → icon. Least reliable fallback, because about 8%
   of labels collide across mods.
-
-When several stacks share a key (NBT variants of one item), the variant
-without NBT is used, since the in-game scripts don't report NBT.
 
 ## In-game setup
 
@@ -318,6 +319,10 @@ without NBT is used, since the in-game scripts don't report NBT.
   server's host not blocked by its whitelist. If this is off, the scripts
   can't POST, and nothing on the Lua side can fix it. The installer also
   needs `raw.githubusercontent.com` and `api.github.com`.
+- Recommended: `allowItemStackNBTTags=true` (under `integration.vanilla`) in
+  `OpenComputers.cfg`. Items that share an id but differ in NBT (seeds with
+  different stats, bees of one species) are then listed separately, as AE2
+  does. Without it they're only told apart by name.
 
 ### Install
 

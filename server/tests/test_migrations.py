@@ -212,3 +212,34 @@ def test_app_db_enforces_foreign_keys(flask_app):
             )
     finally:
         conn.close()
+
+
+def test_variant_steps_extend_existing_tables(tmp_path):
+    history_path = str(tmp_path / "item_history.db")
+    db.migrate(lambda: sqlite3.connect(history_path), db.ITEM_HISTORY_MIGRATIONS[:1])
+    conn = sqlite3.connect(history_path)
+    conn.execute(
+        "INSERT INTO network_snapshot (item_key, internal, kind, size, is_craftable, updated_at) "
+        "VALUES ('m|x|0|item', 'x', 'item', 1, 0, 0)"
+    )
+    conn.commit()
+    conn.close()
+    db.migrate(lambda: sqlite3.connect(history_path), db.ITEM_HISTORY_MIGRATIONS)
+    conn = sqlite3.connect(history_path)
+    try:
+        assert conn.execute("SELECT item_key, variant, variant_name FROM network_snapshot").fetchall() == [
+            ("m|x|0|item", None, None)]
+        # The first scan's one-time history cleanup is pending.
+        assert conn.execute("SELECT COUNT(*) FROM pending_nbt_cleanup").fetchone()[0] == 1
+    finally:
+        conn.close()
+
+    app_path = str(tmp_path / "app.db")
+    version_2_app_db(app_path)
+    db.migrate(lambda: sqlite3.connect(app_path), db.APP_MIGRATIONS)
+    conn = sqlite3.connect(app_path)
+    try:
+        assert conn.execute("SELECT item_key, variant FROM user_item_pins").fetchall() == [
+            ("|water||fluid", None)]
+    finally:
+        conn.close()

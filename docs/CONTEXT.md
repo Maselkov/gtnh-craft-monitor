@@ -437,6 +437,25 @@ colon-presence heuristic is reused elsewhere for the same item/fluid
 distinction (clean item URL paths, `/network/item/mod:internal:damage`
 vs bare `/network/item/internal` for a fluid).
 
+**NBT variants of one item id are separate items.** Every CropsNH seed is
+`cropsnh:genericSeed:0` and every Forestry bee of a type shares one id too;
+the crop or species lives only in NBT. While items were keyed by
+`mod|internal|damage|kind` alone, all variants collapsed into one key: the
+history chart alternated between different seeds' counts, every seed type
+opened the same page, and the snapshot kept only the last one. OC reports
+`hasTag` on every stack, and the NBT itself as `tag` (gzipped binary) only
+with `allowItemStackNBTTags=true` in `OpenComputers.cfg`.
+`network_browser.lua` forwards both (the tag hex-encoded, skipped past
+2 KiB). `inventory.assign_variant()` gives each stack with NBT a `variant`:
+a hash of the canonically serialized NBT (`gcm/nbt.py`), or of the label
+when no tag came. The key and URL gain it (`...|kind|variant`,
+`/network/item/mod:internal:damage~variant`); items without NBT keep their
+old key. `variant_name` is a readable difference (seed stats, analyzed
+bees) or a short id, shown where several variants share a label. Stacks
+still sharing a key (label fallback) are summed. The first scan after the
+change deleted the mixed history under the old plain keys
+(`pending_nbt_cleanup`).
+
 **GT5's item-icon "meta items" are rendered procedurally, not shipped as
 static files.** There's no way to get correct icons for most GTNH items
 (ingots, dusts, plates, circuits) by copying texture files out of mod
@@ -917,7 +936,8 @@ Thaumcraft/BuildCraft blocks), drawing from state outside the item
 renderers.
 
 Only icons the lookup references go through these stages. The mod renders
-every stack (~215k), but NBT variants that share a key never get shown,
+every stack (~215k), but NBT variants that share a key are only shown
+when `by_key_label` (key plus label, e.g. each crop's seeds) points at them,
 and `export.py` (`finish_images`) drops them from `images.zip` too, which
 leaves ~117k icons. That roughly offsets what the APNGs add.
 `build_animations` takes the shortest period the sequence repeats at least

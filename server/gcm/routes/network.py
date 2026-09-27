@@ -135,14 +135,15 @@ def network_history_chart_png():
         except ValueError:
             damage = damage_raw
     kind = request.args.get("kind") or "item"
+    variant = request.args.get("variant") or None
     if not internal:
         abort(400)
 
     range_key, rows = inventory.history(
-        mod, internal, damage, kind, request.args.get("range", "day")
+        mod, internal, damage, kind, request.args.get("range", "day"), variant
     )
     png_bytes = charts.cached_png(
-        ("network", mod, internal, damage, kind, range_key),
+        ("network", mod, internal, damage, kind, variant, range_key),
         lambda: charts.render_png(rows, stepped=True).getvalue(),
     )
     resp = Response(png_bytes, mimetype="image/png")
@@ -163,12 +164,13 @@ def network_history_get():
         except ValueError:
             damage = damage_raw
     kind = request.args.get("kind") or "item"
+    variant = request.args.get("variant") or None
 
     if not internal:
         return jsonify({"error": "missing internal"}), 400
 
     range_key, rows = inventory.history(
-        mod, internal, damage, kind, request.args.get("range", "day")
+        mod, internal, damage, kind, request.args.get("range", "day"), variant
     )
     latest = rows[-1] if rows else None
 
@@ -201,10 +203,11 @@ def network_item_pins_post():
     internal = payload.get("internal")
     damage = payload.get("damage")
     kind = payload.get("kind") or "item"
+    variant = payload.get("variant") or None
     if not internal:
         return jsonify({"error": "missing internal"}), 400
 
-    store.items.pin(user_id, mod, internal, damage, kind)
+    store.items.pin(user_id, mod, internal, damage, kind, variant)
     return jsonify({"ok": True})
 
 
@@ -217,8 +220,9 @@ def network_item_pins_unpin():
     internal = payload.get("internal")
     damage = payload.get("damage")
     kind = payload.get("kind") or "item"
+    variant = payload.get("variant") or None
     if not internal:
         return jsonify({"error": "missing internal"}), 400
 
-    store.items.unpin(user_id, mod, internal, damage, kind)
+    store.items.unpin(user_id, mod, internal, damage, kind, variant)
     return jsonify({"ok": True})

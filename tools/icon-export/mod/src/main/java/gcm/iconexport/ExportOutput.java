@@ -123,11 +123,13 @@ final class ExportOutput {
 
     /**
      * Same tables and tie-breaking as the old NESQL-based generate_icons_lookup.py: when several
-     * stacks share a key (they differ only in NBT, which OC never reports), the one without NBT
-     * wins; otherwise the last one listed wins. Only stacks that actually rendered are included.
+     * stacks share a key (they differ only in NBT), the one without NBT wins; otherwise the last one
+     * listed wins. Only stacks that actually rendered are included. by_key_label tells those NBT
+     * variants apart by label (each crop's seeds, each bee species), keyed "key|label".
      */
     static Map<String, Object> buildLookup(List<ExportJob> jobs) {
         Map<String, ExportJob> byKey = new HashMap<>();
+        Map<String, ExportJob> byKeyLabel = new HashMap<>();
         Map<String, ExportJob> fluidsByKey = new HashMap<>();
         Map<String, ExportJob> byLabel = new HashMap<>();
         // Items before fluids, as the old script did, so a fluid wins a label tie with an item.
@@ -137,6 +139,9 @@ final class ExportOutput {
                     continue;
                 }
                 putPreferringNoNbt(kind == ExportJob.Kind.ITEM ? byKey : fluidsByKey, job.lookupKey, job);
+                if (kind == ExportJob.Kind.ITEM && job.hasNbt && job.label != null) {
+                    byKeyLabel.put(job.lookupKey + "|" + job.label, job);
+                }
                 if (job.label != null) {
                     putPreferringNoNbt(byLabel, job.label, job);
                 }
@@ -144,13 +149,14 @@ final class ExportOutput {
         }
         Map<String, Object> lookup = new LinkedHashMap<>();
         lookup.put("by_key", paths(byKey));
+        lookup.put("by_key_label", paths(byKeyLabel));
         lookup.put("fluids_by_key", paths(fluidsByKey));
         lookup.put("by_label", paths(byLabel));
         // Icons drawn past the item box, and by how much on each side, in 1/16ths of the box:
         // they're that much bigger than the rest, the box in their middle.
         // Only the icons the tables point at: export.py drops the rest from images.zip.
         Map<String, Integer> bleed = new TreeMap<>();
-        for (Map<String, ExportJob> table : Arrays.asList(byKey, fluidsByKey, byLabel)) {
+        for (Map<String, ExportJob> table : Arrays.asList(byKey, byKeyLabel, fluidsByKey, byLabel)) {
             for (ExportJob job : table.values()) {
                 if (job.bleeds) {
                     bleed.put(job.imagePath, IconRenderer.BLEED);

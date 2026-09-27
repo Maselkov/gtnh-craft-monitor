@@ -7,6 +7,7 @@ import functools
 import io
 import json
 import os
+import re
 import threading
 import zipfile
 
@@ -22,7 +23,12 @@ import zipfile
 #   names are globally unique, so no further disambiguation is needed.
 # by_label is the weakest fallback for either case - plain item labels
 # collide across mods ~8% of the time, so only used when nothing else matched.
+# by_key_label: "modid:internalname:damage|label" -> image path, from NBT
+# stacks only. by_key holds the stack WITHOUT NBT, so every NBT variant
+# of an item (each crop's seeds, each bee species) resolved to that one
+# generic icon; their labels are what tell them apart.
 _icons_by_key = {}
+_icons_by_key_label = {}
 _icons_by_label = {}
 _fluids_by_key = {}
 # The GTNH version of the live bundle, or None for the pre-bundle files.
@@ -49,7 +55,7 @@ _ZIP_ROOTS = ("item", "fluid")
 
 def load(lookup_path, images_zip_path, version=None):
     """Makes the given lookup and zip the live ones."""
-    global _icons_by_key, _icons_by_label, _fluids_by_key
+    global _icons_by_key, _icons_by_key_label, _icons_by_label, _fluids_by_key
     global _images_zip, _images_zip_missing_logged, _images_zip_path, _version, _bleed
     icon_data = {}
     if lookup_path and os.path.exists(lookup_path):
@@ -62,6 +68,7 @@ def load(lookup_path, images_zip_path, version=None):
         _images_zip_missing_logged = False
         _images_zip_path = images_zip_path
         _icons_by_key = icon_data.get("by_key", {})
+        _icons_by_key_label = icon_data.get("by_key_label", {})
         _icons_by_label = icon_data.get("by_label", {})
         _fluids_by_key = icon_data.get("fluids_by_key", {})
         _bleed = icon_data.get("bleed", {})
@@ -141,10 +148,15 @@ def damage_str(damage):
     return str(damage)
 
 
-def resolve_icon(mod, internal, damage, label):
+def resolve_icon(mod, internal, damage, label, variant=None):
     """Returns the image path inside images.zip for an item or fluid,
-    prefixed with the data version if a bundle is live, or None."""
-    return _prefixed(_lookup(mod, internal, damage, label))
+    prefixed with the data version if a bundle is live, or None. variant:
+    set for an NBT variant (gcm/inventory.py), whose own icon is found by
+    label before falling back to its item id's generic one."""
+    return _prefixed(
+        (variant and _lookup_variant(mod, internal, damage, label))
+        or _lookup(mod, internal, damage, label)
+    )
 
 
 def current_path(path):
@@ -163,6 +175,24 @@ def _prefixed(path):
         return path
     bleed = _bleed.get(path)
     return f"{_version}~bleed{bleed}/{path}" if bleed else f"{_version}/{path}"
+
+
+def _lookup_variant(mod, internal, damage, label):
+    dmg = damage_str(damage)
+    if not (mod and internal and dmg is not None and label):
+        return None
+    path = _icons_by_key_label.get(f"{mod}:{internal}:{dmg}|{label}")
+    if path:
+        return path
+    # Lookups exported before by_key_label: by_label, but only an NBT
+    # stack of this same item id (the exporter's image path scheme,
+    # item/<mod>/<name>~<damage>~<nbt>.png), never another mod's
+    # namesake.
+    path = _icons_by_label.get(label)
+    prefix = "item/" + re.sub(r'[<>:"/\\|?*]', "", f"{mod}~{internal}").replace("~", "/", 1)
+    if path and path.startswith(f"{prefix}~{dmg}~"):
+        return path
+    return None
 
 
 def _lookup(mod, internal, damage, label):
@@ -186,7 +216,11 @@ def _lookup(mod, internal, damage, label):
 def attach_item_icons(items):
     for item in items or []:
         icon = resolve_icon(
-            item.get("mod"), item.get("internal"), item.get("damage"), item.get("name")
+            item.get("mod"),
+            item.get("internal"),
+            item.get("damage"),
+            item.get("name"),
+            item.get("variant"),
         )
         if icon:
             item["icon"] = icon

@@ -7,16 +7,23 @@ import time
 from gcm import db
 
 
-def item_key(mod, internal, damage, kind):
+def item_key(mod, internal, damage, kind, variant=None):
     # Canonical, stable identifier - built explicitly rather than
     # relying on dict/JSON key ordering, since this is used both as the
     # SQLite storage key and as the browser's shareable URL parameter.
-    return f"{mod or ''}|{internal or ''}|{damage if damage is not None else ''}|{kind or 'item'}"
+    # variant (see gcm/inventory.py) separates NBT variants of one item
+    # id; items without NBT have none, keeping the key they always had.
+    key = f"{mod or ''}|{internal or ''}|{damage if damage is not None else ''}|{kind or 'item'}"
+    return f"{key}|{variant}" if variant else key
 
 
-def _key_of(item):
+def key_of(item):
     return item_key(
-        item.get("mod"), item.get("internal"), item.get("damage"), item.get("kind")
+        item.get("mod"),
+        item.get("internal"),
+        item.get("damage"),
+        item.get("kind"),
+        item.get("variant"),
     )
 
 
@@ -26,20 +33,14 @@ def save_snapshot(items):
     INSERT happens in one transaction so a reader never sees a half-
     written table.
 
-    INSERT OR REPLACE, not a plain INSERT - confirmed from a real
-    production crash: a scan's item list can apparently contain two or
-    more entries resolving to the same item_key (exact cause not
-    pinned down - a plain INSERT just surfaces it as an uncaught
-    IntegrityError instead of handling it). Duplicates aren't corruption
-    worth treating as fatal either way, so REPLACE just lets the later
-    occurrence in the list win, matching ordinary "last write wins"
-    semantics rather than crashing the entire scan/finish request over
-    what's genuinely a best-effort persistence step, not the actual
-    scan result the website itself depends on."""
+    INSERT OR REPLACE, not a plain INSERT: a production crash came from
+    NBT variants of one item sharing a key, before keys carried the
+    variant. inventory.finish_scan() now merges any stacks that still
+    share one, so REPLACE is only a last line of defense."""
     now = time.time()
     rows = [
         (
-            _key_of(it),
+            key_of(it),
             it.get("mod"),
             it.get("internal"),
             it.get("damage"),
@@ -48,6 +49,8 @@ def save_snapshot(items):
             it.get("size", 0) or 0,
             1 if it.get("isCraftable") else 0,
             now,
+            it.get("variant"),
+            it.get("variant_name"),
         )
         for it in items
     ]
@@ -56,8 +59,9 @@ def save_snapshot(items):
         if rows:
             conn.executemany(
                 "INSERT OR REPLACE INTO network_snapshot "
-                "(item_key, mod, internal, damage, kind, name, size, is_craftable, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "(item_key, mod, internal, damage, kind, name, size, is_craftable, updated_at, "
+                "variant, variant_name) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 rows,
             )
 
@@ -68,11 +72,12 @@ def load_snapshot():
     caller attaches those."""
     with db.transaction(db.item_history_db) as conn:
         rows = conn.execute(
-            "SELECT mod, internal, damage, kind, name, size, is_craftable, updated_at "
-            "FROM network_snapshot"
+            "SELECT mod, internal, damage, kind, name, size, is_craftable, updated_at, "
+            "variant, variant_name FROM network_snapshot"
         ).fetchall()
-    items = [
-        {
+    items = []
+    for r in rows:
+        item = {
             "mod": r[0],
             "internal": r[1],
             "damage": r[2],
@@ -81,8 +86,11 @@ def load_snapshot():
             "size": r[5],
             "isCraftable": bool(r[6]),
         }
-        for r in rows
-    ]
+        if r[8]:
+            item["variant"] = r[8]
+        if r[9]:
+            item["variant_name"] = r[9]
+        items.append(item)
     return items, max((r[7] for r in rows), default=None)
 
 
@@ -94,13 +102,13 @@ def record_changes(old_items, new_items):
     having zero stock and no craftable pattern, since getItemsInNetworkById/
     getFluidsInNetwork only ever return entries AE2 itself considers
     present)."""
-    old_by_key = {_key_of(it): it.get("size", 0) for it in old_items or []}
+    old_by_key = {key_of(it): it.get("size", 0) for it in old_items or []}
 
     now = time.time()
     changes = []
     seen_keys = set()
     for it in new_items or []:
-        key = _key_of(it)
+        key = key_of(it)
         seen_keys.add(key)
         new_size = it.get("size", 0)
         if old_by_key.get(key) != new_size:
@@ -117,6 +125,28 @@ def record_changes(old_items, new_items):
             "INSERT INTO item_history (item_key, label, size, recorded_at) VALUES (?, ?, ?, ?)",
             changes,
         )
+
+
+def clear_legacy_variant_history(base_keys, current_sizes):
+    """One-time cleanup, done by the first scan after NBT variants got
+    their own keys (the item_history migration leaves a marker): history
+    recorded under the plain key of an item with NBT variants mixed every
+    variant's count into one series. Deletes it, then records the current
+    size of any plain stack still under that key so its chart has a
+    starting point. Returns whether it ran."""
+    now = time.time()
+    with db.transaction(db.item_history_db) as conn:
+        if not conn.execute("SELECT 1 FROM pending_nbt_cleanup").fetchone():
+            return False
+        conn.executemany(
+            "DELETE FROM item_history WHERE item_key = ?", [(k,) for k in base_keys]
+        )
+        conn.executemany(
+            "INSERT INTO item_history (item_key, label, size, recorded_at) VALUES (?, ?, ?, ?)",
+            [(k, label, size, now) for k, (label, size) in current_sizes.items() if k in base_keys],
+        )
+        conn.execute("DELETE FROM pending_nbt_cleanup")
+    return True
 
 
 def history(key, since):
@@ -165,33 +195,37 @@ def last_recorded(key):
 def pins(user_id):
     with db.transaction(db.app_db) as conn:
         rows = conn.execute(
-            "SELECT mod, internal, damage, kind FROM user_item_pins WHERE user_id = ?",
+            "SELECT mod, internal, damage, kind, variant FROM user_item_pins WHERE user_id = ?",
             (user_id,),
         ).fetchall()
-    return [{"mod": r[0], "internal": r[1], "damage": r[2], "kind": r[3]} for r in rows]
+    return [
+        {"mod": r[0], "internal": r[1], "damage": r[2], "kind": r[3], "variant": r[4]}
+        for r in rows
+    ]
 
 
-def pin(user_id, mod, internal, damage, kind):
+def pin(user_id, mod, internal, damage, kind, variant=None):
     with db.transaction(db.app_db) as conn:
         conn.execute(
             "INSERT OR IGNORE INTO user_item_pins "
-            "(user_id, item_key, mod, internal, damage, kind, pinned_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "(user_id, item_key, mod, internal, damage, kind, variant, pinned_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 user_id,
-                item_key(mod, internal, damage, kind),
+                item_key(mod, internal, damage, kind, variant),
                 mod,
                 internal,
                 damage,
                 kind,
+                variant or None,
                 time.time(),
             ),
         )
 
 
-def unpin(user_id, mod, internal, damage, kind):
+def unpin(user_id, mod, internal, damage, kind, variant=None):
     with db.transaction(db.app_db) as conn:
         conn.execute(
             "DELETE FROM user_item_pins WHERE user_id = ? AND item_key = ?",
-            (user_id, item_key(mod, internal, damage, kind)),
+            (user_id, item_key(mod, internal, damage, kind, variant)),
         )

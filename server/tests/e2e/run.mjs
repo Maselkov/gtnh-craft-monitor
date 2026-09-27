@@ -10,6 +10,7 @@
 // Chrome/Chromium (set CHROME=/path/to/binary if it isn't found).
 
 import { spawn, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
@@ -671,6 +672,24 @@ async function main() {
     await evaluate(PAGE_LIB);
     await waitFor('network tab', `visible($('#networkTab'))`);
     await waitFor('history open', `visible($('#itemHistoryModal')) && $('#itemHistoryName').textContent === 'Iron Ingot'`);
+
+    // NBT variants of one item id each get their own URL.
+    const { data: scan } = await game(base, '/api/network/scan/start', {});
+    const seed = { mod: 'cropsnh', internal: 'genericSeed', damage: 0, hasTag: true };
+    await game(base, '/api/network/scan/batch', {
+      scan_token: scan.scan_token,
+      items: [
+        { ...seed, name: 'Sugar Beet Seeds', size: 27 },
+        { ...seed, name: 'Wheat Seeds', size: 3100 },
+      ],
+    });
+    await game(base, '/api/network/scan/finish', { scan_token: scan.scan_token, chunks_sent: 1, total_errors: 0 });
+    const variant = 'L' + createHash('sha256').update('Wheat Seeds').digest('hex').slice(0, 11);
+    await cdp.send('Page.navigate', { url: base + '/network/item/cropsnh:genericSeed:0~' + variant });
+    await waitFor('reloaded', `document.readyState === 'complete' && !window.byText`);
+    await evaluate(PAGE_LIB);
+    await waitFor('variant history open', `visible($('#itemHistoryModal')) && $('#itemHistoryName').textContent === 'Wheat Seeds' && $('#itemHistoryCurrent').textContent.includes('3,100')`);
+
     await cdp.send('Page.navigate', { url: base + '/power' });
     await waitFor('reloaded', `document.readyState === 'complete' && !window.byText`);
     await evaluate(PAGE_LIB);

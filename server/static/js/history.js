@@ -34,16 +34,19 @@ export function setPendingItemFromUrl(item) {
 // heuristic already trusted elsewhere in this codebase - see the
 // Cryotheum fix), while an item's mod:internal always does. damage
 // is omitted from the URL entirely when it's 0 (the common case for
-// non-variant items), defaulting back to 0 on parse when absent.
+// non-variant items), defaulting back to 0 on parse when absent. An
+// NBT variant (the server's item `variant`) follows a "~":
+// mod:internal:damage~variant - damage then always present.
 export const NETWORK_ITEM_PATH_PREFIX = '/network/item/';
 
-function itemUrlPath(it) {
+export function itemUrlPath(it) {
   if (it.kind === 'fluid') {
     return NETWORK_ITEM_PATH_PREFIX + encodeURIComponent(it.internal);
   }
   const parts = [it.mod || '', it.internal];
-  if (it.damage) parts.push(it.damage);  // omit when 0/falsy
-  return NETWORK_ITEM_PATH_PREFIX + parts.map(p => encodeURIComponent(String(p))).join(':');
+  if (it.damage || it.variant) parts.push(it.damage || 0);  // omit when 0/falsy
+  const path = NETWORK_ITEM_PATH_PREFIX + parts.map(p => encodeURIComponent(String(p))).join(':');
+  return it.variant ? path + '~' + encodeURIComponent(it.variant) : path;
 }
 
 // Returns null if pathname isn't an item URL at all - distinct from
@@ -51,16 +54,19 @@ function itemUrlPath(it) {
 // from "an item page with fields to use."
 export function parseItemUrlPath(pathname) {
   if (!pathname.startsWith(NETWORK_ITEM_PATH_PREFIX)) return null;
-  const raw = pathname.slice(NETWORK_ITEM_PATH_PREFIX.length);
-  if (!raw) return null;
+  const full = pathname.slice(NETWORK_ITEM_PATH_PREFIX.length);
+  if (!full) return null;
+  const tilde = full.indexOf('~');
+  const raw = tilde < 0 ? full : full.slice(0, tilde);
+  const variant = tilde < 0 ? null : (decodeURIComponent(full.slice(tilde + 1)) || null);
   const parts = raw.split(':').map(p => decodeURIComponent(p));
   if (parts.length === 1) {
-    return { mod: null, internal: parts[0], damage: null, kind: 'fluid' };
+    return { mod: null, internal: parts[0], damage: null, kind: 'fluid', variant: null };
   }
   const mod = parts[0] || null;
   const internal = parts[1];
   const damage = parts.length >= 3 ? parseInt(parts[2], 10) : 0;
-  return { mod, internal, damage, kind: 'item' };
+  return { mod, internal, damage, kind: 'item', variant };
 }
 
 function itemHistoryQueryParams(it) {
@@ -69,16 +75,18 @@ function itemHistoryQueryParams(it) {
   params.set('internal', it.internal);
   if (it.damage != null) params.set('damage', it.damage);
   params.set('kind', it.kind || 'item');
+  if (it.variant) params.set('variant', it.variant);
   return params;
 }
 
-function findNetworkItem(mod, internal, damage, kind) {
+function findNetworkItem(mod, internal, damage, kind, variant) {
   const items = (lastNetworkData && lastNetworkData.items) || [];
   return items.find(it =>
     (it.mod || null) === (mod || null) &&
     it.internal === internal &&
     (it.damage != null ? it.damage : null) === (damage != null ? damage : null) &&
-    (it.kind || 'item') === (kind || 'item'));
+    (it.kind || 'item') === (kind || 'item') &&
+    (it.variant || null) === (variant || null));
 }
 
 // Crafting job items (ingredients, final_output) carry name/mod/
@@ -152,7 +160,7 @@ export function tryOpenItemFromUrl() {
   if (!lastNetworkData || !lastNetworkData.items || lastNetworkData.items.length === 0) return;
   const parsed = pendingItemFromUrl;
   pendingItemFromUrl = null;
-  const match = findNetworkItem(parsed.mod, parsed.internal, parsed.damage, parsed.kind);
+  const match = findNetworkItem(parsed.mod, parsed.internal, parsed.damage, parsed.kind, parsed.variant);
   if (match) openItemHistory(match, false);  // false: don't push a NEW url, we're already at this one
 }
 
@@ -175,7 +183,8 @@ export function openItemHistory(it, pushUrl) {
     btn.classList.toggle('active', btn.dataset.range === 'day');
   });
 
-  document.getElementById('itemHistoryName').textContent = it.name || '?';
+  document.getElementById('itemHistoryName').textContent =
+    (it.name || '?') + (it.variant_name ? ' (' + it.variant_name + ')' : '');
   const iconEl = document.getElementById('itemHistoryIcon');
   if (it.icon) {
     iconEl.src = iconUrl(it.icon);
@@ -251,7 +260,7 @@ function updateItemHistoryCurrent(size, kind) {
 
 export function updateItemHistoryPinButton(it) {
   const btn = document.getElementById('itemHistoryPinBtn');
-  const isPinned = pinnedItemKeys.has(networkItemKey(it.mod, it.internal, it.damage, it.kind));
+  const isPinned = pinnedItemKeys.has(networkItemKey(it.mod, it.internal, it.damage, it.kind, it.variant));
   btn.classList.toggle('pinned', isPinned);
   btn.title = isPinned ? 'Unpin this item' : 'Pin this item';
 }

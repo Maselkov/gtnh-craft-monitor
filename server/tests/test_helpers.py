@@ -24,11 +24,26 @@ class TestItemKey:
     def test_missing_kind_defaults_to_item(self):
         assert store.items.item_key("mod", "internal", 0, None) == "mod|internal|0|item"
 
+    def test_nbt_variant_is_appended_only_when_present(self):
+        assert store.items.item_key("cropsnh", "genericSeed", 0, "item", "abc") == (
+            "cropsnh|genericSeed|0|item|abc")
+        assert store.items.item_key("cropsnh", "genericSeed", 0, "item", None) == (
+            "cropsnh|genericSeed|0|item")
+
 
 class TestParseItemUrlPath:
     def test_item_with_damage(self):
         result = pages.parse_item_url_path("gregtech:gt.blockmachines:123")
-        assert result == {"mod": "gregtech", "internal": "gt.blockmachines", "damage": 123, "kind": "item"}
+        assert result == {
+            "mod": "gregtech", "internal": "gt.blockmachines", "damage": 123, "kind": "item", "variant": None,
+        }
+
+    def test_item_with_nbt_variant(self):
+        result = pages.parse_item_url_path("cropsnh:genericSeed:0~0123456789ab")
+        assert result == {
+            "mod": "cropsnh", "internal": "genericSeed", "damage": 0, "kind": "item",
+            "variant": "0123456789ab",
+        }
 
     def test_item_without_damage_defaults_to_zero(self):
         result = pages.parse_item_url_path("minecraft:stone")
@@ -38,14 +53,16 @@ class TestParseItemUrlPath:
     def test_fluid_bare_internal_no_colon(self):
         # The exact real-world case that motivated the clean-URL feature.
         result = pages.parse_item_url_path("molten.silicone")
-        assert result == {"mod": None, "internal": "molten.silicone", "damage": None, "kind": "fluid"}
+        assert result == {
+            "mod": None, "internal": "molten.silicone", "damage": None, "kind": "fluid", "variant": None,
+        }
 
     def test_matches_the_frontend_js_parser_shape(self):
         # Both sides need to agree exactly - this mirrors the manual
         # cross-check already done for the real feature (see the
         # conversation history for the JS-side equivalent test).
         assert pages.parse_item_url_path("cryotheum") == {
-            "mod": None, "internal": "cryotheum", "damage": None, "kind": "fluid",
+            "mod": None, "internal": "cryotheum", "damage": None, "kind": "fluid", "variant": None,
         }
 
 
@@ -114,6 +131,33 @@ class TestResolveIcon:
         monkeypatch.setattr(icons, "_icons_by_label", {"Some Item": "path/to/fallback.png"})
         result = icons.resolve_icon("unknownmod", "unknown_internal", 0, "Some Item")
         assert result == "path/to/fallback.png"
+
+    def test_nbt_variant_prefers_its_own_icon(self, monkeypatch):
+        monkeypatch.setattr(icons, "_icons_by_key", {"cropsnh:genericSeed:0": "item/cropsnh/genericSeed~0.png"})
+        monkeypatch.setattr(icons, "_icons_by_key_label", {
+            "cropsnh:genericSeed:0|Sugar Beet Seeds": "item/cropsnh/genericSeed~0~beet.png"})
+        monkeypatch.setattr(icons, "_icons_by_label", {})
+        assert icons.resolve_icon("cropsnh", "genericSeed", 0, "Sugar Beet Seeds", "v1") == (
+            "item/cropsnh/genericSeed~0~beet.png")
+        # Without a variant (no NBT), the generic icon as before.
+        assert icons.resolve_icon("cropsnh", "genericSeed", 0, "Sugar Beet Seeds") == (
+            "item/cropsnh/genericSeed~0.png")
+        # An unknown variant label falls back to the generic icon.
+        assert icons.resolve_icon("cropsnh", "genericSeed", 0, "Odd Seeds", "v2") == (
+            "item/cropsnh/genericSeed~0.png")
+
+    def test_nbt_variant_uses_label_only_from_the_same_item(self, monkeypatch):
+        # Lookups exported before by_key_label.
+        monkeypatch.setattr(icons, "_icons_by_key", {"cropsnh:genericSeed:0": "item/cropsnh/genericSeed~0.png"})
+        monkeypatch.setattr(icons, "_icons_by_key_label", {})
+        monkeypatch.setattr(icons, "_icons_by_label", {
+            "Sugar Beet Seeds": "item/cropsnh/genericSeed~0~beet.png",
+            "Forest Princess": "item/othermod/thing~0.png",
+        })
+        assert icons.resolve_icon("cropsnh", "genericSeed", 0, "Sugar Beet Seeds", "v1") == (
+            "item/cropsnh/genericSeed~0~beet.png")
+        assert icons.resolve_icon("cropsnh", "genericSeed", 0, "Forest Princess", "v1") == (
+            "item/cropsnh/genericSeed~0.png")
 
     def test_no_match_returns_none(self, monkeypatch):
         monkeypatch.setattr(icons, "_icons_by_key", {})

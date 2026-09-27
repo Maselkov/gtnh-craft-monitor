@@ -194,9 +194,11 @@ def test_finish_images_writes_apngs_and_drops_unused_icons(tmp_path):
 
     (tmp_path / "icons_lookup.json").write_text(json.dumps({
         "by_key": {"a:anim:0": "item/a/anim~0.png", "a:flat:0": "item/a/flat~0.png"},
+        "by_key_label": {"a:flat:0|Seed": "item/a/flat~0~seed.png"},
         "fluids_by_key": {}, "by_label": {"Other": "item/a/other~0.png"}}))
     write_zip(tmp_path / "images.zip", {"item/a/anim~0.png": still,
                                         "item/a/flat~0.png": still,
+                                        "item/a/flat~0~seed.png": BLUE,
                                         "item/a/other~0.png": BLUE,
                                         # An NBT variant no lookup entry uses.
                                         "item/a/anim~0~nbt.png": still})
@@ -208,6 +210,7 @@ def test_finish_images_writes_apngs_and_drops_unused_icons(tmp_path):
         assert "item/a/anim~0~nbt.png" not in zf.namelist()
         assert zf.read("item/a/flat~0.png") == still
         assert zf.read("item/a/other~0.png") == BLUE
+        assert zf.read("item/a/flat~0~seed.png") == BLUE
         image = Image.open(BytesIO(zf.read("item/a/anim~0.png")))
         assert image.n_frames == 3
         durations = [frame.info["duration"]
