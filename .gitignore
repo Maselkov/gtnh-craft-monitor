@@ -286,3 +286,6 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 *.db
+
+# Web Push signing key (server/data/vapid_private.pem)
+*.pem

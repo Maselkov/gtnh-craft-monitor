@@ -25,7 +25,7 @@ The per-CPU memory it compares against lives in gcm/state.py
 
 import time
 
-from gcm import progress, state, store
+from gcm import progress, push, state, store
 
 
 def _classify_status(steps_left):
@@ -95,13 +95,16 @@ def _end_job_locked(name, label=None, icon=None):
     """Records the end of the job tracked on CPU `name`. Caller holds
     state.tracking_lock."""
     last_known = state.cpu_last_known.pop(name, {})
-    store.crafts.record_job_end(
+    label = label or last_known.get("label")
+    status = _classify_status(last_known.get("steps_left"))
+    completions = store.crafts.record_job_end(
         name,
-        label or last_known.get("label"),
+        label,
         icon or last_known.get("icon"),
-        _classify_status(last_known.get("steps_left")),
+        status,
         last_known.get("progress"),
     )
+    push.notify_completions(completions, label, status)
 
 
 def process_jobs(jobs):

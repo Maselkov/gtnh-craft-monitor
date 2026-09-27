@@ -73,7 +73,7 @@ let lastFetchAt = null;  // client-side Date.now() of the last successful fetch
 
 export function setupCraftsActions() {
   delegateActions(document, {
-    'enable-notifications': () => requestNotifPermission(),
+    'toggle-notifications': () => toggleNotifications(),
   });
   const root = document.getElementById('root');
   delegateActions(root, {
@@ -185,7 +185,7 @@ function notifyNewCompletions(completions) {
       if (!claimed.has(c.id)) {
         claimed.add(c.id);
         claimedChanged = true;
-        notifyCraftDone(c.itemName, c.status);
+        notifyCraftDone(c.id, c.itemName, c.status);
       }
     }
   }
@@ -216,42 +216,156 @@ function formatRelativeTime(seconds) {
   return Math.round(diffHr / 24) + 'd ago';
 }
 
-export function updateNotifButton() {
-  const btn = document.getElementById('notifBtn');
-  if (!('Notification' in window)) {
-    btn.textContent = 'Notifications unsupported';
-    btn.disabled = true;
-    return;
+// The switch in the settings menu. Browsers don't let a page revoke
+// its own notification permission, so "off" is this app's own flag
+// on top of it. Nothing stored means the pre-switch behaviour: on
+// exactly when permission was already granted.
+const LS_NOTIFICATIONS = 'gtnhCraftMonitor.notifications';
+
+// Android Chrome throws on `new Notification()` from a page, and iOS
+// only shows notifications through a service worker - so register
+// one when the browser has them and show notifications through it.
+let swRegistration = Promise.resolve(null);
+
+export function setupNotifications() {
+  if ('serviceWorker' in navigator && window.isSecureContext) {
+    swRegistration = navigator.serviceWorker.register('/sw.js').catch(() => null);
   }
-  if (Notification.permission === 'granted') {
-    btn.textContent = 'Notifications on';
-    btn.classList.add('on');
-  } else if (Notification.permission === 'denied') {
-    btn.textContent = 'Notifications blocked';
-    btn.classList.remove('on');
-  } else {
-    btn.textContent = 'Enable notifications';
-    btn.classList.remove('on');
-  }
+  updateNotifToggle();
 }
 
-function requestNotifPermission() {
-  if (!('Notification' in window)) return;
-  // Browsers require this to be triggered by a direct user gesture
-  // (this button click), and most also require a secure context -
-  // plain http:// on a LAN host (not localhost) will silently
-  // refuse to prompt at all. See README for the HTTPS/localhost note.
-  Notification.requestPermission().then(updateNotifButton);
+function notificationsOn() {
+  return !notificationsBlocker() && Notification.permission === 'granted' && notificationsWanted();
 }
 
-function notifyCraftDone(itemName, status) {
-  if (!('Notification' in window) || Notification.permission !== 'granted') return;
-  const what = itemName || 'A pinned craft';
+function base64UrlBytes(text) {
+  const base64 = text.replace(/-/g, '+').replace(/_/g, '/');
+  return Uint8Array.from(atob(base64 + '='.repeat((4 - base64.length % 4) % 4)), c => c.charCodeAt(0));
+}
+
+function postJson(url, body) {
+  return fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+// Web Push (gcm/push.py): with the switch on, this browser's push
+// subscription is saved on the server under the signed-in user, so a
+// finished craft reaches it with no tab open. Called on sign-in and
+// whenever the switch changes; safe to call any time.
+export async function syncPushSubscription() {
+  const registration = await swRegistration;
+  if (!registration || !('PushManager' in window) || !AUTH_USER) return;
   try {
-    if (status === 'incomplete') {
-      new Notification('Craft stopped', { body: what + ' stopped before finishing (cancelled or interrupted).' });
+    let subscription = await registration.pushManager.getSubscription();
+    if (!notificationsOn()) {
+      if (subscription) await forgetSubscription(subscription);
+      return;
+    }
+    const { publicKey } = await (await fetch('/api/push/key')).json();
+    const key = base64UrlBytes(publicKey);
+    // One made for another server key (the data directory was reset,
+    // say) can never be delivered to - replace it.
+    const existingKey = subscription && subscription.options.applicationServerKey;
+    if (existingKey && new Uint8Array(existingKey).join() !== key.join()) {
+      await subscription.unsubscribe();
+      subscription = null;
+    }
+    if (!subscription) {
+      subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+    }
+    await postJson('/api/push/subscribe', subscription.toJSON());
+  } catch (e) {
+    // No push then - the open page still notifies on its own.
+  }
+}
+
+// On sign-out: pushes for this user must stop reaching this browser.
+export async function dropPushSubscription() {
+  const registration = await swRegistration;
+  if (!registration || !('PushManager' in window)) return;
+  try {
+    const subscription = await registration.pushManager.getSubscription();
+    if (subscription) await forgetSubscription(subscription);
+  } catch (e) { /* ignore */ }
+}
+
+async function forgetSubscription(subscription) {
+  await postJson('/api/push/unsubscribe', { endpoint: subscription.endpoint }).catch(() => {});
+  await subscription.unsubscribe();
+}
+
+function notificationsWanted() {
+  let stored = null;
+  try { stored = localStorage.getItem(LS_NOTIFICATIONS); } catch (e) { /* ignore */ }
+  if (stored === 'off') return false;
+  if (stored === 'on') return true;
+  return 'Notification' in window && Notification.permission === 'granted';
+}
+
+function setNotificationsWanted(on) {
+  try { localStorage.setItem(LS_NOTIFICATIONS, on ? 'on' : 'off'); } catch (e) { /* ignore */ }
+}
+
+// Why the switch can't be turned on here, or '' if it can.
+function notificationsBlocker() {
+  // Checked first: over plain http:// browsers hide the API entirely,
+  // and "not supported" would send people looking for the wrong fix.
+  if (!window.isSecureContext) return 'Needs HTTPS';
+  if (!('Notification' in window)) {
+    // iOS Safari has no notifications in a normal tab, only once the
+    // page is added to the home screen and opened from there.
+    const ios = /iPad|iPhone|iPod/.test(navigator.userAgent)
+      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    return ios ? 'Add to Home Screen first' : 'Not supported here';
+  }
+  if (Notification.permission === 'denied') return 'Blocked in browser settings';
+  return '';
+}
+
+export function updateNotifToggle() {
+  const toggle = document.getElementById('notifToggle');
+  const blocker = notificationsBlocker();
+  const on = notificationsOn();
+  toggle.setAttribute('aria-checked', on ? 'true' : 'false');
+  toggle.disabled = Boolean(blocker);
+  document.getElementById('notifNote').textContent = blocker;
+}
+
+async function toggleNotifications() {
+  if (notificationsBlocker()) return;
+  // Go by what the switch shows, which is what the click meant.
+  if (document.getElementById('notifToggle').getAttribute('aria-checked') === 'true') {
+    setNotificationsWanted(false);
+  } else {
+    // Browsers require this to be triggered by a direct user gesture
+    // (this click). It resolves straight away if already granted.
+    const permission = await Notification.requestPermission();
+    if (permission === 'granted') setNotificationsWanted(true);
+  }
+  updateNotifToggle();
+  await syncPushSubscription();
+}
+
+async function notifyCraftDone(id, itemName, status) {
+  if (!notificationsOn()) return;
+  const what = itemName || 'A pinned craft';
+  const [title, body] = status === 'incomplete'
+    ? ['Craft stopped', what + ' stopped before finishing (cancelled or interrupted).']
+    : ['Craft finished', what + ' is done crafting.'];
+  const options = {
+    body,
+    tag: 'craft-completion-' + id,
+    icon: '/icons?path=item%2Fappliedenergistics2%2Ftile.BlockInterface~0.png',
+  };
+  try {
+    const registration = await swRegistration;
+    if (registration) {
+      await registration.showNotification(title, options);
     } else {
-      new Notification('Craft finished', { body: what + ' is done crafting.' });
+      new Notification(title, options);
     }
   } catch (e) {
     // ignore - some browsers throw if called outside a gesture in odd states

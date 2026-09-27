@@ -43,11 +43,16 @@ GAMEDATA_API_URL = os.environ.get("GAMEDATA_API_URL", "https://api.github.com").
 GTNH_VERSION = os.environ.get("GTNH_VERSION", "").strip()
 GTNH_TEXTURES = os.environ.get("GTNH_TEXTURES", "").strip()
 
+# Contact the push services are given with every Web Push (gcm/push.py):
+# a mailto: or https: URL. Empty means the page's own URL.
+VAPID_SUBJECT = os.environ.get("VAPID_SUBJECT", "").strip()
+
 DATA_DIR = None
 GAMEDATA_DIR = None
 POWER_DB_PATH = None
 ITEM_HISTORY_DB_PATH = None
 APP_DB_PATH = None
+VAPID_KEY_PATH = None
 LEGACY_CRAFT_DB_PATH = None
 
 SERVER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -56,6 +61,7 @@ SERVER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 def configure(data_dir=None, api_key=None):
     global API_KEY, DATA_DIR, GAMEDATA_DIR
     global POWER_DB_PATH, ITEM_HISTORY_DB_PATH, APP_DB_PATH, LEGACY_CRAFT_DB_PATH
+    global VAPID_KEY_PATH
     if api_key is not None:
         API_KEY = api_key
     DATA_DIR = data_dir or os.environ.get("DATA_DIR") or os.path.join(SERVER_DIR, "data")
@@ -63,6 +69,7 @@ def configure(data_dir=None, api_key=None):
     POWER_DB_PATH = os.path.join(DATA_DIR, "power.db")
     ITEM_HISTORY_DB_PATH = os.path.join(DATA_DIR, "item_history.db")
     APP_DB_PATH = os.path.join(DATA_DIR, "app.db")
+    VAPID_KEY_PATH = os.path.join(DATA_DIR, "vapid_private.pem")
     # app.db's name before it held more than craft history; startup
     # renames it (db.adopt_legacy_app_db()).
     LEGACY_CRAFT_DB_PATH = os.path.join(DATA_DIR, "craft_history.db")

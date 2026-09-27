@@ -16,6 +16,11 @@
 <script defer src="/static/vendor/chart-4.4.4.umd.js"></script>
 <script defer src="/static/vendor/chartjs-adapter-date-fns-3.0.0.bundle.min.js"></script>
 <link rel="stylesheet" href="/static/app.css?v=__ASSET_VERSION__">
+<!-- Lets the page be added to a phone's home screen as a standalone app -
+     iOS only allows web notifications from a page opened that way. -->
+<link rel="manifest" href="/static/manifest.json?v=__ASSET_VERSION__">
+<link rel="apple-touch-icon" href="/icons?path=item%2Fappliedenergistics2%2Ftile.BlockInterface~0.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
 </head>
 <body>
   <div class="top-bar">
@@ -27,13 +32,20 @@
         placeholder="Access token" autocomplete="off"
         title="Enter your personal access token to sign in">
       <button class="notif-btn" id="authBtn" data-action="sign-in">Sign in</button>
-      <button class="notif-btn" id="notifBtn" data-action="enable-notifications">Enable notifications</button>
       <div class="settings-wrap" id="settingsWrap" style="display:none;">
         <button class="notif-btn settings-btn" id="settingsBtn" title="Settings"
           aria-label="Settings" aria-haspopup="true" aria-expanded="false"
           data-action="toggle-settings">&#9881;</button>
         <div class="settings-menu" id="settingsMenu" role="menu" style="display:none;">
           <div class="settings-menu-user" id="settingsUser"></div>
+          <button class="settings-menu-item settings-toggle" id="notifToggle" role="menuitemcheckbox"
+            aria-checked="false" data-action="toggle-notifications">
+            <span class="settings-toggle-label">
+              Notifications
+              <span class="settings-toggle-note" id="notifNote"></span>
+            </span>
+            <span class="switch" aria-hidden="true"></span>
+          </button>
           <button class="settings-menu-item" id="adminBtn" role="menuitem" style="display:none;"
             data-action="open-admin">Manage users</button>
           <button class="settings-menu-item" id="gamedataBtn" role="menuitem" style="display:none;"

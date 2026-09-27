@@ -435,11 +435,29 @@ def _item_history_variants(conn):
     conn.execute("INSERT INTO pending_nbt_cleanup (id) VALUES (1)")
 
 
+def _app_push_subscriptions(conn):
+    # One row per browser that turned notifications on (gcm/push.py).
+    # A browser has one endpoint whoever is signed in, so it's the key.
+    # origin is the page's own URL, the default VAPID contact.
+    conn.execute("""
+        CREATE TABLE push_subscriptions (
+            endpoint TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            p256dh TEXT NOT NULL,
+            auth TEXT NOT NULL,
+            origin TEXT NOT NULL,
+            created_at REAL NOT NULL
+        )
+    """)
+    conn.execute("CREATE INDEX idx_push_subscriptions_user ON push_subscriptions (user_id)")
+
+
 APP_MIGRATIONS = [
     _app_baseline,
     _app_drop_orphaned_user_rows,
     _app_cascade_user_rows,
     _app_item_pin_variants,
+    _app_push_subscriptions,
 ]
 POWER_MIGRATIONS = [_power_baseline]
 ITEM_HISTORY_MIGRATIONS = [_item_history_baseline, _item_history_variants]

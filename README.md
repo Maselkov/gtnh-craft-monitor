@@ -9,7 +9,7 @@ small Flask server, which serves a live page you can open from any browser.
 Features:
 
 - **Crafts** — every AE2 crafting CPU with its current job, output item, and
-  progress. Pin a job to get a desktop notification when it finishes.
+  progress. Pin a job to get a notification when it finishes.
 - **Power** — stored EU of a GregTech multiblock (e.g. a Lapotronic Super
   Capacitor) charted over time.
 - **Network** — searchable, sortable list of every item and fluid in the ME
@@ -127,6 +127,7 @@ Environment variables (set in `.env` for Docker):
 | `DATA_DIR` | `server/data` | Where the databases and game data are kept. |
 | `GTNH_VERSION` | empty | Game data version to install at startup; see [Item icons](#item-icons). |
 | `GTNH_TEXTURES` | empty | Icon textures for `GTNH_VERSION`: `default` or `faithful32`. Empty keeps what was picked on the page. |
+| `VAPID_SUBJECT` | the page's URL | Contact given to push services with each notification: a `mailto:` or `https:` URL. |
 | `GAMEDATA_REPO` | `Maselkov/gtnh-craft-monitor-data` | Repo whose `gtnh-data-*` releases the Game data page offers. |
 | `GAMEDATA_API_URL` | `https://api.github.com` | GitHub API base for that list (for mirrors). |
 
@@ -203,6 +204,9 @@ instead, which takes a consistent copy while the server keeps running:
 ```bash
 docker compose exec gtnh-craft-monitor python app.py backup "/app/data/backup-$(date +%F)"
 ```
+
+The backup doesn't include `server/data/vapid_private.pem`, the key that signs
+notifications. It never changes, so copy it once alongside.
 
 To restore, stop the container, replace the `.db` file in `server/data/`,
 delete that file's `-wal` and `-shm` files if present, and start it again.
@@ -498,15 +502,32 @@ One card per crafting CPU, updated every 3 seconds. A busy card shows:
 
 Click the pin icon on a card to pin its job to the top of the page. When a
 pinned job finishes, it shows as a completion to acknowledge and, if you've
-clicked **Enable notifications**, triggers a desktop notification. Pins and
+turned notifications on, triggers a notification. Pins and
 completions are saved per user on the server, so they follow you across
 devices.
 
+Turn notifications on with the **Notifications** switch in the settings
+(&#9881;) menu. Each browser you turn it on in gets them, delivered through
+the browser's push service (Web Push), so they arrive even with the page
+closed. Signing out stops them for that browser.
+
+For push, the server needs outbound HTTPS to the push services
+(`fcm.googleapis.com` for Chrome and Android, `*.push.services.mozilla.com`
+for Firefox, `*.push.apple.com` for Safari and iOS, `*.notify.windows.com` for
+Edge on Windows). Without it, notifications still show while the page is open.
+The server signs pushes with a key it generates on first start,
+`server/data/vapid_private.pem`. Keep it with your backups: if it's lost,
+every browser has to turn the switch off and on again.
+
 Browsers allow notifications only on a secure origin: `https://` or
-`http://localhost`. Opened over plain HTTP from another device, the
-**Enable notifications** button does nothing. Use a TLS reverse proxy (see
+`http://localhost`. Opened over plain HTTP from another device, the switch is
+disabled with a "Needs HTTPS" note. Use a TLS reverse proxy (see
 [Exposing it beyond your LAN](#exposing-it-beyond-your-lan)) or open the page
 on the server machine itself.
+
+On phones: Android Chrome works as-is. On iPhone and iPad (iOS 16.4+),
+notifications only work after **Share → Add to Home Screen**, opening the page
+from that icon, and turning the switch on there.
 
 ### Power tab
 

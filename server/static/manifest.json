@@ -1,0 +1,16 @@
+{
+  "name": "GTNH Monitor",
+  "short_name": "GTNH Monitor",
+  "start_url": "/crafts",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0f1115",
+  "theme_color": "#0f1115",
+  "icons": [
+    {
+      "src": "/icons?path=item%2Fappliedenergistics2%2Ftile.BlockInterface~0.png",
+      "type": "image/png",
+      "sizes": "any"
+    }
+  ]
+}
