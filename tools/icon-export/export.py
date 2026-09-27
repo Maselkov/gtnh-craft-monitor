@@ -215,7 +215,11 @@ def resolve_libraries(patches, pack_root, cache):
                 continue
         artifact = lib.get("downloads", {}).get("artifact")
         if not artifact:
-            sys.exit(f"Library {name} has no download URL.")
+            # Legacy MultiMC entries carry only a maven base URL, defaulting
+            # to Mojang's library host, as MultiMC itself does.
+            base = lib.get("url", "https://libraries.minecraft.net/")
+            artifact = {"url": base.rstrip("/") + "/"
+                        + maven_path(name).as_posix()}
         dest = cache / "libraries" / maven_path(name)
         jobs.append((artifact["url"], dest, artifact.get("sha1")))
         classpath.append(dest)
