@@ -418,9 +418,31 @@ def _app_cascade_user_rows(conn):
         raise RuntimeError(f"foreign key violations after rebuilding user tables: {problems}")
 
 
-APP_MIGRATIONS = [_app_baseline, _app_drop_orphaned_user_rows, _app_cascade_user_rows]
+def _app_item_pin_variants(conn):
+    # NBT variants of one item id (gcm/inventory.py) are pinned separately;
+    # item_key already includes the variant, this keeps it retrievable.
+    conn.execute("ALTER TABLE user_item_pins ADD COLUMN variant TEXT")
+
+
+def _item_history_variants(conn):
+    conn.execute("ALTER TABLE network_snapshot ADD COLUMN variant TEXT")
+    conn.execute("ALTER TABLE network_snapshot ADD COLUMN variant_name TEXT")
+    # Until now every NBT variant of an item was recorded under one key,
+    # interleaving their counts. Which keys that hit is only known once a
+    # scan reports variants, so the first scan clears them - see
+    # store.items.clear_legacy_variant_history().
+    conn.execute("CREATE TABLE pending_nbt_cleanup (id INTEGER PRIMARY KEY)")
+    conn.execute("INSERT INTO pending_nbt_cleanup (id) VALUES (1)")
+
+
+APP_MIGRATIONS = [
+    _app_baseline,
+    _app_drop_orphaned_user_rows,
+    _app_cascade_user_rows,
+    _app_item_pin_variants,
+]
 POWER_MIGRATIONS = [_power_baseline]
-ITEM_HISTORY_MIGRATIONS = [_item_history_baseline]
+ITEM_HISTORY_MIGRATIONS = [_item_history_baseline, _item_history_variants]
 
 
 def migrate(open_db, steps):

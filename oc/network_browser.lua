@@ -222,9 +222,36 @@ local function split_mod_name(fullname)
   return fullname:sub(1, colon - 1), fullname:sub(colon + 1)
 end
 
+-- NBT tags past this many (gzipped) bytes aren't forwarded: storage
+-- cells and backpacks carry huge ones, and every scanned stack sits in
+-- this computer's memory until its batch is sent. The server falls back
+-- to telling those variants apart by label.
+local MAX_TAG_BYTES = 2048
+
+local function hex(bytes)
+  return (bytes:gsub(".", function(c) return string.format("%02x", c:byte()) end))
+end
+
 local function simplify_item(item)
   local mod, internal = split_mod_name(item.name)
+  -- hasTag: this stack has NBT, so AE2 may hold several stacks with this
+  -- same name/damage that differ only in it (one crop's seeds with
+  -- different stats, bees of different species). tag is that NBT, but
+  -- OC only includes it with allowItemStackNBTTags = true in
+  -- OpenComputers.cfg - a binary string, hex-encoded since json.lua
+  -- can't carry raw bytes. The server keys each variant separately.
+  local tag, tagTooLarge
+  if item.hasTag and type(item.tag) == "string" then
+    if #item.tag <= MAX_TAG_BYTES then
+      tag = hex(item.tag)
+    else
+      tagTooLarge = true
+    end
+  end
   return {
+    hasTag = item.hasTag and true or nil,
+    tag = tag,
+    tag_too_large = tagTooLarge,
     name = item.label or item.name or "?",
     size = item.size or 0,
     mod = mod,

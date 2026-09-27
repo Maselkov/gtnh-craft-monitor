@@ -17,23 +17,24 @@ let networkShownItems = [];  // the currently-rendered array, indexed by
 // Item pins (Network tab "favorite this item") - a different concept
 // from the CPU-based pin system used for craft completion tracking,
 // kept entirely separate client-side too (own Set, own endpoints).
-// Format matches the server's own _item_key() exactly (mod|internal|
-// damage|kind) - this duplication is low-risk: it's only used for a
+// Format matches the server's own item_key() exactly (mod|internal|
+// damage|kind, then |variant for an NBT variant) - this duplication is low-risk: it's only used for a
 // fast client-side Set lookup, the server's own mod/internal/damage/
 // kind FIELDS remain the actual source of truth, so if this ever
 // drifted out of sync the worst case is a cosmetic "badge didn't
 // show", not a real data problem.
 export let pinnedItemKeys = new Set();
 
-export function networkItemKey(mod, internal, damage, kind) {
-  return (mod || '') + '|' + (internal || '') + '|' + (damage != null ? damage : '') + '|' + (kind || 'item');
+export function networkItemKey(mod, internal, damage, kind, variant) {
+  const key = (mod || '') + '|' + (internal || '') + '|' + (damage != null ? damage : '') + '|' + (kind || 'item');
+  return variant ? key + '|' + variant : key;
 }
 
 export async function fetchNetworkPins() {
   try {
     const res = await fetch('/api/network/pins');
     const data = await res.json();
-    pinnedItemKeys = new Set((data.pins || []).map(p => networkItemKey(p.mod, p.internal, p.damage, p.kind)));
+    pinnedItemKeys = new Set((data.pins || []).map(p => networkItemKey(p.mod, p.internal, p.damage, p.kind, p.variant)));
     // Whichever of fetchNetwork()/fetchNetworkPins() resolves second
     // is what actually needs to trigger the correctly-pinned render -
     // safe to call unconditionally, renderNetworkList() itself
@@ -45,14 +46,16 @@ export async function fetchNetworkPins() {
 }
 
 export async function toggleNetworkItemPin(it) {
-  const key = networkItemKey(it.mod, it.internal, it.damage, it.kind);
+  const key = networkItemKey(it.mod, it.internal, it.damage, it.kind, it.variant);
   const isPinned = pinnedItemKeys.has(key);
   const path = isPinned ? '/api/network/pins/unpin' : '/api/network/pins';
   try {
     await fetch(path, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mod: it.mod, internal: it.internal, damage: it.damage, kind: it.kind || 'item' }),
+      body: JSON.stringify({
+        mod: it.mod, internal: it.internal, damage: it.damage, kind: it.kind || 'item', variant: it.variant || null,
+      }),
     });
   } catch (e) {
     return;  // don't update local state if the request itself failed
@@ -113,6 +116,7 @@ function showNetworkTooltip(cell, x, y) {
   const tip = ensureNetworkTooltip();
   tip.innerHTML = `
     <div class="network-tooltip-name">${escapeHtml(it.name || '?')}</div>
+    ${it.variant_name ? `<div class="network-tooltip-variant">${escapeHtml(it.variant_name)}</div>` : ''}
     <div class="network-tooltip-stat">${statLine}</div>
     ${it.kind === 'fluid' ? `<div class="network-tooltip-fluid">Fluid</div>` : ''}
     ${it.isCraftable ? `<div class="network-tooltip-craftable">Craftable</div>` : ''}
@@ -292,7 +296,7 @@ function buildNetworkCellHtml(it, idx) {
   const patternBadge = it.isCraftable
     ? `<img class="network-cell-pattern-badge" src="${iconUrl(NETWORK_PATTERN_ICON)}" alt="" loading="lazy" data-remove-on-error>`
     : '';
-  const isPinned = pinnedItemKeys.has(networkItemKey(it.mod, it.internal, it.damage, it.kind));
+  const isPinned = pinnedItemKeys.has(networkItemKey(it.mod, it.internal, it.damage, it.kind, it.variant));
   const pinBadge = isPinned ? `<span class="network-cell-pin-badge">&#128204;</span>` : '';
   return `<div class="network-cell${it.isCraftable ? ' craftable' : ''}" data-idx="${idx}">${icon}${qty}${patternBadge}${pinBadge}</div>`;
 }
@@ -355,8 +359,8 @@ function renderNetworkList() {
     // mode - but within each group (pinned vs not), the normal sort
     // criteria still applies, rather than pinned items falling back
     // to some arbitrary pin-timestamp order.
-    const aPinned = pinnedItemKeys.has(networkItemKey(a.mod, a.internal, a.damage, a.kind));
-    const bPinned = pinnedItemKeys.has(networkItemKey(b.mod, b.internal, b.damage, b.kind));
+    const aPinned = pinnedItemKeys.has(networkItemKey(a.mod, a.internal, a.damage, a.kind, a.variant));
+    const bPinned = pinnedItemKeys.has(networkItemKey(b.mod, b.internal, b.damage, b.kind, b.variant));
     if (aPinned !== bPinned) return aPinned ? -1 : 1;
     if (networkSort === 'size') return (b.size || 0) - (a.size || 0);
     return (a.name || '').localeCompare(b.name || '');

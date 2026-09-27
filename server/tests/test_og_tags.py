@@ -119,6 +119,25 @@ class TestNetworkItemOgTags:
         html = client.get(self._item_path(None, "molten.silicone", None, "fluid")).get_data(as_text=True)
         assert "Currently stored: 9,500 mB" in html
 
+    def test_nbt_variant_url_shows_that_variant(self, client, api_headers):
+        from nbt_fixtures import seed_tag
+        seed = {"name": "Sugar Beet Seeds", "size": 27, "mod": "cropsnh", "internal": "genericSeed",
+                "damage": 0, "kind": "item", "hasTag": True}
+        run_scan(client, api_headers, [
+            dict(seed, tag=seed_tag("sugarbeet", 1, 1, 1)),
+            dict(seed, name="Wheat Seeds", size=3100, tag=seed_tag("wheat", 1, 1, 1)),
+        ])
+        items = client.get("/api/network").get_json()["items"]
+        variant = next(it["variant"] for it in items if it["name"] == "Sugar Beet Seeds")
+        html = client.get(f"/network/item/cropsnh:genericSeed:0~{variant}").get_data(as_text=True)
+        assert '<meta property="og:title" content="Sugar Beet Seeds">' in html
+        assert "Currently stored: 27" in html
+        assert f"variant={variant}" in html
+
+    def test_malformed_variant_is_ignored(self, client):
+        html = client.get('/network/item/cropsnh:genericSeed:0~"><script>').get_data(as_text=True)
+        assert "variant=" not in html
+
     def test_unknown_item_still_serves_a_reasonable_fallback(self, client):
         html = client.get(self._item_path("nomod", "nothing_here", 0, "item")).get_data(as_text=True)
         assert '<meta property="og:title" content="Item">' in html

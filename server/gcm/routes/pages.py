@@ -53,14 +53,23 @@ def parse_item_url_path(identifier):
     inferred from whether a colon is present at all - a fluid's internal
     name never contains one, an item's mod:internal always does - same
     heuristic already trusted elsewhere in this codebase for exactly this
-    distinction, see the Cryotheum fix)."""
+    distinction, see the Cryotheum fix). An NBT variant's id follows a
+    "~" (mod:internal:damage~variant)."""
+    identifier, _, variant = identifier.partition("~")
     parts = [unquote(p) for p in identifier.split(":")]
     if len(parts) == 1:
-        return {"mod": None, "internal": parts[0], "damage": None, "kind": "fluid"}
+        return {"mod": None, "internal": parts[0], "damage": None, "kind": "fluid", "variant": None}
     mod = parts[0] or None
     internal = parts[1]
     damage = int(parts[2]) if len(parts) >= 3 and parts[2] else 0
-    return {"mod": mod, "internal": internal, "damage": damage, "kind": "item"}
+    return {
+        "mod": mod,
+        "internal": internal,
+        "damage": damage,
+        "kind": "item",
+        # Only ever hex with an optional "L" prefix (gcm/inventory.py).
+        "variant": variant if re.fullmatch(r"[0-9A-Za-z]{1,16}", variant) else None,
+    }
 
 
 def _build_og_tags(path, args):
@@ -106,8 +115,9 @@ def _build_og_tags(path, args):
         internal = parsed.get("internal")
         damage = parsed.get("damage")
         kind = parsed.get("kind") or "item"
+        variant = parsed.get("variant")
         if internal:
-            label, size = inventory.item_display_info(mod, internal, damage, kind)
+            label, size = inventory.item_display_info(mod, internal, damage, kind, variant)
             title = label if label else "Item"
             unit = " mB" if kind == "fluid" else ""
             desc = (
@@ -116,6 +126,8 @@ def _build_og_tags(path, args):
                 else "No data yet"
             )
             q = f"mod={mod or ''}&internal={internal}&damage={damage if damage is not None else ''}&kind={kind}"
+            if variant:
+                q += f"&variant={variant}"
             image = f"{base}/api/network/history/chart.png?{q}&range=day"
         else:
             title = "Item"

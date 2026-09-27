@@ -3,11 +3,12 @@ protocol that builds each snapshot, its persistence and restart
 reload, item lookups, and per-item quantity history. The live snapshot
 itself is in gcm/state.py; the HTTP side is routes/network.py."""
 
+import hashlib
 import logging
 import secrets
 import time
 
-from gcm import icons, state, store
+from gcm import icons, nbt, state, store
 
 log = logging.getLogger(__name__)
 
@@ -32,11 +33,76 @@ def _is_current_scan_locked(token):
     return bool(current) and token == current
 
 
+def assign_variant(item):
+    """Gives an item with NBT its variant: a short id that, with mod,
+    internal and damage, keys it apart from its item id's other NBT
+    variants (one crop's seeds, bees of one species...), the way AE2
+    keeps them in separate slots. Derived from the NBT itself when
+    network_browser.lua sent it (hex `tag`, which needs
+    allowItemStackNBTTags on in OpenComputers.cfg), else from the label -
+    which still splits seeds by crop and bees by species, just not by
+    stats. Also sets variant_name when the NBT says something readable
+    about what sets this stack apart. Items without NBT get neither, and
+    keep the key they had before variants existed. Strips the transport-
+    only fields either way."""
+    has_tag = item.pop("hasTag", False)
+    tag_hex = item.pop("tag", None)
+    item.pop("tag_too_large", None)
+    if not has_tag or item.get("kind") == "fluid":
+        return item
+    if isinstance(tag_hex, str) and tag_hex:
+        try:
+            root = nbt.parse_hex(tag_hex)
+        except nbt.NbtError as e:
+            log.debug("unreadable NBT on %s:%s: %s", item.get("mod"), item.get("internal"), e)
+        else:
+            item["variant"] = nbt.canonical_hash(root)
+            name = nbt.describe(root)
+            if name:
+                item["variant_name"] = name
+            return item
+    label = str(item.get("name") or "")
+    item["variant"] = "L" + hashlib.sha256(label.encode("utf-8")).hexdigest()[:11]
+    return item
+
+
+def merge_variants(items):
+    """Folds stacks that share a key into one, sizes summed - only
+    possible for label-derived variants, where AE2's separate stacks
+    look identical to us. Then, where several variants still share a
+    label and variant_name doesn't tell them apart, suffixes a short id
+    so the grid never shows two indistinguishable entries."""
+    merged = {}
+    for it in items:
+        key = store.items.key_of(it)
+        existing = merged.get(key)
+        if existing is None:
+            merged[key] = it
+        else:
+            existing["size"] = (existing.get("size") or 0) + (it.get("size") or 0)
+            existing["isCraftable"] = bool(existing.get("isCraftable") or it.get("isCraftable"))
+
+    by_label = {}
+    for it in merged.values():
+        if it.get("variant"):
+            by_label.setdefault((it.get("mod"), it.get("internal"), it.get("name")), []).append(it)
+    for group in by_label.values():
+        if len(group) < 2:
+            continue
+        names = [it.get("variant_name") for it in group]
+        for it in group:
+            name = it.get("variant_name")
+            if not name or names.count(name) > 1:
+                short = "#" + it["variant"][-4:]
+                it["variant_name"] = f"{name} {short}" if name else short
+    return list(merged.values())
+
+
 def add_batch(token, items):
     """Buffers one batch of scanned items. Returns (buffered item count,
     chunks received so far), or None if the batch belongs to a scan
     that isn't the active one - see finish_scan() for why."""
-    items = icons.attach_item_icons(items)
+    items = icons.attach_item_icons([assign_variant(it) for it in items])
     with state.network_lock:
         if not _is_current_scan_locked(token):
             return None
@@ -132,7 +198,7 @@ def finish_scan(token, chunks_sent, total_errors):
             }
 
         old_items = state.network["items"]
-        new_items = list(state.network_buffer)
+        new_items = merge_variants(state.network_buffer)
         state.network["items"] = new_items
         state.network["item_count"] = len(new_items)
         state.network["updated_at"] = time.time()
@@ -152,6 +218,10 @@ def finish_scan(token, chunks_sent, total_errors):
     except Exception as e:
         log.exception("item history recording failed (scan itself still succeeded): %s", e)
     try:
+        _clear_legacy_variant_history(new_items)
+    except Exception as e:
+        log.exception("clearing pre-variant item history failed: %s", e)
+    try:
         store.items.save_snapshot(new_items)
     except Exception as e:
         log.exception(
@@ -159,6 +229,21 @@ def finish_scan(token, chunks_sent, total_errors):
         )
 
     return {"ok": True, "item_count": item_count}
+
+
+def _clear_legacy_variant_history(items):
+    base_keys = {
+        store.items.item_key(it.get("mod"), it.get("internal"), it.get("damage"), it.get("kind"))
+        for it in items
+        if it.get("variant")
+    }
+    current = {
+        store.items.key_of(it): (it.get("name"), it.get("size", 0))
+        for it in items
+        if not it.get("variant")
+    }
+    if store.items.clear_legacy_variant_history(base_keys, current):
+        log.info("Cleared pre-variant history for %d items with NBT variants.", len(base_keys))
 
 
 def load_snapshot():
@@ -201,7 +286,7 @@ def refresh_icons():
         icons.attach_item_icons(state.network_buffer)
 
 
-def item_display_info(mod, internal, damage, kind):
+def item_display_info(mod, internal, damage, kind, variant=None):
     """Returns (label, size) for OG-tag purposes. Tries the live network
     snapshot first (freshest); falls back to item_history's most recent
     row if the item isn't currently in the snapshot (e.g. it dropped to
@@ -216,10 +301,11 @@ def item_display_info(mod, internal, damage, kind):
                 and (it.get("damage") if it.get("damage") is not None else None)
                 == (damage if damage is not None else None)
                 and (it.get("kind") or "item") == (kind or "item")
+                and (it.get("variant") or None) == (variant or None)
             ):
                 return it.get("name"), it.get("size")
 
-    return store.items.last_recorded(store.items.item_key(mod, internal, damage, kind))
+    return store.items.last_recorded(store.items.item_key(mod, internal, damage, kind, variant))
 
 
 HISTORY_RANGE_SECONDS = {
@@ -254,12 +340,12 @@ def downsample_steps(rows, max_points=HISTORY_MAX_POINTS):
     return out
 
 
-def history(mod, internal, damage, kind, range_key):
+def history(mod, internal, damage, kind, range_key, variant=None):
     """(range_key, rows) of one item's quantity history for a chart range
     name, downsampled; unknown names mean "day"."""
     if range_key not in HISTORY_RANGE_SECONDS:
         range_key = "day"
     seconds = HISTORY_RANGE_SECONDS[range_key]
     since = None if seconds is None else time.time() - seconds
-    rows = store.items.history(store.items.item_key(mod, internal, damage, kind), since)
+    rows = store.items.history(store.items.item_key(mod, internal, damage, kind, variant), since)
     return range_key, downsample_steps(rows)

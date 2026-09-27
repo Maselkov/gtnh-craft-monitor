@@ -1,8 +1,9 @@
 import sqlite3
 
-from gcm import config, icons, state
+from gcm import config, icons, state, store
 from gcm import inventory
 from conftest import login_as
+from nbt_fixtures import seed_tag
 
 
 def run_scan(client, api_headers, batches):
@@ -86,7 +87,7 @@ class TestDuplicateItemKeyRegression:
         res = run_scan(client, api_headers, [[duplicate_a], [duplicate_b]])
         assert res.status_code == 200  # NOT 500
 
-    def test_later_duplicate_wins_in_the_snapshot_table(self, client, api_headers):
+    def test_duplicates_are_merged_into_one_summed_entry(self, client, api_headers):
         duplicate_a = dict(ITEM, size=100)
         duplicate_b = dict(ITEM, size=250)
         run_scan(client, api_headers, [[duplicate_a], [duplicate_b]])
@@ -96,8 +97,138 @@ class TestDuplicateItemKeyRegression:
             rows = conn.execute("SELECT size FROM network_snapshot").fetchall()
         finally:
             conn.close()
-        assert len(rows) == 1  # no crash, no duplicate row
-        assert rows[0][0] == 250  # the later occurrence won
+        assert rows == [(350,)]
+        assert client.get("/api/network").get_json()["item_count"] == 1
+
+
+SEED = {
+    "name": "Sugar Beet Seeds",
+    "size": 27,
+    "mod": "cropsnh",
+    "internal": "genericSeed",
+    "damage": 0,
+    "kind": "item",
+    "isCraftable": False,
+    "hasTag": True,
+}
+SEED_Q = {"mod": "cropsnh", "internal": "genericSeed", "damage": 0, "kind": "item"}
+
+
+def history_sizes(client, variant=None, **query):
+    params = dict(SEED_Q, **{"range": "day", **query})
+    if variant:
+        params["variant"] = variant
+    return [p["size"] for p in client.get("/api/network/history", query_string=params).get_json()["points"]]
+
+
+class TestNbtVariants:
+    def test_each_nbt_variant_is_its_own_item_with_its_own_history(self, client, api_headers):
+        beet = dict(SEED, tag=seed_tag("sugarbeet", 1, 1, 1))
+        wheat = dict(SEED, name="Wheat Seeds", size=3100, tag=seed_tag("wheat", 1, 1, 1))
+        for _ in range(3):
+            run_scan(client, api_headers, [[beet, wheat]])
+
+        items = client.get("/api/network").get_json()["items"]
+        assert len(items) == 2
+        variants = {it["name"]: it["variant"] for it in items}
+        assert len(set(variants.values())) == 2
+        assert all("tag" not in it and "hasTag" not in it for it in items)
+
+        assert history_sizes(client, variants["Sugar Beet Seeds"]) == [27]
+        assert history_sizes(client, variants["Wheat Seeds"]) == [3100]
+
+    def test_same_label_different_stats_are_told_apart(self, client, api_headers):
+        low = dict(SEED, tag=seed_tag("sugarbeet", 1, 1, 1))
+        high = dict(SEED, size=5, tag=seed_tag("sugarbeet", 12, 8, 1))
+        run_scan(client, api_headers, [[low, high]])
+
+        items = client.get("/api/network").get_json()["items"]
+        assert sorted(it["variant_name"] for it in items) == [
+            "Gr 1 · Ga 1 · Re 1", "Gr 12 · Ga 8 · Re 1"]
+
+    def test_undescribable_same_label_variants_get_short_ids(self, client, api_headers):
+        from nbt_fixtures import tag_hex
+        from gcm import nbt
+        a = dict(SEED, tag=tag_hex([("x", nbt.INT, 1)]))
+        b = dict(SEED, tag=tag_hex([("x", nbt.INT, 2)]))
+        run_scan(client, api_headers, [[a, b]])
+
+        items = client.get("/api/network").get_json()["items"]
+        assert sorted(it["variant_name"] for it in items) == sorted(
+            "#" + it["variant"][-4:] for it in items)
+
+    def test_without_tags_variants_split_by_label_and_merge_within_it(self, client, api_headers):
+        # allowItemStackNBTTags off: only hasTag and the label to go on.
+        beet_a = dict(SEED, size=20)
+        beet_b = dict(SEED, size=7)
+        wheat = dict(SEED, name="Wheat Seeds", size=3100)
+        run_scan(client, api_headers, [[beet_a, wheat, beet_b]])
+
+        items = {it["name"]: it for it in client.get("/api/network").get_json()["items"]}
+        assert set(items) == {"Sugar Beet Seeds", "Wheat Seeds"}
+        assert items["Sugar Beet Seeds"]["size"] == 27
+        assert items["Sugar Beet Seeds"]["variant"].startswith("L")
+        assert "variant_name" not in items["Sugar Beet Seeds"]
+
+    def test_unreadable_tag_falls_back_to_the_label(self, client, api_headers):
+        run_scan(client, api_headers, [[dict(SEED, tag="not hex")]])
+        item = client.get("/api/network").get_json()["items"][0]
+        assert item["variant"].startswith("L")
+
+    def test_items_without_nbt_keep_their_old_key(self, client, api_headers):
+        run_scan(client, api_headers, [[ITEM]])
+        item = client.get("/api/network").get_json()["items"][0]
+        assert "variant" not in item
+        points = client.get("/api/network/history", query_string={
+            "mod": "minecraft", "internal": "iron_ingot", "damage": 0, "kind": "item",
+        }).get_json()["points"]
+        assert [p["size"] for p in points] == [500]
+
+    def test_variants_survive_a_restart(self, client, api_headers):
+        run_scan(client, api_headers, [[dict(SEED, tag=seed_tag("sugarbeet", 12, 8, 1))]])
+        before = client.get("/api/network").get_json()["items"]
+        state.network["items"] = []
+        inventory.load_snapshot()
+        after = client.get("/api/network").get_json()["items"]
+        assert [(it["variant"], it["variant_name"]) for it in after] == [
+            (it["variant"], it["variant_name"]) for it in before]
+
+    def test_first_scan_clears_mixed_pre_variant_history_once(self, client, api_headers):
+        base_key = store.items.item_key("cropsnh", "genericSeed", 0, "item")
+        conn = sqlite3.connect(config.ITEM_HISTORY_DB_PATH)
+        try:
+            conn.executemany(
+                "INSERT INTO item_history (item_key, label, size, recorded_at) VALUES (?, ?, ?, ?)",
+                [(base_key, "Wheat Seeds", 3100, 1.0), (base_key, "Sugar Beet Seeds", 27, 2.0)],
+            )
+            # Left by the migration; reset_state empties every table.
+            conn.execute("INSERT INTO pending_nbt_cleanup (id) VALUES (1)")
+            conn.commit()
+        finally:
+            conn.close()
+
+        plain = dict(SEED, name="Seeds", size=4, hasTag=False)
+        beet = dict(SEED, tag=seed_tag("sugarbeet", 1, 1, 1))
+        run_scan(client, api_headers, [[plain, beet]])
+        # The mixed rows are gone; the plain stack still under the old key
+        # starts over from its current size.
+        assert history_sizes(client, range="lifetime") == [4]
+
+        # Only once: later history under the old key is kept.
+        run_scan(client, api_headers, [[dict(plain, size=9), beet]])
+        run_scan(client, api_headers, [[dict(plain, size=9), beet]])
+        assert history_sizes(client, range="lifetime") == [4, 9]
+
+    def test_pins_are_per_variant(self, client, api_headers):
+        login_as(client, "usr_alice")
+        client.post("/api/network/pins", json=dict(SEED_Q, variant="aaa"))
+        client.post("/api/network/pins", json=dict(SEED_Q, variant="bbb"))
+        pins = client.get("/api/network/pins").get_json()["pins"]
+        assert sorted(p["variant"] for p in pins) == ["aaa", "bbb"]
+
+        client.post("/api/network/pins/unpin", json=dict(SEED_Q, variant="aaa"))
+        pins = client.get("/api/network/pins").get_json()["pins"]
+        assert [p["variant"] for p in pins] == ["bbb"]
 
 
 class TestSnapshotRestartRecovery:

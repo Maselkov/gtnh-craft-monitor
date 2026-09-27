@@ -600,6 +600,11 @@ h1 {
   color: #f0f0f0;
   margin-bottom: 5px;
 }
+.network-tooltip-variant {
+  font-size: 12px;
+  color: #d8c890;
+  margin: -2px 0 5px;
+}
 .network-tooltip-stat {
   font-size: 12px;
   color: #a8a8b8;
