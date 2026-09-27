@@ -12,8 +12,8 @@ design couldn't fix:
      craft_monitor.lua is), so it never has that gap.
   2. The client had no way to distinguish a finished craft from a
      cancelled/interrupted one - "was busy, now isn't" looked identical
-     either way. The server classifies this from the last known
-     progress_percent at the moment of the transition instead.
+     either way. The server classifies this from how many steps the job
+     had left (gcm/progress.py) at the moment of the transition instead.
 
 craft_events is a permanent, unpruned log of the end of every job on
 every CPU, regardless of whether anyone has it pinned -
@@ -25,13 +25,11 @@ The per-CPU memory it compares against lives in gcm/state.py
 
 import time
 
-from gcm import state, store
-
-FINISHED_THRESHOLD = 99  # progress_percent >= this counts as "finished"
+from gcm import progress, state, store
 
 
-def _classify_status(progress):
-    # progress is None specifically means the main 5s status poll never
+def _classify_status(steps_left):
+    # steps_left is None specifically means the main 5s status poll never
     # captured even ONE snapshot of this CPU while it was busy, before it
     # went idle again - confirmed (via the FusionTech Mk-IV test earlier)
     # that a REJECTED craft request never flips a CPU busy at all, so an
@@ -39,9 +37,11 @@ def _classify_status(progress):
     # fast, genuine SUCCESS that simply outran the polling interval - not
     # evidence of a failure we just failed to observe. Treating it as
     # "incomplete" was actively wrong in exactly that case.
-    if progress is None:
+    if steps_left is None:
         return "finished"
-    return "finished" if progress >= FINISHED_THRESHOLD else "incomplete"
+    # The final output's own step can't be seen reaching zero - the CPU
+    # goes idle as soon as it does - so one step left counts as finished.
+    return "finished" if steps_left <= 1 else "incomplete"
 
 
 def _new_job_entry(started_at):
@@ -53,6 +53,8 @@ def _new_job_entry(started_at):
         "label": None,
         "icon": None,
         "progress": None,
+        "steps_left": None,
+        "peaks": {},  # gcm/progress.py's per-step baseline for this job
         "output": None,
         "started_at": started_at,
     }
@@ -93,13 +95,12 @@ def _end_job_locked(name, label=None, icon=None):
     """Records the end of the job tracked on CPU `name`. Caller holds
     state.tracking_lock."""
     last_known = state.cpu_last_known.pop(name, {})
-    progress = last_known.get("progress")
     store.crafts.record_job_end(
         name,
         label or last_known.get("label"),
         icon or last_known.get("icon"),
-        _classify_status(progress),
-        progress,
+        _classify_status(last_known.get("steps_left")),
+        last_known.get("progress"),
     )
 
 
@@ -113,7 +114,10 @@ def process_jobs(jobs):
     starts its next job between two polls is never seen idle, and its
     pins must not carry over to the new job. A back-to-back job making
     the same item, or a CPU without a Crafting Monitor (no final output
-    at all), still can't be told apart from one long job."""
+    at all), still can't be told apart from one long job.
+
+    Also sets each job's progress_percent, steps_done and steps_total
+    (gcm/progress.py), replacing anything the game sent."""
     with state.tracking_lock:
         for job in jobs:
             name = job.get("name")
@@ -140,10 +144,23 @@ def process_jobs(jobs):
                     entry["output"] = output
                     entry["label"] = job.get("final_output")
                     entry["icon"] = job.get("final_output_icon")
-                if job.get("progress_percent") is not None:
-                    entry["progress"] = job.get("progress_percent")
+                _update_progress(entry, job)
+            else:
+                job["progress_percent"] = None
 
             state.cpu_last_busy[name] = busy
+
+
+def _update_progress(entry, job):
+    percent, steps_done, steps_total = progress.update(entry["peaks"], job)
+    if percent is not None:
+        # Never backwards, even if a step's remaining amount grows mid-job.
+        percent = max(percent, entry["progress"] or 0)
+        entry["progress"] = percent
+        entry["steps_left"] = steps_total - steps_done
+    job["progress_percent"] = entry["progress"]
+    job["steps_done"] = steps_done
+    job["steps_total"] = steps_total
 
 
 def start_requested_job(user_id, cpu_name, label, icon, requested_at):
@@ -161,7 +178,7 @@ def start_requested_job(user_id, cpu_name, label, icon, requested_at):
     sees a busy sample to compare against the later idle one, so the
     completion is never detected and the pin sits there forever. With
     it, the next poll can still detect the transition retroactively.
-    progress is left unknown (None) rather than guessed, which
+    Steps left are unknown (None) rather than guessed, which
     _classify_status reads as "finished" for exactly this reason.
 
     The game only starts a request on a CPU it saw idle, so a job we're

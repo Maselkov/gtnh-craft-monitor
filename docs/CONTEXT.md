@@ -607,14 +607,30 @@ color alone differentiates the highlighted terms now.
 
 ## Design decisions worth knowing (not bugs, but non-obvious choices)
 
-**Progress % is an approximation, not AE2's real job timer.** It's
-computed from `storedItems()` vs `pendingItems()` size ratios - weighted
-by item count, so a job needing one expensive item and 63 cheap ones
-looks "mostly done" once the 63 land, even if the expensive one is still
-crafting. This is also what the server uses to classify a finished
-craft-event as `finished` (progress ≥99%) vs `incomplete` (anything
-else, covering cancellation/interruption without claiming more certainty
-than the data supports).
+**Progress % counts steps, not time.** The server computes it
+(`gcm/progress.py`, called from `tracking.process_jobs`), not
+craft_monitor.lua. A step is one item or fluid type in the job's
+pending + active lists. Its progress is how far its remaining amount has
+fallen from the largest amount seen for it this job. The job's progress
+is the average over steps, each counted equally, and it never moves
+backwards. It used to be `stored / (stored + pending)` over raw stack
+sizes, which had three problems. Fluids counted in mB swamped
+everything. 4096 cheap items outweighed one slow one. And `stored` also
+holds the raw ingredients pulled at the start, which shrink as they're
+consumed, so the bar could go backwards. Remaining-over-peak has no
+units, so fluids need no conversion (there isn't one anyway - not every
+fluid is ingot-based). Time weighting was deliberately left out. Recipe
+durations aren't available, machines are shared between concurrent
+jobs, and "active" includes items queued behind others at a machine. So
+neither observed per-item rates nor past durations of the same craft
+describe the job in front of you. The per-step baselines live in
+`cpu_last_known`, in memory only, so after a server restart an in-flight
+job's bar re-baselines from its current state. The steps left at the
+last report also classify a job end: at most one left (the final
+output's own step, which can't be seen reaching zero before the CPU
+goes idle) is `finished`, anything more is `incomplete`. That covers
+cancellation and interruption without claiming more certainty than the
+data supports.
 
 **Craft completion tracking is entirely server-side now**, not
 client/localStorage-based (an earlier version was - see git history /

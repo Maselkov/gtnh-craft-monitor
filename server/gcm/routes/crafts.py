@@ -56,14 +56,14 @@ def crafts_post():
 
     jobs = icons.attach_job_icons(payload.get("jobs", []))
 
+    # Before storing: it also fills in each job's progress. Outside
+    # crafts_lock - tracking has its own lock.
+    tracking.process_jobs(jobs)
+
     with state.crafts_lock:
         state.crafts["jobs"] = jobs
         state.crafts["source"] = payload.get("source")
         state.crafts["received_at"] = time.time()
-
-    # Outside crafts_lock: tracking has its own lock, and only needs the
-    # jobs list we already hold.
-    tracking.process_jobs(jobs)
 
     return jsonify({"ok": True})
 
