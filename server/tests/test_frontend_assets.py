@@ -23,11 +23,13 @@ def test_index_references_existing_versioned_assets(client):
 IMPORT = re.compile(r"""^import\s[^;]*?from\s+'\./([\w-]+\.js)';""", re.MULTILINE | re.DOTALL)
 
 
-def test_main_is_the_only_script_and_reaches_every_module(client):
+def test_main_is_the_only_module_and_reaches_every_module(client):
     html = client.get("/").get_data(as_text=True)
     local_scripts = re.findall(r'<script([^>]*)src="/static/([^"?]+)', html)
+    # boot.js only reports a module graph that failed to load.
     assert [s for s in local_scripts if not s[1].startswith("vendor/")] == [
-        (' type="module" ', "js/main.js")
+        (" ", "boot.js"),
+        (' type="module" ', "js/main.js"),
     ]
 
     # Walk the import graph from main.js: a module nothing imports would
@@ -42,6 +44,25 @@ def test_main_is_the_only_script_and_reaches_every_module(client):
             todo.extend(IMPORT.findall(f.read()))
     on_disk = set(os.listdir(os.path.join(STATIC_DIR, "js")))
     assert reachable == on_disk
+
+
+def test_served_modules_import_this_release(client):
+    # Every import is versioned like main.js, so a browser can't pair a
+    # new module with an old one it has cached.
+    version = pages._asset_version()
+    for name in os.listdir(os.path.join(STATIC_DIR, "js")):
+        with open(os.path.join(STATIC_DIR, "js", name), encoding="utf-8") as f:
+            source_imports = IMPORT.findall(f.read())
+        served = client.get(f"/static/js/{name}").get_data(as_text=True)
+        assert re.findall(r"from\s+'\./([\w-]+\.js)\?v=" + version + "';", served) == source_imports, name
+        assert not re.search(r"from\s+'\./[\w-]+\.js';", served), name
+
+
+def test_module_revalidation_returns_304(client):
+    first = client.get("/static/js/crafts.js")
+    again = client.get("/static/js/crafts.js", headers={"If-None-Match": first.headers["ETag"]})
+    assert again.status_code == 304
+    assert client.get("/static/js/nope.js").status_code == 404
 
 
 def test_static_files_are_served_and_revalidated(client):

@@ -203,10 +203,28 @@ def service_worker():
     return response
 
 
+@bp.route("/static/js/<name>", methods=["GET"])
+@auth.public
+def js_module(name):
+    source = JS_MODULES.get(name)
+    if source is None:
+        abort(404)
+    response = Response(source, mimetype="text/javascript")
+    response.headers["Cache-Control"] = "no-cache"
+    response.add_etag()
+    return response.make_conditional(request)
+
+
 INDEX_HTML_PATH = os.path.join(config.SERVER_DIR, "index.html")
 STATIC_DIR = os.path.join(config.SERVER_DIR, "static")
+JS_DIR = os.path.join(STATIC_DIR, "js")
 INDEX_HTML = None
 CONTENT_SECURITY_POLICY = None
+# static/js/*.js by file name, with every import stamped like main.js.
+JS_MODULES = {}
+
+# Only the one form the modules use: `... from './name.js';`.
+_MODULE_IMPORT = re.compile(r"(\bfrom\s+'\./[\w-]+\.js)'")
 
 
 def _asset_version():
@@ -226,8 +244,19 @@ def _asset_version():
 
 def load_index_html():
     global INDEX_HTML, CONTENT_SECURITY_POLICY
+    version = _asset_version()
     with open(INDEX_HTML_PATH, "r", encoding="utf-8") as f:
-        INDEX_HTML = f.read().replace("__ASSET_VERSION__", _asset_version())
+        INDEX_HTML = f.read().replace("__ASSET_VERSION__", version)
+    # Modules import each other with the same ?v= as main.js. Without
+    # it a browser can pair a new main.js with an old module it still
+    # has cached - a missing export then stops the whole page from
+    # running (seen on Android Chrome despite no-cache). With it, each
+    # release's modules are all new URLs.
+    JS_MODULES.clear()
+    for name in os.listdir(JS_DIR):
+        if name.endswith(".js"):
+            with open(os.path.join(JS_DIR, name), encoding="utf-8") as f:
+                JS_MODULES[name] = _MODULE_IMPORT.sub(rf"\1?v={version}'", f.read())
     # Derived from the page itself so the policy can't drift from it.
     CONTENT_SECURITY_POLICY = security.content_security_policy(
         external_scripts=re.findall(r'<script\b[^>]*\bsrc="(https://[^"]+)"', INDEX_HTML),

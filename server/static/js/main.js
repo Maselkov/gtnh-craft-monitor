@@ -25,6 +25,9 @@ import { setupPowerActions } from './power.js';
 import { pathToTab, setupTabActions, switchTab } from './tabs.js';
 import { removeLegacyStorageKeys, setupImageErrorRemoval } from './util.js';
 
+// Tells static/boot.js the modules loaded and linked.
+window.gcmStarted = true;
+
 // Before anything renders: every event handler on the page. index.html
 // and the render functions only carry data-action attributes.
 removeLegacyStorageKeys();
