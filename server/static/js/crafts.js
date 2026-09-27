@@ -185,7 +185,7 @@ function notifyNewCompletions(completions) {
       if (!claimed.has(c.id)) {
         claimed.add(c.id);
         claimedChanged = true;
-        notifyCraftDone(c.id, c.itemName, c.status);
+        notifyCraftDone(c.id, c.itemName, c.icon, c.status);
       }
     }
   }
@@ -349,7 +349,7 @@ async function toggleNotifications() {
   await syncPushSubscription();
 }
 
-async function notifyCraftDone(id, itemName, status) {
+async function notifyCraftDone(id, itemName, icon, status) {
   if (!notificationsOn()) return;
   const what = itemName || 'A pinned craft';
   const [title, body] = status === 'incomplete'
@@ -358,7 +358,10 @@ async function notifyCraftDone(id, itemName, status) {
   const options = {
     body,
     tag: 'craft-completion-' + id,
-    icon: '/icons?path=item%2Fappliedenergistics2%2Ftile.BlockInterface~0.png',
+    // Same image as the server's push (gcm/icons.py), so either one looks alike.
+    icon: icon
+      ? `/icons?path=${encodeURIComponent(icon)}&notification=1`
+      : '/icons?path=item%2Fappliedenergistics2%2Ftile.BlockInterface~0.png',
   };
   try {
     const registration = await swRegistration;

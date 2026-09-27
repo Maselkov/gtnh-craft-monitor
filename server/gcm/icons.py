@@ -10,6 +10,7 @@ import os
 import re
 import threading
 import zipfile
+from urllib.parse import quote
 
 
 # Written by tools/icon-export/. Two separate keyspaces:
@@ -138,6 +139,39 @@ def read_still_image(path):
     if data is None or not is_animated(data):
         return data
     return _still(data)
+
+
+# Notification icons are shown at roughly 64-96dp, so ~192 device pixels
+# on a phone. The browser would scale a 16px icon up with smoothing,
+# blurring pixel art; scaled here by a whole factor it stays crisp.
+NOTIFICATION_ICON_PIXELS = 192
+
+
+@functools.lru_cache(maxsize=512)
+def _notification_icon(png):
+    from PIL import Image
+
+    image = Image.open(io.BytesIO(png))  # an APNG opens at its first frame
+    factor = max(1, NOTIFICATION_ICON_PIXELS // max(image.size))
+    image = image.convert("RGBA").resize(
+        (image.width * factor, image.height * factor), Image.Resampling.NEAREST
+    )
+    out = io.BytesIO()
+    image.save(out, format="PNG")
+    return out.getvalue()
+
+
+def read_notification_image(path):
+    """read_image() as a notification icon: still, and scaled up crisply
+    to about NOTIFICATION_ICON_PIXELS."""
+    data = read_image(path)
+    return None if data is None else _notification_icon(data)
+
+
+def notification_icon_url(path):
+    """URL of a stored icon path as a notification icon, or None."""
+    path = current_path(path)
+    return f"/icons?path={quote(path, safe='')}&notification=1" if path else None
 
 
 def damage_str(damage):

@@ -17,7 +17,7 @@ self.addEventListener('push', (event) => {
   event.waitUntil(self.registration.showNotification(message.title || 'GTNH Monitor', {
     body: message.body || 'A pinned craft ended.',
     tag: message.tag,
-    icon: ICON,
+    icon: message.icon || ICON,
   }));
 });
 

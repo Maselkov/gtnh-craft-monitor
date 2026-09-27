@@ -437,6 +437,13 @@ def test_animated_icons_can_be_fetched_as_a_still_frame(admin, github, monkeypat
     goo = icons.resolve_icon(None, "goo", None, None)
     assert admin.get(f"/icons?path={goo}&still=1").data == PNG
 
+    # As a notification icon: the first frame, scaled up by a whole factor
+    # with hard pixel edges (4px -> 192px, each pixel a 48px block).
+    big = Image.open(io.BytesIO(admin.get(f"/icons?path={path}&notification=1").data))
+    assert getattr(big, "n_frames", 1) == 1
+    assert big.size == (icons.NOTIFICATION_ICON_PIXELS, icons.NOTIFICATION_ICON_PIXELS)
+    assert {big.convert("RGBA").getpixel((x, y)) for x in range(48) for y in range(48)} == {(255, 0, 0, 255)}
+
 
 def test_a_rebuilt_release_is_offered_as_an_update_and_reinstalled(admin, github, api_headers):
     github.bundles["2.9.0-beta-3"] = make_bundle("2.9.0-beta-3")

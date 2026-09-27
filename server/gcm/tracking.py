@@ -96,15 +96,16 @@ def _end_job_locked(name, label=None, icon=None):
     state.tracking_lock."""
     last_known = state.cpu_last_known.pop(name, {})
     label = label or last_known.get("label")
+    icon = icon or last_known.get("icon")
     status = _classify_status(last_known.get("steps_left"))
     completions = store.crafts.record_job_end(
         name,
         label,
-        icon or last_known.get("icon"),
+        icon,
         status,
         last_known.get("progress"),
     )
-    push.notify_completions(completions, label, status)
+    push.notify_completions(completions, label, icon, status)
 
 
 def process_jobs(jobs):
