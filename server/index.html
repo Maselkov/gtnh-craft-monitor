@@ -15,6 +15,7 @@
 <link rel="icon" type="image/png" href="/icons?path=item%2Fappliedenergistics2%2Ftile.BlockInterface~0.png">
 <script defer src="/static/vendor/chart-4.4.4.umd.js"></script>
 <script defer src="/static/vendor/chartjs-adapter-date-fns-3.0.0.bundle.min.js"></script>
+<script src="/static/boot.js?v=__ASSET_VERSION__"></script>
 <link rel="stylesheet" href="/static/app.css?v=__ASSET_VERSION__">
 <!-- Lets the page be added to a phone's home screen as a standalone app -
      iOS only allows web notifications from a page opened that way. -->
@@ -56,6 +57,8 @@
       </div>
     </div>
   </div>
+
+  <div class="stale-banner" id="loadError" role="alert"></div>
 
   <div class="tab-bar">
     <button class="tab-btn active" id="tabBtnCrafts" data-action="switch-tab" data-tab="crafts">Crafts</button>

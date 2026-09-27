@@ -11,6 +11,7 @@ PUBLIC_ENDPOINTS = {
     "network.network_history_chart_png",
     "pages.icon",
     "pages.index",
+    "pages.js_module",
     "pages.service_worker",
     "users.auth_session_get",
     "users.auth_login_post",
