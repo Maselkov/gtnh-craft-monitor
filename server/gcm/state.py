@@ -41,6 +41,9 @@ crafts = {
 # mid-scan still sees the last COMPLETE snapshot, not a half-built one.
 network_lock = threading.Lock()
 network_buffer = []
+# The in-progress scan's NBT tags (hex, as network_browser.lua sent
+# them), by item key - promoted to network["tags"] with the items.
+network_tag_buffer = {}
 network = {
     "items": [],
     "item_count": 0,
@@ -65,6 +68,12 @@ network = {
     # the chunks_sent count Lua reports, so the server verifies
     # completeness rather than assuming it.
     "chunks_received": 0,
+    # Item key -> the NBT tag (hex) of each NBT variant in the snapshot,
+    # for craft requests to pick the pattern with exactly that NBT
+    # (craft_monitor.lua). Not served to the frontend, not persisted: a
+    # request made before the first scan after a restart matches by
+    # label alone.
+    "tags": {},
 }
 
 
@@ -98,7 +107,9 @@ def reset():
         crafts["received_at"] = None
     with network_lock:
         network_buffer.clear()
+        network_tag_buffer.clear()
         network.update(
+            tags={},
             items=[],
             item_count=0,
             updated_at=None,

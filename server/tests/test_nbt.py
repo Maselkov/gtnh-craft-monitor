@@ -73,3 +73,10 @@ def test_describes_bees():
 
 def test_unrecognized_nbt_has_no_description():
     assert nbt.describe(nbt.parse_hex(tag_hex([("Energy", nbt.INT, 5)]))) is None
+
+
+def test_describes_gregtech_tool_material():
+    root = nbt.parse_hex(tag_hex([("GT.ToolStats", nbt.COMPOUND, [
+        ("PrimaryMaterial", nbt.STRING, "Neutronium"), ("SecondaryMaterial", nbt.STRING, "Magnalium"),
+        ("MaxDamage", nbt.INT, 5)])]))
+    assert nbt.describe(root) == "Neutronium"

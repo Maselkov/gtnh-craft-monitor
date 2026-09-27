@@ -334,7 +334,10 @@ local function craft_post_json(path, payload)
   }, CONFIG.HTTP_TIMEOUT_SECONDS)
 end
 
-local function build_craftable_filter(mod, internal, damage)
+-- label narrows an NBT variant's search (see pick_craftable()) - AE2
+-- matches it against each pattern output's display name, the same way
+-- the fluid filter below relies on.
+local function build_craftable_filter(mod, internal, damage, label)
   local filter = {}
   if mod and mod ~= "" and internal then
     filter.name = mod .. ":" .. internal
@@ -344,7 +347,49 @@ local function build_craftable_filter(mod, internal, damage)
   if damage ~= nil then
     filter.damage = damage
   end
+  filter.label = label
   return filter
+end
+
+-- Same encoding as network_browser.lua uses to send NBT tags, so a tag
+-- read here compares equal to the one the server got from the scan.
+local function hex(bytes)
+  return (bytes:gsub(".", function(c) return string.format("%02x", c:byte()) end))
+end
+
+local function stack_tag_hex(stack)
+  if stack and type(stack.tag) == "string" then return hex(stack.tag) end
+  return nil
+end
+
+-- Which of getCraftables()'s matches to request. Several patterns can
+-- share an item id, damage and even label, differing only in NBT (a
+-- GregTech turbine per material, all named "Huge Turbine"), and
+-- getCraftables() can't filter on NBT - so for an NBT variant each
+-- pattern's output is compared against the NBT the scan saw on it
+-- (reqData.tag, needs allowItemStackNBTTags in OpenComputers.cfg).
+-- Without that, the label filter has to leave exactly one. Never
+-- guesses: a craft of the wrong material is worse than a failed request.
+-- Returns the craftable, or nil and why not.
+local function pick_craftable(craftables, reqData)
+  if not reqData.variant then
+    -- A plain item: prefer a pattern whose output has no NBT at all.
+    for _, c in ipairs(craftables) do
+      local ok, stack = pcall(c.getItemStack)
+      if ok and stack and not stack.hasTag then return c end
+    end
+    return craftables[1]
+  end
+  if reqData.tag then
+    for _, c in ipairs(craftables) do
+      local ok, stack = pcall(c.getItemStack)
+      if ok and stack_tag_hex(stack) == reqData.tag then return c end
+    end
+    return nil, "no pattern makes this item with exactly this NBT"
+  end
+  if #craftables == 1 then return craftables[1] end
+  return nil, "several patterns match this item and its NBT isn't known "
+    .. "(allowItemStackNBTTags off in OpenComputers.cfg, or no scan since a restart)"
 end
 
 -- Fluids need a DIFFERENT filter shape than items - confirmed via a
@@ -378,7 +423,7 @@ local function cpu_output(cpuProxy)
   local ok, stack = pcall(cpuProxy.finalOutput)
   if not ok or not stack then return nil end
   local mod, internal = split_mod_name(stack.name)
-  return { mod = mod, internal = internal, damage = stack.damage }
+  return { mod = mod, internal = internal, damage = stack.damage, tag = stack_tag_hex(stack) }
 end
 
 -- Which CPU an accepted request went to. AE2's request() doesn't say,
@@ -403,7 +448,8 @@ local function find_request_cpu(me, entry, claimed)
       local output = c.cpu and cpu_output(c.cpu)
       if output then
         if output.mod == entry.mod and output.internal == entry.internal
-            and (entry.damage == nil or output.damage == entry.damage) then
+            and (entry.damage == nil or output.damage == entry.damage)
+            and (entry.tag == nil or output.tag == nil or output.tag == entry.tag) then
           return c.name
         end
       else
@@ -463,18 +509,26 @@ local function run_craft_request_loop(me)
           if not tracked[reqData.id] then
             local filter = (reqData.kind == "fluid")
               and build_fluid_craftable_filter(reqData.label)
-              or build_craftable_filter(reqData.mod, reqData.internal, reqData.damage)
+              or build_craftable_filter(reqData.mod, reqData.internal, reqData.damage,
+                                        (reqData.variant and not reqData.tag) and reqData.label or nil)
             local foundOk, craftables = pcall(me.getCraftables, filter)
+            local craftable, pickErr
+            if foundOk and #craftables > 0 then
+              if reqData.kind == "fluid" then
+                craftable = craftables[1]
+              else
+                craftable, pickErr = pick_craftable(craftables, reqData)
+              end
+            end
 
-            if not foundOk or #craftables == 0 then
+            if not craftable then
               craft_post_json("/requests/" .. reqData.id .. "/result", {
-
                 status = "failed",
-                reason = "no matching craftable pattern found",
+                reason = pickErr or "no matching craftable pattern found",
               })
             else
               local before = snapshot_cpu_busy(me)
-              local reqOk, status = pcall(craftables[1].request, reqData.amount)
+              local reqOk, status = pcall(craftable.request, reqData.amount)
               if not reqOk then
                 craft_post_json("/requests/" .. reqData.id .. "/result", {
                   status = "failed",
@@ -488,6 +542,7 @@ local function run_craft_request_loop(me)
                   mod = reqData.mod,
                   internal = reqData.internal,
                   damage = reqData.damage,
+                  tag = reqData.tag,
                 }
               end
             end

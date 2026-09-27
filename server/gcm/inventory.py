@@ -18,6 +18,7 @@ def start_scan():
     token."""
     with state.network_lock:
         state.network_buffer.clear()
+        state.network_tag_buffer.clear()
         state.network["in_progress"] = True
         state.network["scan_started_at"] = time.time()
         state.network["chunks_received"] = 0
@@ -44,12 +45,13 @@ def assign_variant(item):
     stats. Also sets variant_name when the NBT says something readable
     about what sets this stack apart. Items without NBT get neither, and
     keep the key they had before variants existed. Strips the transport-
-    only fields either way."""
+    only fields either way; returns the tag (hex) if it was usable, else
+    None."""
     has_tag = item.pop("hasTag", False)
     tag_hex = item.pop("tag", None)
     item.pop("tag_too_large", None)
     if not has_tag or item.get("kind") == "fluid":
-        return item
+        return None
     if isinstance(tag_hex, str) and tag_hex:
         try:
             root = nbt.parse_hex(tag_hex)
@@ -60,10 +62,10 @@ def assign_variant(item):
             name = nbt.describe(root)
             if name:
                 item["variant_name"] = name
-            return item
+            return tag_hex.lower()
     label = str(item.get("name") or "")
     item["variant"] = "L" + hashlib.sha256(label.encode("utf-8")).hexdigest()[:11]
-    return item
+    return None
 
 
 def merge_variants(items):
@@ -102,11 +104,17 @@ def add_batch(token, items):
     """Buffers one batch of scanned items. Returns (buffered item count,
     chunks received so far), or None if the batch belongs to a scan
     that isn't the active one - see finish_scan() for why."""
-    items = icons.attach_item_icons([assign_variant(it) for it in items])
+    tags = {}
+    for it in items:
+        tag = assign_variant(it)
+        if tag:
+            tags[store.items.key_of(it)] = tag
+    items = icons.attach_item_icons(items)
     with state.network_lock:
         if not _is_current_scan_locked(token):
             return None
         state.network_buffer.extend(items)
+        state.network_tag_buffer.update(tags)
         state.network["chunks_received"] += 1
         return len(state.network_buffer), state.network["chunks_received"]
 
@@ -200,6 +208,7 @@ def finish_scan(token, chunks_sent, total_errors):
         old_items = state.network["items"]
         new_items = merge_variants(state.network_buffer)
         state.network["items"] = new_items
+        state.network["tags"] = dict(state.network_tag_buffer)
         state.network["item_count"] = len(new_items)
         state.network["updated_at"] = time.time()
         state.network["in_progress"] = False
@@ -306,6 +315,14 @@ def item_display_info(mod, internal, damage, kind, variant=None):
                 return it.get("name"), it.get("size")
 
     return store.items.last_recorded(store.items.item_key(mod, internal, damage, kind, variant))
+
+
+def variant_tag(mod, internal, damage, kind, variant):
+    """The NBT tag (hex) the last scan saw on this variant, or None."""
+    if not variant:
+        return None
+    with state.network_lock:
+        return state.network["tags"].get(store.items.item_key(mod, internal, damage, kind, variant))
 
 
 HISTORY_RANGE_SECONDS = {

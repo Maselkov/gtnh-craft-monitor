@@ -228,3 +228,57 @@ class TestHistoryWrittenFirst:
 
         (req,) = commands.craft_requests.select(lambda r: r["id"] == req_id)
         assert req["status"] == "pending"
+
+
+class TestNbtVariantRequests:
+    TURBINE = {"mod": "gregtech", "internal": "gt.metatool.01", "damage": 176, "kind": "item"}
+
+    def _scan_turbines(self, client, api_headers):
+        from gcm import nbt
+        from nbt_fixtures import tag_hex
+
+        def turbine(material):
+            return tag_hex([("GT.ToolStats", nbt.COMPOUND, [("PrimaryMaterial", nbt.STRING, material)])])
+
+        tags = {m: turbine(m) for m in ("Neutronium", "Steel")}
+        token = client.post("/api/network/scan/start", headers=api_headers).get_json()["scan_token"]
+        client.post("/api/network/scan/batch", headers=api_headers, json={"scan_token": token, "items": [
+            dict(self.TURBINE, name="Huge Turbine", size=0, isCraftable=True, hasTag=True, tag=tags[m])
+            for m in tags
+        ]})
+        client.post("/api/network/scan/finish", headers=api_headers,
+                    json={"scan_token": token, "chunks_sent": 1, "total_errors": 0})
+        items = client.get("/api/network").get_json()["items"]
+        return {it["variant_name"]: it for it in items}, tags
+
+    def test_request_carries_the_variants_exact_nbt_to_the_game(self, client, api_headers):
+        items, tags = self._scan_turbines(client, api_headers)
+        assert set(items) == {"Neutronium", "Steel"}
+
+        login_as(client, "usr_operator", role="operator")
+        steel = items["Steel"]
+        res = client.post("/api/craft/request", json=valid_request_payload(
+            label="Huge Turbine", amount=1, variant=steel["variant"], variant_name="Steel", **self.TURBINE))
+        assert res.status_code == 200
+
+        pending = client.get("/api/craft/requests/pending", headers=api_headers).get_json()["requests"]
+        assert pending[0]["variant"] == steel["variant"]
+        assert pending[0]["tag"] == tags["Steel"]
+
+        # The browser's own list doesn't carry the tag.
+        mine = client.get("/api/craft/requests").get_json()["requests"]
+        assert mine[0]["variant_name"] == "Steel"
+        assert "tag" not in mine[0]
+
+    def test_unknown_variant_has_no_tag(self, client, api_headers):
+        login_as(client, "usr_operator", role="operator")
+        client.post("/api/craft/request", json=valid_request_payload(variant="Labc"))
+        pending = client.get("/api/craft/requests/pending", headers=api_headers).get_json()["requests"]
+        assert pending[0]["variant"] == "Labc"
+        assert pending[0]["tag"] is None
+
+    def test_plain_request_has_no_variant(self, client, api_headers):
+        login_as(client, "usr_operator", role="operator")
+        client.post("/api/craft/request", json=valid_request_payload())
+        pending = client.get("/api/craft/requests/pending", headers=api_headers).get_json()["requests"]
+        assert pending[0]["variant"] is None and pending[0]["tag"] is None

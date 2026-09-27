@@ -186,7 +186,18 @@ def _describe_bee(tree):
     return " · ".join(parts) or None
 
 
-_DESCRIBERS = (_describe_crop_stats, _describe_bee)
+def _describe_gt_tool(tree):
+    # GregTech meta-tools (turbines, drills, wrenches...) share one id and
+    # damage per tool type and one label ("Huge Turbine"); the material
+    # is only in their stats.
+    stats = tree.get("GT.ToolStats")
+    if not isinstance(stats, dict):
+        return None
+    primary = stats.get("PrimaryMaterial")
+    return str(primary) if primary else None
+
+
+_DESCRIBERS = (_describe_crop_stats, _describe_bee, _describe_gt_tool)
 
 
 def describe(root):

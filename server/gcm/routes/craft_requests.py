@@ -12,7 +12,7 @@ import time
 
 from flask import Blueprint, g, jsonify, request
 
-from gcm import auth, commands, icons, state, store, tracking
+from gcm import auth, commands, icons, inventory, state, store, tracking
 
 
 bp = Blueprint("craft_requests", __name__)
@@ -31,6 +31,8 @@ def craft_request_post():
     damage = payload.get("damage")
     amount = payload.get("amount")
     kind = payload.get("kind") or "item"
+    variant = payload.get("variant") or None
+    variant_name = payload.get("variant_name") or None
 
     if not label or not internal:
         return jsonify({"error": "missing label/internal"}), 400
@@ -39,7 +41,10 @@ def craft_request_post():
     if kind not in ("item", "fluid"):
         return jsonify({"error": "kind must be item or fluid"}), 400
 
-    icon = icons.resolve_icon(mod, internal, damage, label)
+    if variant is not None and not isinstance(variant, str):
+        return jsonify({"error": "variant must be a string"}), 400
+
+    icon = icons.resolve_icon(mod, internal, damage, label, variant)
     created_at = time.time()
 
     req_id = commands.craft_requests.add(
@@ -56,6 +61,12 @@ def craft_request_post():
             # fluid request: items filter by name+damage,
             # fluids only matched when filtered by label)
             "icon": icon,
+            # An NBT variant (gcm/inventory.py): craft_monitor.lua picks
+            # the pattern whose output has exactly this NBT (tag, from the
+            # last scan), or, without one, the only pattern with this label.
+            "variant": variant,
+            "variant_name": str(variant_name) if variant_name else None,
+            "tag": inventory.variant_tag(mod, internal, damage, kind, variant),
             # status: pending -> accepted (removed from list, real pin
             # takes over) | failed (stays until dismissed)
             "reason": None,
@@ -81,6 +92,8 @@ def craft_requests_get():
         lambda r: r["user_id"] == user_id and r["status"] in ("pending", "failed")
     )
     mine.sort(key=lambda r: r["created_at"], reverse=True)
+    for r in mine:
+        r.pop("tag", None)  # only for the game
     return jsonify({"requests": mine})
 
 

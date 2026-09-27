@@ -456,6 +456,15 @@ still sharing a key (label fallback) are summed. The first scan after the
 change deleted the mixed history under the old plain keys
 (`pending_nbt_cleanup`).
 
+Craft requests for a variant pick the pattern by NBT too: `getCraftables()`
+can only filter on name, damage and label, and GregTech tools share all
+three per tool type (every material's "Huge Turbine"). The server keeps
+each variant's raw tag from the last scan (`state.network["tags"]`, in
+memory only) and sends it with the request; `craft_monitor.lua`'s
+`pick_craftable()` requests the pattern whose `getItemStack().tag` matches
+it exactly. Without a tag it requires the label to leave exactly one
+pattern, and otherwise fails the request rather than craft the wrong one.
+
 **GT5's item-icon "meta items" are rendered procedurally, not shipped as
 static files.** There's no way to get correct icons for most GTNH items
 (ingots, dusts, plates, circuits) by copying texture files out of mod

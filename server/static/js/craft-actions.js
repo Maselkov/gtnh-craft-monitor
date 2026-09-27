@@ -12,7 +12,8 @@ let craftRequestTarget = null;
 
 export function openCraftRequestModal(it) {
   craftRequestTarget = it;
-  document.getElementById('craftRequestName').textContent = it.name || '?';
+  document.getElementById('craftRequestName').textContent =
+    (it.name || '?') + (it.variant_name ? ' (' + it.variant_name + ')' : '');
   const iconEl = document.getElementById('craftRequestIcon');
   if (it.icon) {
     iconEl.src = iconUrl(it.icon);
@@ -234,6 +235,8 @@ async function submitCraftRequest() {
         damage: craftRequestTarget.damage,
         amount: amount,
         kind: craftRequestTarget.kind || 'item',
+        variant: craftRequestTarget.variant || null,
+        variant_name: craftRequestTarget.variant_name || null,
       }),
     });
     if (!res.ok) {
@@ -290,7 +293,7 @@ function renderCraftRequests() {
       <div class="craft-request-card${isFailed ? ' failed' : ''}">
         ${icon}
         <div class="craft-request-info">
-          <div class="craft-request-name">${escapeHtml(r.label)} ×${r.amount}</div>
+          <div class="craft-request-name">${escapeHtml(r.label)}${r.variant_name ? ' (' + escapeHtml(r.variant_name) + ')' : ''} ×${r.amount}</div>
           <div class="craft-request-status${isFailed ? ' failed' : ''}">${statusText}</div>
         </div>
         ${dismissBtn}
