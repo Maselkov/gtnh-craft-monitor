@@ -1,7 +1,15 @@
 // Sign-in state, admin user/token management modals, settings menu.
 
 import { showToast } from './craft-actions.js';
-import { clearPins, lastData, refreshPinsAndCompletions, render } from './crafts.js';
+import {
+  clearPins,
+  dropPushSubscription,
+  lastData,
+  refreshPinsAndCompletions,
+  render,
+  syncPushSubscription,
+  updateNotifToggle,
+} from './crafts.js';
 import { delegateActions, escapeHtml, onBackdropClick } from './util.js';
 
 export let AUTH_USER = null;
@@ -20,6 +28,7 @@ function updateAuthenticationControl() {
   const adminVisible = AUTH_USER && AUTH_USER.role === 'admin' && !AUTH_MUST_ROTATE_BOOTSTRAP;
   adminButton.style.display = adminVisible ? '' : 'none';
   document.getElementById('gamedataBtn').style.display = adminVisible ? '' : 'none';
+  if (AUTH_USER && !AUTH_MUST_ROTATE_BOOTSTRAP) syncPushSubscription();
 }
 
 export async function loadAuthentication() {
@@ -285,6 +294,8 @@ async function rotateBootstrapToken() {
 function toggleSettingsMenu() {
   const menu = document.getElementById('settingsMenu');
   if (menu.style.display === 'none') {
+    // Permission may have changed in the browser's own settings since.
+    updateNotifToggle();
     menu.style.display = '';
     document.getElementById('settingsBtn').setAttribute('aria-expanded', 'true');
   } else {
@@ -298,6 +309,8 @@ export function closeSettingsMenu() {
 }
 
 async function signOut() {
+  // While still signed in - the server only lets its owner remove it.
+  await dropPushSubscription();
   await fetch('/api/auth/logout', { method: 'POST' });
   AUTH_USER = null;
   AUTH_MUST_ROTATE_BOOTSTRAP = false;

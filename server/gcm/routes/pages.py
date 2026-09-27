@@ -7,7 +7,7 @@ import re
 from html import escape as html_escape
 from urllib.parse import unquote
 
-from flask import abort, Blueprint, request, Response
+from flask import abort, Blueprint, request, Response, send_from_directory
 
 from gcm import auth, charts, config, icons, inventory, security, state, store
 
@@ -188,6 +188,18 @@ def index(identifier=None):
     )
     response = Response(html, mimetype="text/html")
     response.headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
+    return response
+
+
+@bp.route("/sw.js", methods=["GET"])
+@auth.public
+def service_worker():
+    # From the site root rather than /static/, so its scope covers the
+    # whole page - iOS only delivers pushes to a worker that does.
+    response = send_from_directory(STATIC_DIR, "sw.js", mimetype="text/javascript")
+    # Browsers check for a new worker on each load; never let a cache
+    # keep an old one running.
+    response.headers["Cache-Control"] = "no-cache"
     return response
 
 

@@ -410,11 +410,21 @@ async function main() {
     await waitFor('signed in', `visible($('#settingsWrap')) && $('#settingsUser').textContent.includes('Administrator')`);
   });
 
-  step('notifications button asks for permission', async () => {
+  step('notifications switch in the settings menu', async () => {
+    await click(`$('#settingsBtn')`);
+    await waitFor('menu open', `visible($('#settingsMenu'))`);
+    await waitFor('off before permission', `$('#notifToggle').getAttribute('aria-checked') === 'false'`);
     await cdp.send('Browser.grantPermissions', { origin: base, permissions: ['notifications'] });
-    await waitFor('not yet enabled', `$('#notifBtn').textContent === 'Enable notifications'`);
-    await click(`$('#notifBtn')`);
-    await waitFor('enabled', `$('#notifBtn').textContent === 'Notifications on'`);
+    await click(`$('#notifToggle')`);
+    await waitFor('switched on', `$('#notifToggle').getAttribute('aria-checked') === 'true'`);
+    await waitFor('menu stays open', `visible($('#settingsMenu'))`);
+    await click(`$('#notifToggle')`);
+    await waitFor('switched off despite permission', `$('#notifToggle').getAttribute('aria-checked') === 'false'`);
+    await click(`$('#notifToggle')`);
+    await waitFor('back on', `$('#notifToggle').getAttribute('aria-checked') === 'true'`);
+    await waitFor('service worker registered', `navigator.serviceWorker.getRegistration('/').then(r => Boolean(r && r.active))`);
+    await evaluate(`pressKey('Escape'), true`);
+    await waitFor('menu closed', `!visible($('#settingsMenu'))`);
   });
 
   step('expand ingredients; stays open across a refresh', async () => {

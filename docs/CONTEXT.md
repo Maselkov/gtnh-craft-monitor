@@ -746,6 +746,19 @@ keypad a `type="number"` input gives on mobile, which is better UX
 there - detected via `pointer: coarse`, matching how "is this really a
 touch-primary device" is decided elsewhere in this project too.
 
+**Notifications go two ways, deduplicated by tag.** A finished pinned
+craft is pushed by the server (gcm/push.py, Web Push with a VAPID key
+in `data/vapid_private.pem`) to every browser the user turned the
+settings-menu switch on in, and static/sw.js shows it - that's what
+reaches a closed tab or a suspended phone. An open page also notices
+the completion on its own 3s poll and shows the same notification.
+Both use the tag `craft-completion-<id>`, so a browser getting both
+replaces one with the other instead of showing two. Pushes are sent
+from one background thread, never inline in the game's POST, and only
+to an allowlist of push-service hosts (the server POSTs to whatever
+endpoint a browser registers). The worker is served at /sw.js, not
+/static/sw.js, so its scope covers the page - iOS requires that.
+
 ## Test suite (server/tests/)
 
 201 pytest tests across 17 files, covering every endpoint - crafts, CPU

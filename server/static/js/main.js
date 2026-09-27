@@ -8,7 +8,7 @@ import {
   setupCraftDialogActions,
   setupCraftRequestActions,
 } from './craft-actions.js';
-import { refresh, setupCraftsActions, tickSourceLine, updateNotifButton } from './crafts.js';
+import { refresh, setupCraftsActions, setupNotifications, tickSourceLine } from './crafts.js';
 import { setupGameDataActions } from './gamedata.js';
 import {
   parseItemUrlPath,
@@ -53,7 +53,7 @@ setupCraftRequestActions();
                                   // over the URL we just loaded
 })();
 
-updateNotifButton();
+setupNotifications();
 setupNetworkTooltipEvents();
 setupCraftHistoryLinks();
 setupAmountInputForDevice();

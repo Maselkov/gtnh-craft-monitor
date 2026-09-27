@@ -39,7 +39,8 @@ def drop_cpu_pins(cpu_name):
 def record_job_end(cpu_name, label, icon, status, progress):
     """Logs a craft_events row for a job that just left cpu_name, gives
     every user who had that CPU pinned a completion for it, and clears
-    those pins - all in one transaction."""
+    those pins - all in one transaction. Returns the new completions as
+    (user_id, completion_id) pairs."""
     occurred_at = time.time()
     with db.transaction(db.app_db) as conn:
         event_id = conn.execute(
@@ -53,6 +54,10 @@ def record_job_end(cpu_name, label, icon, status, progress):
             (event_id, occurred_at, cpu_name),
         )
         conn.execute("DELETE FROM user_pins WHERE cpu_name = ?", (cpu_name,))
+        return conn.execute(
+            "SELECT user_id, id FROM user_completions WHERE craft_event_id = ?",
+            (event_id,),
+        ).fetchall()
 
 
 def completions(user_id, max_age_seconds):
