@@ -172,23 +172,28 @@ async function api(base, method, urlPath, body, headers = {}) {
 
 const game = (base, urlPath, body) => api(base, 'POST', urlPath, body, { 'X-API-Key': API_KEY });
 
-function postCrafts(base, w01Busy) {
+// The server measures progress against the first report of a job, so
+// seed() sends a starting report (atStart) first: 3/5 ingots and 6/10 ore
+// left afterwards is 40%.
+function postCrafts(base, w01Busy, atStart = false) {
   return game(base, '/api/crafts', {
     source: 'me_controller',
     jobs: [
       w01Busy
         ? {
             name: 'W01', busy: true, final_output: 'Iron Ingot', final_output_mod: 'minecraft',
-            final_output_internal: 'iron_ingot', final_output_damage: 0, progress_percent: 40,
-            active: [{ name: 'Iron Ingot', size: 3 }], pending: [{ name: 'Iron Ore', size: 5 }], stored: [],
+            final_output_internal: 'iron_ingot', final_output_damage: 0,
+            active: [{ name: 'Iron Ingot', size: atStart ? 5 : 3 }],
+            pending: [{ name: 'Iron Ore', size: atStart ? 10 : 6 }], stored: [],
           }
-        : { name: 'W01', busy: false, progress_percent: 100 },
+        : { name: 'W01', busy: false },
       { name: 'W02', busy: false },
     ],
   });
 }
 
 async function seed(base) {
+  await postCrafts(base, true, true);
   await postCrafts(base, true);
   for (const stored of [100000, 200000, 300000]) {
     await game(base, '/api/power', { stored, capacity: 1000000, avg_eu_in_5s: 50, avg_eu_out_5s: 20 });

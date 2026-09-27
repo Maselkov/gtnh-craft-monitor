@@ -32,8 +32,8 @@
   Item stack tables include (at least) `label`, `name`, `size`,
   `isCraftable` per the same source.
 
-  We use storedItems() vs pendingItems() to derive an actual progress
-  percentage (sum of sizes stored / sum of sizes stored+pending).
+  Progress is computed server-side (server/gcm/progress.py) from the
+  active/pending lists sent here - this script doesn't derive it.
 
   REQUIREMENTS (in-game):
     - Adapter block touching your ME Controller (or an ME Interface).
@@ -48,7 +48,7 @@
     2. Copy this file to /etc/rc.d/craft_monitor.lua.
     3. Optionally run once with DEBUG_DUMP = true to sanity-check the
        raw structure your build actually returns before trusting the
-       parsed/derived progress numbers.
+       parsed item lists.
 
   Deployed as an OpenOS rc service. Manage it with:
     rc craft_monitor start    - start now, this boot only (starts BOTH
@@ -197,14 +197,6 @@ local function simplify_items(list)
   return out
 end
 
-local function sum_size(list)
-  local total = 0
-  for _, it in ipairs(list or {}) do
-    total = total + (it.size or 0)
-  end
-  return total
-end
-
 local function extract_jobs(raw_cpus)
   local jobs = {}
   local errors = {}  -- collected, not printed immediately - see VERBOSE below
@@ -219,13 +211,6 @@ local function extract_jobs(raw_cpus)
       if ok3 then stored = s else errors[#errors+1] = "CPU " .. idx .. " storedItems(): " .. tostring(s) end
     else
       errors[#errors+1] = "CPU " .. idx .. " has no 'cpu' proxy field at all."
-    end
-
-    local storedTotal = sum_size(stored)
-    local pendingTotal = sum_size(pending)
-    local progress = nil
-    if (storedTotal + pendingTotal) > 0 then
-      progress = math.floor((storedTotal / (storedTotal + pendingTotal)) * 100 + 0.5)
     end
 
     -- finalOutput() needs an AE2 Crafting Monitor tile physically present
@@ -246,7 +231,6 @@ local function extract_jobs(raw_cpus)
       busy             = row.busy and true or false,
       storage          = row.storage,
       coprocessors     = row.coprocessors,
-      progress_percent = progress,
       final_output          = finalName,
       final_output_mod      = finalMod,
       final_output_internal = finalInternal,

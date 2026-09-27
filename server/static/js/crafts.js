@@ -324,7 +324,7 @@ function renderCard(job) {
   const hasProgress = job.busy && job.progress_percent != null;
   const progressBar = hasProgress ? `
     <div class="progress-track"><div class="progress-fill" data-progress="${escapeHtml(job.progress_percent)}"></div></div>
-    <div class="progress-label">${job.progress_percent}% by items stored vs. pending</div>
+    <div class="progress-label">${escapeHtml(job.progress_percent)}% &middot; ${escapeHtml(job.steps_done ?? '?')}/${escapeHtml(job.steps_total ?? '?')} steps done</div>
   ` : '';
 
   const body = renderItemList('Active', job.active) + renderItemList('Pending', job.pending) + renderItemList('Stored', job.stored);

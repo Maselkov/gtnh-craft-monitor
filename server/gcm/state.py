@@ -75,8 +75,10 @@ network = {
 # so they don't fire on the next unrelated job.
 tracking_lock = threading.Lock()
 cpu_last_busy = {}  # cpu_name -> bool
-# cpu_name -> the current job's {label, icon, progress, output,
-# started_at}, only while busy (see _new_job_entry() in tracking.py)
+# cpu_name -> the current job's {label, icon, progress, steps_left,
+# peaks, output, started_at}, only while busy (see _new_job_entry() in
+# tracking.py). Lost on restart, so an in-flight job's progress
+# re-baselines from the first report after it.
 cpu_last_known = {}
 
 

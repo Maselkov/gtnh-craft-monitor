@@ -1,4 +1,4 @@
-from gcm import commands, state
+from gcm import commands, db, state
 from conftest import login_as
 
 
@@ -137,8 +137,8 @@ class TestCpuPins:
         assert len(client.get("/api/completions").get_json()["completions"]) == 1
 
 
-def post_job(client, api_headers, output=None, busy=True, progress=None, cpu_name="W01"):
-    job = {"name": cpu_name, "busy": busy, "progress_percent": progress}
+def post_job(client, api_headers, output=None, busy=True, cpu_name="W01", pending=None, **extra):
+    job = {"name": cpu_name, "busy": busy, "pending": pending or [], **extra}
     if output:
         job.update(final_output=output, final_output_mod="gregtech", final_output_internal=output)
     client.post(
@@ -156,11 +156,11 @@ class TestBackToBackJobs:
     # A CPU that finishes and starts its next job between two polls is
     # never seen idle.
     def test_new_output_on_a_busy_cpu_ends_the_old_job(self, client, api_headers):
-        post_job(client, api_headers, "Iron Ingot", progress=98)
+        post_job(client, api_headers, "Iron Ingot")
         login_as(client, "alice")
         client.post("/api/pins", json={"cpu_name": "W01"})
 
-        post_job(client, api_headers, "Gold Ingot", progress=5)
+        post_job(client, api_headers, "Gold Ingot")
 
         assert completion_names(client) == ["Iron Ingot"]
         assert client.get("/api/pins").get_json()["pins"] == []
@@ -190,7 +190,7 @@ class TestAcceptedRequestTracking:
         commands.craft_requests.requests[req_id]["created_at"] -= 10
         client.get("/api/craft/requests/pending", headers=api_headers)
         if poll_sees_job_first:
-            post_job(client, api_headers, "Gold Ingot", progress=10)
+            post_job(client, api_headers, "Gold Ingot")
         client.post(
             f"/api/craft/requests/{req_id}/result",
             json={"status": "accepted", "cpu_name": "W01"},
@@ -200,7 +200,7 @@ class TestAcceptedRequestTracking:
     def test_job_tracked_from_before_the_request_is_closed(self, client, api_headers):
         # The game only starts a request on an idle CPU, so a job we
         # still think runs there ended between polls.
-        post_job(client, api_headers, "Iron Ingot", progress=99)
+        post_job(client, api_headers, "Iron Ingot")
         state.cpu_last_known["W01"]["started_at"] -= 60
         login_as(client, "alice")
         client.post("/api/pins", json={"cpu_name": "W01"})
@@ -222,3 +222,76 @@ class TestAcceptedRequestTracking:
 
         post_job(client, api_headers, busy=False)
         assert completion_names(client) == ["Gold Ingot"]
+
+
+def fluid(amount):
+    return {"name": "Molten Iron", "internal": "molten.iron", "size": amount}
+
+
+def item(name, amount):
+    return {"name": name, "mod": "gregtech", "internal": name, "damage": 0, "size": amount}
+
+
+def w01(client):
+    return client.get("/api/crafts").get_json()["jobs"][0]
+
+
+def craft_statuses(client):
+    with db.transaction(db.app_db) as conn:
+        return [r[0] for r in conn.execute("SELECT status FROM craft_events ORDER BY id")]
+
+
+class TestJobProgress:
+    def test_first_report_is_the_baseline(self, client, api_headers):
+        post_job(client, api_headers, "Gear", pending=[item("Plate", 8)], progress_percent=77)
+        job = w01(client)
+        assert (job["progress_percent"], job["steps_done"], job["steps_total"]) == (0, 0, 1)
+
+    def test_fluid_amounts_do_not_outweigh_items(self, client, api_headers):
+        post_job(client, api_headers, "Gear", pending=[fluid(144000), item("Plate", 1)])
+        post_job(client, api_headers, "Gear", pending=[fluid(144000)])
+        job = w01(client)
+        assert (job["progress_percent"], job["steps_done"], job["steps_total"]) == (50, 1, 2)
+
+    def test_stored_is_ignored(self, client, api_headers):
+        post_job(client, api_headers, "Gear", pending=[item("Plate", 4)], stored=[item("Ingot", 100)])
+        post_job(client, api_headers, "Gear", pending=[item("Plate", 4)], stored=[item("Ingot", 1)])
+        assert w01(client)["progress_percent"] == 0
+
+    def test_active_counts_as_remaining(self, client, api_headers):
+        post_job(client, api_headers, "Gear", pending=[item("Plate", 4)])
+        post_job(client, api_headers, "Gear", pending=[item("Plate", 1)], active=[item("Plate", 3)])
+        assert w01(client)["progress_percent"] == 0
+        post_job(client, api_headers, "Gear", active=[item("Plate", 1)])
+        assert w01(client)["progress_percent"] == 75
+
+    def test_never_goes_backwards(self, client, api_headers):
+        post_job(client, api_headers, "Gear", pending=[item("Plate", 4)])
+        post_job(client, api_headers, "Gear", pending=[item("Plate", 2)])
+        post_job(client, api_headers, "Gear", pending=[item("Plate", 8)])
+        assert w01(client)["progress_percent"] == 50
+
+    def test_new_job_starts_over(self, client, api_headers):
+        post_job(client, api_headers, "Gear", pending=[item("Plate", 4)])
+        post_job(client, api_headers, "Gear", pending=[item("Plate", 1)])
+        post_job(client, api_headers, busy=False)
+        assert w01(client)["progress_percent"] is None
+        post_job(client, api_headers, "Gear", pending=[item("Plate", 2)])
+        assert w01(client)["progress_percent"] == 0
+
+    def test_new_output_starts_over(self, client, api_headers):
+        post_job(client, api_headers, "Gear", pending=[item("Plate", 4)])
+        post_job(client, api_headers, "Gear", pending=[item("Plate", 1)])
+        post_job(client, api_headers, "Rotor", pending=[item("Plate", 2)])
+        assert w01(client)["progress_percent"] == 0
+
+    def test_ending_with_only_the_final_step_left_is_finished(self, client, api_headers):
+        post_job(client, api_headers, "Gear", pending=[item("Gear", 1), item("Plate", 4)])
+        post_job(client, api_headers, "Gear", active=[item("Gear", 1)])
+        post_job(client, api_headers, busy=False)
+        assert craft_statuses(client) == ["finished"]
+
+    def test_ending_with_steps_left_is_incomplete(self, client, api_headers):
+        post_job(client, api_headers, "Gear", pending=[item("Gear", 1), item("Plate", 4)])
+        post_job(client, api_headers, busy=False)
+        assert craft_statuses(client) == ["incomplete"]
