@@ -704,13 +704,6 @@ local function service_loop()
       else
         draw_status(nil, result, CONFIG.SCAN_INTERVAL_SECONDS)
       end
-    else
-      if ok then
-        print(string.format("[network_browser] Scan done: %d items, %d fluids, %d batch errors",
-          result.total_items, result.total_fluids or 0, result.total_errors))
-      else
-        print("[network_browser] Scan failed: " .. tostring(result))
-      end
     end
 
     -- stop() may have been called WHILE that scan was running - honor
