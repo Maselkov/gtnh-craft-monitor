@@ -6,6 +6,19 @@ small Flask server, which serves a live page you can open from any browser.
 
 [demo.webm](https://github.com/user-attachments/assets/8aff745b-3819-45f4-a624-8a0846b361a2)
 
+# TLDR
+Basically Web AE2 for your GregTech: New Horizons base made using OpenComputers.
+
+Quick setup:
+1. On server: `docker compose up -d`
+2. Log in as admin, set an account and download game data
+3. In game:
+   ```
+   wget -f https://raw.githubusercontent.com/Maselkov/gtnh-craft-monitor/main/oc/gcm.lua /tmp/gcm.lua
+   /tmp/gcm.lua install
+   ```
+4. Configure `~/config.lua` and you're good to go.
+
 Features:
 
 - **Crafts** — every AE2 crafting CPU with its current job, output item, and
