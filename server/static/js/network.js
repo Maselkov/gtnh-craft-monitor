@@ -4,6 +4,7 @@ import { openCraftRequestModal } from './craft-actions.js';
 import { openItemHistory, tryOpenItemFromUrl, updateItemHistoryPinButton } from './history.js';
 import { buildSearchHighlightHtml, itemMatchesSearch, parseSearchQuery } from './search.js';
 import { activeTab } from './tabs.js';
+import { bindCellTooltip, hideTooltip } from './tooltip.js';
 import { delegateActions, escapeHtml, formatQty, iconClass, iconUrl } from './util.js';
 
 // ---------- Network browser ----------
@@ -65,46 +66,11 @@ export async function toggleNetworkItemPin(it) {
   renderNetworkList();  // reflect the new pin badge/sort order immediately
 }
 
-// ---------- Network browser: custom instant tooltip ----------
-// Deliberately not the native `title` attribute - that has a real,
-// noticeable OS-level hover delay before it appears, which is exactly
-// what a "like in-game" browse experience shouldn't have. This shows
-// immediately on mouseover instead, positioned at the cursor.
-let networkTooltipEl = null;
-
-function ensureNetworkTooltip() {
-  if (!networkTooltipEl) {
-    networkTooltipEl = document.createElement('div');
-    networkTooltipEl.className = 'network-tooltip';
-    networkTooltipEl.style.display = 'none';
-    document.body.appendChild(networkTooltipEl);
-  }
-  return networkTooltipEl;
-}
-
-function hideNetworkTooltip() {
-  if (networkTooltipEl) networkTooltipEl.style.display = 'none';
-}
-
-function positionNetworkTooltip(tip, x, y) {
-  const offset = 16;
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-  const rect = tip.getBoundingClientRect();
-  let left = x + offset;
-  let top = y + offset;
-  // Clamp to the viewport so it can't run off-screen near an edge -
-  // flip to the other side of the cursor instead of clipping.
-  if (left + rect.width > vw - 8) left = x - rect.width - offset;
-  if (top + rect.height > vh - 8) top = y - rect.height - offset;
-  tip.style.left = Math.max(4, left) + 'px';
-  tip.style.top = Math.max(4, top) + 'px';
-}
-
-function showNetworkTooltip(cell, x, y) {
+// ---------- Network browser: tooltip and clicks ----------
+function networkTooltipHtml(cell) {
   const idx = parseInt(cell.dataset.idx, 10);
   const it = networkShownItems[idx];
-  if (!it) return;
+  if (!it) return null;
 
   // Always the real number now (including 0) - craftability is its
   // own separate line, not a replacement for the actual count.
@@ -113,8 +79,7 @@ function showNetworkTooltip(cell, x, y) {
   // no such unit.
   const statLine = 'Stored: ' + (it.size || 0).toLocaleString() + (it.kind === 'fluid' ? ' mB' : '');
 
-  const tip = ensureNetworkTooltip();
-  tip.innerHTML = `
+  return `
     <div class="network-tooltip-name">${escapeHtml(it.name || '?')}</div>
     ${it.variant_name ? `<div class="network-tooltip-variant">${escapeHtml(it.variant_name)}</div>` : ''}
     <div class="network-tooltip-stat">${statLine}</div>
@@ -122,34 +87,11 @@ function showNetworkTooltip(cell, x, y) {
     ${it.isCraftable ? `<div class="network-tooltip-craftable">Craftable</div>` : ''}
     ${it.mod ? `<div class="network-tooltip-mod">${escapeHtml(it.mod)}</div>` : ''}
   `;
-  tip.style.display = 'block';
-  positionNetworkTooltip(tip, x, y);
 }
 
 export function setupNetworkTooltipEvents() {
   const listEl = document.getElementById('networkList');
-  // Event delegation on the (stable) container, not per-cell listeners -
-  // the grid's inner content gets replaced wholesale on every render
-  // (search input, sort change, periodic refresh), so per-cell
-  // listeners would just be discarded each time anyway.
-  listEl.addEventListener('mouseover', (e) => {
-    const cell = e.target.closest('.network-cell');
-    if (!cell) return;
-    showNetworkTooltip(cell, e.clientX, e.clientY);
-  });
-  listEl.addEventListener('mousemove', (e) => {
-    const cell = e.target.closest('.network-cell');
-    if (!cell || !networkTooltipEl || networkTooltipEl.style.display === 'none') return;
-    positionNetworkTooltip(networkTooltipEl, e.clientX, e.clientY);
-  });
-  listEl.addEventListener('mouseout', (e) => {
-    const cell = e.target.closest('.network-cell');
-    if (!cell) return;
-    // Only actually hide if the cursor left the cell itself, not just
-    // moved onto a child element (the icon/qty span) within it.
-    if (cell.contains(e.relatedTarget)) return;
-    hideNetworkTooltip();
-  });
+  bindCellTooltip(listEl, '.network-cell', networkTooltipHtml);
 
   // Suppress the native middle-click autoscroll indicator - without
   // this, the browser shows its own scrolling cursor/UI on middle
@@ -328,7 +270,7 @@ function renderNetworkList() {
   // mouse-move event firing (e.g. typing in the search box) - hide
   // any currently-shown tooltip so it can't linger showing stale
   // data for whatever used to be there.
-  hideNetworkTooltip();
+  hideTooltip();
 
   const listEl = document.getElementById('networkList');
   const emptyEl = document.getElementById('networkEmpty');

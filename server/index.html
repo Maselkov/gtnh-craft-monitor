@@ -140,6 +140,22 @@
     </div>
   </div>
 
+  <!-- Before itemHistoryModal: a cell click opens history on top of it. -->
+  <div id="ingredientsModal" class="modal-overlay" style="display:none;">
+    <div class="modal-box ingredients-box">
+      <div class="modal-header">
+        <div class="history-name-wrap">
+          <div id="ingredientsTitle" class="craft-title"></div>
+          <div id="ingredientsCpu" class="cpu-id"></div>
+        </div>
+        <button class="history-close-btn" data-action="close-ingredients" title="Close">&times;</button>
+      </div>
+      <div id="ingredientsProgress" class="ingredients-progress"></div>
+      <div id="ingredientsNote" class="modal-note" style="display:none;"></div>
+      <div id="ingredientsGrid" class="ingredients-grid"></div>
+    </div>
+  </div>
+
   <div id="itemHistoryModal" class="modal-overlay" style="display:none;">
     <div class="modal-box history-box">
       <div class="modal-header">

@@ -3,12 +3,11 @@
 
 import { AUTH_USER } from './auth.js';
 import { openCancelConfirmModal, pendingCancelCpus } from './craft-actions.js';
+import { ingredientCount, openIngredientsModal, refreshIngredientsModal } from './ingredients.js';
 import { delegateActions, escapeHtml, iconClass, iconUrl } from './util.js';
 
-// Toggle-open state survives across the 3s auto-refresh (which
-// rebuilds the DOM from scratch), keyed by CPU name for ingredient
-// panels and a single flag for the idle-CPU section.
-const openIngredients = new Set();
+// Toggle-open state of the idle-CPU section, which has to survive the
+// 3s auto-refresh (it rebuilds the DOM from scratch).
 let idleSectionOpen = false;
 
 // pinnedCpus and completedPins are now just local caches of what the
@@ -79,18 +78,14 @@ export function setupCraftsActions() {
   delegateActions(root, {
     'toggle-pin': (el) => togglePin(el.dataset.cpu),
     'cancel-craft': (el) => openCancelConfirmModal(el.dataset.cpu),
+    'open-ingredients': (el) => openIngredientsModal(el.dataset.cpu, lastData),
     'acknowledge': (el) => acknowledgePin(el.dataset.completionId),
     'acknowledge-all': () => acknowledgeAllPins(),
   });
-  // Remembers which <details> are open so the 3s re-render can restore
-  // them. toggle doesn't bubble, so catch it on the way down.
+  // Remembers whether the idle section is open so the 3s re-render can
+  // restore it. toggle doesn't bubble, so catch it on the way down.
   root.addEventListener('toggle', (e) => {
-    const details = e.target;
-    if (details.matches('details.ingredients')) {
-      if (details.open) openIngredients.add(details.dataset.key); else openIngredients.delete(details.dataset.key);
-    } else if (details.matches('details.idle-group')) {
-      idleSectionOpen = details.open;
-    }
+    if (e.target.matches('details.idle-group')) idleSectionOpen = e.target.open;
   }, true);
 }
 
@@ -409,23 +404,6 @@ export function tickSourceLine() {
   sourceLine.textContent = `Source: ${lastData.source} - updated ${ageDisplay}s ago`;
 }
 
-function renderItemList(label, list) {
-  if (!Array.isArray(list) || list.length === 0) return '';
-  const rows = list.map(it => {
-    const icon = it.icon
-      ? `<img class="${iconClass('item-icon', it.icon)}" src="${iconUrl(it.icon)}" alt="" loading="lazy" data-remove-on-error>`
-      : '';
-    const linkAttrs = `data-mod="${escapeHtml(it.mod || '')}" data-internal="${escapeHtml(it.internal || '')}" `
-      + `data-damage="${it.damage != null ? it.damage : ''}" data-name="${escapeHtml(it.name || '?')}" `
-      + `data-icon="${escapeHtml(it.icon || '')}"`;
-    return `<div class="item">
-      <span class="item-left">${icon}<span class="item-name item-history-link" ${linkAttrs}>${escapeHtml(it.name || '?')}</span></span>
-      <span class="item-qty">${escapeHtml(String(it.size ?? ''))}</span>
-    </div>`;
-  }).join('');
-  return `<div class="section-label">${label}</div>${rows}`;
-}
-
 function renderCard(job) {
   // Progress/ingredients/title all gated on job.busy, not just on
   // whether the underlying fields happen to be present - AE2 can
@@ -444,10 +422,7 @@ function renderCard(job) {
     <div class="progress-label">${escapeHtml(job.progress_percent)}% &middot; ${escapeHtml(job.steps_done ?? '?')}/${escapeHtml(job.steps_total ?? '?')} steps done</div>
   ` : '';
 
-  const body = renderItemList('Active', job.active) + renderItemList('Pending', job.pending) + renderItemList('Stored', job.stored);
-  const itemCount = (job.active?.length || 0) + (job.pending?.length || 0) + (job.stored?.length || 0);
-  const key = 'ingredients:' + job.name;
-  const isOpen = openIngredients.has(key);
+  const itemCount = job.busy ? ingredientCount(job) : 0;
   const isPinned = pinnedCpus.has(job.name);
   const canPin = job.busy || isPinned;  // pinning only ever makes sense for a busy CPU
 
@@ -457,12 +432,9 @@ function renderCard(job) {
         : `<span class="craft-title-muted">Crafting job (no monitor tile)</span>`)
     : `<span class="craft-title-muted">Idle</span>`;
 
-  const ingredientsBlock = (job.busy && itemCount > 0) ? `
-    <details class="ingredients" ${isOpen ? 'open' : ''} data-key="${escapeHtml(key)}">
-      <summary>Ingredients (${itemCount})</summary>
-      <div class="ingredients-body">${body}</div>
-    </details>
-  ` : '';
+  const ingredientsBlock = (job.busy && itemCount > 0)
+    ? `<button class="ingredients-btn" data-action="open-ingredients" data-cpu="${escapeHtml(job.name)}">Ingredients (${itemCount})</button>`
+    : '';
 
   const pinTitle = isPinned ? 'Unpin' : (canPin ? 'Pin - notify me when this finishes' : 'Only a busy CPU can be pinned');
 
@@ -544,6 +516,7 @@ export function render(data) {
 
   if (jobs.length === 0) {
     root.innerHTML = completedSection + '<div class="empty">No crafting CPUs reported yet.</div>';
+    refreshIngredientsModal(data);
     return;
   }
 
@@ -581,4 +554,5 @@ export function render(data) {
   for (const bar of root.querySelectorAll('.progress-fill[data-progress]')) {
     bar.style.width = `${Number(bar.dataset.progress)}%`;
   }
+  refreshIngredientsModal(data);
 }
