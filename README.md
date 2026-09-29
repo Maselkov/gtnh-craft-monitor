@@ -666,6 +666,24 @@ stored than the capacity, the script falls back to parsing
 
 ## Development
 
+Run a local server with a fake game feeding it (Python with
+`server/requirements.txt` installed):
+
+```bash
+cd server
+python dev.py --open
+```
+
+It prints an admin access token to sign in with, and serves
+http://127.0.0.1:8421/ from a temporary data directory (deleted on exit;
+`--data-dir PATH` keeps one between runs). There are fake crafting CPUs
+whose jobs progress, finish and restart, network scans, power readings,
+a week of history for the charts, and an icon for every fake item. Craft
+and cancel requests from the page are answered the way the in-game
+scripts would. `--host 0.0.0.0` makes it reachable from a phone on the
+same network; `--no-icons` runs without game data. It never touches
+`server/data/`.
+
 Run the server tests:
 
 ```bash
