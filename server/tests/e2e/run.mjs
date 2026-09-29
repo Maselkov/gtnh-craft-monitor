@@ -427,12 +427,16 @@ async function main() {
     await waitFor('menu closed', `!visible($('#settingsMenu'))`);
   });
 
-  step('expand ingredients; stays open across a refresh', async () => {
-    await waitFor('ingredients', `card('W01').querySelector('details.ingredients summary')`);
-    await click(`card('W01').querySelector('details.ingredients summary')`);
-    await waitFor('open', `card('W01').querySelector('details.ingredients').open`);
+  step('ingredients modal; stays open across a refresh, Escape closes it', async () => {
+    await waitFor('ingredients button', `card('W01').querySelector('.ingredients-btn')`);
+    await click(`card('W01').querySelector('.ingredients-btn')`);
+    await waitFor('open with a cell per item', `visible($('#ingredientsModal')) && $$('#ingredientsGrid .ingredient-cell').length === 2`);
+    await waitFor('crafting cell first', `$('#ingredientsGrid .ingredient-cell').classList.contains('crafting')
+      && $('#ingredientsGrid .ingredient-cell').textContent.includes('Crafting: 3')`);
     await sleep(3500);  // the crafts tab re-renders every 3s
-    await waitFor('still open after re-render', `card('W01').querySelector('details.ingredients').open`);
+    await waitFor('still open after re-render', `visible($('#ingredientsModal')) && $$('#ingredientsGrid .ingredient-cell').length === 2`);
+    await evaluate(`pressKey('Escape'), true`);
+    await waitFor('closed', `!visible($('#ingredientsModal'))`);
   });
 
   step('expand idle CPUs; stays open across a refresh', async () => {

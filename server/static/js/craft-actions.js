@@ -5,6 +5,7 @@ import { AUTH_USER, closeAdminUsersModal, closeSettingsMenu } from './auth.js';
 import { lastData, render } from './crafts.js';
 import { closeGameDataModal } from './gamedata.js';
 import { closeItemHistory } from './history.js';
+import { closeIngredientsModal } from './ingredients.js';
 import { delegateActions, escapeHtml, iconClass, iconUrl, onBackdropClick } from './util.js';
 
 // ---------- Craft request modal ----------
@@ -328,6 +329,8 @@ export function setupCraftDialogActions() {
         closeCancelConfirmModal();
       } else if (document.getElementById('itemHistoryModal').style.display !== 'none') {
         closeItemHistory();
+      } else if (document.getElementById('ingredientsModal').style.display !== 'none') {
+        closeIngredientsModal();
       } else if (document.getElementById('adminUsersModal').style.display !== 'none') {
         closeAdminUsersModal();
       } else if (document.getElementById('gamedataModal').style.display !== 'none') {

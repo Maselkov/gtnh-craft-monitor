@@ -136,18 +136,21 @@ function readDamageFromDataset(raw) {
 
 export function setupCraftHistoryLinks() {
   // Event delegation, same reasoning as the network grid's tooltip -
-  // the crafts container is rebuilt wholesale via innerHTML on every
-  // poll, so per-element listeners would just be discarded each time.
-  document.getElementById('root').addEventListener('click', (e) => {
-    const link = e.target.closest('.item-history-link');
-    if (!link) return;
-    openItemHistoryFromCraft(
-      link.dataset.mod || null,
-      link.dataset.internal || null,
-      readDamageFromDataset(link.dataset.damage),
-      link.dataset.name || '?',
-      link.dataset.icon || null);
-  });
+  // the crafts container and the ingredients grid are rebuilt
+  // wholesale via innerHTML on every poll, so per-element listeners
+  // would just be discarded each time.
+  for (const id of ['root', 'ingredientsModal']) {
+    document.getElementById(id).addEventListener('click', (e) => {
+      const link = e.target.closest('.item-history-link');
+      if (!link) return;
+      openItemHistoryFromCraft(
+        link.dataset.mod || null,
+        link.dataset.internal || null,
+        readDamageFromDataset(link.dataset.damage),
+        link.dataset.name || '?',
+        link.dataset.icon || null);
+    });
+  }
 }
 
 // Called once network data is actually available - either right

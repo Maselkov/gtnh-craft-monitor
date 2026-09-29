@@ -10,6 +10,7 @@ import {
 } from './craft-actions.js';
 import { refresh, setupCraftsActions, setupNotifications, tickSourceLine } from './crafts.js';
 import { setupGameDataActions } from './gamedata.js';
+import { setupIngredientsActions } from './ingredients.js';
 import {
   parseItemUrlPath,
   setPendingItemFromUrl,
@@ -36,6 +37,7 @@ setupAuthControls();
 setupAdminActions();
 setupGameDataActions();
 setupCraftsActions();
+setupIngredientsActions();
 setupTabActions();
 setupPowerActions();
 setupNetworkActions();
