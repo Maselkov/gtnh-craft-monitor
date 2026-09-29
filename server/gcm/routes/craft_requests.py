@@ -136,10 +136,28 @@ def craft_request_result(req_id):
 
     if status == "accepted" and cpu_name:
         tracking.start_requested_job(
-            req["user_id"], cpu_name, req.get("label"), req.get("icon"), req["created_at"]
+            req["user_id"], cpu_name, req.get("label"), req.get("icon"), req["created_at"],
+            request_id=req_id if payload.get("watching") is True else None,
         )
 
     return jsonify({"ok": True})
+
+
+@bp.route("/api/craft/requests/<int:req_id>/outcome", methods=["POST"])
+@auth.api_key_required
+def craft_request_outcome(req_id):
+    # How an accepted request's job ended, from its own AE2 crafting link
+    # - sent only for requests accepted with watching=true.
+    payload = request.get_json(silent=True) or {}
+    outcome = payload.get("outcome")
+    cpu_name = payload.get("cpu_name")
+    if outcome not in ("finished", "cancelled"):
+        return jsonify({"error": "outcome must be finished or cancelled"}), 400
+    if not isinstance(cpu_name, str) or not cpu_name:
+        return jsonify({"error": "missing cpu_name"}), 400
+    # Not an error when the job is no longer tracked: it was already
+    # judged without this, and there's nothing for the game to retry.
+    return jsonify({"ok": True, "applied": tracking.report_outcome(req_id, cpu_name, outcome)})
 
 
 @bp.route("/api/craft/cancel", methods=["POST"])

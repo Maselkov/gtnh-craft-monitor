@@ -85,10 +85,15 @@ network = {
 tracking_lock = threading.Lock()
 cpu_last_busy = {}  # cpu_name -> bool
 # cpu_name -> the current job's {label, icon, progress, steps_left,
-# peaks, output, started_at}, only while busy (see _new_job_entry() in
+# steps_total, peaks, output, started_at, first_sample_at,
+# last_sample_at, request_id, outcome}, only while busy (see _new_job_entry() in
 # tracking.py). Lost on restart, so an in-flight job's progress
 # re-baselines from the first report after it.
 cpu_last_known = {}
+# cpu_name -> {entry, label, icon, ended_at}: a watched browser request's
+# job that ended before the game reported its outcome, recorded once it
+# does or after tracking.OUTCOME_WAIT_SECONDS.
+cpu_ending = {}
 
 
 # Small ad-hoc debugging channel: the Lua side can POST a raw dump here
@@ -122,4 +127,5 @@ def reset():
     with tracking_lock:
         cpu_last_busy.clear()
         cpu_last_known.clear()
+        cpu_ending.clear()
     debug_dumps.clear()

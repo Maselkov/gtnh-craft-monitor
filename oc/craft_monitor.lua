@@ -62,6 +62,7 @@
 --]]
 
 local component = require("component")
+local computer = require("computer")
 local event = require("event")
 local serialization = require("serialization")
 local term = require("term")
@@ -111,6 +112,11 @@ local CONFIG = {
   URL          = config.SERVER_URL .. "/api/crafts",
   API_KEY      = config.API_KEY,
   POLL_SECONDS = 5,                 -- how often to poll + POST
+  WATCH_SECONDS = 1,                -- between those, how often to look at
+                                     -- busy CPUs' pending/active items, so a
+                                     -- job's end is judged from a snapshot
+                                     -- this old rather than POLL_SECONDS
+                                     -- old (0 = don't look in between)
   DEBUG_DUMP   = false,             -- true = print raw structure once and exit
   DEBUG_CPU_FILTER = nil,           -- e.g. "W01" - only dump this one CPU when
                                      -- DEBUG_DUMP is true (nil = dump all)
@@ -133,6 +139,10 @@ local CONFIG = {
 
   CRAFT_API_URL = config.SERVER_URL .. "/api/craft",  -- base for
                                      -- /requests/pending, /requests/<id>/result
+  WATCH_REQUEST_OUTCOMES = true,    -- after a craft request is accepted,
+                                     -- keep its CraftingStatus and report
+                                     -- whether its job finished or was
+                                     -- cancelled (isDone()/isCanceled())
   CRAFT_REQUEST_POLL_SECONDS = 1.5,  -- separate, much faster loop than the
                                       -- main status poll above - request()
                                       -- itself returns near-instantly, the
@@ -197,8 +207,45 @@ local function simplify_items(list)
   return out
 end
 
+-- Between full reports: watched holds the latest look at each busy
+-- CPU's job, and ended the last look at each job that ended since the
+-- last report that reached the server. That look goes out with the
+-- CPU's idle report as last_busy - the server judges whether the job
+-- finished from how much it had left, and a snapshot from up to
+-- POLL_SECONDS earlier makes a quick job that finished look cut short.
+local watched, ended = {}, {}
+
+-- Returns true when a watched job has ended, so the caller can report
+-- it right away.
+local function watch_cpus(me)
+  local ok, cpus = pcall(me.getCpus)
+  if not ok then return false end
+  local now = computer.uptime()
+  local anyEnded = false
+  for _, row in ipairs(cpus) do
+    local name = row.name or "(unnamed CPU)"
+    if row.busy then
+      if row.cpu then
+        -- storedItems() skipped: progress ignores it, and it's the
+        -- biggest list.
+        local okP, pending = pcall(row.cpu.pendingItems)
+        local okA, active = pcall(row.cpu.activeItems)
+        if okP and okA then
+          watched[name] = { pending = simplify_items(pending), active = simplify_items(active), at = now }
+        end
+      end
+    elseif watched[name] then
+      ended[name] = watched[name]
+      watched[name] = nil
+      anyEnded = true
+    end
+  end
+  return anyEnded
+end
+
 local function extract_jobs(raw_cpus)
   local jobs = {}
+  local now = computer.uptime()
   local errors = {}  -- collected, not printed immediately - see VERBOSE below
   for idx, row in ipairs(raw_cpus or {}) do
     local active, pending, stored = {}, {}, {}
@@ -226,8 +273,22 @@ local function extract_jobs(raw_cpus)
       end
     end
 
+    local name = row.name or "(unnamed CPU)"
+    local lastBusy
+    if row.busy then
+      ended[name] = nil
+    else
+      -- A job that ended since the last watch tick is still in watched.
+      ended[name] = ended[name] or watched[name]
+      watched[name] = nil
+      local seen = ended[name]
+      if seen then
+        lastBusy = { pending = seen.pending, active = seen.active, age = now - seen.at }
+      end
+    end
+
     jobs[#jobs + 1] = {
-      name             = row.name or "(unnamed CPU)",
+      name             = name,
       busy             = row.busy and true or false,
       storage          = row.storage,
       coprocessors     = row.coprocessors,
@@ -238,6 +299,7 @@ local function extract_jobs(raw_cpus)
       active  = simplify_items(active),
       pending = simplify_items(pending),
       stored  = simplify_items(stored),
+      last_busy = lastBusy,
     }
 
     if CONFIG.VERBOSE then
@@ -307,11 +369,10 @@ end
 -- isComputing() becoming false: at that point, hasFailed() tells you
 -- whether it was accepted or rejected. If accepted, the target CPU
 -- flips busy=true at essentially the same moment (confirmed via a live
--- Robot Arm (UHV) test) - that's the actual "done, for our purposes"
--- point. What happens after that (the real, possibly long physical
--- crafting process) is a different concern, already handled by the
--- existing pin/completion infrastructure - this loop hands off to that
--- rather than tracking completion itself.
+-- Robot Arm (UHV) test) - that's the point the request is reported
+-- accepted. After that the same handle's isDone()/isCanceled() say how
+-- the job itself ended (see request_outcome()), which the server uses
+-- instead of judging the end from the job's last status samples.
 
 local function craft_get_json(path)
   local url = CONFIG.CRAFT_API_URL .. path
@@ -494,8 +555,30 @@ end
 -- lost track of. A known, accepted limitation (same category as the
 -- network browser's non-persistent state) rather than something this
 -- version tries to solve.
+-- How long an accepted request's CraftingStatus is watched for its
+-- outcome: given up once its CPU has been idle this long without
+-- isDone()/isCanceled() turning true, or after the cap regardless - the
+-- server judges the job without it by then anyway.
+local OUTCOME_IDLE_GIVE_UP_SECONDS = 30
+local OUTCOME_MAX_WATCH_SECONDS = 24 * 3600
+
+-- Whether a CraftingStatus says its job ended: "finished", "cancelled",
+-- or nil while it's running (or if it can't say). Per OC's AE2 driver,
+-- both read the request's own AE2 crafting link, which the CPU marks
+-- when it completes or cancels the job.
+local function request_outcome(status)
+  local okC, cancelled = pcall(status.isCanceled)
+  if okC and cancelled == true then return "cancelled" end
+  local okD, done = pcall(status.isDone)
+  if okD and done == true then return "finished" end
+  return nil
+end
+
 local function run_craft_request_loop(me)
   local tracked = {}  -- request id -> { status = <CraftingStatus>, before = <snapshot>, ... }
+  -- Accepted requests watched for how their job ends: request id ->
+  -- { status, cpu, since, idleSince }.
+  local watching = {}
   -- CPUs already credited to an accepted request, until they go idle -
   -- so a second request finishing planning can't claim the same one.
   local claimed = {}
@@ -609,12 +692,43 @@ local function run_craft_request_loop(me)
         else
           local cpuName = find_request_cpu(me, entry, claimed)
           if cpuName then claimed[cpuName] = true end
-          craft_post_json("/requests/" .. reqId .. "/result", {
+          local watch = CONFIG.WATCH_REQUEST_OUTCOMES and cpuName ~= nil
+            and entry.status.isDone ~= nil and entry.status.isCanceled ~= nil
+          local posted = craft_post_json("/requests/" .. reqId .. "/result", {
             status = "accepted",
             cpu_name = cpuName,
+            -- Tells the server to wait briefly for the outcome when the
+            -- job ends, rather than judge it from its last samples.
+            watching = watch and true or nil,
           })
+          if watch and posted then
+            watching[reqId] = { status = entry.status, cpu = cpuName, since = computer.uptime() }
+          end
         end
         tracked[reqId] = nil
+      end
+    end
+
+    local now = computer.uptime()
+    for reqId, w in pairs(watching) do
+      local outcome = request_outcome(w.status)
+      if outcome and craft_post_json("/requests/" .. reqId .. "/outcome", {
+            outcome = outcome,
+            cpu_name = w.cpu,
+          }) then
+        watching[reqId] = nil
+      else
+        -- Also covers an outcome whose POST failed: retried next tick,
+        -- until these give up on it.
+        if busyNow[w.cpu] then
+          w.idleSince = nil
+        else
+          w.idleSince = w.idleSince or now
+        end
+        if (w.idleSince and now - w.idleSince > OUTCOME_IDLE_GIVE_UP_SECONDS)
+            or now - w.since > OUTCOME_MAX_WATCH_SECONDS then
+          watching[reqId] = nil
+        end
       end
     end
 
@@ -767,6 +881,8 @@ local function service_loop()
         source = kind,
         jobs = jobs,
       })
+      -- Kept until a report carrying them gets through.
+      if post_ok then ended = {} end
     else
       post_err = tostring(raw)
     end
@@ -792,7 +908,18 @@ local function service_loop()
     -- whole point of converting to rc (independent per-service stop)
     -- if it could. `rc craft_monitor stop` - which just flips `running`
     -- - is the one sanctioned way to stop this service now.
-    os.sleep(CONFIG.POLL_SECONDS)
+    -- With WATCH_SECONDS set, the wait is split into ticks that look at
+    -- the busy CPUs (watch_cpus()), and a job ending cuts it short.
+    local nextPoll = computer.uptime() + CONFIG.POLL_SECONDS
+    local watch = CONFIG.WATCH_SECONDS or 0
+    while running and computer.uptime() < nextPoll do
+      if watch > 0 then
+        os.sleep(math.min(watch, nextPoll - computer.uptime()))
+        if running and watch_cpus(me) then break end
+      else
+        os.sleep(nextPoll - computer.uptime())
+      end
+    end
   end
   print("[craft_monitor] Stopped.")
 end

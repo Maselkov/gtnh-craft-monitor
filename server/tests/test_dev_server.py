@@ -67,3 +67,27 @@ def test_icon_bundle_covers_every_item(tmp_path):
     assert len(paths) == len(dev.CATALOG)
     assert set(paths) <= names
     assert json.loads((tmp_path / "gamedata" / "selected.json").read_text())["version"] == "dev"
+
+
+def test_ended_job_sends_its_last_look_once(game):
+    cpu = game.cpus[1]
+    assert any(cpu.tick() for _ in range(500))
+    report = cpu.report()
+    assert set(report["last_busy"]) == {"pending", "active", "age"}
+    assert "last_busy" not in cpu.report()
+
+
+def test_requested_job_reports_its_outcome(game, client):
+    login_as(client, "usr_dev", role="operator")
+    client.post("/api/craft/request", json={
+        "label": "Titanium Gear", "mod": "gregtech", "internal": "gt.metaitem.01",
+        "damage": 30015, "amount": 4,
+    })
+    free = next(cpu for cpu in game.cpus if cpu.job is None)
+    game.tick()
+    assert free.request_id is not None
+    assert client.post("/api/craft/cancel", json={"cpu_name": free.name}).status_code == 200
+    game.tick()
+    assert free.request_id is None
+    statuses = [c["status"] for c in client.get("/api/completions").get_json()["completions"]]
+    assert statuses == ["incomplete"]

@@ -260,6 +260,12 @@ class Cpu:
         self.name, self.storage, self.coprocessors = name, storage, coprocessors
         self.job = None           # {"output": name, "items": {name: [scheduled, crafting, stored]}}
         self.idle_ticks = 0
+        # craft_monitor.lua's watch-tick look at a job that just ended,
+        # sent once with the next idle report as last_busy.
+        self.last_look = None
+        # The browser request running here, watched for its outcome the
+        # way craft_monitor.lua watches its CraftingStatus.
+        self.request_id = None
 
     def start(self, output, ingredients):
         self.job = {"output": output, "items": {
@@ -273,6 +279,7 @@ class Cpu:
         if not self.job:
             self.idle_ticks += 1
             return False
+        before = self._lists()
         for counts in self.job["items"].values():
             if counts[1] and random.random() < 0.35:
                 counts[1] = max(0, counts[1] - random.randint(1, max(1, counts[1] // 2 + 1)))
@@ -281,16 +288,20 @@ class Cpu:
                 counts[0] -= moved
                 counts[1] += moved
         if all(s == 0 and c == 0 for s, c, _ in self.job["items"].values()):
-            self.job = None
-            self.idle_ticks = 0
+            self.stop(before)
             return True
         return False
 
-    def report(self):
-        if not self.job:
-            return {"name": self.name, "busy": False, "storage": self.storage,
-                    "coprocessors": self.coprocessors}
-        out = BY_NAME.get(self.job["output"], {})
+    def stop(self, look=None):
+        """Ends the job, as finishing or a cancel does. `look` is what the
+        last watch tick saw of it - by default, the job as it is now."""
+        look = look or self._lists()
+        self.last_look = {"pending": look["pending"], "active": look["active"],
+                          "age": round(random.uniform(0.1, 1), 2)}
+        self.job = None
+        self.idle_ticks = 0
+
+    def _lists(self):
         active, pending, stored = [], [], []
         for name, (scheduled, crafting, kept) in self.job["items"].items():
             if crafting:
@@ -299,12 +310,22 @@ class Cpu:
                 pending.append(stack(name, scheduled))
             if kept:
                 stored.append(stack(name, kept))
+        return {"active": active, "pending": pending, "stored": stored}
+
+    def report(self):
+        if not self.job:
+            idle = {"name": self.name, "busy": False, "storage": self.storage,
+                    "coprocessors": self.coprocessors}
+            if self.last_look:
+                idle["last_busy"], self.last_look = self.last_look, None
+            return idle
+        out = BY_NAME.get(self.job["output"], {})
         return {
             "name": self.name, "busy": True, "storage": self.storage,
             "coprocessors": self.coprocessors, "final_output": self.job["output"],
             "final_output_mod": out.get("mod"), "final_output_internal": out.get("internal"),
             "final_output_damage": out.get("damage"),
-            "active": active, "pending": pending, "stored": stored,
+            **self._lists(),
         }
 
 
@@ -339,7 +360,8 @@ class FakeGame:
 
     def tick(self):
         for cpu in self.cpus:
-            cpu.tick()
+            if cpu.tick():
+                self.report_outcome(cpu, "finished")
             if cpu.job is None and cpu.name == "M00" and cpu.idle_ticks >= 5:
                 cpu.start(BIG_JOB[0], random_ingredients(BIG_JOB[1], BIG_JOB[0]))
             elif cpu.job is None and cpu.name != "B01" and cpu.idle_ticks >= 8 and random.random() < 0.1:
@@ -364,16 +386,23 @@ class FakeGame:
             label = req["label"] if req["label"] in BY_NAME else "Iron Ingot"
             cpu.start(label, random_ingredients(random.randint(2, 8), label))
             cpu.job["output"] = req["label"]
+            cpu.request_id = req["id"]
             self.call("POST", f"/api/craft/requests/{req['id']}/result",
-                      {"status": "accepted", "cpu_name": cpu.name})
+                      {"status": "accepted", "cpu_name": cpu.name, "watching": True})
         for req in self.call("GET", "/api/craft/cancel/pending").get("requests", []):
             cpu = next((c for c in self.cpus if c.name == req["cpu_name"]), None)
             ok = bool(cpu and cpu.job)
             if ok:
-                cpu.job = None
-                cpu.idle_ticks = 0
+                cpu.stop()
+                self.report_outcome(cpu, "cancelled")
             self.call("POST", f"/api/craft/cancel/{req['id']}/result",
                       {"success": ok, "reason": None if ok else "CPU is not crafting"})
+
+    def report_outcome(self, cpu, outcome):
+        if cpu.request_id is not None:
+            self.call("POST", f"/api/craft/requests/{cpu.request_id}/outcome",
+                      {"outcome": outcome, "cpu_name": cpu.name})
+            cpu.request_id = None
 
     def scan(self):
         items = []
