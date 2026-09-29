@@ -947,6 +947,15 @@ always the same, whichever Random the renderer holds. GT's glitch effect
 also keeps state between draws (new colour offsets in the first 0.4 s of
 every 2 s, held after), which now comes from those same draws.
 
+The seed is the tick run through SplitMix64's finalizer
+(`ExportClock.seed()`), not the tick itself: `java.util.Random` gives nearly
+the same first numbers for seeds a few low bits apart, so seeding with
+`constant ^ tick` made neighbouring ticks' jitter correlate at 0.7. GT's
+Infinity pulse on UEV components (a 60%-opacity copy scaled by
+`0.95 + 0.15 x gaussian`, drawn under the item, so only visible when above
+1x) showed on 1% of ticks instead of ~36%, and with Faithful's static UEV
+textures the icons weren't detected as animated at all.
+
 Two other things made icons "random". Avaritia turns on GUI item lighting
 and draws its pulse quad without a normal, taking the current one, which
 was whatever the previous item left: its still came out up to a third
