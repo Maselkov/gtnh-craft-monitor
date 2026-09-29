@@ -1,4 +1,6 @@
-from gcm import commands, db, state
+import pytest
+
+from gcm import commands, db, state, tracking
 from conftest import login_as
 
 
@@ -291,7 +293,210 @@ class TestJobProgress:
         post_job(client, api_headers, busy=False)
         assert craft_statuses(client) == ["finished"]
 
-    def test_ending_with_steps_left_is_incomplete(self, client, api_headers):
-        post_job(client, api_headers, "Gear", pending=[item("Gear", 1), item("Plate", 4)])
+
+
+def shift_samples(seconds, cpu_name="W01", last=None):
+    """Moves the job's recorded sample times `seconds` into the past, as
+    if it had been running that long; `last` moves only the latest one,
+    as if that many seconds passed since it."""
+    entry = state.cpu_last_known[cpu_name]
+    for key in ("started_at", "first_sample_at", "last_sample_at"):
+        entry[key] -= seconds
+    if last is not None:
+        entry["last_sample_at"] -= last
+
+
+def plates(n):
+    return [item("Gear", 1), item("Plate", 4), item("Rod", 4), item("Bolt", 4)][: n + 1]
+
+
+class TestJobEnd:
+    # Only the steps left at the last busy sample are known, and that
+    # sample is seconds old by the time the CPU is seen idle.
+    def test_slow_job_ending_with_steps_left_is_incomplete(self, client, api_headers):
+        post_job(client, api_headers, "Gear", pending=plates(3))
+        shift_samples(600)
+        post_job(client, api_headers, "Gear", pending=[item("Gear", 1), item("Plate", 2), item("Rod", 4), item("Bolt", 4)])
+        shift_samples(0, last=5)
         post_job(client, api_headers, busy=False)
         assert craft_statuses(client) == ["incomplete"]
+
+    def test_job_seen_once_is_finished(self, client, api_headers):
+        # One sample is only the baseline - the job most likely finished
+        # in the gap.
+        post_job(client, api_headers, "Gear", pending=plates(3))
+        post_job(client, api_headers, busy=False)
+        assert craft_statuses(client) == ["finished"]
+
+    def test_fast_job_ending_with_steps_left_is_finished(self, client, api_headers):
+        # Half done within 5s: the other half fits in the next 5s.
+        post_job(client, api_headers, "Gear", pending=plates(3))
+        shift_samples(5)
+        post_job(client, api_headers, "Gear", pending=[item("Gear", 1), item("Plate", 2), item("Rod", 2), item("Bolt", 2)])
+        shift_samples(0, last=5)
+        post_job(client, api_headers, busy=False)
+        assert craft_statuses(client) == ["finished"]
+
+    def test_fresh_last_busy_snapshot_decides(self, client, api_headers):
+        # A slow job whose 5s-old sample had steps left, but Lua looked
+        # again a second before it went idle: only the final step left.
+        post_job(client, api_headers, "Gear", pending=plates(3))
+        shift_samples(600)
+        post_job(client, api_headers, "Gear", pending=[item("Gear", 1), item("Plate", 2), item("Rod", 4), item("Bolt", 4)])
+        shift_samples(0, last=5)
+        post_job(client, api_headers, busy=False,
+                 last_busy={"pending": [], "active": [item("Gear", 1)], "age": 1})
+        assert craft_statuses(client) == ["finished"]
+
+    def test_last_busy_is_not_served(self, client, api_headers):
+        post_job(client, api_headers, "Gear", pending=plates(1))
+        post_job(client, api_headers, busy=False, last_busy={"pending": [], "active": [], "age": 1})
+        assert "last_busy" not in w01(client)
+
+    @pytest.mark.parametrize("last_busy", [
+        "junk",
+        {"pending": [], "active": []},
+        {"pending": [], "active": [], "age": "1"},
+        {"pending": [], "active": [], "age": True},
+        {"pending": "junk", "active": 3, "age": 1},
+    ])
+    def test_malformed_last_busy_is_ignored(self, client, api_headers, last_busy):
+        post_job(client, api_headers, "Gear", pending=plates(3))
+        shift_samples(600)
+        post_job(client, api_headers, "Gear", pending=[item("Gear", 1), item("Plate", 2), item("Rod", 4), item("Bolt", 4)])
+        shift_samples(0, last=5)
+        res = client.post(
+            "/api/crafts",
+            json={"jobs": [{"name": "W01", "busy": False, "last_busy": last_busy}]},
+            headers=api_headers,
+        )
+        assert res.status_code == 200
+        assert craft_statuses(client) == ["incomplete"]
+
+    def _cancel(self, client, api_headers, report=True):
+        login_as(client, "bob", role="operator")
+        req_id = client.post("/api/craft/cancel", json={"cpu_name": "W01"}).get_json()["id"]
+        client.get("/api/craft/cancel/pending", headers=api_headers)
+        if report:
+            client.post(f"/api/craft/cancel/{req_id}/result", json={"success": True}, headers=api_headers)
+
+    @pytest.mark.parametrize("result_first", [True, False])
+    def test_cancel_from_the_page_is_incomplete(self, client, api_headers, result_first):
+        # Even a job with only its final step left - and whichever of the
+        # cancel's result and the idle report reaches us first.
+        post_job(client, api_headers, "Gear", pending=[item("Gear", 1)])
+        self._cancel(client, api_headers, report=result_first)
+        post_job(client, api_headers, busy=False)
+        assert craft_statuses(client) == ["incomplete"]
+
+    def test_refused_cancel_does_not_count(self, client, api_headers):
+        post_job(client, api_headers, "Gear", pending=[item("Gear", 1)])
+        login_as(client, "bob", role="operator")
+        req_id = client.post("/api/craft/cancel", json={"cpu_name": "W01"}).get_json()["id"]
+        client.get("/api/craft/cancel/pending", headers=api_headers)
+        client.post(f"/api/craft/cancel/{req_id}/result", json={"success": False}, headers=api_headers)
+        post_job(client, api_headers, busy=False)
+        assert craft_statuses(client) == ["finished"]
+
+    def test_cancel_of_an_earlier_job_does_not_count(self, client, api_headers):
+        post_job(client, api_headers, "Gear", pending=[item("Gear", 1)])
+        self._cancel(client, api_headers)
+        post_job(client, api_headers, busy=False)
+        post_job(client, api_headers, "Rotor", pending=[item("Rotor", 1)])
+        post_job(client, api_headers, busy=False)
+        assert craft_statuses(client) == ["incomplete", "finished"]
+
+
+class TestRequestOutcome:
+    # craft_monitor.lua watching a browser request's own crafting link
+    # for how its job ended.
+    def _accept(self, client, api_headers, watching=True):
+        login_as(client, "bob", role="operator")
+        req_id = client.post(
+            "/api/craft/request",
+            json={"label": "Gear", "internal": "Gear", "amount": 1},
+        ).get_json()["id"]
+        client.get("/api/craft/requests/pending", headers=api_headers)
+        client.post(
+            f"/api/craft/requests/{req_id}/result",
+            json={"status": "accepted", "cpu_name": "W01", "watching": watching},
+            headers=api_headers,
+        )
+        return req_id
+
+    def _outcome(self, client, api_headers, req_id, outcome, cpu_name="W01"):
+        return client.post(
+            f"/api/craft/requests/{req_id}/outcome",
+            json={"outcome": outcome, "cpu_name": cpu_name},
+            headers=api_headers,
+        )
+
+    def _slow_job_with_steps_left(self, client, api_headers):
+        # The pace check alone would call this incomplete.
+        post_job(client, api_headers, "Gear", pending=plates(3))
+        shift_samples(600)
+        post_job(client, api_headers, "Gear", pending=[item("Gear", 1), item("Plate", 2), item("Rod", 4), item("Bolt", 4)])
+        shift_samples(0, last=5)
+
+    def test_finished_outcome_before_idle_decides(self, client, api_headers):
+        req_id = self._accept(client, api_headers)
+        self._slow_job_with_steps_left(client, api_headers)
+        assert self._outcome(client, api_headers, req_id, "finished").get_json()["applied"] is True
+        post_job(client, api_headers, busy=False)
+        assert craft_statuses(client) == ["finished"]
+
+    def test_cancelled_outcome_after_idle_decides(self, client, api_headers):
+        req_id = self._accept(client, api_headers)
+        post_job(client, api_headers, "Gear", pending=[item("Gear", 1)])
+        post_job(client, api_headers, busy=False)
+        # Held until the outcome arrives.
+        assert craft_statuses(client) == []
+        assert client.get("/api/pins").get_json()["pins"] == ["W01"]
+        assert self._outcome(client, api_headers, req_id, "cancelled").get_json()["applied"] is True
+        assert craft_statuses(client) == ["incomplete"]
+        assert completion_names(client) == ["Gear"]
+
+    def test_no_outcome_is_judged_after_the_wait(self, client, api_headers):
+        self._accept(client, api_headers)
+        self._slow_job_with_steps_left(client, api_headers)
+        post_job(client, api_headers, busy=False)
+        assert craft_statuses(client) == []
+        state.cpu_ending["W01"]["ended_at"] -= tracking.OUTCOME_WAIT_SECONDS
+        post_job(client, api_headers, busy=False)
+        assert craft_statuses(client) == ["incomplete"]
+
+    def test_new_job_releases_the_held_end_first(self, client, api_headers):
+        req_id = self._accept(client, api_headers)
+        post_job(client, api_headers, "Gear", pending=[item("Gear", 1)])
+        post_job(client, api_headers, busy=False)
+        post_job(client, api_headers, "Rotor", pending=[item("Rotor", 1)])
+        assert craft_statuses(client) == ["finished"]
+        login_as(client, "alice")
+        client.post("/api/pins", json={"cpu_name": "W01"})
+        # Too late for the ended job, and not this one's to decide.
+        assert self._outcome(client, api_headers, req_id, "cancelled").get_json()["applied"] is False
+        assert client.get("/api/pins").get_json()["pins"] == ["W01"]
+
+    def test_unwatched_request_is_not_held(self, client, api_headers):
+        self._accept(client, api_headers, watching=False)
+        post_job(client, api_headers, "Gear", pending=[item("Gear", 1)])
+        post_job(client, api_headers, busy=False)
+        assert craft_statuses(client) == ["finished"]
+
+    def test_outcome_for_another_cpu_is_not_applied(self, client, api_headers):
+        req_id = self._accept(client, api_headers)
+        post_job(client, api_headers, "Gear", pending=[item("Gear", 1)])
+        assert self._outcome(client, api_headers, req_id, "cancelled", cpu_name="W02").get_json()["applied"] is False
+
+    @pytest.mark.parametrize("body", [
+        {"outcome": "exploded", "cpu_name": "W01"},
+        {"outcome": "finished"},
+        {"outcome": "finished", "cpu_name": 3},
+    ])
+    def test_malformed_outcome_rejected(self, client, api_headers, body):
+        res = client.post("/api/craft/requests/1/outcome", json=body, headers=api_headers)
+        assert res.status_code == 400
+
+    def test_outcome_needs_the_api_key(self, client):
+        res = client.post("/api/craft/requests/1/outcome", json={"outcome": "finished", "cpu_name": "W01"})
+        assert res.status_code == 401
