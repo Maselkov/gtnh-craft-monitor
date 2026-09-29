@@ -499,7 +499,7 @@ final class IconRenderer {
             try {
                 Object random = field.get(Modifier.isStatic(field.getModifiers()) ? null : renderer);
                 if (random != null) {
-                    ((Random) random).setSeed(0x6763_6D00L ^ ExportClock.tick());
+                    ((Random) random).setSeed(ExportClock.seed());
                 }
             } catch (Throwable ignored) {}
         }

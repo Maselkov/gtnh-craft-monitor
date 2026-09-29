@@ -44,7 +44,20 @@ public final class ExportClock {
 
     /** Called before every draw: the random calls it makes start from the tick's own seed. */
     static void beginDraw() {
-        DRAW.setSeed(0x6763_6D00L ^ tick);
+        DRAW.setSeed(seed());
+    }
+
+    /**
+     * The tick's random seed, well mixed (SplitMix64's finalizer). java.util.Random gives nearly
+     * the same first numbers for seeds that differ in a few low bits, so seeding with the tick
+     * itself made neighbouring ticks' jitter alike: GT's Infinity pulse (UEV parts) came out
+     * bigger than the item, and so visible, on 1% of ticks instead of about a third.
+     */
+    static long seed() {
+        long z = (0x6763_6D00L ^ tick) + 0x9E37_79B9_7F4A_7C15L;
+        z = (z ^ (z >>> 30)) * 0xBF58_476D_1CE4_E5B9L;
+        z = (z ^ (z >>> 27)) * 0x94D0_49BB_1331_11EBL;
+        return z ^ (z >>> 31);
     }
 
     public static double randomGaussian(Random own) {
