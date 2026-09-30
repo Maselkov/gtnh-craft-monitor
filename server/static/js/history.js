@@ -1,5 +1,6 @@
 // Item history popup and its chart.
 
+import { AUTH_USER, isOperator } from './auth.js';
 import { openCraftRequestModal } from './craft-actions.js';
 import {
   lastNetworkData,
@@ -204,7 +205,7 @@ export function openItemHistory(it, pushUrl) {
   updateItemHistoryCurrent(it.size, it.kind);
   updateItemHistoryPinButton(it);
 
-  document.getElementById('itemHistoryCraftBtn').style.display = it.isCraftable ? '' : 'none';
+  document.getElementById('itemHistoryCraftBtn').style.display = (it.isCraftable && isOperator()) ? '' : 'none';
   document.getElementById('itemHistoryModal').style.display = 'flex';
 
   if (pushUrl) {
@@ -263,6 +264,7 @@ function updateItemHistoryCurrent(size, kind) {
 
 export function updateItemHistoryPinButton(it) {
   const btn = document.getElementById('itemHistoryPinBtn');
+  btn.style.display = AUTH_USER ? '' : 'none';  // pins are per-user
   const isPinned = pinnedItemKeys.has(networkItemKey(it.mod, it.internal, it.damage, it.kind, it.variant));
   btn.classList.toggle('pinned', isPinned);
   btn.title = isPinned ? 'Unpin this item' : 'Pin this item';

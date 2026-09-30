@@ -1,5 +1,6 @@
 // Network tab: item grid, tooltip, pins, infinite scroll.
 
+import { isOperator } from './auth.js';
 import { openCraftRequestModal } from './craft-actions.js';
 import { openItemHistory, tryOpenItemFromUrl, updateItemHistoryPinButton } from './history.js';
 import { buildSearchHighlightHtml, itemMatchesSearch, parseSearchQuery } from './search.js';
@@ -127,7 +128,7 @@ function handleNetworkCellClick(cell, button) {
     // Desktop-only shortcut straight to the craft request modal,
     // matching AE2's own autocraft gesture - skips the history view
     // entirely. Only meaningful for a craftable item.
-    if (it.isCraftable) openCraftRequestModal(it);
+    if (it.isCraftable && isOperator()) openCraftRequestModal(it);
     return;
   }
 
