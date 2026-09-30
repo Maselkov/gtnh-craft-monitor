@@ -249,22 +249,26 @@ local function extract_jobs(raw_cpus)
   local errors = {}  -- collected, not printed immediately - see VERBOSE below
   for idx, row in ipairs(raw_cpus or {}) do
     local active, pending, stored = {}, {}, {}
-    if row.cpu then
+    -- Idle CPUs are skipped: each of these calls waits a server tick and
+    -- blocks the whole computer, shell included, and an idle CPU has no
+    -- job to describe. The server falls back to what it saw while the
+    -- job ran when a CPU goes idle without a final_output.
+    if not row.cpu then
+      errors[#errors+1] = "CPU " .. idx .. " has no 'cpu' proxy field at all."
+    elseif row.busy then
       local ok1, a = pcall(row.cpu.activeItems)
       if ok1 then active = a else errors[#errors+1] = "CPU " .. idx .. " activeItems(): " .. tostring(a) end
       local ok2, p = pcall(row.cpu.pendingItems)
       if ok2 then pending = p else errors[#errors+1] = "CPU " .. idx .. " pendingItems(): " .. tostring(p) end
       local ok3, s = pcall(row.cpu.storedItems)
       if ok3 then stored = s else errors[#errors+1] = "CPU " .. idx .. " storedItems(): " .. tostring(s) end
-    else
-      errors[#errors+1] = "CPU " .. idx .. " has no 'cpu' proxy field at all."
     end
 
     -- finalOutput() needs an AE2 Crafting Monitor tile physically present
     -- in that CPU's multiblock cluster - if there isn't one, this errors
     -- or returns nil, and we just omit final_output for that CPU.
     local finalName, finalMod, finalInternal, finalDamage = nil, nil, nil, nil
-    if row.cpu then
+    if row.cpu and row.busy then
       local okf, finalStack = pcall(row.cpu.finalOutput)
       if okf and finalStack then
         finalName = finalStack.label or finalStack.name
@@ -507,14 +511,18 @@ local function build_fluid_craftable_filter(label)
   return { label = label }
 end
 
-local function snapshot_cpu_busy(me)
-  local ok, cpus = pcall(me.getCpus)
-  if not ok then return {} end
+local function busy_map(cpus)
   local snap = {}
   for _, c in ipairs(cpus) do
     snap[c.name] = c.busy and true or false
   end
   return snap
+end
+
+local function snapshot_cpu_busy(me)
+  local ok, cpus = pcall(me.getCpus)
+  if not ok then return {} end
+  return busy_map(cpus)
 end
 
 -- What a CPU's job is making, as split_mod_name() pieces - or nil when
@@ -539,9 +547,7 @@ end
 -- output is unknown (no Crafting Monitor to ask). nil when none can be
 -- told apart - the request is still accepted, just without a pin,
 -- rather than pinning its user to someone else's job.
-local function find_request_cpu(me, entry, claimed)
-  local ok, cpus = pcall(me.getCpus)
-  if not ok then return nil end
+local function find_request_cpu(cpus, entry, claimed)
   local unknown = {}
   for _, c in ipairs(cpus) do
     if c.busy and not entry.before[c.name] and not claimed[c.name] then
@@ -577,9 +583,7 @@ end
 -- everywhere else in this script for activeItems()/pendingItems()/etc.)
 -- by name, for cancel() - the only place this script needs to act on
 -- one SPECIFIC named CPU rather than just reading getCpus()'s summary.
-local function find_cpu_proxy_by_name(me, cpuName)
-  local ok, cpus = pcall(me.getCpus)
-  if not ok then return nil, tostring(cpus) end
+local function find_cpu_proxy_by_name(cpus, cpuName)
   for _, c in ipairs(cpus) do
     if c.name == cpuName then
       return c.cpu, nil
@@ -678,9 +682,17 @@ local function run_craft_request_loop(me)
     -- resolves synchronously, no multi-poll isComputing/CraftingStatus
     -- tracking needed, just call it and report the result immediately.
     local cancelResp = craft_get_json("/cancel/pending")
-    if cancelResp and cancelResp.requests then
+    if cancelResp and cancelResp.requests and #cancelResp.requests > 0 then
+      -- One getCpus() for all of them - each call blocks the computer
+      -- for a server tick.
+      local cpusOk, cpus = pcall(me.getCpus)
       for _, cancelData in ipairs(cancelResp.requests) do
-        local cpuProxy, findErr = find_cpu_proxy_by_name(me, cancelData.cpu_name)
+        local cpuProxy, findErr
+        if cpusOk then
+          cpuProxy, findErr = find_cpu_proxy_by_name(cpus, cancelData.cpu_name)
+        else
+          findErr = tostring(cpus)
+        end
         if not cpuProxy then
           craft_post_json("/cancel/" .. cancelData.id .. "/result", {
             success = false,
@@ -707,45 +719,51 @@ local function run_craft_request_loop(me)
             -- "there was nothing to cancel" rather than a blank success).
             craft_post_json("/cancel/" .. cancelData.id .. "/result", {
               success = cancelResult and true or false,
-              reason = cancelResult and nil or "CPU was not busy - nothing to cancel",
+              reason = not cancelResult and "CPU was not busy - nothing to cancel" or nil,
             })
           end
         end
       end
     end
 
-    -- Check on everything currently in flight.
-    local busyNow = snapshot_cpu_busy(me)
+    -- Check on everything currently in flight. Which requests finished
+    -- planning is asked first, so the one getCpus() after it already
+    -- shows the jobs they started.
+    local planned = {}
+    for reqId, entry in pairs(tracked) do
+      local computingOk, computing = pcall(entry.status.isComputing)
+      if computingOk and not computing then planned[reqId] = entry end
+    end
+    local cpusOk, cpus = pcall(me.getCpus)
+    if not cpusOk then cpus = {} end
+    local busyNow = busy_map(cpus)
     for name in pairs(claimed) do
       if not busyNow[name] then claimed[name] = nil end
     end
-    for reqId, entry in pairs(tracked) do
-      local computingOk, computing = pcall(entry.status.isComputing)
-      if computingOk and not computing then
-        local failOk, failed, failReason = pcall(entry.status.hasFailed)
-        if failOk and failed then
-          craft_post_json("/requests/" .. reqId .. "/result", {
-            status = "failed",
-            reason = tostring(failReason or "request failed"),
-          })
-        else
-          local cpuName = find_request_cpu(me, entry, claimed)
-          if cpuName then claimed[cpuName] = true end
-          local watch = CONFIG.WATCH_REQUEST_OUTCOMES and cpuName ~= nil
-            and entry.status.isDone ~= nil and entry.status.isCanceled ~= nil
-          local posted = craft_post_json("/requests/" .. reqId .. "/result", {
-            status = "accepted",
-            cpu_name = cpuName,
-            -- Tells the server to wait briefly for the outcome when the
-            -- job ends, rather than judge it from its last samples.
-            watching = watch and true or nil,
-          })
-          if watch and posted then
-            watching[reqId] = { status = entry.status, cpu = cpuName, since = computer.uptime() }
-          end
+    for reqId, entry in pairs(planned) do
+      local failOk, failed, failReason = pcall(entry.status.hasFailed)
+      if failOk and failed then
+        craft_post_json("/requests/" .. reqId .. "/result", {
+          status = "failed",
+          reason = tostring(failReason or "request failed"),
+        })
+      else
+        local cpuName = cpusOk and find_request_cpu(cpus, entry, claimed) or nil
+        if cpuName then claimed[cpuName] = true end
+        local watch = CONFIG.WATCH_REQUEST_OUTCOMES and cpuName ~= nil
+          and entry.status.isDone ~= nil and entry.status.isCanceled ~= nil
+        local posted = craft_post_json("/requests/" .. reqId .. "/result", {
+          status = "accepted",
+          cpu_name = cpuName,
+          -- Tells the server to wait briefly for the outcome when the
+          -- job ends, rather than judge it from its last samples.
+          watching = watch and true or nil,
+        })
+        if watch and posted then
+          watching[reqId] = { status = entry.status, cpu = cpuName, since = computer.uptime() }
         end
-        tracked[reqId] = nil
       end
+      tracked[reqId] = nil
     end
 
     local now = computer.uptime()
