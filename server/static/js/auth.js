@@ -15,6 +15,11 @@ import { delegateActions, escapeHtml, onBackdropClick } from './util.js';
 export let AUTH_USER = null;
 let AUTH_MUST_ROTATE_BOOTSTRAP = false;
 
+// Mirrors auth.is_operator on the server: who may request or cancel crafts.
+export function isOperator() {
+  return Boolean(AUTH_USER && (AUTH_USER.role === 'operator' || AUTH_USER.role === 'admin'));
+}
+
 function updateAuthenticationControl() {
   const input = document.getElementById('accessTokenInput');
   const button = document.getElementById('authBtn');

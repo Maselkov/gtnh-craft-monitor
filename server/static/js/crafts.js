@@ -1,7 +1,7 @@
 // Crafts tab: CPU status polling and rendering, pins, completion
 // notifications.
 
-import { AUTH_USER } from './auth.js';
+import { AUTH_USER, isOperator } from './auth.js';
 import { openCancelConfirmModal, pendingCancelCpus } from './craft-actions.js';
 import { ingredientCount, openIngredientsModal, refreshIngredientsModal } from './ingredients.js';
 import { delegateActions, escapeHtml, iconClass, iconUrl } from './util.js';
@@ -437,10 +437,13 @@ function renderCard(job) {
     : '';
 
   const pinTitle = isPinned ? 'Unpin' : (canPin ? 'Pin - notify me when this finishes' : 'Only a busy CPU can be pinned');
+  // Pins are per-user, so there is nothing to pin to while signed out.
+  const pinBtn = AUTH_USER
+    ? `<button class="pin-btn ${isPinned ? 'pinned' : ''}" ${canPin ? '' : 'disabled'} data-action="toggle-pin" data-cpu="${escapeHtml(job.name)}" title="${pinTitle}">&#128204;</button>`
+    : '';
 
-  const isOperator = AUTH_USER && (AUTH_USER.role === 'operator' || AUTH_USER.role === 'admin');
   const isCancelPending = pendingCancelCpus.has(job.name);
-  const cancelBtn = (job.busy && isOperator)
+  const cancelBtn = (job.busy && isOperator())
     ? `<button class="cancel-btn" ${isCancelPending ? 'disabled' : ''} data-action="cancel-craft" data-cpu="${escapeHtml(job.name)}" title="${isCancelPending ? 'Cancelling…' : 'Cancel this craft'}">${isCancelPending ? '&#8987;' : '&times;'}</button>`
     : '';
 
@@ -452,7 +455,7 @@ function renderCard(job) {
           <div class="cpu-id">CPU ${escapeHtml(job.name || '?')} &middot; storage ${job.storage ?? '?'} &middot; coprocessors ${job.coprocessors ?? '?'}</div>
         </div>
         <div class="head-right">
-          <button class="pin-btn ${isPinned ? 'pinned' : ''}" ${canPin ? '' : 'disabled'} data-action="toggle-pin" data-cpu="${escapeHtml(job.name)}" title="${pinTitle}">&#128204;</button>
+          ${pinBtn}
           ${cancelBtn}
           <div class="badge ${job.busy ? 'busy' : 'idle'}">${job.busy ? 'BUSY' : 'IDLE'}</div>
         </div>

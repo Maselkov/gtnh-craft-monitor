@@ -671,6 +671,10 @@ async function main() {
     await click(`$('#settingsBtn')`);
     await click(`byText('#settingsMenu button', 'Sign out')`);
     await waitFor('signed out', `visible($('#authBtn')) && !visible($('#settingsWrap'))`);
+    // Pinning and cancelling both need a user, so the cards drop them.
+    await click(`$('#tabBtnCrafts')`);
+    await waitFor('no pin or cancel buttons', `$$('#root .card').length > 0 && !$('#root .pin-btn') && !$('#root .cancel-btn')`);
+    await click(`$('#tabBtnNetwork')`);
   });
 
   step('back/forward between tabs', async () => {
@@ -686,6 +690,8 @@ async function main() {
     await evaluate(PAGE_LIB);
     await waitFor('network tab', `visible($('#networkTab'))`);
     await waitFor('history open', `visible($('#itemHistoryModal')) && $('#itemHistoryName').textContent === 'Iron Ingot'`);
+    // Still signed out: a craftable item offers neither a pin nor a request.
+    await waitFor('no pin or request', `!visible($('#itemHistoryPinBtn')) && !visible($('#itemHistoryCraftBtn'))`);
 
     // NBT variants of one item id each get their own URL.
     const { data: scan } = await game(base, '/api/network/scan/start', {});
