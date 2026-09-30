@@ -462,7 +462,10 @@ three per tool type (every material's "Huge Turbine"). The server keeps
 each variant's raw tag from the last scan (`state.network["tags"]`, in
 memory only) and sends it with the request; `craft_monitor.lua`'s
 `pick_craftable()` requests the pattern whose `getItemStack().tag` matches
-it exactly. Without a tag it requires the label to leave exactly one
+it - byte for byte, or else by asking the server
+(`/api/craft/requests/<id>/match`), which compares the parsed NBT by the
+variant hash, since the same NBT can serialize in a different key order.
+A miss posts every tag involved to `/api/debug`. Without a tag it requires the label to leave exactly one
 pattern, and otherwise fails the request rather than craft the wrong one.
 
 **GT5's item-icon "meta items" are rendered procedurally, not shipped as

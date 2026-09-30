@@ -423,6 +423,22 @@ local function stack_tag_hex(stack)
   return nil
 end
 
+-- For pick_craftable(): which pattern the server says makes the
+-- variant. Byte-equal tags are the same NBT, but the same NBT can be
+-- written in a different key order (Java compounds are HashMaps), so
+-- the server compares them parsed. Returns the index or nil, and a
+-- summary of the server's answer for the debug dump.
+local function match_on_server(reqData, tags)
+  local ok, body = craft_post_json("/requests/" .. reqData.id .. "/match", { tags = tags })
+  if not ok then return nil, "match request failed: " .. tostring(body) end
+  local decoded = json_decode(body)
+  if type(decoded) ~= "table" then return nil, "match reply unreadable" end
+  local variants = {}
+  for i = 1, #tags do variants[i] = tostring(decoded.variants and decoded.variants[i]) end
+  local index = tonumber(decoded.index)
+  return index, "server: want " .. tostring(decoded.variant) .. ", patterns " .. table.concat(variants, ", ")
+end
+
 -- Which of getCraftables()'s matches to request. Several patterns can
 -- share an item id, damage and even label, differing only in NBT (a
 -- GregTech turbine per material, all named "Huge Turbine"), and
@@ -431,7 +447,8 @@ end
 -- (reqData.tag, needs allowItemStackNBTTags in OpenComputers.cfg).
 -- Without that, the label filter has to leave exactly one. Never
 -- guesses: a craft of the wrong material is worse than a failed request.
--- Returns the craftable, or nil and why not.
+-- Returns the craftable, or nil and why not. A miss also goes to
+-- /api/debug with every tag involved.
 local function pick_craftable(craftables, reqData)
   if not reqData.variant then
     -- A plain item: prefer a pattern whose output has no NBT at all.
@@ -442,11 +459,33 @@ local function pick_craftable(craftables, reqData)
     return craftables[1]
   end
   if reqData.tag then
-    for _, c in ipairs(craftables) do
+    -- false, not nil, for an unreadable one: keeps the list an array.
+    local tags, unreadable, untagged = {}, 0, 0
+    for i, c in ipairs(craftables) do
       local ok, stack = pcall(c.getItemStack)
-      if ok and stack_tag_hex(stack) == reqData.tag then return c end
+      local tag = ok and stack and stack_tag_hex(stack)
+      if tag == reqData.tag then return c end
+      if not (ok and stack) then
+        unreadable = unreadable + 1
+      elseif not tag then
+        untagged = untagged + 1
+      end
+      tags[i] = tag or false
     end
-    return nil, "no pattern makes this item with exactly this NBT"
+    local index, summary = nil, "no pattern had NBT to compare"
+    if unreadable + untagged < #craftables then
+      index, summary = match_on_server(reqData, tags)
+      if index and craftables[index] then return craftables[index] end
+    end
+    local lines = { "request " .. tostring(reqData.id) .. " " .. tostring(reqData.label)
+      .. " variant " .. tostring(reqData.variant), summary, "scan tag: " .. reqData.tag }
+    for i = 1, #craftables do
+      lines[#lines + 1] = "pattern " .. i .. ": " .. tostring(tags[i])
+    end
+    post_debug("craft-nbt-miss", table.concat(lines, "\n"))
+    return nil, string.format(
+      "no pattern makes this item with exactly this NBT (%d found: %d unreadable, %d without NBT) - see /api/debug",
+      #craftables, unreadable, untagged)
   end
   if #craftables == 1 then return craftables[1] end
   return nil, "several patterns match this item and its NBT isn't known "
