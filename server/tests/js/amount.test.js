@@ -9,7 +9,9 @@ test('plain numbers and metric suffixes', () => {
   assert.equal(value('64'), 64);
   assert.equal(value('10k'), 10000);
   assert.equal(value('1.5M'), 1500000);
+  assert.equal(value('2g'), 2e9);
   assert.equal(value('2b'), 2e9);
+  assert.equal(value('3T'), 3e12);
 });
 
 test('operator precedence, parentheses and unary minus', () => {

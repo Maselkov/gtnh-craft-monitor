@@ -95,7 +95,7 @@ def format_qty(n):
     if a >= 1e12:
         return f"{n/1e12:.2f}T"
     if a >= 1e9:
-        return f"{n/1e9:.2f}B"
+        return f"{n/1e9:.2f}G"
     if a >= 1e6:
         return f"{n/1e6:.2f}M"
     if a >= 1e3:

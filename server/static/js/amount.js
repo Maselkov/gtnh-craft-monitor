@@ -2,7 +2,7 @@
 // (tested under server/tests/js/).
 
 // Simple four-function expression evaluator (+, -, *, /, parens),
-// with metric-prefixed numbers (10k, 1.5m, 2b) as the base number
+// with metric-prefixed numbers (10k, 1.5m, 2g; b is accepted as an alias for g) as the base number
 // token - not a separate feature bolted on, the OLD plain-number
 // parseAmountInput() is now just the trivial one-token case of this
 // same grammar. Hand-written rather than eval()/new Function() (a
@@ -31,13 +31,14 @@ function tokenizeAmountExpression(text) {
       i++;
       continue;
     }
-    const m = s.slice(i).match(/^([0-9]*\.?[0-9]+)([kmb])?/i);
+    const m = s.slice(i).match(/^([0-9]*\.?[0-9]+)([kmgbt])?/i);
     if (!m || !m[0]) return null;  // unrecognized character - malformed
     let n = parseFloat(m[1]);
     const suffix = m[2] ? m[2].toLowerCase() : null;
     if (suffix === 'k') n *= 1e3;
     else if (suffix === 'm') n *= 1e6;
-    else if (suffix === 'b') n *= 1e9;
+    else if (suffix === 'g' || suffix === 'b') n *= 1e9;
+    else if (suffix === 't') n *= 1e12;
     tokens.push({ type: 'num', value: n });
     i += m[0].length;
   }

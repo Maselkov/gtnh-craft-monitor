@@ -73,8 +73,8 @@ class TestFormatQtyPy:
     def test_millions(self):
         assert charts.format_qty(2_500_000) == "2.50M"
 
-    def test_billions(self):
-        assert charts.format_qty(3_000_000_000) == "3.00B"
+    def test_giga(self):
+        assert charts.format_qty(3_000_000_000) == "3.00G"
 
     def test_trillions(self):
         assert charts.format_qty(4_000_000_000_000) == "4.00T"
