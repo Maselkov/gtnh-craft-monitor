@@ -1084,7 +1084,8 @@ section.group {
   color: var(--muted);
   margin-bottom: 10px;
 }
-details.idle-group summary {
+details.idle-group summary,
+details.craft-history summary {
   cursor: pointer;
   list-style: none;
   font-size: 13px;
@@ -1096,18 +1097,76 @@ details.idle-group summary {
   border-radius: 10px;
   user-select: none;
 }
-details.idle-group summary::-webkit-details-marker { display: none; }
-details.idle-group summary::before {
+details.idle-group summary::-webkit-details-marker,
+details.craft-history summary::-webkit-details-marker { display: none; }
+details.idle-group summary::before,
+details.craft-history summary::before {
   content: "\25B8";
   display: inline-block;
   margin-right: 8px;
   transition: transform 0.15s ease;
 }
-details.idle-group[open] summary::before {
+details.idle-group[open] summary::before,
+details.craft-history[open] summary::before {
   transform: rotate(90deg);
 }
 details.idle-group .grid {
   margin-top: 12px;
+}
+
+/* Crafts tab: Recent crafts (craft-history.js). */
+details.craft-history {
+  margin-top: 14px;
+}
+.craft-history-list {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.history-day {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin: 8px 0 2px;
+}
+.history-day:first-child {
+  margin-top: 0;
+}
+.history-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--card);
+  border: 1px solid rgba(128,128,128,0.15);
+  border-radius: 10px;
+}
+.history-row span.craft-icon {
+  display: block;  /* a blank where a row has no icon, to keep names lined up */
+}
+.history-row-main {
+  flex: 1;
+  min-width: 0;
+}
+.history-row-name {
+  font-weight: 600;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.history-row-when {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.history-loading {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
 }
 
 /* An icon drawn past the item box (util.js iconClass()): the image is

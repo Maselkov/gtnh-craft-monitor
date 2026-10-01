@@ -1,5 +1,5 @@
 """Crafting-CPU jobs (app.db): the permanent craft_events log
-of every busy->idle transition, per-user CPU pins, and the completion
+of every busy->idle transition (the Crafts tab's history), per-user CPU pins, and the completion
 notifications fanned out to whoever had a finished job's CPU pinned."""
 
 import time
@@ -36,17 +36,23 @@ def drop_cpu_pins(cpu_name):
         conn.execute("DELETE FROM user_pins WHERE cpu_name = ?", (cpu_name,))
 
 
-def record_job_end(cpu_name, label, icon, status, progress):
+def record_job_end(cpu_name, label, icon, status, progress, started_at=None, item=None):
     """Logs a craft_events row for a job that just left cpu_name, gives
     every user who had that CPU pinned a completion for it, and clears
     those pins - all in one transaction. Returns the new completions as
-    (user_id, completion_id) pairs."""
+    (user_id, completion_id) pairs.
+
+    started_at is None when the job's start wasn't seen; item is the
+    output's {mod, internal, damage}, or None when it wasn't reported."""
     occurred_at = time.time()
+    item = item or {}
     with db.transaction(db.app_db) as conn:
         event_id = conn.execute(
-            "INSERT INTO craft_events (cpu_name, item_label, item_icon, status, progress_at_end, occurred_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (cpu_name, label, icon, status, progress, occurred_at),
+            "INSERT INTO craft_events (cpu_name, item_label, item_icon, status, progress_at_end, occurred_at, "
+            "started_at, item_mod, item_internal, item_damage) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (cpu_name, label, icon, status, progress, occurred_at,
+             started_at, item.get("mod"), item.get("internal"), item.get("damage")),
         ).lastrowid
         conn.execute(
             "INSERT INTO user_completions (user_id, craft_event_id, created_at) "
@@ -58,6 +64,45 @@ def record_job_end(cpu_name, label, icon, status, progress):
             "SELECT user_id, id FROM user_completions WHERE craft_event_id = ?",
             (event_id,),
         ).fetchall()
+
+
+def history(before=None, after=None, limit=50):
+    """Job ends on every CPU, newest first: up to `limit` of them, only
+    ones older than event id `before` or newer than `after` if given.
+    Returns (events, more), more saying whether rows past the limit
+    were left out."""
+    where, params = [], []
+    if before is not None:
+        where.append("id < ?")
+        params.append(before)
+    if after is not None:
+        where.append("id > ?")
+        params.append(after)
+    with db.transaction(db.app_db) as conn:
+        rows = conn.execute(
+            "SELECT id, cpu_name, item_label, item_icon, status, progress_at_end, occurred_at, "
+            "started_at, item_mod, item_internal, item_damage FROM craft_events"
+            + (" WHERE " + " AND ".join(where) if where else "")
+            + " ORDER BY id DESC LIMIT ?",
+            (*params, limit + 1),
+        ).fetchall()
+    events = [
+        {
+            "id": r[0],
+            "cpu": r[1],
+            "itemName": r[2],
+            "icon": icons.current_path(r[3]),
+            "status": r[4],
+            "progress": r[5],
+            "finishedAt": r[6],
+            "startedAt": r[7],
+            "mod": r[8],
+            "internal": r[9],
+            "damage": r[10],
+        }
+        for r in rows[:limit]
+    ]
+    return events, len(rows) > limit
 
 
 def completions(user_id, max_age_seconds):

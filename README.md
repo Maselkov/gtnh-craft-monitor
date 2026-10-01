@@ -511,6 +511,13 @@ One card per crafting CPU, updated every 3 seconds. A busy card shows:
 - **Progress** — items already produced versus items still needed for the
   job.
 
+Below the cards, **Recent crafts** lists every job that ended on any CPU,
+newest first and grouped by day. Each row shows the CPU, how long the job ran,
+and an Incomplete badge if it stopped early. Click an item's name to open its
+stock history. Jobs that were already running when the server started show no
+duration, since their start wasn't seen. The list is kept permanently in
+`server/data/app.db`.
+
 ### Pins and notifications
 
 Click the pin icon on a card to pin its job to the top of the page. When a

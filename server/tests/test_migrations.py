@@ -243,3 +243,17 @@ def test_variant_steps_extend_existing_tables(tmp_path):
             ("|water||fluid", None)]
     finally:
         conn.close()
+
+
+def test_craft_events_written_before_step_6_list_without_start_or_item(tmp_path):
+    path = str(tmp_path / "app.db")
+    version_2_app_db(path)
+    db.migrate(lambda: sqlite3.connect(path), db.APP_MIGRATIONS)
+    conn = sqlite3.connect(path)
+    try:
+        row = conn.execute(
+            "SELECT cpu_name, started_at, item_mod, item_internal, item_damage FROM craft_events"
+        ).fetchone()
+    finally:
+        conn.close()
+    assert row == ("W01", None, None, None, None)

@@ -17,8 +17,8 @@ design couldn't fix:
 
 craft_events is a permanent, unpruned log of the end of every job on
 every CPU, regardless of whether anyone has it pinned -
-cheap (a few dozen writes a day at most) and doubles as raw material
-for any future historical/analytics view.
+cheap (a few dozen writes a day at most) - and is what the Crafts
+tab's history lists.
 
 The per-CPU memory it compares against lives in gcm/state.py
 (cpu_last_busy, cpu_last_known) and isn't persisted."""
@@ -82,8 +82,10 @@ def _cancelled_from_page(name, started_at):
     ))
 
 
-def _new_job_entry(started_at):
-    # cpu_last_known entry for a job first seen at started_at. "output"
+def _new_job_entry(started_at, seen_from_start=True):
+    # cpu_last_known entry for a job first seen at started_at -
+    # seen_from_start False when it was already running then, so its
+    # real start is unknown. "output"
     # is the job's final output as craft_monitor.lua reported it - kept
     # apart from "label", which a craft request fills in with the
     # browser's name for the item until a status report names the output.
@@ -96,6 +98,7 @@ def _new_job_entry(started_at):
         "peaks": {},  # gcm/progress.py's per-step baseline for this job
         "output": None,
         "started_at": started_at,
+        "seen_from_start": seen_from_start,
         # When the first status report with steps in it (the progress
         # baseline) and the latest one were taken - the job's pace.
         "first_sample_at": None,
@@ -153,7 +156,7 @@ def _end_job_locked(name, label=None, icon=None, hold=True):
     outcome, and hasn't reported one yet, is held in state.cpu_ending
     instead (unless hold=False) - the game can see the CPU go idle a
     moment before it reports how the job ended."""
-    last_known = state.cpu_last_known.pop(name, None) or _new_job_entry(time.time())
+    last_known = state.cpu_last_known.pop(name, None) or _new_job_entry(time.time(), False)
     label = label or last_known.get("label")
     icon = icon or last_known.get("icon")
     ended_at = time.time()
@@ -171,12 +174,15 @@ def _record_end_locked(name, entry, label, icon, ended_at):
         status = "finished" if outcome == "finished" else "incomplete"
     else:
         status = _classify_status(name, entry, ended_at)
+    output = entry.get("output")
     completions = store.crafts.record_job_end(
         name,
         label,
         icon,
         status,
         entry.get("progress"),
+        started_at=entry["started_at"] if entry.get("seen_from_start") else None,
+        item=output and {"mod": output[1], "internal": output[2], "damage": output[3]},
     )
     push.notify_completions(completions, label, icon, status)
 
@@ -262,7 +268,11 @@ def process_jobs(jobs):
                     _end_job_locked(name, hold=False)
 
             if busy:
-                entry = state.cpu_last_known.setdefault(name, _new_job_entry(now))
+                entry = state.cpu_last_known.get(name)
+                if entry is None:
+                    # A CPU busy in the first report since the server
+                    # started has been running for who knows how long.
+                    entry = state.cpu_last_known[name] = _new_job_entry(now, was_busy is not None)
                 if output:
                     entry["output"] = output
                     entry["label"] = job.get("final_output")

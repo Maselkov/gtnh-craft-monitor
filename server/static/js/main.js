@@ -8,6 +8,7 @@ import {
   setupCraftDialogActions,
   setupCraftRequestActions,
 } from './craft-actions.js';
+import { setupCraftHistory } from './craft-history.js';
 import { refresh, setupCraftsActions, setupNotifications, tickSourceLine } from './crafts.js';
 import { setupGameDataActions } from './gamedata.js';
 import { setupIngredientsActions } from './ingredients.js';
@@ -37,6 +38,7 @@ setupAuthControls();
 setupAdminActions();
 setupGameDataActions();
 setupCraftsActions();
+setupCraftHistory();
 setupIngredientsActions();
 setupTabActions();
 setupPowerActions();
