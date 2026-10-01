@@ -24,6 +24,7 @@ import {
   updateNetworkSearchHighlight,
 } from './network.js';
 import { setupPowerActions } from './power.js';
+import { setupStockActions } from './stock.js';
 import { pathToTab, setupTabActions, switchTab } from './tabs.js';
 import { removeLegacyStorageKeys, setupImageErrorRemoval } from './util.js';
 
@@ -43,6 +44,7 @@ setupIngredientsActions();
 setupTabActions();
 setupPowerActions();
 setupNetworkActions();
+setupStockActions();
 setupHistoryActions();
 setupCraftDialogActions();
 setupCraftRequestActions();

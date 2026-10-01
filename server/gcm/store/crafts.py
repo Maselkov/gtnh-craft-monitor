@@ -146,3 +146,15 @@ def acknowledge_completion(user_id, completion_id):
 def acknowledge_all_completions(user_id):
     with db.transaction(db.app_db) as conn:
         conn.execute("DELETE FROM user_completions WHERE user_id = ?", (user_id,))
+
+
+def items_ended_since(since):
+    """(mod, internal, damage) of every item a job finished making since
+    the time `since`."""
+    with db.transaction(db.app_db) as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT item_mod, item_internal, item_damage FROM craft_events "
+            "WHERE occurred_at >= ? AND status = 'finished' AND item_internal IS NOT NULL",
+            (since,),
+        ).fetchall()
+    return {tuple(r) for r in rows}

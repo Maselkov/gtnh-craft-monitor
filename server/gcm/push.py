@@ -1,5 +1,5 @@
-"""Web Push: a notification for each finished pinned craft, delivered
-through the browser's push service, so it arrives even with every tab
+"""Web Push: a notification for each finished pinned craft and each
+stock alert (gcm/stock.py), delivered through the browser's push service, so it arrives even with every tab
 closed or a phone's page suspended. static/sw.js shows it.
 
 The server signs each push with its own VAPID key pair, generated once
@@ -99,13 +99,33 @@ def message(completion_id, label, icon, status):
     return payload
 
 
+def stock_message(key, label, icon, text):
+    """A stock alert's notification. Tagged by item, so a newer one about
+    the same item replaces an older one still showing."""
+    payload = {"title": "Low stock", "body": text, "tag": f"stock-{key}"}
+    icon_url = icons.notification_icon_url(icon)
+    if icon_url:
+        payload["icon"] = icon_url
+    return payload
+
+
 def notify_completions(completions, label, icon, status):
     """Queues a push to every device of each user in completions, a list
     of (user_id, completion_id). Returns immediately."""
-    if not completions:
-        return
+    if completions:
+        _put({user_id: message(completion_id, label, icon, status) for user_id, completion_id in completions})
+
+
+def notify_users(user_ids, payload):
+    """Queues the same push to every device of each of user_ids. Returns
+    immediately."""
+    if user_ids:
+        _put({user_id: payload for user_id in user_ids})
+
+
+def _put(payload_by_user):
     _ensure_worker()
-    _queue.put((list(completions), label, icon, status))
+    _queue.put(payload_by_user)
 
 
 def _ensure_worker():
@@ -120,7 +140,7 @@ def _run():
     while True:
         item = _queue.get()
         try:
-            deliver(*item)
+            send_to(item)
         except Exception:
             log.exception("web push delivery failed")
         finally:
@@ -128,9 +148,14 @@ def _run():
 
 
 def deliver(completions, label, icon, status):
-    completion_by_user = dict(completions)
-    for subscription in store.push.subscriptions_for(list(completion_by_user)):
-        payload = message(completion_by_user[subscription["user_id"]], label, icon, status)
+    send_to({user_id: message(completion_id, label, icon, status) for user_id, completion_id in completions})
+
+
+def send_to(payload_by_user):
+    """Sends each user's payload to every device they turned
+    notifications on in."""
+    for subscription in store.push.subscriptions_for(list(payload_by_user)):
+        payload = payload_by_user[subscription["user_id"]]
         try:
             _send(subscription, json.dumps(payload))
         except WebPushException as error:

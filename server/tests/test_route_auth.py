@@ -6,6 +6,7 @@ PUBLIC_ENDPOINTS = {
     "crafts.crafts_get",
     "crafts.crafts_history_get",
     "power.power_get",
+    "stock.stock_rules_get",
     "power.power_chart_png",
     "network.network_get",
     "network.network_history_get",
