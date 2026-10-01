@@ -1,7 +1,7 @@
 // Power tab: readings, trend and chart.
 
 import { CHART_RANGE_SECONDS_JS, CHART_TIME_CONFIG } from './history.js';
-import { delegateActions } from './util.js';
+import { delegateActions, formatDuration, formatRate } from './util.js';
 
 // ---------- Power chart ----------
 let powerRange = 'day';
@@ -99,6 +99,20 @@ function buildPowerTrendHtml(latest) {
   `;
 }
 
+// "Full in 3h 5m · +1.20G EU/h over the past hour", from the server's
+// fit to the last hour of readings (gcm/rates.py) - steadier than the
+// 5s in/out arrow, which follows every machine switching on and off.
+export function powerEtaText(trend) {
+  if (!trend) return '';
+  const rate = formatRate(trend.per_second, ' EU');
+  if (!rate) return '';
+  const parts = [];
+  if (trend.seconds_to_full != null) parts.push(`Full in ${formatDuration(trend.seconds_to_full)}`);
+  if (trend.seconds_to_empty != null) parts.push(`Empty in ${formatDuration(trend.seconds_to_empty)}`);
+  parts.push(`${rate} over the past hour`);
+  return parts.join(' \u00b7 ');
+}
+
 function renderPower(data) {
   const points = data.points || [];
   const empty = document.getElementById('powerEmpty');
@@ -109,6 +123,11 @@ function renderPower(data) {
     const trendHtml = ' ' + buildPowerTrendHtml(data.latest);
     document.getElementById('powerCurrent').innerHTML =
       `<span class="big">${formatEU(data.latest.stored)} EU</span> / ${formatEU(data.latest.capacity)} EU (${pct.toFixed(1)}%)${trendHtml}`;
+    const eta = document.createElement('div');
+    eta.className = 'power-eta';
+    eta.id = 'powerEta';
+    eta.textContent = powerEtaText(data.trend);
+    if (eta.textContent) document.getElementById('powerCurrent').append(eta);
   } else {
     document.getElementById('powerCurrent').textContent = 'No readings yet';
   }

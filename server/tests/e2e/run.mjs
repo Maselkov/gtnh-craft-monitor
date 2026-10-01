@@ -196,8 +196,10 @@ function postCrafts(base, w01Busy, atStart = false) {
 async function seed(base) {
   await postCrafts(base, true, true);
   await postCrafts(base, true);
-  for (const stored of [100000, 200000, 300000]) {
-    await game(base, '/api/power', { stored, capacity: 1000000, avg_eu_in_5s: 50, avg_eu_out_5s: 20 });
+  // Half an hour apart in all, so the Power tab has a trend to show.
+  const now = Date.now() / 1000;
+  for (const [ago, stored] of [[1800, 100000], [900, 200000], [0, 300000]]) {
+    await game(base, '/api/power', { stored, capacity: 1000000, avg_eu_in_5s: 50, avg_eu_out_5s: 20, timestamp: now - ago });
   }
   const { data: scan } = await game(base, '/api/network/scan/start', {});
   await game(base, '/api/network/scan/batch', {
@@ -525,6 +527,8 @@ async function main() {
     await click(`$('#tabBtnPower')`);
     await waitFor('power tab', `visible($('#powerTab')) && location.pathname === '/power'`);
     await waitFor('reading shown', `$('#powerCurrent').textContent.includes('EU')`);
+    // +200k EU over 30 minutes leaves 700k to go: 1h 45m.
+    await waitFor('eta shown', `$('#powerEta')?.textContent === 'Full in 1h 45m \u00b7 +400.0k EU/h over the past hour'`);
     await click(`$('#powerTab [data-range="week"]')`);
     await waitFor('week active', `$('#powerTab [data-range="week"]').classList.contains('active')`);
   });

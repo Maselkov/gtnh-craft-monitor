@@ -105,3 +105,14 @@ export function formatDuration(seconds) {
   if (s < 86400) return `${Math.floor(s / 3600)}h ${Math.floor(s % 3600 / 60)}m`;
   return `${Math.floor(s / 86400)}d ${Math.floor(s % 86400 / 3600)}h`;
 }
+
+// A rate of change given per second, as a signed amount per hour
+// ("+1.20M/h"), or per day when under one an hour. unit goes between
+// the amount and the "/": ' EU' gives "+1.20G EU/h". Null for a rate
+// that rounds to nothing.
+export function formatRate(perSecond, unit = '') {
+  const perHour = perSecond * 3600;
+  const [value, per] = Math.abs(perHour) >= 1 ? [perHour, 'h'] : [perHour * 24, 'd'];
+  if (Math.abs(value) < 0.5) return null;
+  return `${value > 0 ? '+' : '−'}${formatQty(Math.abs(value))}${unit}/${per}`;
+}
