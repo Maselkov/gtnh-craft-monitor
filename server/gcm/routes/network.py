@@ -139,7 +139,7 @@ def network_history_chart_png():
     if not internal:
         abort(400)
 
-    range_key, rows = inventory.history(
+    range_key, rows, _ = inventory.history(
         mod, internal, damage, kind, request.args.get("range", "day"), variant
     )
     png_bytes = charts.cached_png(
@@ -169,7 +169,7 @@ def network_history_get():
     if not internal:
         return jsonify({"error": "missing internal"}), 400
 
-    range_key, rows = inventory.history(
+    range_key, rows, trend = inventory.history(
         mod, internal, damage, kind, request.args.get("range", "day"), variant
     )
     latest = rows[-1] if rows else None
@@ -179,6 +179,7 @@ def network_history_get():
             "range": range_key,
             "points": [{"t": r[0], "size": r[1]} for r in rows],
             "latest": {"t": latest[0], "size": latest[1]} if latest else None,
+            "trend": trend,
         }
     )
 

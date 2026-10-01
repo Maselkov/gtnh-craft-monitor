@@ -9,7 +9,7 @@ import {
   toggleNetworkItemPin,
 } from './network.js';
 import { activeTab, switchTab } from './tabs.js';
-import { delegateActions, formatQty, iconClass, iconUrl, onBackdropClick } from './util.js';
+import { delegateActions, formatDuration, formatQty, formatRate, iconClass, iconUrl, onBackdropClick } from './util.js';
 
 // ---------- Item history popup ----------
 let itemHistoryTarget = null;
@@ -203,6 +203,7 @@ export function openItemHistory(it, pushUrl) {
   // a crafting ingredient) - refined below once fetchItemHistory's
   // own more authoritative "latest" value comes back.
   updateItemHistoryCurrent(it.size, it.kind);
+  updateItemHistoryTrend(null);
   updateItemHistoryPinButton(it);
 
   document.getElementById('itemHistoryCraftBtn').style.display = (it.isCraftable && isOperator()) ? '' : 'none';
@@ -262,6 +263,31 @@ function updateItemHistoryCurrent(size, kind) {
   el.textContent = 'Currently stored: ' + Math.round(size).toLocaleString() + unit;
 }
 
+const TREND_RANGE_LABELS = {
+  hour: 'over the past hour', day: 'over the past day', week: 'over the past week',
+  month: 'over the past month', lifetime: 'all time',
+};
+
+// "−1.2k/h over the past day · runs out in 3d 4h" under the stored
+// amount, for the selected range. Blank when the history is too short
+// to say, or the amount hasn't moved.
+export function itemTrendText(trend, range, kind) {
+  if (!trend) return '';
+  const rate = formatRate(trend.per_second, kind === 'fluid' ? ' mB' : '');
+  if (!rate) return '';
+  let text = `${rate} ${TREND_RANGE_LABELS[range]}`;
+  if (trend.seconds_to_empty != null) text += ` \u00b7 runs out in ${formatDuration(trend.seconds_to_empty)}`;
+  return text;
+}
+
+function updateItemHistoryTrend(data) {
+  const el = document.getElementById('itemHistoryTrend');
+  const trend = data && data.trend;
+  el.textContent = data ? itemTrendText(trend, data.range, itemHistoryTarget && itemHistoryTarget.kind) : '';
+  el.classList.toggle('trend-up', !!el.textContent && trend.per_second > 0);
+  el.classList.toggle('trend-down', !!el.textContent && trend.per_second < 0);
+}
+
 export function updateItemHistoryPinButton(it) {
   const btn = document.getElementById('itemHistoryPinBtn');
   btn.style.display = AUTH_USER ? '' : 'none';  // pins are per-user
@@ -317,6 +343,7 @@ function renderItemHistoryChart(data) {
   if (data.latest) {
     updateItemHistoryCurrent(data.latest.size, itemHistoryTarget && itemHistoryTarget.kind);
   }
+  updateItemHistoryTrend(data);
 
   if (points.length === 0) {
     emptyEl.style.display = 'block';

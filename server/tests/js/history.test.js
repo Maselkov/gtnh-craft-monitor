@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { itemUrlPath, parseItemUrlPath } from '../../static/js/history.js';
+import { itemTrendText, itemUrlPath, parseItemUrlPath } from '../../static/js/history.js';
 
 test('item URLs round-trip, NBT variant included', () => {
   for (const it of [
@@ -20,4 +20,13 @@ test('a variant keeps an explicit damage in the URL', () => {
   assert.equal(
     itemUrlPath({ mod: 'minecraft', internal: 'stone', damage: 0, kind: 'item' }),
     '/network/item/minecraft:stone');
+});
+
+test('itemTrendText gives the rate for the range and when stock runs out', () => {
+  assert.equal(itemTrendText(null, 'day', 'item'), '');
+  assert.equal(itemTrendText({ per_second: 0 }, 'day', 'item'), '');
+  assert.equal(
+    itemTrendText({ per_second: -1200 / 3600, seconds_to_empty: 3 * 86400 + 4 * 3600 }, 'week', 'item'),
+    '−1.2k/h over the past week · runs out in 3d 4h');
+  assert.equal(itemTrendText({ per_second: 5 / 3600, seconds_to_empty: null }, 'lifetime', 'fluid'), '+5 mB/h all time');
 });

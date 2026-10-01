@@ -8,7 +8,7 @@ import logging
 import secrets
 import time
 
-from gcm import icons, nbt, state, store
+from gcm import icons, nbt, rates, state, store
 
 log = logging.getLogger(__name__)
 
@@ -358,11 +358,13 @@ def downsample_steps(rows, max_points=HISTORY_MAX_POINTS):
 
 
 def history(mod, internal, damage, kind, range_key, variant=None):
-    """(range_key, rows) of one item's quantity history for a chart range
-    name, downsampled; unknown names mean "day"."""
+    """(range_key, rows, trend) of one item's quantity history for a
+    chart range name: rows downsampled, trend (see rates.stock_trend)
+    from the full ones. Unknown names mean "day"."""
     if range_key not in HISTORY_RANGE_SECONDS:
         range_key = "day"
     seconds = HISTORY_RANGE_SECONDS[range_key]
-    since = None if seconds is None else time.time() - seconds
+    now = time.time()
+    since = None if seconds is None else now - seconds
     rows = store.items.history(store.items.item_key(mod, internal, damage, kind, variant), since)
-    return range_key, downsample_steps(rows)
+    return range_key, downsample_steps(rows), rates.stock_trend(rows, now)

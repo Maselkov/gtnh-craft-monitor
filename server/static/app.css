@@ -773,6 +773,22 @@ h1 {
   color: var(--muted);
   margin-top: 2px;
 }
+.history-trend {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.history-trend.trend-up {
+  color: #5fd97a;
+}
+.history-trend.trend-down {
+  color: var(--stale);
+}
+.power-eta {
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 4px;
+}
 .history-pin-btn {
   flex-shrink: 0;
   background: none;

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { escapeHtml, formatDuration, formatQty, iconClass } from '../../static/js/util.js';
+import { escapeHtml, formatDuration, formatQty, formatRate, iconClass } from '../../static/js/util.js';
 
 test('formatQty abbreviates like the in-game terminal', () => {
   assert.equal(formatQty(null), '?');
@@ -31,4 +31,12 @@ test('formatDuration shows the two largest units', () => {
   assert.equal(formatDuration(3 * 3600 + 5 * 60 + 9), '3h 5m');
   assert.equal(formatDuration(2 * 86400 + 4 * 3600 + 59), '2d 4h');
   assert.equal(formatDuration(-5), '0s');
+});
+
+test('formatRate signs the amount and picks hours or days', () => {
+  assert.equal(formatRate(1e6 / 3600), '+1.00M/h');
+  assert.equal(formatRate(-1200 / 3600, ' mB'), '−1.2k mB/h');
+  assert.equal(formatRate(12 / 86400), '+12/d');
+  assert.equal(formatRate(0), null);
+  assert.equal(formatRate(0.1 / 86400), null);
 });

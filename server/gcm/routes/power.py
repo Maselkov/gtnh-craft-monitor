@@ -5,7 +5,7 @@ import time
 
 from flask import Blueprint, jsonify, request, Response
 
-from gcm import auth, charts, store
+from gcm import auth, charts, rates, store
 
 
 bp = Blueprint("power", __name__)
@@ -84,6 +84,10 @@ def range_rows(range_key):
 def power_get():
     range_key, rows = range_rows(request.args.get("range", "day"))
     latest = store.power.latest()
+    now = time.time()
+    trend = rates.power_trend(
+        store.power.readings(now - rates.POWER_WINDOW_SECONDS, POWER_MAX_POINTS), now
+    )
 
     return jsonify(
         {
@@ -100,6 +104,7 @@ def power_get():
                 if latest
                 else None
             ),
+            "trend": trend,
         }
     )
 
