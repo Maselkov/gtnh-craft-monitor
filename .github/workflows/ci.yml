@@ -28,8 +28,12 @@ jobs:
             server/requirements.txt
             server/tests/requirements-test.txt
       - run: pip install -r server/tests/requirements-test.txt
+      # tests/test_oc_scripts.py runs the oc/ scripts against the app.
+      - run: sudo apt-get update && sudo apt-get install -y lua5.3
       - run: python -m pytest -q
         working-directory: server
+        env:
+          OC_LUA: lua5.3
 
   frontend:
     name: Frontend tests
@@ -90,6 +94,8 @@ jobs:
             luac5.3 -p "$f" || status=1
           done
           exit $status
+      # The scripts on a fake computer, ME network and GT machine.
+      - run: lua5.3 oc/tests/run.lua
       # gcm.lua installs whatever manifest.lua lists, so a renamed or
       # deleted script would otherwise only fail on someone's computer.
       - name: Check gcm manifest
