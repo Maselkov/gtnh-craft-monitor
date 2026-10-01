@@ -10,6 +10,7 @@ import {
 } from './history.js';
 import { fetchNetwork, fetchNetworkPins, tickNetworkSourceLine } from './network.js';
 import { fetchPower, tickPowerSourceLine } from './power.js';
+import { fetchStockRules } from './stock.js';
 import { delegateActions } from './util.js';
 
 // ---------- Tabs ----------
@@ -65,9 +66,11 @@ export function switchTab(tab, pushUrl) {
   if (tab === 'network') {
     fetchNetwork();
     fetchNetworkPins();
+    fetchStockRules();
     // A full scan takes a minute or two and this data doesn't change
     // fast - no point polling anywhere near as often as crafts/power.
-    if (!networkInterval) networkInterval = setInterval(fetchNetwork, 60000);
+    // Stock rules only change with a scan (or an auto-craft's answer).
+    if (!networkInterval) networkInterval = setInterval(() => { fetchNetwork(); fetchStockRules(); }, 60000);
     if (!networkTickInterval) networkTickInterval = setInterval(tickNetworkSourceLine, 1000);
     // Craft requests are the opposite - they should resolve within
     // seconds, matching craft_monitor.lua's own ~1.5s request-polling

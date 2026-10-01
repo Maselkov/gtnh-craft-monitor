@@ -176,6 +176,10 @@ h1 {
   margin-left: 8px;
   vertical-align: middle;
 }
+.status-badge.auto {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--accent);
+}
 .status-badge.incomplete {
   background: color-mix(in srgb, var(--stale) 20%, transparent);
   color: var(--stale);
@@ -623,6 +627,18 @@ h1 {
   height: 13px;
   image-rendering: pixelated;
   filter: drop-shadow(0 0 2px rgba(0,0,0,0.9));
+}
+.network-cell-stock-badge {
+  position: absolute;
+  bottom: 1px;
+  left: 2px;
+  font-size: 11px;
+  line-height: 1;
+  filter: drop-shadow(0 0 2px rgba(0,0,0,0.9));
+}
+.network-cell.stock-low {
+  border-color: color-mix(in srgb, var(--stale) 70%, transparent);
+  background: color-mix(in srgb, var(--stale) 10%, var(--card));
 }
 .network-cell-pin-badge {
   position: absolute;
@@ -1101,7 +1117,8 @@ section.group {
   margin-bottom: 10px;
 }
 details.idle-group summary,
-details.craft-history summary {
+details.craft-history summary,
+details.stock-rules summary {
   cursor: pointer;
   list-style: none;
   font-size: 13px;
@@ -1114,16 +1131,19 @@ details.craft-history summary {
   user-select: none;
 }
 details.idle-group summary::-webkit-details-marker,
-details.craft-history summary::-webkit-details-marker { display: none; }
+details.craft-history summary::-webkit-details-marker,
+details.stock-rules summary::-webkit-details-marker { display: none; }
 details.idle-group summary::before,
-details.craft-history summary::before {
+details.craft-history summary::before,
+details.stock-rules summary::before {
   content: "\25B8";
   display: inline-block;
   margin-right: 8px;
   transition: transform 0.15s ease;
 }
 details.idle-group[open] summary::before,
-details.craft-history[open] summary::before {
+details.craft-history[open] summary::before,
+details.stock-rules[open] summary::before {
   transform: rotate(90deg);
 }
 details.idle-group .grid {
@@ -1198,4 +1218,84 @@ details.craft-history {
 }
 .network-cell-icon.icon-bleed {
   z-index: 1;
+}
+
+/* Stock rules (stock.js): the list on the Network tab... */
+details.stock-rules {
+  margin-bottom: 14px;
+}
+.stock-row {
+  cursor: pointer;
+}
+.stock-row:hover {
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+}
+.stock-chip {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 999px;
+  margin-left: 8px;
+  vertical-align: middle;
+  white-space: nowrap;
+  background: rgba(128,128,128,0.2);
+  color: var(--muted);
+}
+.stock-chip.ok { background: color-mix(in srgb, var(--idle) 20%, transparent); color: var(--idle); }
+.stock-chip.low,
+.stock-chip.failed { background: color-mix(in srgb, var(--stale) 20%, transparent); color: var(--stale); }
+.stock-chip.waiting { background: color-mix(in srgb, var(--busy) 20%, transparent); color: var(--busy); }
+.stock-chip.requested,
+.stock-chip.crafting { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); }
+.stock-row-amount {
+  flex-shrink: 0;
+  width: 84px;
+  text-align: right;
+  font-size: 13px;
+  font-weight: 600;
+}
+.stock-bar {
+  height: 4px;
+  margin-top: 4px;
+  border-radius: 999px;
+  background: rgba(128,128,128,0.2);
+  overflow: hidden;
+}
+.stock-bar-fill {
+  height: 100%;
+  background: var(--idle);
+}
+.stock-bar-fill.low {
+  background: var(--stale);
+}
+
+/* ...and the panel in the item popup. */
+.stock-panel {
+  margin: 4px 0 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(128,128,128,0.15);
+}
+.stock-panel-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.stock-panel-row[hidden] {
+  display: none;
+}
+.stock-panel-label {
+  font-size: 13px;
+  color: var(--muted);
+}
+.stock-panel-row .stock-input {
+  width: 110px;
+  margin: 0;
+}
+.stock-panel-note {
+  margin-bottom: 8px;
 }

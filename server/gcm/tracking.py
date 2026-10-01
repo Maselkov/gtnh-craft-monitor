@@ -107,6 +107,8 @@ def _new_job_entry(started_at, seen_from_start=True):
         # and its outcome once reported (see report_outcome()).
         "request_id": None,
         "outcome": None,
+        # Started by a keep-in-stock target rather than a person.
+        "auto": False,
     }
 
 
@@ -232,7 +234,8 @@ def process_jobs(jobs):
     at all), still can't be told apart from one long job.
 
     Also sets each job's progress_percent, steps_done and steps_total
-    (gcm/progress.py), replacing anything the game sent.
+    (gcm/progress.py), replacing anything the game sent, and auto on a
+    job a keep-in-stock target started.
 
     An idle CPU can carry last_busy: craft_monitor.lua's last look at the
     job between its full reports, taken `age` seconds ago - fresher than
@@ -315,11 +318,15 @@ def _update_progress(entry, job, sampled_at):
     job["progress_percent"] = entry["progress"]
     job["steps_done"] = steps_done
     job["steps_total"] = steps_total
+    if entry.get("auto"):
+        job["auto"] = True
 
 
-def start_requested_job(user_id, cpu_name, label, icon, requested_at, request_id=None):
+def start_requested_job(user_id, cpu_name, label, icon, requested_at, request_id=None, auto=False):
     """A browser craft request the game reports it started on cpu_name:
-    pins it for the requester and records the job as started.
+    pins it for the requester and records the job as started. A
+    keep-in-stock target's request (auto) isn't pinned for anyone - it
+    would notify whoever last saved the target about every refill.
 
     Pinned directly rather than through /api/pins, which requires the
     CPU to already show busy in the last status report - that only
@@ -356,5 +363,7 @@ def start_requested_job(user_id, cpu_name, label, icon, requested_at, request_id
             entry["icon"] = icon
         if request_id is not None:
             entry["request_id"] = request_id
+        entry["auto"] = auto
         state.cpu_last_busy[cpu_name] = True
-        store.crafts.pin_cpu(user_id, cpu_name)
+        if not auto:
+            store.crafts.pin_cpu(user_id, cpu_name)

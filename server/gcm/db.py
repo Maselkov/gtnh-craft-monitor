@@ -460,6 +460,53 @@ def _app_craft_event_details(conn):
         conn.execute(f"ALTER TABLE craft_events ADD COLUMN {column}")
 
 
+def _app_stock_rules(conn):
+    # Stock rules (gcm/stock.py), checked after every network scan.
+    # stock_alerts: a user's "tell me when this drops below N". armed is
+    # 0 once it has fired, until the item is back at or above N.
+    conn.execute("""
+        CREATE TABLE stock_alerts (
+            user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            item_key TEXT NOT NULL,
+            label TEXT NOT NULL,
+            mod TEXT,
+            internal TEXT NOT NULL,
+            damage INTEGER,
+            kind TEXT NOT NULL,
+            variant TEXT,
+            below REAL NOT NULL,
+            armed INTEGER NOT NULL DEFAULT 1,
+            created_at REAL NOT NULL,
+            PRIMARY KEY (user_id, item_key)
+        )
+    """)
+    # stock_targets: the base's "keep at least N, refill to M" rules, one
+    # per item whoever set it. updated_by is who auto requests are filed
+    # under; last_* is the latest auto request and how it went.
+    conn.execute("""
+        CREATE TABLE stock_targets (
+            item_key TEXT PRIMARY KEY,
+            label TEXT NOT NULL,
+            mod TEXT,
+            internal TEXT NOT NULL,
+            damage INTEGER,
+            kind TEXT NOT NULL,
+            variant TEXT,
+            keep_at_least REAL NOT NULL,
+            refill_to REAL NOT NULL,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            updated_by TEXT NOT NULL,
+            updated_at REAL NOT NULL,
+            last_request_id INTEGER,
+            last_requested_at REAL,
+            last_status TEXT,
+            last_reason TEXT
+        )
+    """)
+    # Whether a request came from the page or a stock target.
+    conn.execute("ALTER TABLE craft_request_history ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'")
+
+
 APP_MIGRATIONS = [
     _app_baseline,
     _app_drop_orphaned_user_rows,
@@ -467,6 +514,7 @@ APP_MIGRATIONS = [
     _app_item_pin_variants,
     _app_push_subscriptions,
     _app_craft_event_details,
+    _app_stock_rules,
 ]
 POWER_MIGRATIONS = [_power_baseline]
 ITEM_HISTORY_MIGRATIONS = [_item_history_baseline, _item_history_variants]

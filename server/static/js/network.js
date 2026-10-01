@@ -4,6 +4,7 @@ import { isOperator } from './auth.js';
 import { openCraftRequestModal } from './craft-actions.js';
 import { openItemHistory, tryOpenItemFromUrl, updateItemHistoryPinButton } from './history.js';
 import { buildSearchHighlightHtml, itemMatchesSearch, parseSearchQuery } from './search.js';
+import { stockBadgeFor } from './stock.js';
 import { activeTab } from './tabs.js';
 import { bindCellTooltip, hideTooltip } from './tooltip.js';
 import { delegateActions, escapeHtml, formatQty, iconClass, iconUrl } from './util.js';
@@ -241,7 +242,10 @@ function buildNetworkCellHtml(it, idx) {
     : '';
   const isPinned = pinnedItemKeys.has(networkItemKey(it.mod, it.internal, it.damage, it.kind, it.variant));
   const pinBadge = isPinned ? `<span class="network-cell-pin-badge">&#128204;</span>` : '';
-  return `<div class="network-cell${it.isCraftable ? ' craftable' : ''}" data-idx="${idx}">${icon}${qty}${patternBadge}${pinBadge}</div>`;
+  const stock = stockBadgeFor(it);
+  const stockBadge = stock ? `<span class="network-cell-stock-badge">${stock.symbol}</span>` : '';
+  const classes = 'network-cell' + (it.isCraftable ? ' craftable' : '') + (stock && stock.low ? ' stock-low' : '');
+  return `<div class="${classes}" data-idx="${idx}">${icon}${qty}${patternBadge}${pinBadge}${stockBadge}</div>`;
 }
 
 export function updateNetworkSearchHighlight() {
@@ -264,6 +268,11 @@ function buildNetworkNoteHtml(query) {
     return `<div class="network-note">Showing ${networkRenderedCount} of ${networkFilteredSorted.length} - scroll for more.</div>`;
   }
   return `<div class="network-note">End of list - ${networkFilteredSorted.length} items.</div>`;
+}
+
+// For a change that only affects how cells look (stock rules).
+export function rerenderNetworkList() {
+  if (lastNetworkData) renderNetworkList();
 }
 
 function renderNetworkList() {

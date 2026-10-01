@@ -11,7 +11,7 @@ process left open - see store.requests.close_orphaned())."""
 import threading
 import time
 
-from gcm import store
+from gcm import icons, inventory, store
 
 
 class CommandQueue:
@@ -181,10 +181,54 @@ craft_requests = CommandQueue(
     unclaimed_reason="the game didn't pick up this request - is craft_monitor running?",
     finished_status="failed",
     finished_at_field="failed_at",
-    on_expire=lambda req_id, reason: store.requests.resolve_request(
-        req_id, "failed", reason, None, only_if_open=True
-    ),
+    on_expire=lambda req_id, reason: _expire_craft_request(req_id, reason),
 )
+
+
+def _expire_craft_request(req_id, reason):
+    store.requests.resolve_request(req_id, "failed", reason, None, only_if_open=True)
+    store.stock.record_auto_result(req_id, "failed", reason)
+
+
+def queue_craft(user_id, label, mod, internal, damage, amount, kind, variant=None,
+                variant_name=None, source="manual", target_key=None):
+    """Queues a craft request for craft_monitor.lua and writes its history
+    row; returns its id. source is "manual" for one made on the page, or
+    "auto" for a keep-in-stock target's (target_key: that target's item
+    key)."""
+    created_at = time.time()
+    return craft_requests.add(
+        {
+            "user_id": user_id,
+            "label": label,
+            "mod": mod,
+            "internal": internal,
+            "damage": damage,
+            "amount": amount,
+            "kind": kind,  # "item" or "fluid" - craft_monitor.lua's request
+            # loop needs this to pick the right getCraftables()
+            # filter shape (confirmed via a real successful
+            # fluid request: items filter by name+damage,
+            # fluids only matched when filtered by label)
+            "icon": icons.resolve_icon(mod, internal, damage, label, variant),
+            # An NBT variant (gcm/inventory.py): craft_monitor.lua picks
+            # the pattern whose output has exactly this NBT (tag, from the
+            # last scan), or, without one, the only pattern with this label.
+            "variant": variant,
+            "variant_name": str(variant_name) if variant_name else None,
+            "tag": inventory.variant_tag(mod, internal, damage, kind, variant),
+            "source": source,
+            "target_key": target_key,
+            # status: pending -> accepted (removed from list, real pin
+            # takes over) | failed (stays until dismissed)
+            "reason": None,
+            "cpu_name": None,
+            "created_at": created_at,
+        },
+        lambda req_id: store.requests.record_request(
+            req_id, user_id, label, mod, internal, damage, amount, kind, created_at, source
+        ),
+    )
 
 
 # Craft cancellation. Simpler than craft REQUESTS: AE2's cancel() call

@@ -47,6 +47,13 @@ GTNH_TEXTURES = os.environ.get("GTNH_TEXTURES", "").strip()
 # a mailto: or https: URL. Empty means the page's own URL.
 VAPID_SUBJECT = os.environ.get("VAPID_SUBJECT", "").strip()
 
+# Keep-in-stock targets (gcm/stock.py): auto-crafts only start while more
+# than this many crafting CPUs are idle, leaving those for requests made
+# by hand; and a target whose auto-craft failed waits this long before
+# trying again.
+AUTOCRAFT_KEEP_IDLE_CPUS = int(os.environ.get("AUTOCRAFT_KEEP_IDLE_CPUS", "1"))
+AUTOCRAFT_RETRY_SECONDS = int(os.environ.get("AUTOCRAFT_RETRY_SECONDS", "1800"))
+
 DATA_DIR = None
 GAMEDATA_DIR = None
 POWER_DB_PATH = None

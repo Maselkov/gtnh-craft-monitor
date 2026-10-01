@@ -201,15 +201,19 @@ async function seed(base) {
   for (const [ago, stored] of [[1800, 100000], [900, 200000], [0, 300000]]) {
     await game(base, '/api/power', { stored, capacity: 1000000, avg_eu_in_5s: 50, avg_eu_out_5s: 20, timestamp: now - ago });
   }
+  await scanNetwork(base);
+}
+
+const SEEDED_ITEMS = [
+  { mod: 'minecraft', internal: 'iron_ingot', damage: 0, name: 'Iron Ingot', size: 1234, isCraftable: true },
+  { mod: 'gregtech', internal: 'gt.metaitem.01', damage: 11028, name: 'Neutronium Ingot', size: 5, isCraftable: false },
+  { internal: 'water', kind: 'fluid', name: 'Water', size: 64000 },
+];
+
+async function scanNetwork(base) {
   const { data: scan } = await game(base, '/api/network/scan/start', {});
-  await game(base, '/api/network/scan/batch', {
-    scan_token: scan.scan_token,
-    items: [
-      { mod: 'minecraft', internal: 'iron_ingot', damage: 0, name: 'Iron Ingot', size: 1234, isCraftable: true },
-      { mod: 'gregtech', internal: 'gt.metaitem.01', damage: 11028, name: 'Neutronium Ingot', size: 5, isCraftable: false },
-      { internal: 'water', kind: 'fluid', name: 'Water', size: 64000 },
-    ],
-  });
+  // Copies: the server reads the items, and these are reused.
+  await game(base, '/api/network/scan/batch', { scan_token: scan.scan_token, items: SEEDED_ITEMS.map(it => ({ ...it })) });
   await game(base, '/api/network/scan/finish', { scan_token: scan.scan_token, chunks_sent: 1, total_errors: 0 });
 }
 
@@ -618,6 +622,47 @@ async function main() {
     await waitFor('one dismissed', `$$('#craftRequestsSection .craft-request-card').length === 1`);
     await click(`$('#craftRequestsSection .craft-request-dismiss')`);
     await waitFor('both dismissed', `!$('#craftRequestsSection .craft-request-card')`);
+  });
+
+  step('stock rules: set from the item popup, a scan requests the refill, remove', async () => {
+    await evaluate(`openItem('Iron Ingot'), true`);
+    await waitFor('panel shown', `visible($('#stockAlertRow')) && visible($('#stockTargetRow'))`);
+    await evaluate(`typeInto('#stockAlertBelow', '2k')`);
+    await click(`byText('#stockAlertRow button', 'Save')`);
+    await waitFor('alert saved', `visible($('#stockAlertDelete')) && $('#stockAlertBelow').value === '2k'`);
+    await evaluate(`typeInto('#stockKeep', '1.5k'), typeInto('#stockRefill', '3k')`);
+    await click(`byText('#stockTargetRow button', 'Save')`);
+    await waitFor('target saved', `visible($('#stockTargetDelete')) && $('#stockTargetNote').textContent.includes('No auto-craft yet')`);
+    await click(`$('#itemHistoryModal .history-close-btn')`);
+    await waitFor('overview lists it as low', `visible($('#stockRules'))
+      && $('#stockRulesSummary').textContent === 'Stock rules (1) · 1 low'`);
+    await waitFor('cell marked', `$('#networkList .network-cell.stock-low .network-cell-stock-badge')`);
+
+    // Two idle CPUs, one kept free: the next scan (Iron Ingot still at
+    // 1234) asks for the refill up to 3k.
+    await postCrafts(base, false);
+    await scanNetwork(base);
+    const { data: pending } = await api(base, 'GET', '/api/craft/requests/pending', undefined, { 'X-API-Key': API_KEY });
+    if (pending.requests.length !== 1 || pending.requests[0].amount !== 1766 || pending.requests[0].source !== 'auto') {
+      throw new Error('expected one auto request for 1766, got ' + JSON.stringify(pending.requests));
+    }
+    await api(base, 'POST', `/api/craft/requests/${pending.requests[0].id}/result`,
+      { status: 'failed', reason: 'e2e: missing resources' }, { 'X-API-Key': API_KEY });
+    // Not one of the user's own request cards; shown on the rule instead.
+    await click(`$('#tabBtnCrafts')`);
+    await click(`$('#tabBtnNetwork')`);
+    await waitFor('failure on the rule', `$('#stockRulesList .stock-chip.failed')?.title.includes('e2e: missing resources')`);
+    await waitFor('no request card', `!$('#craftRequestsSection .craft-request-card')`);
+
+    await click(`$('#stockRulesList .stock-row')`);
+    await waitFor('popup from the list', `visible($('#itemHistoryModal')) && $('#stockTargetNote').textContent.includes('failed: e2e: missing resources')`);
+    await click(`$('#stockTargetDelete')`);
+    await waitFor('target removed', `!visible($('#stockTargetDelete'))`);
+    await click(`$('#stockAlertDelete')`);
+    await waitFor('alert removed', `!visible($('#stockAlertDelete'))`);
+    await click(`$('#itemHistoryModal .history-close-btn')`);
+    await waitFor('overview hidden', `!visible($('#stockRules'))`);
+    await evaluate(`typeInto('#networkSearch', ''), true`);  // openItem() searched for it
   });
 
   step('admin: create user, history, new token, revoke, delete', async () => {

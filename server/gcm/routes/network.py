@@ -2,11 +2,14 @@
 oc/network_browser.lua, the live item list, per-item quantity history
 and item pins. The logic behind them is in gcm/inventory.py."""
 
+import logging
 import secrets
 
 from flask import abort, Blueprint, g, jsonify, request, Response, send_file
 
-from gcm import auth, charts, gamedata, icons, inventory, state, store
+from gcm import auth, charts, gamedata, icons, inventory, state, stock, store
+
+log = logging.getLogger(__name__)
 
 
 bp = Blueprint("network", __name__)
@@ -70,11 +73,17 @@ def network_scan_batch():
 @auth.api_key_required
 def network_scan_finish():
     payload = request.get_json(silent=True) or {}
-    return jsonify(
-        inventory.finish_scan(
-            payload.get("scan_token"), payload.get("chunks_sent"), payload.get("total_errors")
-        )
+    result = inventory.finish_scan(
+        payload.get("scan_token"), payload.get("chunks_sent"), payload.get("total_errors")
     )
+    if result.get("ok") and not result.get("rejected"):
+        # Like finish_scan()'s own extras: a failure here is logged, and
+        # never makes network_browser.lua think the scan failed.
+        try:
+            stock.evaluate_scan()
+        except Exception:
+            log.exception("checking stock rules failed (the scan itself succeeded)")
+    return jsonify(result)
 
 
 # Changes whenever the served snapshot could: a new process (icons are

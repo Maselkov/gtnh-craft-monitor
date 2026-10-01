@@ -39,7 +39,8 @@ import zlib
 # ones, or refuse to start.
 for _name in ("API_KEY", "DATA_DIR", "GCM_BOOTSTRAP_ADMIN_TOKEN", "GCM_BOOTSTRAP_ADMIN_NAME",
               "GTNH_VERSION", "GTNH_TEXTURES", "GAMEDATA_API_URL", "GAMEDATA_REPO",
-              "TRUSTED_PROXIES", "VAPID_SUBJECT", "STALE_AFTER_SECONDS", "SESSION_LIFETIME_SECONDS"):
+              "TRUSTED_PROXIES", "VAPID_SUBJECT", "STALE_AFTER_SECONDS", "SESSION_LIFETIME_SECONDS",
+              "AUTOCRAFT_KEEP_IDLE_CPUS", "AUTOCRAFT_RETRY_SECONDS"):
     os.environ.pop(_name, None)
 # Read by gcm.config at import: session cookies over plain http.
 os.environ["SESSION_COOKIE_SECURE"] = "0"
@@ -289,6 +290,9 @@ class Cpu:
         # The browser request running here, watched for its outcome the
         # way craft_monitor.lua watches its CraftingStatus.
         self.request_id = None
+        # What finishing the job adds to the network: (name, amount),
+        # for a request's job.
+        self.delivers = None
 
     def start(self, output, ingredients):
         self.job = {"output": output, "items": {
@@ -361,6 +365,9 @@ def random_ingredients(count, exclude):
 # The big job restarts on M00 forever, so there's always a long
 # ingredient list to look at.
 BIG_JOB = ("Dangote Distillus", 30)
+# Requests the fake game turns down, and why - so a failed keep-in-stock
+# target has something to show.
+FAILS = {"Inconel-625 Plate": "request failed (missing resources?)"}
 SMALL_JOBS = ["Radon Plasma", "Bacterial Sludge", "Glass Dust", "Lapotron Crystal",
               "Titanium Gear", "Ultimate Circuit"]
 
@@ -385,6 +392,10 @@ class FakeGame:
         for cpu in self.cpus:
             if cpu.tick():
                 self.report_outcome(cpu, "finished")
+                if cpu.delivers:
+                    name, amount = cpu.delivers
+                    self.stock[name] = self.stock.get(name, 0) + amount
+                    cpu.delivers = None
             if cpu.job is None and cpu.name == "M00" and cpu.idle_ticks >= 5:
                 cpu.start(BIG_JOB[0], random_ingredients(BIG_JOB[1], BIG_JOB[0]))
             elif cpu.job is None and cpu.name != "B01" and cpu.idle_ticks >= 8 and random.random() < 0.1:
@@ -406,10 +417,15 @@ class FakeGame:
                 self.call("POST", f"/api/craft/requests/{req['id']}/result",
                           {"status": "failed", "reason": "no free crafting CPU"})
                 continue
+            if req["label"] in FAILS:
+                self.call("POST", f"/api/craft/requests/{req['id']}/result",
+                          {"status": "failed", "reason": FAILS[req["label"]]})
+                continue
             label = req["label"] if req["label"] in BY_NAME else "Iron Ingot"
             cpu.start(label, random_ingredients(random.randint(2, 8), label))
             cpu.job["output"] = req["label"]
             cpu.request_id = req["id"]
+            cpu.delivers = (req["label"], int(req["amount"])) if req["label"] in BY_NAME else None
             self.call("POST", f"/api/craft/requests/{req['id']}/result",
                       {"status": "accepted", "cpu_name": cpu.name, "watching": True})
         for req in self.call("GET", "/api/craft/cancel/pending").get("requests", []):
@@ -452,6 +468,26 @@ class FakeGame:
 
 # ---------------------------------------------------------------- main
 
+def seed_stock_rules(stock):
+    """A few stock rules for the dev admin, some already low: targets
+    the fake game fills (Iron Ingot), turns down (Inconel-625 Plate) or
+    has plenty of (Titanium Gear), and two alerts."""
+    user_id = store.users.id_for_display_name(ADMIN_NAME)
+
+    def item(name):
+        it = BY_NAME[name]
+        return {"label": name, "mod": it["mod"], "internal": it["internal"], "damage": it["damage"],
+                "kind": it["kind"], "variant": None}
+
+    store.stock.set_target(user_id, item("Iron Ingot"), stock["Iron Ingot"] + 300, stock["Iron Ingot"] + 1500, True)
+    store.stock.set_target(user_id, item("Inconel-625 Plate"), stock["Inconel-625 Plate"] + 200,
+                           stock["Inconel-625 Plate"] + 1000, True)
+    store.stock.set_target(user_id, item("Titanium Gear"), max(1, stock["Titanium Gear"] // 4),
+                           max(2, stock["Titanium Gear"] // 2), True)
+    store.stock.set_alert(user_id, item("Glass Dust"), stock["Glass Dust"] + 200)
+    store.stock.set_alert(user_id, item("Osmium Rod"), max(1, stock["Osmium Rod"] // 3))
+
+
 def admin_token():
     """A fresh access token for the dev admin, creating it if needed."""
     user_id = store.users.id_for_display_name(ADMIN_NAME)
@@ -470,6 +506,8 @@ def run(args, data_dir):
     app = create_app(data_dir=data_dir, api_key=API_KEY)
     stock = backfill_history() if fresh else None
     token = admin_token()
+    if fresh:
+        seed_stock_rules(stock)
 
     game = FakeGame(app, stock)
     game.tick()  # data in place before the first page load

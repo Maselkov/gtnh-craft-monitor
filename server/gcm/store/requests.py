@@ -9,13 +9,13 @@ from gcm import db
 
 
 def record_request(
-    request_id, user_id, label, mod, internal, damage, amount, kind, created_at
+    request_id, user_id, label, mod, internal, damage, amount, kind, created_at, source="manual"
 ):
     with db.transaction(db.app_db) as conn:
         conn.execute(
             "INSERT INTO craft_request_history "
-            "(request_id, user_id, label, mod, internal, damage, amount, kind, status, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)",
+            "(request_id, user_id, label, mod, internal, damage, amount, kind, status, created_at, source) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
             (
                 request_id,
                 user_id,
@@ -26,6 +26,7 @@ def record_request(
                 amount,
                 kind,
                 created_at,
+                source,
             ),
         )
 
@@ -97,10 +98,10 @@ def user_activity(user_id, limit=100):
     """A user's latest craft requests and cancellations, newest first."""
     with db.transaction(db.app_db) as conn:
         rows = conn.execute(
-            "SELECT 'request', label, status, reason, cpu_name, created_at, resolved_at "
+            "SELECT 'request', label, status, reason, cpu_name, created_at, resolved_at, source "
             "FROM craft_request_history WHERE user_id = ? "
             "UNION ALL "
-            "SELECT 'cancel', cpu_name, status, reason, cpu_name, created_at, resolved_at "
+            "SELECT 'cancel', cpu_name, status, reason, cpu_name, created_at, resolved_at, 'manual' "
             "FROM craft_cancel_history WHERE user_id = ? "
             "ORDER BY created_at DESC LIMIT ?",
             (user_id, user_id, limit),
@@ -114,6 +115,7 @@ def user_activity(user_id, limit=100):
             "cpu_name": row[4],
             "created_at": row[5],
             "resolved_at": row[6],
+            "source": row[7],
         }
         for row in rows
     ]

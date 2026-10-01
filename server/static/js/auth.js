@@ -166,7 +166,7 @@ async function openUserHistory(userId) {
   document.getElementById('userHistoryTitle').textContent = `${data.user.display_name} history`;
   list.innerHTML = data.events.map((event) => `
     <div class="user-history-row">
-      <div class="user-history-target">${event.type === 'request' ? 'Request' : 'Cancel'}: ${escapeHtml(event.target || '?')}</div>
+      <div class="user-history-target">${event.type === 'cancel' ? 'Cancel' : (event.source === 'auto' ? 'Auto request' : 'Request')}: ${escapeHtml(event.target || '?')}</div>
       <div class="user-history-meta">${escapeHtml(event.status)} · ${formatHistoryTime(event.created_at)}${event.reason ? ` · ${escapeHtml(event.reason)}` : ''}</div>
     </div>`).join('') || '<div class="user-history-row">No craft actions recorded.</div>';
 }
