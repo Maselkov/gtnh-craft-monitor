@@ -479,6 +479,37 @@ async function main() {
     await postCrafts(base, true);
   });
 
+  step('recent crafts: lists ended jobs, picks up new ones, scrolls, opens the item', async () => {
+    await click(`$('#craftHistory summary')`);
+    await waitFor('both ended jobs', `$$('#craftHistoryList .history-row').length === 2`);
+    await waitFor('item and CPU shown', `$('#craftHistoryList .history-row').textContent.includes('Iron Ingot')
+      && $('#craftHistoryList .history-row').textContent.includes('CPU W01')`);
+    await postCrafts(base, false);
+    await waitFor('new end added while open', `$$('#craftHistoryList .history-row').length === 3`);
+    await postCrafts(base, true);
+    // More than a page ends while it's closed: reopened, it shows one
+    // page, and scrolling down loads the rest.
+    await click(`$('#craftHistory summary')`);
+    for (let i = 0; i < 30; i++) {
+      await postCrafts(base, false);
+      await postCrafts(base, true);
+    }
+    await click(`$('#craftHistory summary')`);
+    await waitFor('first page', `$$('#craftHistoryList .history-row').length === 25`);
+    await evaluate(`window.scrollTo(0, document.documentElement.scrollHeight), true`);
+    await waitFor('scrolled to the end', `$$('#craftHistoryList .history-row').length === 33
+      && $('#craftHistoryLoading').hidden`);
+    // Item history belongs to the Network tab, wherever it's opened from.
+    await click(`$('#craftHistoryList .item-history-link')`);
+    await waitFor('item history open', `visible($('#itemHistoryModal')) && $('#itemHistoryName').textContent === 'Iron Ingot'`);
+    await click(`$('#itemHistoryModal .history-close-btn')`);
+    await waitFor('item history closed', `!visible($('#itemHistoryModal'))`);
+    await click(`$('#tabBtnCrafts')`);
+    await waitFor('crafts tab', `visible($('#craftsTab'))`);
+    await click(`$('#craftHistory summary')`);
+    await waitFor('section closed', `!$('#craftHistory').open`);
+  });
+
   step('confirm a cancel; the game reports it done', async () => {
     await waitFor('busy W01', `card('W01')?.querySelector('.cancel-btn:not([disabled])')`);
     await click(`card('W01').querySelector('.cancel-btn')`);

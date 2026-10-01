@@ -2,9 +2,10 @@
 // notifications.
 
 import { AUTH_USER, isOperator } from './auth.js';
+import { refreshCraftHistory } from './craft-history.js';
 import { openCancelConfirmModal, pendingCancelCpus } from './craft-actions.js';
 import { ingredientCount, openIngredientsModal, refreshIngredientsModal } from './ingredients.js';
-import { delegateActions, escapeHtml, iconClass, iconUrl } from './util.js';
+import { delegateActions, escapeHtml, formatRelativeTime, iconClass, iconUrl } from './util.js';
 
 // Toggle-open state of the idle-CPU section, which has to survive the
 // 3s auto-refresh (it rebuilds the DOM from scratch).
@@ -201,16 +202,6 @@ function notifyNewCompletions(completions) {
   if (claimedChanged) saveClaimedIds(claimed);
 }
 
-function formatRelativeTime(seconds) {
-  const diffSec = Math.max(0, Math.round(Date.now() / 1000 - seconds));
-  if (diffSec < 60) return diffSec + 's ago';
-  const diffMin = Math.round(diffSec / 60);
-  if (diffMin < 60) return diffMin + 'm ago';
-  const diffHr = Math.round(diffMin / 60);
-  if (diffHr < 24) return diffHr + 'h ago';
-  return Math.round(diffHr / 24) + 'd ago';
-}
-
 // The switch in the settings menu. Browsers don't let a page revoke
 // its own notification permission, so "off" is this app's own flag
 // on top of it. Nothing stored means the pre-switch behaviour: on
@@ -380,6 +371,7 @@ export async function refresh() {
     lastFetchAt = Date.now();
     render(data);
     tickSourceLine();
+    refreshCraftHistory();
   } catch (e) {
     document.getElementById('sourceLine').textContent = 'Could not reach server.';
   }

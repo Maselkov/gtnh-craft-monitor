@@ -500,3 +500,66 @@ class TestRequestOutcome:
     def test_outcome_needs_the_api_key(self, client):
         res = client.post("/api/craft/requests/1/outcome", json={"outcome": "finished", "cpu_name": "W01"})
         assert res.status_code == 401
+
+
+def history(client, **params):
+    return client.get("/api/crafts/history", query_string=params).get_json()
+
+
+class TestCraftHistory:
+    def test_lists_job_ends_newest_first(self, client, api_headers):
+        post_job(client, api_headers, busy=False)
+        for output in ("Gear", "Rotor"):
+            post_job(client, api_headers, output)
+            post_job(client, api_headers, busy=False)
+        data = history(client)
+        assert [e["itemName"] for e in data["events"]] == ["Rotor", "Gear"]
+        assert data["more"] is False
+        event = data["events"][0]
+        assert (event["cpu"], event["status"]) == ("W01", "finished")
+        assert (event["mod"], event["internal"]) == ("gregtech", "Rotor")
+
+    def test_public(self, client):
+        assert client.get("/api/crafts/history").status_code == 200
+
+    def test_records_how_long_a_job_ran(self, client, api_headers):
+        post_job(client, api_headers, busy=False)
+        post_job(client, api_headers, "Gear", pending=plates(1))
+        shift_samples(90)
+        post_job(client, api_headers, busy=False)
+        event = history(client)["events"][0]
+        assert event["finishedAt"] - event["startedAt"] == pytest.approx(90, abs=5)
+
+    def test_start_unknown_for_a_job_running_before_the_server_saw_it(self, client, api_headers):
+        post_job(client, api_headers, "Gear")
+        post_job(client, api_headers, busy=False)
+        assert history(client)["events"][0]["startedAt"] is None
+
+    def test_back_to_back_job_start_is_known(self, client, api_headers):
+        post_job(client, api_headers, "Gear")
+        post_job(client, api_headers, "Rotor")
+        post_job(client, api_headers, busy=False)
+        rotor, gear = history(client)["events"]
+        assert gear["startedAt"] is None
+        assert rotor["startedAt"] is not None
+
+    def test_pages_with_before_and_after(self, client, api_headers):
+        post_job(client, api_headers, busy=False)
+        for n in range(5):
+            post_job(client, api_headers, f"Item{n}")
+            post_job(client, api_headers, busy=False)
+        first = history(client, limit=2)
+        assert [e["itemName"] for e in first["events"]] == ["Item4", "Item3"]
+        assert first["more"] is True
+        older = history(client, limit=2, before=first["events"][-1]["id"])
+        assert [e["itemName"] for e in older["events"]] == ["Item2", "Item1"]
+        newer = history(client, after=older["events"][0]["id"])
+        assert [e["itemName"] for e in newer["events"]] == ["Item4", "Item3"]
+        assert newer["more"] is False
+
+    def test_bad_params_fall_back_to_defaults(self, client, api_headers):
+        post_job(client, api_headers, "Gear")
+        post_job(client, api_headers, busy=False)
+        data = history(client, limit="lots", before="x")
+        assert len(data["events"]) == 1
+        assert len(history(client, limit=0)["events"]) == 1

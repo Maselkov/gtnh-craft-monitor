@@ -84,6 +84,34 @@ def crafts_get():
         )
 
 
+# Most rows /api/crafts/history returns at once.
+HISTORY_PAGE_MAX = 100
+
+
+def _int_arg(name):
+    value = request.args.get(name)
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
+@bp.route("/api/crafts/history", methods=["GET"])
+@auth.public
+def crafts_history_get():
+    """Finished and stopped jobs, newest first. ?before=<id> pages back
+    through older ones, ?after=<id> fetches only newer ones."""
+    limit = _int_arg("limit") or 50
+    events, more = store.crafts.history(
+        before=_int_arg("before"),
+        after=_int_arg("after"),
+        limit=max(1, min(limit, HISTORY_PAGE_MAX)),
+    )
+    return jsonify({"events": events, "more": more})
+
+
 @bp.route("/api/pins", methods=["GET"])
 @auth.login_required
 def pins_get():

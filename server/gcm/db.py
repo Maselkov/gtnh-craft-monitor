@@ -452,12 +452,21 @@ def _app_push_subscriptions(conn):
     conn.execute("CREATE INDEX idx_push_subscriptions_user ON push_subscriptions (user_id)")
 
 
+def _app_craft_event_details(conn):
+    # For the Crafts tab's history: how long a job ran (started_at, NULL
+    # when it was already running as the server first saw its CPU) and
+    # which item it made, so a row can open that item's stock history.
+    for column in ("started_at REAL", "item_mod TEXT", "item_internal TEXT", "item_damage INTEGER"):
+        conn.execute(f"ALTER TABLE craft_events ADD COLUMN {column}")
+
+
 APP_MIGRATIONS = [
     _app_baseline,
     _app_drop_orphaned_user_rows,
     _app_cascade_user_rows,
     _app_item_pin_variants,
     _app_push_subscriptions,
+    _app_craft_event_details,
 ]
 POWER_MIGRATIONS = [_power_baseline]
 ITEM_HISTORY_MIGRATIONS = [_item_history_baseline, _item_history_variants]

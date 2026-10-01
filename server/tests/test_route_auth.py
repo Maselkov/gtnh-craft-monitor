@@ -4,6 +4,7 @@ from conftest import login_as
 # that serves or changes anything user-specific must never end up here.
 PUBLIC_ENDPOINTS = {
     "crafts.crafts_get",
+    "crafts.crafts_history_get",
     "power.power_get",
     "power.power_chart_png",
     "network.network_get",

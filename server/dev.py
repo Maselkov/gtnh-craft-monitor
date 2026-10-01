@@ -44,7 +44,7 @@ for _name in ("API_KEY", "DATA_DIR", "GCM_BOOTSTRAP_ADMIN_TOKEN", "GCM_BOOTSTRAP
 # Read by gcm.config at import: session cookies over plain http.
 os.environ["SESSION_COOKIE_SECURE"] = "0"
 
-from gcm import create_app, db, store  # noqa: E402
+from gcm import create_app, db, icons, store  # noqa: E402
 
 API_KEY = "dev-" + secrets.token_hex(24)
 TICK_SECONDS = 2
@@ -228,8 +228,9 @@ def power_reading(ts):
 
 
 def backfill_history(days=7):
-    """A week of power readings and network stock, written straight to
-    the stores, so the charts aren't empty on a fresh data directory.
+    """A week of power readings, network stock and craft history, written
+    straight to the stores, so the charts and lists aren't empty on a
+    fresh data directory.
     Returns each item's last backfilled stock, for the live scans to
     carry on from."""
     now = time.time()
@@ -249,6 +250,28 @@ def backfill_history(days=7):
     with db.transaction(db.item_history_db) as conn:
         conn.executemany(
             "INSERT INTO item_history (item_key, label, size, recorded_at) VALUES (?, ?, ?, ?)", rows
+        )
+
+    # Past job ends for the Crafts tab's history, oldest first like the
+    # real log. A few were already running when the server first saw
+    # them (no start), a few stopped early.
+    events, ended = [], now - days * 86400
+    while True:
+        ended += random.uniform(600, 5400)
+        if ended >= now - 60:
+            break
+        name, cpu = random.choice([(BIG_JOB[0], "M00")] + [(n, f"a0{i}") for i, n in enumerate(SMALL_JOBS[:4])])
+        it = BY_NAME[name]
+        took = random.uniform(1800, 7200) if cpu == "M00" else random.uniform(5, 900)
+        stopped = random.random() < 0.08
+        events.append((cpu, name, icons.resolve_icon(it["mod"], it["internal"], it["damage"], name),
+                       "incomplete" if stopped else "finished", random.randint(5, 90) if stopped else 100,
+                       ended, None if random.random() < 0.05 else ended - took,
+                       it["mod"], it["internal"], it["damage"]))
+    with db.transaction(db.app_db) as conn:
+        conn.executemany(
+            "INSERT INTO craft_events (cpu_name, item_label, item_icon, status, progress_at_end, occurred_at, "
+            "started_at, item_mod, item_internal, item_damage) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", events
         )
     return stock
 

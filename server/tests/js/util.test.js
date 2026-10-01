@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { escapeHtml, formatQty, iconClass } from '../../static/js/util.js';
+import { escapeHtml, formatDuration, formatQty, iconClass } from '../../static/js/util.js';
 
 test('formatQty abbreviates like the in-game terminal', () => {
   assert.equal(formatQty(null), '?');
@@ -22,4 +22,13 @@ test('iconClass marks icons drawn past the item box', () => {
   // Only the prefix counts, not a matching item name.
   assert.equal(iconClass('craft-icon', '2.9.0~ab12cd34/item/a/x~bleed12/y.png'), 'craft-icon');
   assert.equal(iconClass('craft-icon', null), 'craft-icon');
+});
+
+test('formatDuration shows the two largest units', () => {
+  assert.equal(formatDuration(0), '0s');
+  assert.equal(formatDuration(42.4), '42s');
+  assert.equal(formatDuration(252), '4m 12s');
+  assert.equal(formatDuration(3 * 3600 + 5 * 60 + 9), '3h 5m');
+  assert.equal(formatDuration(2 * 86400 + 4 * 3600 + 59), '2d 4h');
+  assert.equal(formatDuration(-5), '0s');
 });

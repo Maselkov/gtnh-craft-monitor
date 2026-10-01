@@ -1,5 +1,5 @@
 // Small shared helpers: event delegation, HTML escaping for generated
-// markup, and quantity formatting.
+// markup, and quantity and time formatting.
 
 // One-time cleanup of the old all-client-side pin/completion keys
 // this page used before pins moved server-side - harmless to leave,
@@ -83,4 +83,25 @@ export function formatQty(n) {
   if (abs >= 1e6) return (n / 1e6).toFixed(2) + 'M';
   if (abs >= 1e3) return (n / 1e3).toFixed(1) + 'k';
   return String(Math.round(n));
+}
+
+// "42s ago", "5m ago", ... for a Unix time in seconds.
+export function formatRelativeTime(seconds) {
+  const diffSec = Math.max(0, Math.round(Date.now() / 1000 - seconds));
+  if (diffSec < 60) return diffSec + 's ago';
+  const diffMin = Math.round(diffSec / 60);
+  if (diffMin < 60) return diffMin + 'm ago';
+  const diffHr = Math.round(diffMin / 60);
+  if (diffHr < 24) return diffHr + 'h ago';
+  return Math.round(diffHr / 24) + 'd ago';
+}
+
+// A length of time in seconds, to its two largest units: "42s",
+// "4m 12s", "3h 5m", "2d 4h".
+export function formatDuration(seconds) {
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 60) return s + 's';
+  if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ${Math.floor(s % 3600 / 60)}m`;
+  return `${Math.floor(s / 86400)}d ${Math.floor(s % 86400 / 3600)}h`;
 }
