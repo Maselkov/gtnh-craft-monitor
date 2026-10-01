@@ -7,6 +7,7 @@ from gcm import auth, charts, commands, config, db, gamedata, inventory, push, s
 from gcm.routes import craft_requests, crafts, network, pages, power, users
 from gcm.routes import gamedata as gamedata_routes
 from gcm.routes import push as push_routes
+from gcm.routes import stock as stock_routes
 
 
 def create_app(data_dir=None, api_key=None):
@@ -38,6 +39,7 @@ def create_app(data_dir=None, api_key=None):
         crafts.bp,
         craft_requests.bp,
         network.bp,
+        stock_routes.bp,
         power.bp,
         users.bp,
         gamedata_routes.bp,

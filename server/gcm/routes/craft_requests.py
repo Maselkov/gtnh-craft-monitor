@@ -12,7 +12,7 @@ import time
 
 from flask import Blueprint, g, jsonify, request
 
-from gcm import auth, commands, icons, inventory, nbt, state, store, tracking
+from gcm import auth, commands, nbt, state, stock, store, tracking
 
 
 bp = Blueprint("craft_requests", __name__)
@@ -44,38 +44,8 @@ def craft_request_post():
     if variant is not None and not isinstance(variant, str):
         return jsonify({"error": "variant must be a string"}), 400
 
-    icon = icons.resolve_icon(mod, internal, damage, label, variant)
-    created_at = time.time()
-
-    req_id = commands.craft_requests.add(
-        {
-            "user_id": user_id,
-            "label": label,
-            "mod": mod,
-            "internal": internal,
-            "damage": damage,
-            "amount": amount,
-            "kind": kind,  # "item" or "fluid" - craft_monitor.lua's request
-            # loop needs this to pick the right getCraftables()
-            # filter shape (confirmed via a real successful
-            # fluid request: items filter by name+damage,
-            # fluids only matched when filtered by label)
-            "icon": icon,
-            # An NBT variant (gcm/inventory.py): craft_monitor.lua picks
-            # the pattern whose output has exactly this NBT (tag, from the
-            # last scan), or, without one, the only pattern with this label.
-            "variant": variant,
-            "variant_name": str(variant_name) if variant_name else None,
-            "tag": inventory.variant_tag(mod, internal, damage, kind, variant),
-            # status: pending -> accepted (removed from list, real pin
-            # takes over) | failed (stays until dismissed)
-            "reason": None,
-            "cpu_name": None,
-            "created_at": created_at,
-        },
-        lambda req_id: store.requests.record_request(
-            req_id, user_id, label, mod, internal, damage, amount, kind, created_at
-        ),
+    req_id = commands.queue_craft(
+        user_id, label, mod, internal, damage, amount, kind, variant, variant_name
     )
     return jsonify({"ok": True, "id": req_id})
 
@@ -88,8 +58,12 @@ def craft_requests_get():
     # is accepted, a real pin is created and it's the pin (existing
     # infrastructure) that represents it from then on, not this
     # ephemeral request record.
+    # A keep-in-stock target's requests are shown with the target
+    # instead (routes/stock.py), not as this user's own.
     mine = commands.craft_requests.select(
-        lambda r: r["user_id"] == user_id and r["status"] in ("pending", "failed")
+        lambda r: r["user_id"] == user_id
+        and r["status"] in ("pending", "failed")
+        and r.get("source") != "auto"
     )
     mine.sort(key=lambda r: r["created_at"], reverse=True)
     for r in mine:
@@ -162,10 +136,14 @@ def craft_request_result(req_id):
     if req is None:
         return jsonify({"error": "unknown request id"}), 404
 
+    auto = req.get("source") == "auto"
+    if auto:
+        stock.auto_request_result(req, status, reason)
     if status == "accepted" and cpu_name:
         tracking.start_requested_job(
             req["user_id"], cpu_name, req.get("label"), req.get("icon"), req["created_at"],
             request_id=req_id if payload.get("watching") is True else None,
+            auto=auto,
         )
 
     return jsonify({"ok": True})

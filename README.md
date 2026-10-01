@@ -28,6 +28,8 @@ Features:
 - **Network** — searchable, sortable list of every item and fluid in the ME
   network, with per-item stock history charts.
 - **Remote crafting** — request or cancel AE2 crafts from the browser.
+- **Stock rules** — get a notification when an item runs low, or have the
+  server queue a craft to keep it stocked.
 - **Accounts** — per-user tokens with viewer, operator, and admin roles.
 
 ## Contents
@@ -143,6 +145,8 @@ Environment variables (set in `.env` for Docker):
 | `VAPID_SUBJECT` | the page's URL | Contact given to push services with each notification: a `mailto:` or `https:` URL. |
 | `GAMEDATA_REPO` | `Maselkov/gtnh-craft-monitor-data` | Repo whose `gtnh-data-*` releases the Game data page offers. |
 | `GAMEDATA_API_URL` | `https://api.github.com` | GitHub API base for that list (for mirrors). |
+| `AUTOCRAFT_KEEP_IDLE_CPUS` | `1` | Keep-in-stock crafts only start while more crafting CPUs than this are idle; see [Stock rules](#stock-rules). |
+| `AUTOCRAFT_RETRY_SECONDS` | `1800` | How long a keep-in-stock target waits after a failed craft before trying again. |
 
 ### Exposing it beyond your LAN
 
@@ -591,6 +595,39 @@ To cancel a running job, click **×** on its card in the Crafts tab.
 
 Fluids can be requested too.
 
+### Stock rules
+
+Set them in an item's popup on the Network tab. Every rule is checked after
+each network scan.
+
+- **Alert me below N** — any signed-in user. You get one notification when the
+  item drops below N, and another only after it has been back at or above N.
+  Alerts are your own; other users don't see them.
+- **Keep at least N, refill to M** — operators and admins, craftable items
+  only. When the item drops below N, the server requests a craft of
+  (M − current) and AE2 plans it like any other request. There's one target
+  per item for the whole base.
+
+A target holds off while a craft for it is already under way: its own request
+waiting on the game, a CPU busy making the item, or a job that finished making
+it during the scan. It only starts a craft while more than
+`AUTOCRAFT_KEEP_IDLE_CPUS` crafting CPUs are idle, so some stay free for
+requests made by hand. When CPUs are short, the emptiest items go first. If a
+craft fails (usually missing ingredients), the target waits
+`AUTOCRAFT_RETRY_SECONDS` before asking again, and anyone with an alert on
+that item is notified.
+
+Auto-crafts aren't pinned for anyone. They show with an **Auto** badge on their
+CPU card, and as "Auto request" in an admin's view of the user who last saved
+the target.
+
+When any rules exist, a **Stock rules** list sits above the Network tab's
+item grid. It shows each rule with the item's current amount and status
+(ok, low, craft requested, crafting, waiting for a free CPU, craft failed).
+Click a row to open that item. Grid cells with a rule carry a 🔔 or ♻ badge,
+tinted red while low, and the item's chart draws each threshold as a dashed
+line.
+
 ## Limitations
 
 - Crafting status is only as fresh as `POLL_SECONDS` (5 s by default) plus the
@@ -598,6 +635,9 @@ Fluids can be requested too.
   the game.
 - Progress is based on item counts, not on crafting time. A job with one slow
   expensive item and 63 cheap ones shows as nearly done once the 63 are made.
+- Stock rules only react to network scans, every `SCAN_INTERVAL_SECONDS`
+  (10 min by default). AE2 picks the CPU for each craft itself, so the idle-CPU
+  limit is checked when a craft is requested, not enforced while it runs.
 - With `allowInternet` disabled on the Minecraft server, nothing works. The
   only alternative is an in-game display.
 

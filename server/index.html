@@ -98,6 +98,10 @@
   <div id="networkTab" style="display:none;">
     <div class="sub" id="networkSourceLine">Waiting for data&hellip;</div>
     <div id="craftRequestsSection"></div>
+    <details class="stock-rules" id="stockRules" hidden>
+      <summary id="stockRulesSummary">Stock rules</summary>
+      <div id="stockRulesList" class="craft-history-list"></div>
+    </details>
     <div class="network-head">
       <div class="network-search-wrap">
         <input type="text" id="networkSearch" class="network-search" placeholder="Search items&hellip;" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off">
@@ -182,6 +186,24 @@
         <canvas id="itemHistoryChart"></canvas>
       </div>
       <div class="empty" id="itemHistoryEmpty" style="display:none;">No history yet for this item.</div>
+      <div id="stockPanel" class="stock-panel" hidden>
+        <div class="stock-panel-row" id="stockAlertRow">
+          <label class="stock-panel-label" for="stockAlertBelow">&#128276; Alert me below</label>
+          <input id="stockAlertBelow" class="modal-amount-input stock-input" type="text" inputmode="text" placeholder="e.g. 10k" spellcheck="false" autocomplete="off">
+          <button class="modal-btn secondary" data-action="stock-save-alert">Save</button>
+          <button class="modal-btn secondary" id="stockAlertDelete" data-action="stock-delete-alert" hidden>Remove</button>
+        </div>
+        <div class="stock-panel-row" id="stockTargetRow">
+          <label class="stock-panel-label" for="stockKeep">&#9851; Keep at least</label>
+          <input id="stockKeep" class="modal-amount-input stock-input" type="text" inputmode="text" placeholder="e.g. 10k" spellcheck="false" autocomplete="off">
+          <label class="stock-panel-label" for="stockRefill">refill to</label>
+          <input id="stockRefill" class="modal-amount-input stock-input" type="text" inputmode="text" placeholder="e.g. 20k" spellcheck="false" autocomplete="off">
+          <button class="modal-btn secondary" data-action="stock-save-target">Save</button>
+          <button class="modal-btn secondary" id="stockTargetDelete" data-action="stock-delete-target" hidden>Remove</button>
+        </div>
+        <div id="stockTargetNote" class="modal-note stock-panel-note" hidden></div>
+        <div id="stockError" class="modal-error" hidden></div>
+      </div>
       <button class="modal-btn primary history-craft-btn" id="itemHistoryCraftBtn" style="display:none;" data-action="craft-from-history">Request Craft</button>
     </div>
   </div>

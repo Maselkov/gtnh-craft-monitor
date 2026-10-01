@@ -8,4 +8,4 @@ must be atomic across several statements is one function here, not a
 sequence of calls. The exceptions are a few token helpers in users.py
 that take a `conn` to join a caller's transaction."""
 
-from gcm.store import crafts, items, power, push, requests, users  # noqa: F401
+from gcm.store import crafts, items, power, push, requests, stock, users  # noqa: F401

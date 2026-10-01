@@ -423,6 +423,10 @@ function renderCard(job) {
         ? `${job.final_output_icon ? `<img class="${iconClass('craft-icon', job.final_output_icon)}" src="${iconUrl(job.final_output_icon)}" alt="" loading="lazy" data-remove-on-error>` : ''}<span class="item-history-link" data-mod="${escapeHtml(job.final_output_mod || '')}" data-internal="${escapeHtml(job.final_output_internal || '')}" data-damage="${job.final_output_damage != null ? job.final_output_damage : ''}" data-name="${escapeHtml(job.final_output)}" data-icon="${escapeHtml(job.final_output_icon || '')}">${escapeHtml(job.final_output)}</span>`
         : `<span class="craft-title-muted">Crafting job (no monitor tile)</span>`)
     : `<span class="craft-title-muted">Idle</span>`;
+  // Started by a keep-in-stock target (stock.js), not by anyone.
+  const autoBadge = job.busy && job.auto
+    ? '<span class="status-badge auto" title="Started to keep this item in stock">Auto</span>'
+    : '';
 
   const ingredientsBlock = (job.busy && itemCount > 0)
     ? `<button class="ingredients-btn" data-action="open-ingredients" data-cpu="${escapeHtml(job.name)}">Ingredients (${itemCount})</button>`
@@ -443,7 +447,7 @@ function renderCard(job) {
     <div class="card">
       <div class="card-head">
         <div>
-          <div class="craft-title">${title}</div>
+          <div class="craft-title">${title}${autoBadge}</div>
           <div class="cpu-id">CPU ${escapeHtml(job.name || '?')} &middot; storage ${job.storage ?? '?'} &middot; coprocessors ${job.coprocessors ?? '?'}</div>
         </div>
         <div class="head-right">

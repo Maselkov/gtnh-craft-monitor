@@ -8,6 +8,7 @@ import {
   pinnedItemKeys,
   toggleNetworkItemPin,
 } from './network.js';
+import { hideStockPanel, showStockPanel, stockThresholdsFor } from './stock.js';
 import { activeTab, switchTab } from './tabs.js';
 import { delegateActions, formatQty, iconClass, iconUrl, onBackdropClick } from './util.js';
 
@@ -15,6 +16,7 @@ import { delegateActions, formatQty, iconClass, iconUrl, onBackdropClick } from 
 let itemHistoryTarget = null;
 let itemHistoryRange = 'day';
 let itemHistoryChart = null;
+let itemHistoryData = null;  // the last /api/network/history answer, for redrawing
 let pendingItemFromUrl = null;  // set when the page loads (or a back/
                                  // forward nav lands) on /network/item/...
                                  // before the network snapshot has
@@ -206,6 +208,7 @@ export function openItemHistory(it, pushUrl) {
   updateItemHistoryPinButton(it);
 
   document.getElementById('itemHistoryCraftBtn').style.display = (it.isCraftable && isOperator()) ? '' : 'none';
+  showStockPanel(it);
   document.getElementById('itemHistoryModal').style.display = 'flex';
 
   if (pushUrl) {
@@ -219,6 +222,8 @@ export function closeItemHistory(pushUrl) {
   if (pushUrl === undefined) pushUrl = true;
   document.getElementById('itemHistoryModal').style.display = 'none';
   itemHistoryTarget = null;
+  itemHistoryData = null;
+  hideStockPanel();
   if (itemHistoryChart) {
     itemHistoryChart.destroy();
     itemHistoryChart = null;
@@ -303,7 +308,28 @@ export const CHART_TIME_CONFIG = {
                                   // chart point, only visual noise
 };
 
+// Again from the last data, when only the stock rules' lines changed.
+export function redrawItemHistoryChart() {
+  if (itemHistoryTarget && itemHistoryData) renderItemHistoryChart(itemHistoryData);
+}
+
+// A stock rule's threshold, as a flat dashed line across the chart.
+function thresholdDataset(line, axisMin, axisMax, firstX) {
+  const color = line.label === 'Alert below' ? '#ff6b6b' : '#ffb454';
+  return {
+    label: line.label,
+    data: [{ x: axisMin ?? firstX, y: line.value }, { x: axisMax, y: line.value }],
+    borderColor: color,
+    borderDash: [6, 4],
+    borderWidth: 1.5,
+    pointRadius: 0,
+    fill: false,
+    stepped: false,
+  };
+}
+
 function renderItemHistoryChart(data) {
+  itemHistoryData = data;
   const points = data.points || [];
   const emptyEl = document.getElementById('itemHistoryEmpty');
   const canvas = document.getElementById('itemHistoryChart');
@@ -356,9 +382,12 @@ function renderItemHistoryChart(data) {
   // no fixed lower bound by definition, so it's left auto-fitted.
   const axisMin = rangeSeconds ? nowMs - rangeSeconds * 1000 : undefined;
   const axisMax = nowMs;
+  const thresholds = stockThresholdsFor(itemHistoryTarget)
+    .map(line => thresholdDataset(line, axisMin, axisMax, chartPoints[0].x));
 
   if (itemHistoryChart) {
     itemHistoryChart.data.datasets[0].data = chartPoints;
+    itemHistoryChart.data.datasets.splice(1, Infinity, ...thresholds);
     itemHistoryChart.options.scales.x.min = axisMin;
     itemHistoryChart.options.scales.x.max = axisMax;
     itemHistoryChart.update('none');
@@ -389,7 +418,7 @@ function renderItemHistoryChart(data) {
         fill: true,
         pointRadius: 0,
         borderWidth: 2,
-      }],
+      }, ...thresholds],
     },
     options: {
       responsive: true,
@@ -399,6 +428,9 @@ function renderItemHistoryChart(data) {
       plugins: {
         legend: { display: false },
         tooltip: {
+          // Only the item's amount - not the stock rules' flat
+          // threshold lines, which have just two points each.
+          filter: (item) => item.datasetIndex === 0,
           callbacks: {
             label: (item) => 'Quantity: ' + Math.round(item.parsed.y).toLocaleString(),
           },
