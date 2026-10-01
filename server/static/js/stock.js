@@ -8,7 +8,7 @@ import { AUTH_USER, isOperator } from './auth.js';
 import { showToast } from './craft-actions.js';
 import { openItemHistory, redrawItemHistoryChart } from './history.js';
 import { lastNetworkData, networkItemKey, rerenderNetworkList } from './network.js';
-import { delegateActions, escapeHtml, formatQty, formatRelativeTime, iconClass, iconUrl } from './util.js';
+import { BELL_ICON, delegateActions, escapeHtml, formatQty, formatRelativeTime, iconClass, iconUrl, RESTOCK_ICON } from './util.js';
 
 let targets = new Map();  // item key -> target, for the whole base
 let alerts = new Map();   // item key -> this user's alert
@@ -60,7 +60,7 @@ export function stockBadgeFor(it) {
   const alert = alerts.get(key);
   if (!target && !alert) return null;
   return {
-    symbol: target ? '♻' : '🔔',
+    icon: target ? RESTOCK_ICON : BELL_ICON,
     low: Boolean((target && targetIsLow(target)) || (alert && alert.low)),
   };
 }

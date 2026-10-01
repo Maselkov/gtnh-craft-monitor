@@ -624,9 +624,9 @@ the target.
 When any rules exist, a **Stock rules** list sits above the Network tab's
 item grid. It shows each rule with the item's current amount and status
 (ok, low, craft requested, crafting, waiting for a free CPU, craft failed).
-Click a row to open that item. Grid cells with a rule carry a 🔔 or ♻ badge,
-tinted red while low, and the item's chart draws each threshold as a dashed
-line.
+Click a row to open that item. Grid cells with a rule carry a bell (alert) or
+circular-arrows (target) badge, tinted red while low, and the item's chart
+draws each threshold as a dashed line.
 
 ## Limitations
 
