@@ -5,7 +5,7 @@ import { AUTH_USER, isOperator } from './auth.js';
 import { refreshCraftHistory } from './craft-history.js';
 import { openCancelConfirmModal, pendingCancelCpus } from './craft-actions.js';
 import { ingredientCount, openIngredientsModal, refreshIngredientsModal } from './ingredients.js';
-import { delegateActions, escapeHtml, formatRelativeTime, iconClass, iconUrl } from './util.js';
+import { delegateActions, escapeHtml, formatRelativeTime, iconClass, iconUrl, PIN_ICON } from './util.js';
 
 // Toggle-open state of the idle-CPU section, which has to survive the
 // 3s auto-refresh (it rebuilds the DOM from scratch).
@@ -423,9 +423,10 @@ function renderCard(job) {
         ? `${job.final_output_icon ? `<img class="${iconClass('craft-icon', job.final_output_icon)}" src="${iconUrl(job.final_output_icon)}" alt="" loading="lazy" data-remove-on-error>` : ''}<span class="item-history-link" data-mod="${escapeHtml(job.final_output_mod || '')}" data-internal="${escapeHtml(job.final_output_internal || '')}" data-damage="${job.final_output_damage != null ? job.final_output_damage : ''}" data-name="${escapeHtml(job.final_output)}" data-icon="${escapeHtml(job.final_output_icon || '')}">${escapeHtml(job.final_output)}</span>`
         : `<span class="craft-title-muted">Crafting job (no monitor tile)</span>`)
     : `<span class="craft-title-muted">Idle</span>`;
-  // Started by a keep-in-stock target (stock.js), not by anyone.
+  // Busy or idle shows by which section the card is in; a job a
+  // keep-in-stock target (stock.js) started says so next to the CPU.
   const autoBadge = job.busy && job.auto
-    ? '<span class="status-badge auto" title="Started to keep this item in stock">Auto</span>'
+    ? '<span class="badge auto" title="Started to keep this item in stock">AUTO</span>'
     : '';
 
   const ingredientsBlock = (job.busy && itemCount > 0)
@@ -435,25 +436,28 @@ function renderCard(job) {
   const pinTitle = isPinned ? 'Unpin' : (canPin ? 'Pin - notify me when this finishes' : 'Only a busy CPU can be pinned');
   // Pins are per-user, so there is nothing to pin to while signed out.
   const pinBtn = AUTH_USER
-    ? `<button class="pin-btn ${isPinned ? 'pinned' : ''}" ${canPin ? '' : 'disabled'} data-action="toggle-pin" data-cpu="${escapeHtml(job.name)}" title="${pinTitle}">&#128204;</button>`
+    ? `<button class="pin-btn ${isPinned ? 'pinned' : ''}" ${canPin ? '' : 'disabled'} data-action="toggle-pin" data-cpu="${escapeHtml(job.name)}" title="${pinTitle}">${PIN_ICON}</button>`
     : '';
 
   const isCancelPending = pendingCancelCpus.has(job.name);
   const cancelBtn = (job.busy && isOperator())
-    ? `<button class="cancel-btn" ${isCancelPending ? 'disabled' : ''} data-action="cancel-craft" data-cpu="${escapeHtml(job.name)}" title="${isCancelPending ? 'Cancelling…' : 'Cancel this craft'}">${isCancelPending ? '&#8987;' : '&times;'}</button>`
+    ? `<button class="cancel-btn${isCancelPending ? ' pending' : ''}" ${isCancelPending ? 'disabled' : ''} data-action="cancel-craft" data-cpu="${escapeHtml(job.name)}" title="${isCancelPending ? 'Cancelling…' : 'Cancel this craft'}">&times;</button>`
     : '';
 
   return `
     <div class="card">
-      <div class="card-head">
-        <div>
-          <div class="craft-title">${title}${autoBadge}</div>
-          <div class="cpu-id">CPU ${escapeHtml(job.name || '?')} &middot; storage ${job.storage ?? '?'} &middot; coprocessors ${job.coprocessors ?? '?'}</div>
-        </div>
+      <div class="card-top">
+        <span class="card-cpu">CPU ${escapeHtml(job.name || '?')}</span>
+        ${autoBadge}
         <div class="head-right">
           ${pinBtn}
           ${cancelBtn}
-          <div class="badge ${job.busy ? 'busy' : 'idle'}">${job.busy ? 'BUSY' : 'IDLE'}</div>
+        </div>
+      </div>
+      <div class="card-head">
+        <div class="card-head-main">
+          <div class="craft-title">${title}</div>
+          <div class="cpu-id">storage ${job.storage ?? '?'} &middot; coprocessors ${job.coprocessors ?? '?'}</div>
         </div>
       </div>
       ${progressBar}
@@ -475,7 +479,7 @@ function renderCompletedCard(entry) {
   return `
     <div class="card completed-card">
       <div class="card-head">
-        <div>
+        <div class="card-head-main">
           <div class="craft-title">${icon}<span>${title}</span>${statusBadge}</div>
           <div class="cpu-id">Finished ${formatRelativeTime(entry.finishedAt)}</div>
         </div>
@@ -526,7 +530,7 @@ export function render(data) {
 
   const pinnedSection = pinnedJobs.length > 0 ? `
     <section class="group">
-      <div class="group-heading">&#128204; Pinned (${pinnedJobs.length})</div>
+      <div class="group-heading">${PIN_ICON} Pinned (${pinnedJobs.length})</div>
       <div class="grid">${pinnedJobs.map(renderCard).join('')}</div>
     </section>
   ` : '';

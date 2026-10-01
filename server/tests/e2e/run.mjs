@@ -327,7 +327,7 @@ const PAGE_LIB = `
     $$(sel, root).find((el) => el.textContent.trim() === text);
   window.visible = (el) => !!el && el.getClientRects().length > 0
     && getComputedStyle(el).visibility !== 'hidden';
-  window.card = (cpu) => $$('#root .card').find((c) => c.querySelector('.cpu-id')?.textContent.includes('CPU ' + cpu + ' '));
+  window.card = (cpu) => $$('#root .card').find((c) => c.querySelector('.card-cpu')?.textContent === 'CPU ' + cpu);
   window.typeInto = (sel, text) => {
     const el = $(sel);
     el.focus();
@@ -466,7 +466,7 @@ async function main() {
 
   step('pin a CPU, get its completion, acknowledge it', async () => {
     await click(`card('W01').querySelector('.pin-btn')`);
-    await waitFor('pinned', `byText('.group-heading', '📌 Pinned (1)') && card('W01').querySelector('.pin-btn.pinned')`);
+    await waitFor('pinned', `byText('.group-heading', 'Pinned (1)') && card('W01').querySelector('.pin-btn.pinned')`);
     await postCrafts(base, false);
     await waitFor('completion shown', `$('.completed-card')`);
     await click(`$('.completed-card .ack-btn')`);

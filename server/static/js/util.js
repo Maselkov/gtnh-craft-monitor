@@ -29,6 +29,14 @@ export function iconClass(base, path) {
   return /^[^/]*~bleed12\//.test(path || '') ? `${base} icon-bleed` : base;
 }
 
+// A one-colour pushpin in the text colour around it (currentColor),
+// rather than the 📌 emoji, whose own colours ignore the page's.
+export const PIN_ICON = '<svg class="ui-icon" viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true"><g transform="rotate(45 8 8)" fill="currentColor"><rect x="5" y="1" width="6" height="2" rx="0.6"/><path d="M6.2 3h3.6l1 5H5.2z"/><rect x="3.5" y="7.6" width="9" height="1.8" rx="0.9"/><rect x="7.35" y="9" width="1.3" height="6" rx="0.65"/></g></svg>';
+
+// Same idea for stock rules (stock.js): an alert, and a keep-in-stock target.
+export const BELL_ICON = '<svg class="ui-icon" viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true"><path fill="currentColor" d="M8 1.2a1 1 0 0 1 1 1v.7a4.6 4.6 0 0 1 3.6 4.5v3l1.3 1.7a.6.6 0 0 1-.5 1H2.6a.6.6 0 0 1-.5-1l1.3-1.7v-3A4.6 4.6 0 0 1 7 2.9v-.7a1 1 0 0 1 1-1zM6.2 14.3h3.6a1.8 1.8 0 0 1-3.6 0z"/></svg>';
+export const RESTOCK_ICON = '<svg class="ui-icon" viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13.2 7A5.2 5.2 0 0 0 3.7 4.6"/><path d="M3.4 1.9v2.9h2.9"/><path d="M2.8 9a5.2 5.2 0 0 0 9.5 2.4"/><path d="M12.6 14.1v-2.9H9.7"/></g></svg>';
+
 export function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }

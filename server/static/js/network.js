@@ -7,7 +7,7 @@ import { buildSearchHighlightHtml, itemMatchesSearch, parseSearchQuery } from '.
 import { stockBadgeFor } from './stock.js';
 import { activeTab } from './tabs.js';
 import { bindCellTooltip, hideTooltip } from './tooltip.js';
-import { delegateActions, escapeHtml, formatQty, iconClass, iconUrl } from './util.js';
+import { delegateActions, escapeHtml, formatQty, iconClass, iconUrl, PIN_ICON } from './util.js';
 
 // ---------- Network browser ----------
 export let lastNetworkData = null;
@@ -241,9 +241,9 @@ function buildNetworkCellHtml(it, idx) {
     ? `<img class="network-cell-pattern-badge" src="${iconUrl(NETWORK_PATTERN_ICON)}" alt="" loading="lazy" data-remove-on-error>`
     : '';
   const isPinned = pinnedItemKeys.has(networkItemKey(it.mod, it.internal, it.damage, it.kind, it.variant));
-  const pinBadge = isPinned ? `<span class="network-cell-pin-badge">&#128204;</span>` : '';
+  const pinBadge = isPinned ? `<span class="network-cell-pin-badge">${PIN_ICON}</span>` : '';
   const stock = stockBadgeFor(it);
-  const stockBadge = stock ? `<span class="network-cell-stock-badge">${stock.symbol}</span>` : '';
+  const stockBadge = stock ? `<span class="network-cell-stock-badge${stock.low ? ' low' : ''}">${stock.icon}</span>` : '';
   const classes = 'network-cell' + (it.isCraftable ? ' craftable' : '') + (stock && stock.low ? ' stock-low' : '');
   return `<div class="${classes}" data-idx="${idx}">${icon}${qty}${patternBadge}${pinBadge}${stockBadge}</div>`;
 }

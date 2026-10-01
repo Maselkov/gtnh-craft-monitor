@@ -97,6 +97,8 @@ ITEMS = [
     ("Water", "fluid", (50, 80, 230)),
     ("Glass Dust", "dust", (230, 230, 230)),
     ("Iron Ingot", "ingot", (215, 215, 215)),
+    # A real GTNH name, long enough to wrap on a crafting card.
+    ("Exquisite Cerium-doped Lutetium Aluminium Garnet (Ce:LuAG)", "gem", (130, 220, 60)),
 ]
 
 
@@ -369,7 +371,8 @@ BIG_JOB = ("Dangote Distillus", 30)
 # target has something to show.
 FAILS = {"Inconel-625 Plate": "request failed (missing resources?)"}
 SMALL_JOBS = ["Radon Plasma", "Bacterial Sludge", "Glass Dust", "Lapotron Crystal",
-              "Titanium Gear", "Ultimate Circuit"]
+              "Titanium Gear", "Ultimate Circuit",
+              "Exquisite Cerium-doped Lutetium Aluminium Garnet (Ce:LuAG)"]
 
 
 class FakeGame:
