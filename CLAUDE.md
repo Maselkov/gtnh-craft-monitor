@@ -21,7 +21,19 @@ cd server && python -m pytest -q                        # server + dev.py
 node --test 'server/tests/js/*.test.js'                 # from the repo root
 node server/tests/e2e/run.mjs                           # browser, needs Chromium
 for f in server/static/js/*.js; do node --check "$f"; done
+lua5.3 oc/tests/run.lua                                 # from the repo root
 ```
+
+## Testing the OC scripts
+
+`oc/tests/harness/` runs the real `oc/*.lua` scripts on a fake OpenOS
+computer with a virtual clock, a fake ME network (`fake_ae2.lua`) and GT
+machine (`fake_gt.lua`). `oc/tests/*_test.lua` test script logic against
+scripted HTTP; `server/tests/test_oc_scripts.py` runs the scripts against
+the real Flask app, so a payload change on either side shows up there.
+The fakes only know the AE2/GT API as the notes in `craft_monitor.lua`
+describe it, so they can't catch the real API differing from those notes.
+Any Lua 5.3+ runs them (CI uses 5.3, as OpenComputers does).
 
 The e2e suite clicks through the real page, so UI changes usually need
 matching edits in `server/tests/e2e/run.mjs`.
