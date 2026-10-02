@@ -122,6 +122,9 @@ local CONFIG = {
                                   -- doesn't need to be anywhere near as
                                   -- fresh as crafting status, and a scan
                                   -- costs real time (a minute or two)
+  WATCH_INTERVAL_SECONDS = 60,  -- between full scans, how often to check
+                                -- just the items with a stock rule on them
+                                -- (see run_watch); 0 turns it off
   MAX_CONSECUTIVE_ERRORS = 5,
   HTTP_TIMEOUT_SECONDS = 20,  -- see http.lua's read_response_with_timeout -
                               -- bails out of an individual POST if a real,
@@ -657,12 +660,145 @@ local running = false
 -- seconds instead of potentially waiting out the entire interval -
 -- see the comment at this function's call site for why that matters
 -- much more here than in the other two scripts.
+-- How a watched item is matched against what AE2 returns: its id plus
+-- damage, so "gregtech:gt.metaitem.01" damage 11028 isn't confused with
+-- every other material sharing that id. Damage may arrive as a float
+-- from one side and an integer from the other.
+local function watch_key(name, damage)
+  local d = damage and math.tointeger(damage) or damage
+  return tostring(name) .. "|" .. tostring(d)
+end
+
+-- Between full scans: asks the server which items have a stock rule on
+-- them (an alert or a keep-in-stock target), looks up just those, and
+-- reports what it found - so a rule reacts within WATCH_INTERVAL_SECONDS
+-- instead of waiting up to SCAN_INTERVAL_SECONDS for the next full scan.
+--
+-- It's the same getItemsInNetworkById() call a full scan makes, on a
+-- short list. The call takes ids without damage, so one GT material
+-- brings back every stack sharing its id (hundreds, for gt.metaitem.01)
+-- - about one full-scan batch's worth, which a scan already survives.
+-- Only the watched stacks are kept. Returns ok, items-found-or-error.
+local function run_watch(me)
+  local started = computer.uptime()
+  local ok, body = http.request_with_timeout(CONFIG.URL .. "/watch", nil, {
+    ["X-API-Key"] = CONFIG.API_KEY,
+  }, CONFIG.HTTP_TIMEOUT_SECONDS)
+  if not ok then
+    return false, "watch list request failed: " .. tostring(body)
+  end
+  local watch = json_decode(body)
+  if type(watch) ~= "table" or type(watch.items) ~= "table" or type(watch.fluids) ~= "table" then
+    return false, "watch list unreadable: " .. tostring(body)
+  end
+
+  local wanted, ids, seen = {}, {}, {}
+  for _, entry in ipairs(watch.items) do
+    wanted[watch_key(entry.name, entry.damage)] = true
+    if not seen[entry.name] then
+      seen[entry.name] = true
+      ids[#ids + 1] = entry.name
+    end
+  end
+  local wantedFluids = {}
+  for _, name in ipairs(watch.fluids) do wantedFluids[name] = true end
+  if #ids == 0 and #watch.fluids == 0 then
+    return true, 0  -- no rules: nothing to check
+  end
+
+  local found = {}
+  for first = 1, #ids, CONFIG.BATCH_SIZE do
+    local batch = {}
+    for i = first, math.min(first + CONFIG.BATCH_SIZE - 1, #ids) do batch[#batch + 1] = ids[i] end
+    local callStart = computer.uptime()
+    local callOk, result = pcall(me.getItemsInNetworkById, batch)
+    if not callOk then
+      return false, "getItemsInNetworkById() failed: " .. tostring(result)
+    end
+    -- For judging what this costs on a real network: the call blocks
+    -- the computer, and an id shared by many items returns all of them.
+    debug_log(string.format("watch: %d ids -> %d stacks in %.2fs", #batch, #result,
+      computer.uptime() - callStart))
+    for j = 1, #result do
+      local stack = result[j]
+      if wanted[watch_key(stack.name, stack.damage)] then
+        found[#found + 1] = simplify_item(stack)
+      end
+    end
+    result = nil
+    pcall(collectgarbage, "collect")
+  end
+
+  if #watch.fluids > 0 and me.getFluidsInNetwork then
+    local fluidOk, fluids = pcall(me.getFluidsInNetwork)
+    if not fluidOk then
+      return false, "getFluidsInNetwork() failed: " .. tostring(fluids)
+    end
+    for j = 1, #fluids do
+      if wantedFluids[fluids[j].name] then
+        found[#found + 1] = simplify_fluid(fluids[j])
+      end
+    end
+  end
+
+  -- checked: exactly what was looked up, so the server only replaces
+  -- those items - a rule added since /watch answered waits for next time.
+  local sendOk, postOk, reply = pcall(function()
+    return post_json("/levels", json_encode({
+      checked = { items = watch.items, fluids = watch.fluids },
+      items = found,
+      elapsed = computer.uptime() - started,
+    }))
+  end)
+  if not sendOk then
+    return false, "couldn't send levels: " .. tostring(postOk)
+  end
+  if not postOk then
+    return false, "levels POST failed: " .. tostring(reply)
+  end
+  local decoded = json_decode(reply)
+  if decoded and decoded.ok == false then
+    return false, "server refused levels: " .. tostring(decoded.error)
+  end
+  return true, #found
+end
+
 local function sleep_while_running(totalSeconds)
   local checkInterval = 5
   local remaining = totalSeconds
   while remaining > 0 and running do
     os.sleep(math.min(checkInterval, remaining))
     remaining = remaining - checkInterval
+  end
+end
+
+-- The wait between full scans, in sleep_while_running()'s short slices,
+-- checking the watched items every WATCH_INTERVAL_SECONDS on the way. A
+-- failed check is only logged: the next one, or the next full scan,
+-- catches up.
+local function wait_and_watch(me, totalSeconds)
+  local interval = CONFIG.WATCH_INTERVAL_SECONDS or 0
+  if interval <= 0 or interval >= totalSeconds then
+    sleep_while_running(totalSeconds)
+    return
+  end
+  local deadline = computer.uptime() + totalSeconds
+  while running do
+    local untilScan = deadline - computer.uptime()
+    if untilScan <= 0 then return end
+    -- No check right before a full scan: that scan covers the items.
+    if untilScan <= interval then
+      sleep_while_running(untilScan)
+      return
+    end
+    sleep_while_running(interval)
+    if not running then return end
+    local ok, result = run_watch(me)
+    if ok then
+      debug_log("watch: reported " .. tostring(result) .. " watched items")
+    else
+      debug_log("watch: " .. tostring(result))
+    end
   end
 end
 
@@ -722,7 +858,7 @@ local function service_loop()
     -- unnoticeable delay). Sleeping in short increments and re-checking
     -- `running` between each means `rc network_browser stop` takes
     -- effect within a few seconds instead.
-    sleep_while_running(CONFIG.SCAN_INTERVAL_SECONDS)
+    wait_and_watch(me, CONFIG.SCAN_INTERVAL_SECONDS)
   end
   print("[network_browser] Stopped.")
 end

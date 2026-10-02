@@ -37,8 +37,28 @@ def save_snapshot(items):
     NBT variants of one item sharing a key, before keys carried the
     variant. inventory.finish_scan() now merges any stacks that still
     share one, so REPLACE is only a last line of defense."""
+    rows = _snapshot_rows(items)
+    with db.transaction(db.item_history_db) as conn:
+        conn.execute("DELETE FROM network_snapshot")
+        _insert_snapshot_rows(conn, rows)
+
+
+def update_snapshot(removed_keys, items):
+    """Replaces just some of the mirror's rows: deletes removed_keys,
+    then writes items - for a check of a few watched items between full
+    scans (inventory.apply_levels()), where rewriting every row would be
+    thousands of writes for a handful of changes."""
+    rows = _snapshot_rows(items)
+    with db.transaction(db.item_history_db) as conn:
+        conn.executemany(
+            "DELETE FROM network_snapshot WHERE item_key = ?", [(key,) for key in removed_keys]
+        )
+        _insert_snapshot_rows(conn, rows)
+
+
+def _snapshot_rows(items):
     now = time.time()
-    rows = [
+    return [
         (
             key_of(it),
             it.get("mod"),
@@ -54,16 +74,17 @@ def save_snapshot(items):
         )
         for it in items
     ]
-    with db.transaction(db.item_history_db) as conn:
-        conn.execute("DELETE FROM network_snapshot")
-        if rows:
-            conn.executemany(
-                "INSERT OR REPLACE INTO network_snapshot "
-                "(item_key, mod, internal, damage, kind, name, size, is_craftable, updated_at, "
-                "variant, variant_name) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                rows,
-            )
+
+
+def _insert_snapshot_rows(conn, rows):
+    if rows:
+        conn.executemany(
+            "INSERT OR REPLACE INTO network_snapshot "
+            "(item_key, mod, internal, damage, kind, name, size, is_craftable, updated_at, "
+            "variant, variant_name) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            rows,
+        )
 
 
 def load_snapshot():

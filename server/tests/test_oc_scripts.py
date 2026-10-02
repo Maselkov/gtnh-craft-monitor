@@ -146,3 +146,37 @@ def test_network_scan_lands(game, client):
     assert data["in_progress"] is False
     sizes = {i["name"]: i["size"] for i in data["items"]}
     assert sizes == {"Thing A": 5, "Thing B": 7, "Molten Neutronium": 144000}
+
+
+def test_watched_items_are_checked_between_scans(game, client):
+    # Two materials sharing one GT id; an alert on one, then the game's
+    # stock of it drops between full scans.
+    game.write_file("/home/item_catalog.txt", "gregtech:gt.metaitem.01\n")
+    game.lua(
+        f"""
+        me = ae2.new(env)
+        gear = {GEAR}
+        gear.size = 50
+        me.items = {{ gear, ae2.stack("gregtech:gt.metaitem.01", "Iron Dust", 900, {{ damage = 2032 }}) }}
+        me.fluids = {{ ae2.fluid("water", "Water", 64000) }}
+        env:start_service("network_browser")
+        """
+    )
+    game.run(30)
+    login_as(client, "alice")
+    for item in (
+        {"label": "Titanium Gear", "mod": "gregtech", "internal": "gt.metaitem.01", "damage": 32600},
+        {"label": "Water", "internal": "water", "kind": "fluid"},
+    ):
+        assert client.post("/api/stock/alert", json={**item, "below": 10}).status_code == 200
+    game.lua("gear.size = 3; me.fluids[1].amount = 5")
+    game.run(60)
+
+    assert all(status == 200 for _, _, status in game.requests)
+    levels = [r for r in game.requests if r[1].endswith("/api/network/levels")]
+    assert levels
+    sizes = {i["name"]: i["size"] for i in client.get("/api/network").get_json()["items"]}
+    assert sizes == {"Titanium Gear": 3, "Iron Dust": 900, "Water": 5}
+    assert {a["label"]: a["low"] for a in client.get("/api/stock/rules").get_json()["alerts"]} == {
+        "Titanium Gear": True, "Water": True,
+    }

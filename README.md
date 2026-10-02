@@ -483,6 +483,7 @@ the output, then remove it again.
 | Setting | Default | Description |
 |---|---|---|
 | `SCAN_INTERVAL_SECONDS` | `600` | Time between full network scans |
+| `WATCH_INTERVAL_SECONDS` | `60` | Between full scans, how often to check just the items with a [stock rule](#stock-rules); `0` turns it off |
 | `CATALOG_PATH` | `/home/item_catalog.txt` | Item catalog to use when the server has no game data |
 | `BATCH_SIZE` | `300` | Item IDs queried per call |
 | `RESULT_CHUNK_SIZE` | `100` | Items sent to the server per POST |
@@ -598,7 +599,9 @@ Fluids can be requested too.
 ### Stock rules
 
 Set them in an item's popup on the Network tab. Every rule is checked after
-each network scan.
+each full network scan, and after a quicker check of just the rules' items
+that `network_browser.lua` makes every `WATCH_INTERVAL_SECONDS` (1 minute by
+default) in between.
 
 - **Alert me below N** — any signed-in user. You get one notification when the
   item drops below N, and another only after it has been back at or above N.
@@ -635,9 +638,9 @@ draws each threshold as a dashed line.
   the game.
 - Progress is based on item counts, not on crafting time. A job with one slow
   expensive item and 63 cheap ones shows as nearly done once the 63 are made.
-- Stock rules only react to network scans, every `SCAN_INTERVAL_SECONDS`
-  (10 min by default). AE2 picks the CPU for each craft itself, so the idle-CPU
-  limit is checked when a craft is requested, not enforced while it runs.
+- Stock rules react within `WATCH_INTERVAL_SECONDS` (1 minute by default).
+  AE2 picks the CPU for each craft itself, so the idle-CPU limit is checked
+  when a craft is requested, not enforced while it runs.
 - With `allowInternet` disabled on the Minecraft server, nothing works. The
   only alternative is an in-game display.
 
@@ -695,6 +698,17 @@ hold far fewer fluid types than item types.
 On the server, a scan is a `start` → `batch` × N → `finish` sequence. Batches
 fill a buffer, and `finish` swaps it in as the live snapshot, so the page
 never shows a half-finished scan.
+
+Between full scans, `network_browser.lua` checks the items that have a
+[stock rule](#stock-rules). It asks the server for them (`GET
+/api/network/watch`), looks them up with the same `getItemsInNetworkById()`
+call on just their IDs, and posts what it found (`POST /api/network/levels`).
+The server replaces only those items in the snapshot, records the changes
+in their history, and checks the rules. The call takes IDs without damage
+values, so a GregTech material brings back every stack sharing its ID
+(hundreds, for `gt.metaitem.01`), roughly one full-scan batch, and the script
+keeps only the watched ones. Each call's size and duration go to the
+script's debug log, `network_browser_debug.log`, in the directory it runs from.
 
 ### Fluid items
 

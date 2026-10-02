@@ -240,6 +240,78 @@ def finish_scan(token, chunks_sent, total_errors):
     return {"ok": True, "item_count": item_count}
 
 
+def _base_identity(item):
+    """What a watched-items check asks AE2 for: an item id and damage
+    (every NBT variant of it included), or a fluid's name."""
+    if item.get("kind") == "fluid":
+        return ("fluid", item.get("internal"))
+    return ("item", item.get("mod"), item.get("internal"), item.get("damage"))
+
+
+def checked_identities(checked):
+    """The {items: [{name, damage}], fluids: [name]} a check reports it
+    asked for, as _base_identity() tuples. Malformed entries are skipped."""
+    out = set()
+    for entry in (checked or {}).get("items") or []:
+        if not isinstance(entry, dict) or not isinstance(entry.get("name"), str):
+            continue
+        mod, _, internal = entry["name"].partition(":")
+        if internal:
+            out.add(("item", mod, internal, entry.get("damage")))
+    for name in (checked or {}).get("fluids") or []:
+        if isinstance(name, str):
+            out.add(("fluid", name))
+    return out
+
+
+def apply_levels(checked, items):
+    """A check of a few items between full scans (network_browser.lua
+    asks for the stock rules' items every minute or so): every snapshot
+    entry with a checked identity is replaced by what the check found -
+    one it didn't find is gone, as in a full scan - and the changes are
+    recorded as history. Everything else keeps its last full scan's
+    numbers. Returns how many entries the check returned, or None while
+    a full scan is under way (it will have newer numbers)."""
+    covered = checked_identities(checked)
+    tags = {}
+    found = []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        tag = assign_variant(it)
+        if _base_identity(it) not in covered:
+            continue  # not something that was asked for
+        if tag:
+            tags[store.items.key_of(it)] = tag
+        found.append(it)
+    found = merge_variants(icons.attach_item_icons(found))
+
+    with state.network_lock:
+        if state.network["in_progress"]:
+            return None
+        old_items = state.network["items"]
+        replaced = [it for it in old_items if _base_identity(it) in covered]
+        state.network["items"] = [it for it in old_items if _base_identity(it) not in covered] + found
+        state.network["item_count"] = len(state.network["items"])
+        replaced_keys = {store.items.key_of(it) for it in replaced}
+        state.network["tags"] = {
+            **{k: v for k, v in state.network["tags"].items() if k not in replaced_keys},
+            **tags,
+        }
+        state.network["levels_at"] = time.time()
+
+    # Best-effort extras, as in finish_scan().
+    try:
+        store.items.record_changes(replaced, found)
+    except Exception as e:
+        log.exception("item history recording failed for a watched-items check: %s", e)
+    try:
+        store.items.update_snapshot(replaced_keys, found)
+    except Exception as e:
+        log.exception("network snapshot update failed for a watched-items check: %s", e)
+    return len(found)
+
+
 def _clear_legacy_variant_history(items):
     base_keys = {
         store.items.item_key(it.get("mod"), it.get("internal"), it.get("damage"), it.get("kind"))

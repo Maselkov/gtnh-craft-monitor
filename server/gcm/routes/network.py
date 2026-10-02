@@ -4,6 +4,7 @@ and item pins. The logic behind them is in gcm/inventory.py."""
 
 import logging
 import secrets
+import time
 
 from flask import abort, Blueprint, g, jsonify, request, Response, send_file
 
@@ -86,6 +87,36 @@ def network_scan_finish():
     return jsonify(result)
 
 
+@bp.route("/api/network/watch", methods=["GET"])
+@auth.api_key_required
+def network_watch_get():
+    """The items network_browser.lua checks between full scans."""
+    return jsonify(stock.watch_list())
+
+
+@bp.route("/api/network/levels", methods=["POST"])
+@auth.api_key_required
+def network_levels_post():
+    """A check of the watched items: {checked: what was asked for, as
+    /watch gave it; items: every stack found, as in a scan batch;
+    elapsed: seconds since the check began}. Like scan/batch, a refusal
+    is in the body, not the status - http.lua never reads the status."""
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict) or not isinstance(payload.get("items"), list):
+        return jsonify({"error": "invalid payload"}), 400
+    found = inventory.apply_levels(payload.get("checked"), payload["items"])
+    if found is None:
+        return jsonify({"ok": False, "error": "scan_in_progress"})
+    elapsed = payload.get("elapsed")
+    if isinstance(elapsed, bool) or not isinstance(elapsed, (int, float)) or elapsed < 0:
+        elapsed = 0
+    try:
+        stock.evaluate_scan(started_at=time.time() - elapsed)
+    except Exception:
+        log.exception("checking stock rules failed (the levels were still recorded)")
+    return jsonify({"ok": True, "found": found})
+
+
 # Changes whenever the served snapshot could: a new process (icons are
 # re-resolved on reload), new game data (icons re-resolved again) or any
 # of the fields below.
@@ -108,6 +139,7 @@ def network_get():
                 state.network["in_progress"],
                 state.network["scan_started_at"],
                 state.network["is_reconstructed"],
+                state.network["levels_at"],
             )
         )
         if request.if_none_match.contains(etag):
