@@ -96,9 +96,10 @@ function renderRow(e) {
   const title = e.internal
     ? `<span class="item-history-link" data-mod="${escapeHtml(e.mod || '')}" data-internal="${escapeHtml(e.internal)}" data-damage="${e.damage != null ? escapeHtml(e.damage) : ''}" data-name="${name}" data-icon="${escapeHtml(e.icon || '')}">${name}</span>`
     : `<span>${name}</span>`;
-  const badge = e.status === 'incomplete'
-    ? `<span class="status-badge incomplete">Incomplete${e.progress != null ? ` &middot; ${escapeHtml(e.progress)}%` : ''}</span>`
-    : '';
+  const badge = (e.auto ? '<span class="status-badge auto" title="Started to keep this item in stock">Auto</span>' : '')
+    + (e.status === 'incomplete'
+      ? `<span class="status-badge incomplete">Incomplete${e.progress != null ? ` &middot; ${escapeHtml(e.progress)}%` : ''}</span>`
+      : '');
   const took = e.startedAt != null ? ` &middot; took ${formatDuration(e.finishedAt - e.startedAt)}` : '';
   const when = new Date(e.finishedAt * 1000).toLocaleString();
   return `

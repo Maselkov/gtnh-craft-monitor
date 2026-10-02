@@ -252,8 +252,8 @@ def test_craft_events_written_before_step_6_list_without_start_or_item(tmp_path)
     conn = sqlite3.connect(path)
     try:
         row = conn.execute(
-            "SELECT cpu_name, started_at, item_mod, item_internal, item_damage FROM craft_events"
+            "SELECT cpu_name, started_at, item_mod, item_internal, item_damage, auto FROM craft_events"
         ).fetchone()
     finally:
         conn.close()
-    assert row == ("W01", None, None, None, None)
+    assert row == ("W01", None, None, None, None, 0)

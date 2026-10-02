@@ -507,6 +507,13 @@ def _app_stock_rules(conn):
     conn.execute("ALTER TABLE craft_request_history ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'")
 
 
+def _app_craft_event_auto(conn):
+    # Whether a keep-in-stock target (gcm/stock.py) started the job, for
+    # the Auto badge in the Crafts tab's history. Rows from before are 0:
+    # nothing recorded which of them were.
+    conn.execute("ALTER TABLE craft_events ADD COLUMN auto INTEGER NOT NULL DEFAULT 0")
+
+
 APP_MIGRATIONS = [
     _app_baseline,
     _app_drop_orphaned_user_rows,
@@ -515,6 +522,7 @@ APP_MIGRATIONS = [
     _app_push_subscriptions,
     _app_craft_event_details,
     _app_stock_rules,
+    _app_craft_event_auto,
 ]
 POWER_MIGRATIONS = [_power_baseline]
 ITEM_HISTORY_MIGRATIONS = [_item_history_baseline, _item_history_variants]

@@ -36,23 +36,24 @@ def drop_cpu_pins(cpu_name):
         conn.execute("DELETE FROM user_pins WHERE cpu_name = ?", (cpu_name,))
 
 
-def record_job_end(cpu_name, label, icon, status, progress, started_at=None, item=None):
+def record_job_end(cpu_name, label, icon, status, progress, started_at=None, item=None, auto=False):
     """Logs a craft_events row for a job that just left cpu_name, gives
     every user who had that CPU pinned a completion for it, and clears
     those pins - all in one transaction. Returns the new completions as
     (user_id, completion_id) pairs.
 
     started_at is None when the job's start wasn't seen; item is the
-    output's {mod, internal, damage}, or None when it wasn't reported."""
+    output's {mod, internal, damage}, or None when it wasn't reported;
+    auto, whether a keep-in-stock target started the job."""
     occurred_at = time.time()
     item = item or {}
     with db.transaction(db.app_db) as conn:
         event_id = conn.execute(
             "INSERT INTO craft_events (cpu_name, item_label, item_icon, status, progress_at_end, occurred_at, "
-            "started_at, item_mod, item_internal, item_damage) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "started_at, item_mod, item_internal, item_damage, auto) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (cpu_name, label, icon, status, progress, occurred_at,
-             started_at, item.get("mod"), item.get("internal"), item.get("damage")),
+             started_at, item.get("mod"), item.get("internal"), item.get("damage"), int(auto)),
         ).lastrowid
         conn.execute(
             "INSERT INTO user_completions (user_id, craft_event_id, created_at) "
@@ -81,7 +82,7 @@ def history(before=None, after=None, limit=50):
     with db.transaction(db.app_db) as conn:
         rows = conn.execute(
             "SELECT id, cpu_name, item_label, item_icon, status, progress_at_end, occurred_at, "
-            "started_at, item_mod, item_internal, item_damage FROM craft_events"
+            "started_at, item_mod, item_internal, item_damage, auto FROM craft_events"
             + (" WHERE " + " AND ".join(where) if where else "")
             + " ORDER BY id DESC LIMIT ?",
             (*params, limit + 1),
@@ -99,6 +100,7 @@ def history(before=None, after=None, limit=50):
             "mod": r[8],
             "internal": r[9],
             "damage": r[10],
+            "auto": bool(r[11]),
         }
         for r in rows[:limit]
     ]

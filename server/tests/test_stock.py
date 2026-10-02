@@ -263,6 +263,17 @@ class TestAutoRequestResults:
         scan(operator, api_headers, scanned(IRON, 40))
         assert len([r for r in auto_requests() if r["status"] == "pending"]) == 1
 
+    def test_marked_auto_in_craft_history(self, operator, api_headers, requested):
+        game_result(operator, api_headers, requested, status="accepted", cpu_name="I0")
+        iron_job = {"final_output": "Iron Ingot", "final_output_mod": "minecraft",
+                    "final_output_internal": "iron_ingot", "final_output_damage": 0}
+        operator.post("/api/crafts", headers=api_headers, json={"source": "me_controller", "jobs": [
+            {"name": "I0", "busy": True, **iron_job}, {"name": "I1", "busy": True, **iron_job}]})
+        operator.post("/api/crafts", headers=api_headers, json={"source": "me_controller", "jobs": [
+            {"name": "I0", "busy": False}, {"name": "I1", "busy": False}]})
+        events = operator.get("/api/crafts/history").get_json()["events"]
+        assert {e["cpu"]: e["auto"] for e in events} == {"I0": True, "I1": False}
+
     def test_listed_as_auto_in_user_history(self, client, operator, api_headers, requested):
         login_as(client, "admin", role="admin")
         events = client.get("/api/admin/users/olive/history").get_json()["events"]

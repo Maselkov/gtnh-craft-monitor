@@ -231,6 +231,10 @@ h1 {
   margin-left: 8px;
   vertical-align: middle;
 }
+.status-badge.auto {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--accent);
+}
 .status-badge.incomplete {
   background: color-mix(in srgb, var(--stale) 20%, transparent);
   color: var(--stale);

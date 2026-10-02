@@ -260,7 +260,8 @@ def backfill_history(days=7):
 
     # Past job ends for the Crafts tab's history, oldest first like the
     # real log. A few were already running when the server first saw
-    # them (no start), a few stopped early.
+    # them (no start), a few stopped early, and some small ones were a
+    # keep-in-stock target's.
     events, ended = [], now - days * 86400
     while True:
         ended += random.uniform(600, 5400)
@@ -273,11 +274,12 @@ def backfill_history(days=7):
         events.append((cpu, name, icons.resolve_icon(it["mod"], it["internal"], it["damage"], name),
                        "incomplete" if stopped else "finished", random.randint(5, 90) if stopped else 100,
                        ended, None if random.random() < 0.05 else ended - took,
-                       it["mod"], it["internal"], it["damage"]))
+                       it["mod"], it["internal"], it["damage"],
+                       int(cpu != "M00" and random.random() < 0.25)))
     with db.transaction(db.app_db) as conn:
         conn.executemany(
             "INSERT INTO craft_events (cpu_name, item_label, item_icon, status, progress_at_end, occurred_at, "
-            "started_at, item_mod, item_internal, item_damage) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", events
+            "started_at, item_mod, item_internal, item_damage, auto) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", events
         )
     return stock
 

@@ -185,6 +185,7 @@ def _record_end_locked(name, entry, label, icon, ended_at):
         entry.get("progress"),
         started_at=entry["started_at"] if entry.get("seen_from_start") else None,
         item=output and {"mod": output[1], "internal": output[2], "damage": output[3]},
+        auto=entry.get("auto", False),
     )
     push.notify_completions(completions, label, icon, status)
 

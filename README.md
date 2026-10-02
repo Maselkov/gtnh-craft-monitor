@@ -621,8 +621,8 @@ craft fails (usually missing ingredients), the target waits
 that item is notified.
 
 Auto-crafts aren't pinned for anyone. They show with an **Auto** badge on their
-CPU card, and as "Auto request" in an admin's view of the user who last saved
-the target.
+CPU card and in Recent crafts, and as "Auto request" in an admin's view of the
+user who last saved the target.
 
 When any rules exist, a **Stock rules** list sits above the Network tab's
 item grid. It shows each rule with the item's current amount and status
