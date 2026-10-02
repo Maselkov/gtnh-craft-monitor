@@ -540,6 +540,7 @@ async function main() {
   step('network tab, search and sort', async () => {
     await click(`$('#tabBtnNetwork')`);
     await waitFor('3 cells', `location.pathname === '/network' && $$('#networkList .network-cell').length === 3`);
+    await waitFor('search focused', `document.activeElement === $('#networkSearch')`);
     await evaluate(`typeInto('#networkSearch', '@gregtech')`);
     await waitFor('filtered to 1', `$$('#networkList .network-cell').length === 1`);
     await waitFor('highlight', `$('#networkSearchHighlight .search-hl-mod')?.textContent === '@gregtech'`);

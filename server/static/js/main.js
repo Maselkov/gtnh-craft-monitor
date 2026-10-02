@@ -25,7 +25,7 @@ import {
 } from './network.js';
 import { setupPowerActions } from './power.js';
 import { setupStockActions } from './stock.js';
-import { pathToTab, setupTabActions, switchTab } from './tabs.js';
+import { focusNetworkSearch, pathToTab, setupTabActions, switchTab } from './tabs.js';
 import { removeLegacyStorageKeys, setupImageErrorRemoval } from './util.js';
 
 // Tells static/boot.js the modules loaded and linked.
@@ -60,6 +60,7 @@ setupCraftRequestActions();
   }
   switchTab(initialTab, false);  // false: don't push a new history entry
                                   // over the URL we just loaded
+  if (location.pathname === '/network') focusNetworkSearch();  // not under an item's popup
 })();
 
 setupNotifications();
