@@ -74,6 +74,10 @@ network = {
     # request made before the first scan after a restart matches by
     # label alone.
     "tags": {},
+    # When a check of just the stock rules' items (inventory.apply_levels())
+    # last changed the snapshot - between full scans, so updated_at (the
+    # last full scan) stays as it was.
+    "levels_at": None,
 }
 
 
@@ -123,6 +127,7 @@ def reset():
             is_reconstructed=False,
             current_scan_token=None,
             chunks_received=0,
+            levels_at=None,
         )
     with tracking_lock:
         cpu_last_busy.clear()

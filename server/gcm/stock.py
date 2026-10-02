@@ -1,11 +1,13 @@
-"""Stock rules, checked after every accepted network scan: per-user
-low-stock alerts (a push when an item drops below a threshold) and the
-base's keep-in-stock targets (an AE2 craft request when it does). The
+"""Stock rules: per-user low-stock alerts (a push when an item drops
+below a threshold) and the base's keep-in-stock targets (an AE2 craft
+request when it does). Checked after every accepted network scan, and
+after network_browser.lua's quicker checks of just the rules' items
+between scans (see watch_list()). The
 rules themselves are stored by gcm/store/stock.py; routes/stock.py
 edits them.
 
-Only a scan's numbers are trusted: the network is scanned every few
-minutes, and between scans nothing here runs.
+Only the game's numbers are trusted: nothing here runs between a full
+scan or a check of the watched items and the next.
 
 Alerts fire once when an item goes below their threshold, then stay
 quiet until it's back at or above it.
@@ -28,14 +30,33 @@ from gcm import charts, commands, config, icons, push, state, store, tracking
 log = logging.getLogger(__name__)
 
 
-def evaluate_scan():
-    """Checks every rule against the scan just accepted."""
+def evaluate_scan(started_at=None):
+    """Checks every rule against the snapshot, just updated by a full
+    scan, or by a check of the rules' own items begun at started_at."""
     with state.network_lock:
         items = state.network["items"]
-        scan_started_at = state.network["scan_started_at"]
+        started_at = started_at or state.network["scan_started_at"]
     sizes = current_sizes(items)
     _check_alerts(sizes)
-    _restock(sizes, scan_started_at or time.time())
+    _restock(sizes, started_at or time.time())
+
+
+def watch_list():
+    """What network_browser.lua checks between full scans: every item
+    with an alert or an enabled target, as {items: [{name: "mod:internal",
+    damage}], fluids: [name]}. getItemsInNetworkById() takes the name;
+    the damage picks out this item from the others sharing that id."""
+    items, fluids = set(), set()
+    rules = [t for t in store.stock.targets() if t["enabled"]] + store.stock.all_alerts()
+    for rule in rules:
+        if rule["kind"] == "fluid":
+            fluids.add(rule["internal"])
+        elif rule["mod"]:
+            items.add((f"{rule['mod']}:{rule['internal']}", rule["damage"]))
+    return {
+        "items": [{"name": name, "damage": damage} for name, damage in sorted(items, key=str)],
+        "fluids": sorted(fluids),
+    }
 
 
 def current_sizes(items):

@@ -50,6 +50,9 @@ from gcm import create_app, db, icons, store  # noqa: E402
 API_KEY = "dev-" + secrets.token_hex(24)
 TICK_SECONDS = 2
 SCAN_EVERY_TICKS = 15
+# Between scans, the stock rules' items are checked this often, as
+# network_browser.lua does every WATCH_INTERVAL_SECONDS.
+WATCH_EVERY_TICKS = 5
 ADMIN_NAME = "Admin"
 
 # ---------------------------------------------------------------- items
@@ -411,6 +414,8 @@ class FakeGame:
         self.call("POST", "/api/power", {"stored": stored, "capacity": CAPACITY, **trend})
         if self.ticks % SCAN_EVERY_TICKS == 0:
             self.scan()
+        elif self.ticks % WATCH_EVERY_TICKS == 0:
+            self.check_watched()
         self.ticks += 1
 
     def answer_requests(self):
@@ -446,19 +451,44 @@ class FakeGame:
                       {"outcome": outcome, "cpu_name": cpu.name})
             cpu.request_id = None
 
+    def _scanned(self, it):
+        """`it` as a scan reports it, or None when AE2 wouldn't list it."""
+        size = self.stock[it["name"]]
+        craftable = it["name"] in SMALL_JOBS or it["shape"] in ("ingot", "plate", "gear")
+        if not size and not craftable:
+            return None
+        entry = {k: it[k] for k in ("name", "mod", "internal", "damage", "kind")}
+        return {**entry, "size": size, "isCraftable": craftable}
+
     def scan(self):
         items = []
         for it in CATALOG:
-            size = max(0, self.stock[it["name"]] + random.randint(-50, 60))
-            self.stock[it["name"]] = size
-            craftable = it["name"] in SMALL_JOBS or it["shape"] in ("ingot", "plate", "gear")
-            if size or craftable:
-                entry = {k: it[k] for k in ("name", "mod", "internal", "damage", "kind")}
-                items.append({**entry, "size": size, "isCraftable": craftable})
+            self.stock[it["name"]] = max(0, self.stock[it["name"]] + random.randint(-50, 60))
+            entry = self._scanned(it)
+            if entry:
+                items.append(entry)
         token = self.call("POST", "/api/network/scan/start").get("scan_token")
         self.call("POST", "/api/network/scan/batch", {"scan_token": token, "items": items})
         self.call("POST", "/api/network/scan/finish",
                   {"scan_token": token, "chunks_sent": 1, "total_errors": 0})
+
+    def check_watched(self):
+        """network_browser.lua's check of the stock rules' items between
+        full scans. Those items get used up a little faster here, so the
+        checks have something to show."""
+        watch = self.call("GET", "/api/network/watch")
+        wanted = {(w["name"], w["damage"]) for w in watch.get("items", [])} | {
+            (f, None) for f in watch.get("fluids", [])}
+        found = []
+        for it in CATALOG:
+            name = f"{it['mod']}:{it['internal']}" if it["mod"] else it["internal"]
+            if (name, it["damage"]) in wanted:
+                self.stock[it["name"]] = max(0, self.stock[it["name"]] - random.randint(0, 120))
+                entry = self._scanned(it)
+                if entry:
+                    found.append(entry)
+        if wanted:
+            self.call("POST", "/api/network/levels", {"checked": watch, "items": found, "elapsed": 0.2})
 
     def run_forever(self):
         while True:

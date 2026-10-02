@@ -147,4 +147,101 @@ test("stop() takes effect within a few seconds of the wait", function()
   t.eq(env:alive(), 0)
 end)
 
+-- ---------------------------------------------------------- watched items
+
+local IRON_WATCH = { items = { { name = "gregtech:gt.metaitem.01", damage = 11028 } }, fluids = { "water" } }
+
+-- Three stacks sharing one id (as GT materials do), one of them watched,
+-- plus an unrelated item and two fluids.
+local function fill_watch(me)
+  me.items = {
+    ae2.stack("gregtech:gt.metaitem.01", "Neutronium Ingot", 5, { damage = 11028 }),
+    ae2.stack("gregtech:gt.metaitem.01", "Iron Dust", 900, { damage = 2032 }),
+    ae2.stack("gregtech:gt.metaitem.01", "Gold Plate", 40, { damage = 17086 }),
+    ae2.stack("testmod:item1", "Item 1", 1),
+  }
+  me.fluids = { ae2.fluid("water", "Water", 64000), ae2.fluid("lava", "Lava", 1000) }
+end
+
+local function levels(env)
+  local out = {}
+  for _, r in ipairs(env:requests_to("^/api/network/levels$", "POST")) do out[#out + 1] = r.json end
+  return out
+end
+
+test("between full scans, checks just the watched items every WATCH_INTERVAL_SECONDS", function()
+  local env, me = setup({ routes = { ["GET /api/network/watch"] = IRON_WATCH } })
+  fill_watch(me)
+  env:start_service("network_browser")
+  env:run({ seconds = 200 })
+
+  local sent = levels(env)
+  t.eq(#sent, 3, "at about 60, 120 and 180s")
+  t.eq(sent[1].checked, IRON_WATCH)
+  t.eq(#sent[1].items, 2, "the watched stack and fluid, not the others sharing the id")
+  t.eq(sent[1].items[1], { name = "Neutronium Ingot", size = 5, mod = "gregtech", internal = "gt.metaitem.01",
+    damage = 11028, isCraftable = false, kind = "item" })
+  t.eq(sent[1].items[2], { name = "Water", size = 64000, internal = "water", isCraftable = false, kind = "fluid" })
+  t.eq(type(sent[1].elapsed), "number")
+  t.eq(#env:requests_to("^/api/network/scan/start$"), 1, "no full scan in between")
+end)
+
+test("a watched item that's gone is reported as not found", function()
+  local env, me = setup({ routes = { ["GET /api/network/watch"] = IRON_WATCH } })
+  env:start_service("network_browser")
+  env:run({ seconds = 70 })
+  t.eq(levels(env)[1].items, {})
+end)
+
+test("with no rules, nothing is looked up or sent", function()
+  local env, me = setup({ routes = { ["GET /api/network/watch"] = { items = {}, fluids = {} } } })
+  fill(me, 3)
+  env:start_service("network_browser")
+  env:run({ seconds = 200 })
+  t.eq(#env:requests_to("^/api/network/watch$"), 3)
+  t.eq(#levels(env), 0)
+  t.eq(me.calls.getItemsInNetworkById, 1, "only the full scan's")
+end)
+
+test("WATCH_INTERVAL_SECONDS = 0 turns the checks off", function()
+  local env, me = setup({ config = { WATCH_INTERVAL_SECONDS = 0 },
+    routes = { ["GET /api/network/watch"] = IRON_WATCH } })
+  fill_watch(me)
+  env:start_service("network_browser")
+  env:run({ seconds = 200 })
+  t.eq(#env:requests_to("^/api/network/watch$"), 0)
+end)
+
+test("no check just before a full scan", function()
+  local env, me = setup({ config = { SCAN_INTERVAL_SECONDS = 100 },
+    routes = { ["GET /api/network/watch"] = IRON_WATCH } })
+  fill_watch(me)
+  env:start_service("network_browser")
+  env:run({ seconds = 250 })
+  -- Scans at about 0, 100 and 200; one check after each of the first two.
+  t.eq(#env:requests_to("^/api/network/scan/start$"), 3)
+  t.eq(#levels(env), 2)
+end)
+
+test("a failed check is skipped, and the next one and the next scan still run", function()
+  local calls = 0
+  local env, me = setup({ config = { SCAN_INTERVAL_SECONDS = 200 }, routes = {
+    ["GET /api/network/watch"] = IRON_WATCH,
+    ["POST /api/network/levels"] = function()
+      calls = calls + 1
+      if calls == 1 then return { connect_error = "connection refused" } end
+      return { ok = true }
+    end,
+  } })
+  fill_watch(me)
+  me:fail("getItemsInNetworkById", "network busy", 2)  -- the full scan's call, then the first check's
+  env:start_service("network_browser")
+  env:run({ seconds = 250 })
+  -- Checks at about 60, 120 and 180s: the first fails looking items
+  -- up, the second posting them, the third gets through.
+  t.eq(#env:requests_to("^/api/network/watch$"), 3)
+  t.eq(calls, 2)
+  t.eq(#env:requests_to("^/api/network/scan/start$"), 2)
+end)
+
 return suite
