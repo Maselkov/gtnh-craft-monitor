@@ -105,6 +105,18 @@ export function setupTabActions() {
   });
 
   delegateActions(document, {
-    'switch-tab': (el) => switchTab(el.dataset.tab),
+    'switch-tab': (el) => {
+      switchTab(el.dataset.tab);
+      if (el.dataset.tab === 'network') focusNetworkSearch();
+    },
   });
+}
+
+// Clicking over to the network tab is almost always to look something
+// up, so the search box takes the keyboard straight away. Not on touch
+// devices, where focusing it would throw the on-screen keyboard over
+// the list before the user has even asked to type.
+export function focusNetworkSearch() {
+  if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return;
+  document.getElementById('networkSearch').focus();
 }
