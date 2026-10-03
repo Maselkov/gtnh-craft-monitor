@@ -125,6 +125,8 @@ local CONFIG = {
   WATCH_INTERVAL_SECONDS = 60,  -- between full scans, how often to check
                                 -- just the items with a stock rule on them
                                 -- (see run_watch); 0 turns it off
+  CRASH_RESTART_SECONDS = 30,  -- after an error kills the scan loop (see
+                               -- service_loop), wait this long and start over
   MAX_CONSECUTIVE_ERRORS = 5,
   HTTP_TIMEOUT_SECONDS = 20,  -- see http.lua's read_response_with_timeout -
                               -- bails out of an individual POST if a real,
@@ -353,10 +355,18 @@ end
 local currentPhase = "idle"
 local scanStartUptime = nil
 
+-- Free memory as "123k", for the debug log: the three scripts share one
+-- computer's memory, and running out shows as an error in whichever one
+-- allocates next - a falling number here is the warning.
+local function free_memory_text()
+  local free = safe_free_memory()
+  return free and string.format("%dk", free // 1024) or "?"
+end
+
 local function set_phase(msg)
   currentPhase = msg
   local elapsed = scanStartUptime and (computer.uptime() - scanStartUptime) or 0
-  debug_log(string.format("t=%.1fs  %s", elapsed, msg))
+  debug_log(string.format("t=%.1fs mem=%s  %s", elapsed, free_memory_text(), msg))
   if CONFIG.SHOW_STATUS then
     term.clear()
     term.setCursor(1, 1)
@@ -717,8 +727,8 @@ local function run_watch(me)
     end
     -- For judging what this costs on a real network: the call blocks
     -- the computer, and an id shared by many items returns all of them.
-    debug_log(string.format("watch: %d ids -> %d stacks in %.2fs", #batch, #result,
-      computer.uptime() - callStart))
+    debug_log(string.format("watch: %d ids -> %d stacks in %.2fs (mem=%s)", #batch, #result,
+      computer.uptime() - callStart, free_memory_text()))
     for j = 1, #result do
       local stack = result[j]
       if wanted[watch_key(stack.name, stack.damage)] then
@@ -802,26 +812,8 @@ local function wait_and_watch(me, totalSeconds)
   end
 end
 
-local function service_loop()
-  local me, kind = find_me_component()
-  if not me then
-    print("[network_browser] No me_controller / me_interface found. Check Adapter placement.")
-    running = false
-    return
-  end
-  if not me.getItemsInNetworkById then
-    print("[network_browser] No getItemsInNetworkById() method on this component.")
-    running = false
-    return
-  end
-  if not component.isAvailable("internet") then
-    print("[network_browser] No Internet Card installed.")
-    running = false
-    return
-  end
-
-  print("[network_browser] Using " .. kind .. ". Scanning every " .. CONFIG.SCAN_INTERVAL_SECONDS .. "s.")
-
+-- Full scans, with the watched-item checks in between, until stopped.
+local function scan_forever(me)
   while running do
     -- No placeholder screen here - run_scan()'s own set_phase() draws
     -- the live "Calling scan/start..." state almost immediately, so a
@@ -859,6 +851,66 @@ local function service_loop()
     -- `running` between each means `rc network_browser stop` takes
     -- effect within a few seconds instead.
     wait_and_watch(me, CONFIG.SCAN_INTERVAL_SECONDS)
+  end
+end
+
+-- Builds the crash report while the error is still on the stack. Memory
+-- may be what ran out, so collect first, and fall back to the bare
+-- message if even the traceback can't be built.
+local function crash_report(err)
+  pcall(collectgarbage, "collect")
+  local traceback = type(debug) == "table" and debug.traceback
+  local ok, trace = pcall(traceback or tostring, tostring(err), 2)
+  return ok and trace or tostring(err)
+end
+
+-- Tells the server, so the page says the scanner crashed instead of a
+-- scan looking stuck. Best effort: the debug log has it either way.
+local function report_crash(report)
+  pcall(function()
+    post_json("/crashed", json_encode({
+      error = report:match("^[^\n]*"),
+      phase = currentPhase,
+      free_memory = safe_free_memory(),
+    }))
+  end)
+end
+
+local function service_loop()
+  local me, kind = find_me_component()
+  if not me then
+    print("[network_browser] No me_controller / me_interface found. Check Adapter placement.")
+    running = false
+    return
+  end
+  if not me.getItemsInNetworkById then
+    print("[network_browser] No getItemsInNetworkById() method on this component.")
+    running = false
+    return
+  end
+  if not component.isAvailable("internet") then
+    print("[network_browser] No Internet Card installed.")
+    running = false
+    return
+  end
+
+  print("[network_browser] Using " .. kind .. ". Scanning every " .. CONFIG.SCAN_INTERVAL_SECONDS .. "s.")
+
+  -- An error that escapes scan_forever() (running out of memory, most
+  -- likely - the three scripts share one computer's) would otherwise kill
+  -- this thread silently: the message goes to a screen other scripts keep
+  -- clearing, `rc network_browser status` still says running, and the
+  -- server is left with a scan that never finishes. Instead it's written
+  -- to the debug log and the server, and scanning starts over.
+  while running do
+    local ok, report = xpcall(scan_forever, crash_report, me)
+    if not ok then
+      debug_log(string.format("CRASHED during \"%s\" (mem=%s): %s",
+        currentPhase, free_memory_text(), tostring(report)))
+      report_crash(tostring(report))
+      scanStartUptime = nil
+      sleep_while_running(CONFIG.CRASH_RESTART_SECONDS)
+    end
   end
   print("[network_browser] Stopped.")
 end

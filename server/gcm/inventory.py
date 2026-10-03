@@ -213,6 +213,7 @@ def finish_scan(token, chunks_sent, total_errors):
         state.network["updated_at"] = time.time()
         state.network["in_progress"] = False
         state.network["is_reconstructed"] = False  # this is a real, live scan now
+        state.network["crash"] = None  # scanning works again
         item_count = state.network["item_count"]
 
     # Outside the lock - a SQLite write shouldn't hold up anyone reading
@@ -238,6 +239,27 @@ def finish_scan(token, chunks_sent, total_errors):
         )
 
     return {"ok": True, "item_count": item_count}
+
+
+def record_crash(error, phase, free_memory):
+    """network_browser.lua's report that an error killed its scan loop
+    (it restarts after a short wait). Any scan under way died with it, so
+    it's no longer in progress; the page shows the report until a scan
+    finishes."""
+    with state.network_lock:
+        state.network_buffer.clear()
+        state.network_tag_buffer.clear()
+        state.network["in_progress"] = False
+        state.network["scan_started_at"] = None
+        state.network["current_scan_token"] = None
+        state.network["crash"] = {
+            "error": str(error or "unknown error")[:500],
+            "phase": str(phase)[:200] if phase else None,
+            "free_memory": free_memory if isinstance(free_memory, (int, float))
+            and not isinstance(free_memory, bool) else None,
+            "at": time.time(),
+        }
+    log.warning("network_browser.lua crashed during %r: %s", phase, error)
 
 
 def _base_identity(item):

@@ -87,6 +87,18 @@ def network_scan_finish():
     return jsonify(result)
 
 
+@bp.route("/api/network/crashed", methods=["POST"])
+@auth.api_key_required
+def network_crashed_post():
+    """network_browser.lua caught an error that killed its scan loop:
+    {error, phase, free_memory}."""
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"error": "invalid payload"}), 400
+    inventory.record_crash(payload.get("error"), payload.get("phase"), payload.get("free_memory"))
+    return jsonify({"ok": True})
+
+
 @bp.route("/api/network/watch", methods=["GET"])
 @auth.api_key_required
 def network_watch_get():
@@ -140,6 +152,7 @@ def network_get():
                 state.network["scan_started_at"],
                 state.network["is_reconstructed"],
                 state.network["levels_at"],
+                (state.network["crash"] or {}).get("at"),
             )
         )
         if request.if_none_match.contains(etag):
@@ -153,6 +166,7 @@ def network_get():
                     "in_progress": state.network["in_progress"],
                     "scan_started_at": state.network["scan_started_at"],
                     "is_reconstructed": state.network["is_reconstructed"],
+                    "crash": state.network["crash"],
                 }
             )
     response.set_etag(etag)

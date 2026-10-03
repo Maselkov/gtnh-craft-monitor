@@ -363,6 +363,8 @@ function Env:_build_globals()
   }) do
     base[name] = _G[name]
   end
+  -- OpenComputers' sandbox keeps a few debug functions, traceback among them.
+  base.debug = { traceback = debug.traceback, getinfo = debug.getinfo }
   base._G = base
   base._VERSION = _VERSION
   base._OSVERSION = "OpenOS 1.8.3 (harness)"

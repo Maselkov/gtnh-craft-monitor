@@ -710,3 +710,38 @@ class TestNetworkRevalidation:
         res = client.get("/api/network", headers={"If-None-Match": etag})
         assert res.status_code == 200
         assert res.get_json()["in_progress"] is True
+
+
+class TestCrashReports:
+    REPORT = {"error": "not enough memory", "phase": "Batch 30: calling getItemsInNetworkById()",
+              "free_memory": 1024}
+
+    def test_needs_the_api_key(self, client):
+        assert client.post("/api/network/crashed", json=self.REPORT).status_code == 401
+
+    def test_ends_the_dead_scan_and_is_shown_until_one_finishes(self, client, api_headers):
+        run_scan(client, api_headers, [[ITEM]])
+        etag = client.get("/api/network").headers["ETag"]
+        client.post("/api/network/scan/start", headers=api_headers)
+        assert client.post("/api/network/crashed", json=self.REPORT, headers=api_headers).get_json() == {"ok": True}
+
+        res = client.get("/api/network", headers={"If-None-Match": etag})
+        assert res.status_code == 200
+        data = res.get_json()
+        assert data["in_progress"] is False
+        assert data["scan_started_at"] is None
+        crash = data["crash"]
+        assert (crash["error"], crash["phase"], crash["free_memory"]) == (
+            "not enough memory", "Batch 30: calling getItemsInNetworkById()", 1024)
+        assert data["items"][0]["size"] == 500, "the last full scan's numbers stay"
+
+        run_scan(client, api_headers, [[ITEM]])
+        assert client.get("/api/network").get_json()["crash"] is None
+
+    def test_odd_values_are_tidied(self, client, api_headers):
+        client.post("/api/network/crashed", headers=api_headers,
+                    json={"error": "x" * 2000, "phase": None, "free_memory": True})
+        crash = client.get("/api/network").get_json()["crash"]
+        assert (len(crash["error"]), crash["phase"], crash["free_memory"]) == (500, None, None)
+        assert client.post("/api/network/crashed", headers=api_headers, data="nope",
+                           content_type="application/json").status_code == 400
