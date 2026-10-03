@@ -244,4 +244,64 @@ test("a failed check is skipped, and the next one and the next scan still run", 
   t.eq(#env:requests_to("^/api/network/scan/start$"), 2)
 end)
 
+-- ------------------------------------------------------------- crashes
+
+-- getItemsInNetworkById() returning junk once raises an error outside
+-- any pcall - standing in for running out of memory, which can strike
+-- wherever the script allocates.
+local function crash_once(me)
+  local real = me.proxy.getItemsInNetworkById
+  local crashed = false
+  me.proxy.getItemsInNetworkById = function(ids)
+    if not crashed then
+      crashed = true
+      return "junk"
+    end
+    return real(ids)
+  end
+end
+
+test("an error that kills the scan is logged, reported, and scanning starts over", function()
+  local env, me = setup({ config = { CRASH_RESTART_SECONDS = 30 } })
+  fill(me, 5)
+  crash_once(me)
+  env:start_service("network_browser")
+  env:run({ seconds = 25 })
+
+  local reports = env:requests_to("^/api/network/crashed$", "POST")
+  t.eq(#reports, 1)
+  t.truthy(reports[1].json.error:find("attempt to index", 1, true), reports[1].json.error)
+  t.eq(reports[1].json.phase, "Batch 1: getItemsInNetworkById() returned (ok=true)")
+  t.eq(type(reports[1].json.free_memory), "number")
+  local log = env:read_file("network_browser_debug.log")
+  t.truthy(log:find("CRASHED during", 1, true), "logged")
+  t.truthy(log:find("stack traceback", 1, true), "with the traceback")
+  t.eq(#env:requests_to("^/api/network/scan/finish$"), 0)
+
+  env:run({ seconds = 60 })
+  t.eq(#env:requests_to("^/api/network/scan/start$"), 2, "started over after the wait")
+  t.eq(#env:requests_to("^/api/network/scan/finish$"), 1)
+  t.eq(env:alive(), 1)
+end)
+
+test("stop() during the wait after a crash takes effect", function()
+  local env, me = setup({ config = { CRASH_RESTART_SECONDS = 300 } })
+  fill(me, 5)
+  crash_once(me)
+  local svc = env:start_service("network_browser")
+  env:run({ seconds = 20 })
+  svc.stop()
+  env:run({ seconds = 6 })
+  t.eq(env:alive(), 0)
+end)
+
+test("the debug log records free memory", function()
+  local env, me = setup()
+  fill(me, 5)
+  env.free_memory = 512 * 1024
+  env:start_service("network_browser")
+  env:run({ seconds = 30 })
+  t.truthy(env:read_file("network_browser_debug.log"):find("mem=512k", 1, true))
+end)
+
 return suite

@@ -537,6 +537,21 @@ async function main() {
     await waitFor('week active', `$('#powerTab [data-range="week"]').classList.contains('active')`);
   });
 
+  step('a network_browser crash shows on the Network tab until a scan finishes', async () => {
+    await game(base, '/api/network/crashed', { error: 'not enough memory', phase: 'Batch 30', free_memory: 2048 });
+    await click(`$('#tabBtnCrafts')`);
+    await click(`$('#tabBtnNetwork')`);
+    await waitFor('crash shown', `$('#networkSourceLine').textContent.includes('network_browser.lua crashed')
+      && $('#networkSourceLine').textContent.includes('2k memory free: not enough memory')
+      && $('#networkSourceLine').classList.contains('stale-warning')`);
+    await scanNetwork(base);
+    await click(`$('#tabBtnCrafts')`);
+    await click(`$('#tabBtnNetwork')`);
+    await waitFor('cleared by the next scan', `!$('#networkSourceLine').textContent.includes('crashed')
+      && !$('#networkSourceLine').classList.contains('stale-warning')`);
+    await click(`$('#tabBtnCrafts')`);
+  });
+
   step('network tab, search and sort', async () => {
     await click(`$('#tabBtnNetwork')`);
     await waitFor('3 cells', `location.pathname === '/network' && $$('#networkList .network-cell').length === 3`);

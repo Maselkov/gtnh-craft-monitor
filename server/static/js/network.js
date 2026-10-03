@@ -7,7 +7,7 @@ import { buildSearchHighlightHtml, itemMatchesSearch, parseSearchQuery } from '.
 import { stockBadgeFor } from './stock.js';
 import { activeTab } from './tabs.js';
 import { bindCellTooltip, hideTooltip } from './tooltip.js';
-import { delegateActions, escapeHtml, formatQty, iconClass, iconUrl, PIN_ICON } from './util.js';
+import { delegateActions, escapeHtml, formatQty, formatRelativeTime, iconClass, iconUrl, PIN_ICON } from './util.js';
 
 // ---------- Network browser ----------
 export let lastNetworkData = null;
@@ -153,12 +153,22 @@ function handleNetworkCellClick(cell, button) {
 // data just sat there looking completely normal.
 const NETWORK_SCAN_STALE_SECONDS = 600;
 
+// network_browser.lua caught an error that killed its scanning and is
+// starting over (the server keeps the report until a scan finishes).
+function crashNote(crash) {
+  if (!crash) return '';
+  const memory = crash.free_memory != null ? `, ${Math.round(crash.free_memory / 1024)}k memory free` : '';
+  return ` — network_browser.lua crashed ${formatRelativeTime(crash.at)}${memory}: ${crash.error}`
+    + ' (it restarts on its own; details in network_browser_debug.log)';
+}
+
 export function tickNetworkSourceLine() {
   const el = document.getElementById('networkSourceLine');
+  const crash = lastNetworkData && lastNetworkData.crash;
   if (!lastNetworkData || !lastNetworkData.updated_at) {
-    el.textContent = lastNetworkData && lastNetworkData.in_progress
-      ? 'First scan in progress...' : 'Waiting for data from network_browser.lua...';
-    el.classList.remove('stale-warning');
+    el.textContent = (lastNetworkData && lastNetworkData.in_progress
+      ? 'First scan in progress...' : 'Waiting for data from network_browser.lua...') + crashNote(crash);
+    el.classList.toggle('stale-warning', Boolean(crash));
     return;
   }
   const age = Math.max(0, Math.round(Date.now() / 1000 - lastNetworkData.updated_at));
@@ -174,6 +184,7 @@ export function tickNetworkSourceLine() {
       progressNote = ' (new scan in progress)';
     }
   }
+  if (crash) stale = true;
   el.classList.toggle('stale-warning', stale);
   // Reconstructed (loaded from the DB after a server restart, not a
   // real scan yet) gets its own wording rather than claiming to be
@@ -186,7 +197,7 @@ export function tickNetworkSourceLine() {
   const baseText = lastNetworkData.is_reconstructed
     ? `${lastNetworkData.item_count} items - showing data from before the last restart (${age}s ago)`
     : `${lastNetworkData.item_count} items - last scan ${age}s ago`;
-  el.textContent = baseText + progressNote;
+  el.textContent = baseText + progressNote + crashNote(crash);
 }
 
 export async function fetchNetwork() {

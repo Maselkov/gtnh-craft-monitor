@@ -180,3 +180,28 @@ def test_watched_items_are_checked_between_scans(game, client):
     assert {a["label"]: a["low"] for a in client.get("/api/stock/rules").get_json()["alerts"]} == {
         "Titanium Gear": True, "Water": True,
     }
+
+
+def test_a_crashed_scan_is_reported_and_scanning_starts_over(game, client):
+    game.write_file("/home/item_catalog.txt", "testmod:a\n")
+    game.lua(
+        """
+        me = ae2.new(env)
+        me.items = { ae2.stack("testmod:a", "Thing A", 5) }
+        local real, crashed = me.proxy.getItemsInNetworkById, false
+        me.proxy.getItemsInNetworkById = function(ids)
+          if not crashed then crashed = true; return "junk" end
+          return real(ids)
+        end
+        env:start_service("network_browser")
+        """
+    )
+    game.run(10)
+    data = client.get("/api/network").get_json()
+    assert data["in_progress"] is False
+    assert "attempt to index" in data["crash"]["error"]
+
+    game.run(60)  # CRASH_RESTART_SECONDS, then a full scan
+    data = client.get("/api/network").get_json()
+    assert data["crash"] is None
+    assert {i["name"]: i["size"] for i in data["items"]} == {"Thing A": 5}

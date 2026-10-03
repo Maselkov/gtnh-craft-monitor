@@ -78,6 +78,9 @@ network = {
     # last changed the snapshot - between full scans, so updated_at (the
     # last full scan) stays as it was.
     "levels_at": None,
+    # network_browser.lua's last crash report ({error, phase, free_memory,
+    # at}), until its next scan finishes - see inventory.record_crash().
+    "crash": None,
 }
 
 
@@ -128,6 +131,7 @@ def reset():
             current_scan_token=None,
             chunks_received=0,
             levels_at=None,
+            crash=None,
         )
     with tracking_lock:
         cpu_last_busy.clear()

@@ -484,6 +484,7 @@ the output, then remove it again.
 |---|---|---|
 | `SCAN_INTERVAL_SECONDS` | `600` | Time between full network scans |
 | `WATCH_INTERVAL_SECONDS` | `60` | Between full scans, how often to check just the items with a [stock rule](#stock-rules); `0` turns it off |
+| `CRASH_RESTART_SECONDS` | `30` | After an error stops scanning, how long to wait before starting over |
 | `CATALOG_PATH` | `/home/item_catalog.txt` | Item catalog to use when the server has no game data |
 | `BATCH_SIZE` | `300` | Item IDs queried per call |
 | `RESULT_CHUNK_SIZE` | `100` | Items sent to the server per POST |
@@ -694,6 +695,17 @@ with loading the full list.
 
 Fluids are read with a single `getFluidsInNetwork()` call, since networks
 hold far fewer fluid types than item types.
+
+If an error escapes the scan loop (most likely the computer running out of
+memory, which the three scripts share), `network_browser.lua` writes it, with
+a stack traceback and free memory, to `network_browser_debug.log` in the
+directory it runs from. It also reports the error to the server, which ends
+the dead scan and shows the error on the Network tab until a scan finishes.
+Then it starts over after `CRASH_RESTART_SECONDS`. Each line of that log
+records free memory (`mem=`), so a slow leak shows as a falling number.
+Without this, the error was printed to a screen that other scripts keep
+clearing, `rc network_browser status` still said running, and the page just
+showed a scan that never finished.
 
 On the server, a scan is a `start` → `batch` × N → `finish` sequence. Batches
 fill a buffer, and `finish` swaps it in as the live snapshot, so the page
