@@ -17,7 +17,8 @@ Basically, it's web AE2 for your base.
    [User accounts](#user-accounts)). Then pick your GTNH version under
    **Settings (⚙) → Game data**.
 3. In game, on a computer with an Internet Card and an Adapter touching the ME
-   Controller:
+   Controller, or linked to it with an MFU (see
+   [Connecting the Adapter](#connecting-the-adapter)):
    ```
    wget -f https://raw.githubusercontent.com/Maselkov/gtnh-craft-monitor/main/oc/gcm.lua /tmp/gcm.lua
    /tmp/gcm.lua install
@@ -355,6 +356,20 @@ The lookup contains four tables:
   `OpenComputers.cfg`. Items that share an id but differ in NBT (seeds with
   different stats, bees of one species) are then listed separately, as AE2
   does. Without it they're only told apart by name.
+
+#### Connecting the Adapter
+
+An Adapter doesn't have to touch the ME Controller. Put an **MFU** in the
+Adapter's upgrade slot instead. Link it by sneak-right-clicking a face of the
+block, and the Adapter then works as if it touched that face, wirelessly. That
+way no controller face is used up. The MFU only reaches **16 blocks**, so keep
+the Adapter within that range of the block. It works the same way for the
+power monitor's Adapter and a GregTech multiblock.
+
+Run OpenComputers cable between the computer and its Adapters. Don't carry
+the connection through AE2's **OpenComputers P2P tunnels**: they're buggy.
+Components go missing from the computer, and the shell fills up with the
+scripts' crashes.
 
 ### Install
 
