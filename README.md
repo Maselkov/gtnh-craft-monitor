@@ -3,30 +3,39 @@
 A web dashboard for a GregTech: New Horizons base. OpenComputers scripts
 running in-game read your AE2 network and GregTech machines and report to a
 small Flask server, which serves a live page you can open from any browser.
+Basically, it's web AE2 for your base.
 
 [demo.webm](https://github.com/user-attachments/assets/8aff745b-3819-45f4-a624-8a0846b361a2)
 
-# TLDR
-Basically Web AE2 for your GregTech: New Horizons base made using OpenComputers.
+## Quick start
 
-Quick setup:
-1. On server: `docker compose up -d`
-2. Log in as admin, set an account and download game data
-3. In game:
+1. On the server, create `.env` with an API key and a first admin token
+   (see [Server setup](#quick-start-docker)), then run
+   `docker compose up -d`.
+2. Open `http://<your-host>:8420/` and sign in with the bootstrap token. The
+   page swaps it for a new admin token to keep (see
+   [User accounts](#user-accounts)). Then pick your GTNH version under
+   **Settings (⚙) → Game data**.
+3. In game, on a computer with an Internet Card and an Adapter touching the ME
+   Controller:
    ```
    wget -f https://raw.githubusercontent.com/Maselkov/gtnh-craft-monitor/main/oc/gcm.lua /tmp/gcm.lua
    /tmp/gcm.lua install
    ```
-4. Configure `~/config.lua` and you're good to go.
+   It asks for the server URL and the `API_KEY` from `.env`, and can start
+   the scripts on every boot.
 
-Features:
+## Features
 
-- **Crafts** — every AE2 crafting CPU with its current job, output item, and
-  progress. Pin a job to get a notification when it finishes.
+- **Crafts** — every AE2 crafting CPU with its current job, output item,
+  progress and a live grid of its ingredients. Pin a job to get a
+  notification when it finishes. Recent crafts lists every job that ended.
 - **Power** — stored EU of a GregTech multiblock (e.g. a Lapotronic Super
-  Capacitor) charted over time.
-- **Network** — searchable, sortable list of every item and fluid in the ME
-  network, with per-item stock history charts.
+  Capacitor) charted over time, with its EU/s and the time until it's full
+  or empty.
+- **Network** — sortable list of every item and fluid in the ME network,
+  with NEI-style search and per-item stock history charts that show how fast
+  an item is running out.
 - **Remote crafting** — request or cancel AE2 crafts from the browser.
 - **Stock rules** — get a notification when an item runs low, or have the
   server queue a craft to keep it stocked.
@@ -137,7 +146,9 @@ Environment variables (set in `.env` for Docker):
 | `SESSION_LIFETIME_SECONDS` | `604800` (7 days) | Browser session length. |
 | `STALE_AFTER_SECONDS` | `30` | How old crafting data can get before the page marks it stale. |
 | `CHART_CACHE_TTL_SECONDS` | `60` | Cache time for chart PNGs. |
+| `CHART_CACHE_MAX_ENTRIES` | `64` | Chart PNGs kept in the cache. |
 | `CHART_RATE_LIMIT_PER_MINUTE` | `30` | Chart PNG requests allowed per client per minute. |
+| `CHART_MAX_TRACKED_CLIENTS` | `4096` | Clients the chart rate limit keeps track of at once. |
 | `PORT` | `8420` | Listening port. |
 | `DATA_DIR` | `server/data` | Where the databases and game data are kept. |
 | `GTNH_VERSION` | empty | Game data version to install at startup; see [Item icons](#item-icons). |
@@ -459,8 +470,11 @@ one clears the terminal on every cycle, so two would flicker.
 | Setting | Default | Description |
 |---|---|---|
 | `POLL_SECONDS` | `5` | How often crafting CPUs are read and posted |
+| `WATCH_SECONDS` | `1` | Between those, how often busy CPUs are checked, so a job's end is noticed sooner; `0` turns it off |
 | `CRAFT_REQUEST_POLL_SECONDS` | `1.5` | How often pending craft requests are checked |
+| `WATCH_REQUEST_OUTCOMES` | `true` | After a requested craft starts, report whether it finished or was cancelled |
 | `COMPONENT` | `nil` (auto) | Force `"me_controller"` or `"me_interface"` |
+| `HTTP_TIMEOUT_SECONDS` | `20` | Give up on a request to the server that stalls this long |
 | `SHOW_STATUS` | `false` | Draw a compact status screen |
 | `VERBOSE` | `false` | Print one line per CPU per cycle, for debugging |
 | `DEBUG_DUMP` | `false` | Print the raw `getCpus()` data once and exit |
@@ -476,6 +490,7 @@ the output, then remove it again.
 |---|---|---|
 | `POLL_SECONDS` | `60` | How often stored EU is read and posted |
 | `COMPONENT_ADDRESS` | `nil` | Pick a specific `gt_machine` if several are connected |
+| `HTTP_TIMEOUT_SECONDS` | `20` | Give up on a request to the server that stalls this long |
 | `SHOW_STATUS` | `false` | Draw a status screen |
 
 **network_browser.lua**
@@ -489,6 +504,8 @@ the output, then remove it again.
 | `BATCH_SIZE` | `300` | Item IDs queried per call |
 | `RESULT_CHUNK_SIZE` | `100` | Items sent to the server per POST |
 | `DELAY_BETWEEN_BATCHES_SECONDS` | `0.1` | Pause between batches |
+| `MAX_CONSECUTIVE_ERRORS` | `5` | Batches in a row that may fail before the scan is abandoned |
+| `HTTP_TIMEOUT_SECONDS` | `20` | Give up on a request to the server that stalls this long |
 | `SHOW_STATUS` | `false` | Draw a status screen |
 
 A full scan takes about 37 batches with the GTNH catalog and runs every
@@ -514,8 +531,12 @@ One card per crafting CPU, updated every 3 seconds. A busy card shows:
 
 - **Output item** — needs an AE2 **Crafting Monitor** block in that CPU's
   multiblock. Without one, the card shows "Crafting job (no monitor tile)".
-- **Progress** — items already produced versus items still needed for the
-  job.
+- **Progress** — each item or fluid type the job still has to make counts
+  as one step, and the bar is the average of how far along each step is.
+  It never moves backwards. It counts steps done, not time left.
+- **Ingredients (N)** — opens a grid of everything the job holds, is crafting
+  and is waiting on, laid out like AE2's crafting status screen. It stays
+  live while open.
 
 Below the cards, **Recent crafts** lists every job that ended on any CPU,
 newest first and grouped by day. Each row shows the CPU, how long the job ran,
@@ -561,6 +582,11 @@ Stored EU over time. The Hour, Day, Week, Month, and Lifetime
 ranges are downsampled on the server to at most 800 points, so long ranges
 stay fast. Readings are kept in `server/data/power.db`.
 
+Above the chart, an arrow shows the machine's net EU/s over the last 5
+seconds (hover it for input and output separately), and a line gives the
+rate over the past hour with the time until the machine is full or empty
+at that rate. The estimate needs at least 10 minutes of readings.
+
 ### Network tab
 
 Every item and fluid in the ME network, with icon, name, and amount (fluids in
@@ -569,11 +595,24 @@ finishes.
 
 - Click an item to open its stock history chart. Each item has its own URL
   (`/network/item/<mod:internal:damage>`) that can be shared; link previews
-  include the current amount and a chart.
+  include the current amount and a chart. Under the amount, the popup shows
+  how fast it changed over the chosen range and, if it's falling, when it
+  runs out at that rate.
 - Pin items to keep them at the top of the list.
 - The last scan is saved to `server/data/item_history.db` and restored when
   the server restarts. Until the next scan completes, the page marks the data
   as restored rather than live.
+
+The search box takes NEI's syntax, matched against item names and ignoring
+case:
+
+| Query | Matches |
+|---|---|
+| `molten neutronium` | names containing both words, in any order |
+| `copper\|tin` | names containing either |
+| `"air shard"` | names containing that exact phrase |
+| `@gregtech` | items from mods whose id contains `gregtech` (the mod id, not its display name) |
+| `-dust` | names without `dust`; `-` also works before `@mod`, `a\|b` and `"phrase"` |
 
 ### Requesting and cancelling crafts
 
@@ -584,6 +623,16 @@ have a small Blank Pattern icon in the corner.
   craftable item, to open the request dialog. This matches AE2's terminal.
 - Left-clicking an item that is in stock does nothing, since the page can't
   extract items.
+
+The amount can be written as `10k`, `1.5M` or `2G`, or as arithmetic such as
+`4*64+10` or `(10k-2k)/2`; the dialog shows the result before you submit. The
+stock rule fields below take the same forms.
+
+Items that differ only in NBT (GregTech turbines of each material, seeds,
+bees) are separate entries in the grid, and requesting one crafts that
+variant. This needs `allowItemStackNBTTags` (see
+[Requirements](#requirements)). Without it, the name has to pick out a single
+pattern, or the request fails rather than crafting the wrong item.
 
 After you submit, a pending card appears. Planning a large craft can take from
 under a second to several minutes, and the request survives closing the tab.
@@ -637,8 +686,9 @@ draws each threshold as a dashed line.
 - Crafting status is only as fresh as `POLL_SECONDS` (5 s by default) plus the
   page's 3 s refresh. Requests and cancellations wait for the next poll from
   the game.
-- Progress is based on item counts, not on crafting time. A job with one slow
-  expensive item and 63 cheap ones shows as nearly done once the 63 are made.
+- Progress counts steps, not crafting time, since recipe durations aren't
+  available. A job with one slow step and 63 quick ones shows as nearly done
+  once the 63 are made.
 - Stock rules react within `WATCH_INTERVAL_SECONDS` (1 minute by default).
   AE2 picks the CPU for each craft itself, so the idle-CPU limit is checked
   when a craft is requested, not enforced while it runs.
@@ -661,9 +711,16 @@ me.getCpus() -> array of { name, storage, coprocessors, busy, cpu }
 
 Each `cpu` object provides `isActive()`, `isBusy()`, `activeItems()`,
 `pendingItems()`, `storedItems()`, `finalOutput()`, and `cancel()`.
-Progress is the summed `size` of `storedItems()` relative to
-`pendingItems()`. `finalOutput()` fails unless the CPU has a Crafting
-Monitor block.
+`finalOutput()` fails unless the CPU has a Crafting Monitor block.
+
+`craft_monitor.lua` only reports these lists; the server works out progress
+(`server/gcm/progress.py`). Every item or fluid type in `pendingItems()` and
+`activeItems()` is a step, measured as its remaining amount against the
+largest amount seen for it during the job, and the job's progress is the
+average over steps. That has no units, so fluids in mB don't swamp items,
+and thousands of cheap items don't outweigh one slow one. `storedItems()` is
+left out because it also holds the raw ingredients pulled at the start, which
+shrink as they're used and would make the bar go backwards.
 
 ### Craft request results
 
@@ -757,35 +814,42 @@ scripts would. `--host 0.0.0.0` makes it reachable from a phone on the
 same network; `--no-icons` runs without game data. It never touches
 `server/data/`.
 
-Run the server tests:
+### Tests
+
+CI runs all of these on every push and pull request; run all of them before
+pushing:
 
 ```bash
-cd server
-pip install -r tests/requirements-test.txt
-pytest
+cd server && python -m pytest -q                        # server + dev.py
+node --test 'server/tests/js/*.test.js'                 # from the repo root
+node server/tests/e2e/run.mjs                           # browser, needs Chromium
+for f in server/static/js/*.js; do node --check "$f"; done
+lua5.3 oc/tests/run.lua                                 # from the repo root
 ```
 
-The tests use a temporary data directory and Flask's test client, so they
-don't need a running server or Docker and never touch `server/data/`. They
-cover the server's HTTP API and helper functions, not the Lua scripts.
+- **Server** (`pip install -r server/tests/requirements-test.txt`): Flask's
+  test client on a temporary data directory, so no running server or Docker
+  and never `server/data/`. `test_oc_scripts.py` also runs the real
+  `oc/*.lua` scripts against the app, so a payload change on either side
+  shows up there; it needs a Lua interpreter (`OC_LUA=/path/to/lua` if it
+  isn't found) and is skipped without one.
+- **Frontend** (Node 24 or newer, no dependencies): the page's pure
+  functions, such as search, amounts and formatting.
+- **Browser** (Python with `server/requirements.txt`, Node 24+, Chrome or
+  Chromium; set `CHROME=/path/to/binary` if it isn't found): starts the real
+  server on seeded data and clicks through the page.
+- **OC scripts** (any Lua 5.3+; OpenComputers uses 5.3): `oc/tests/harness/`
+  runs the real scripts on a fake OpenOS computer with a virtual clock, a fake
+  ME network and a fake GT machine, against scripted HTTP.
+  `lua5.3 oc/tests/run.lua craft` runs only tests whose name contains
+  `craft`, and `OC_HARNESS_ECHO=1` shows what the scripts print. The fakes
+  follow the AE2 and GT APIs as described in [Technical notes](#technical-notes),
+  so they can't catch the real API differing from those.
 
-Run the frontend tests (Node 24 or newer, no dependencies) from the repo root:
-
-```bash
-node --test 'server/tests/js/*.test.js'
-```
-
-Run the browser tests (Python with `server/requirements.txt`, Node 24+,
-and Chrome or Chromium - set `CHROME=/path/to/binary` if it isn't found):
-
-```bash
-node server/tests/e2e/run.mjs
-```
-
-GitHub Actions runs all three test suites, a syntax check of every frontend
-script, a Lua 5.3 syntax check of `oc/*.lua`, and a Docker build on every
-push and pull request (`.github/workflows/ci.yml`).
-Pushing a `v*` tag publishes the image to GHCR (`.github/workflows/publish.yml`).
+CI (`.github/workflows/ci.yml`) also checks `oc/*.lua` with `luac5.3 -p`,
+checks that every file `oc/manifest.lua` lists exists, tests the icon export
+tools and builds the Docker image. Pushing a `v*` tag publishes the image to
+GHCR (`.github/workflows/publish.yml`).
 
 ## License
 
