@@ -148,7 +148,7 @@ def faithful_export(tmp_path, textured_png):
     (tmp_path / "icons_lookup.json").write_text(json.dumps(
         {"by_key": {f"a:i{n}:0": p for n, p in enumerate(paths)}}))
     (tmp_path / "export-report.json").write_text(json.dumps(
-        {"by_keyEntries": 50000, "fluids_by_keyEntries": 2000,
+        {"by_keyEntries": 50000, "fluids_by_keyEntries": 2000, "aspects_by_keyEntries": 60,
          "catalogIds": 9000, "itemsRendered": 100, "itemsFailed": 0}))
     (tmp_path / "data.json").write_text(json.dumps(
         {"textures": {"faithful32": {"default_fallbacks": 0}}}))
@@ -325,3 +325,9 @@ def test_animation_that_only_changes_alpha_keeps_its_frames(tmp_path):
     assert image.n_frames == 3
     image.seek(1)
     assert image.convert("RGBA").getpixel((1, 1)) == (0, 0, 0, 255)
+
+
+def test_lookup_paths_include_aspects(tmp_path):
+    (tmp_path / "lookup.json").write_text(json.dumps(
+        {"by_key": {"a:b:0": "item/a/b~0.png"}, "aspects_by_key": {"ordo": "aspect/ordo.png"}}))
+    assert export.lookup_paths(tmp_path / "lookup.json") == {"item/a/b~0.png", "aspect/ordo.png"}

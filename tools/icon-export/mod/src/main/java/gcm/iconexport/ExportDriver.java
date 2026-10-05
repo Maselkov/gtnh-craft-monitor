@@ -68,6 +68,7 @@ public final class ExportDriver {
     private IconRenderer renderer;
     private ExportOutput output;
     private int itemsRendered, itemsBlank, itemsFailed, fluidsRendered, fluidsBlank, fluidsFailed;
+    private int aspectsRendered, aspectsBlank, aspectsFailed;
     private final List<String> blank = new ArrayList<>();
     private final List<String> failed = new ArrayList<>();
     /** Icons that changed between two renders at the same tick; they stay still. */
@@ -215,17 +216,26 @@ public final class ExportDriver {
                 jobs.add(job);
             }
         }
+        for (Map.Entry<String, Object> aspect : Aspects.all().entrySet()) {
+            ExportJob job = ExportJob.forAspect(aspect.getKey(), aspect.getValue());
+            if (paths.add(job.imagePath)) {
+                jobs.add(job);
+            }
+        }
         jobs = applyDebugFilters(jobs);
-        int itemJobs = 0;
+        int itemJobs = 0, aspectJobs = 0;
         for (ExportJob job : jobs) {
             if (job.kind == ExportJob.Kind.ITEM) {
                 itemJobs++;
+            } else if (job.kind == ExportJob.Kind.ASPECT) {
+                aspectJobs++;
             }
         }
         IconExportMod.LOG.info(
-                "Rendering {} item and {} fluid icons at {}px into {}.",
+                "Rendering {} item, {} fluid and {} aspect icons at {}px into {}.",
                 itemJobs,
-                jobs.size() - itemJobs,
+                jobs.size() - itemJobs - aspectJobs,
+                aspectJobs,
                 config.iconSize,
                 config.outDir.getAbsolutePath());
 
@@ -283,26 +293,28 @@ public final class ExportDriver {
                     "Rendered {}/{} ({} blank, {} failed) in {}s.",
                     nextJob,
                     jobs.size(),
-                    itemsBlank + fluidsBlank,
-                    itemsFailed + fluidsFailed,
+                    itemsBlank + fluidsBlank + aspectsBlank,
+                    itemsFailed + fluidsFailed + aspectsFailed,
                     Math.round(seconds));
         }
     }
 
     private void renderOne(ExportJob job) throws Exception {
-        boolean item = job.kind == ExportJob.Kind.ITEM;
+        ExportJob.Kind kind = job.kind;
         BufferedImage image;
         try {
-            image = item ? renderer.renderItem(job.item) : renderer.renderFluid(job.fluid);
+            image = render(job);
         } catch (Throwable t) {
-            if (item) itemsFailed++;
-            else fluidsFailed++;
+            if (kind == ExportJob.Kind.ITEM) itemsFailed++;
+            else if (kind == ExportJob.Kind.FLUID) fluidsFailed++;
+            else aspectsFailed++;
             note(failed, job.imagePath + ": " + t);
             return;
         }
         if (image == null) {
-            if (item) itemsBlank++;
-            else fluidsBlank++;
+            if (kind == ExportJob.Kind.ITEM) itemsBlank++;
+            else if (kind == ExportJob.Kind.FLUID) fluidsBlank++;
+            else aspectsBlank++;
             note(blank, job.imagePath);
             return;
         }
@@ -310,15 +322,26 @@ public final class ExportDriver {
         job.rendered = true;
         job.bleeds = image.getWidth() > config.iconSize;
         job.stillHash = hash(image);
-        if (item) itemsRendered++;
-        else fluidsRendered++;
+        if (kind == ExportJob.Kind.ITEM) itemsRendered++;
+        else if (kind == ExportJob.Kind.FLUID) fluidsRendered++;
+        else aspectsRendered++;
+    }
+
+    private BufferedImage render(ExportJob job) throws Exception {
+        switch (job.kind) {
+            case ITEM:
+                return renderer.renderItem(job.item);
+            case FLUID:
+                return renderer.renderFluid(job.fluid);
+            default:
+                return Aspects.render(job.aspect, config.iconSize);
+        }
     }
 
     /** Renders a job for the animation stages; null if its renderer threw. */
     private BufferedImage renderQuietly(ExportJob job) {
         try {
-            BufferedImage image = job.kind == ExportJob.Kind.ITEM ? renderer.renderItem(job.item)
-                    : renderer.renderFluid(job.fluid);
+            BufferedImage image = render(job);
             return image != null ? image : blankImage();
         } catch (Throwable t) {
             return null;
@@ -354,7 +377,8 @@ public final class ExportDriver {
         }
         passJobs = new ArrayList<>();
         for (ExportJob job : jobs) {
-            if (job.rendered && referenced.contains(job.imagePath)) {
+            // Aspects are read from their textures, which don't animate.
+            if (job.rendered && job.kind != ExportJob.Kind.ASPECT && referenced.contains(job.imagePath)) {
                 passJobs.add(job);
             }
         }
@@ -564,6 +588,9 @@ public final class ExportDriver {
         report.put("fluidsRendered", fluidsRendered);
         report.put("fluidsBlank", fluidsBlank);
         report.put("fluidsFailed", fluidsFailed);
+        report.put("aspectsRendered", aspectsRendered);
+        report.put("aspectsBlank", aspectsBlank);
+        report.put("aspectsFailed", aspectsFailed);
         report.put("translucentRenders", translucentRenders);
         Map<String, List<Object[]>> sequences = animationSequences();
         report.put("animatedTextures", clock != null ? clock.spriteCount() : 0);

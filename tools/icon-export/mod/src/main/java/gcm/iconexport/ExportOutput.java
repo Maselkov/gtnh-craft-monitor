@@ -131,11 +131,18 @@ final class ExportOutput {
         Map<String, ExportJob> byKey = new HashMap<>();
         Map<String, ExportJob> byKeyLabel = new HashMap<>();
         Map<String, ExportJob> fluidsByKey = new HashMap<>();
+        Map<String, ExportJob> aspectsByKey = new HashMap<>();
         Map<String, ExportJob> byLabel = new HashMap<>();
         // Items before fluids, as the old script did, so a fluid wins a label tie with an item.
         for (ExportJob.Kind kind : ExportJob.Kind.values()) {
             for (ExportJob job : jobs) {
                 if (job.kind != kind || !job.rendered) {
+                    continue;
+                }
+                if (kind == ExportJob.Kind.ASPECT) {
+                    // Never by label: an aspect's name is also the name of blocks and items made
+                    // of it, and essentia is only ever looked up by its tag.
+                    aspectsByKey.put(job.lookupKey, job);
                     continue;
                 }
                 putPreferringNoNbt(kind == ExportJob.Kind.ITEM ? byKey : fluidsByKey, job.lookupKey, job);
@@ -151,6 +158,7 @@ final class ExportOutput {
         lookup.put("by_key", paths(byKey));
         lookup.put("by_key_label", paths(byKeyLabel));
         lookup.put("fluids_by_key", paths(fluidsByKey));
+        lookup.put("aspects_by_key", paths(aspectsByKey));
         lookup.put("by_label", paths(byLabel));
         // Icons drawn past the item box, and by how much on each side, in 1/16ths of the box:
         // they're that much bigger than the rest, the box in their middle.

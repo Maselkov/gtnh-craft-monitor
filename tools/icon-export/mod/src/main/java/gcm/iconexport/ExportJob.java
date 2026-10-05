@@ -20,21 +20,25 @@ import cpw.mods.fml.common.registry.GameRegistry;
  *
  * <p>Image paths use NESQL-Exporter's scheme exactly ({@code item/<mod>/<name>~<damage>[~<nbt>].png},
  * {@code fluid/<mod>/<name>.png}), so an images.zip from either tool can be swapped for the other
- * and the two can be diffed entry by entry.
+ * and the two can be diffed entry by entry. Essentia, which NESQL didn't export, is
+ * {@code aspect/<tag>.png}.
  */
 final class ExportJob {
 
     enum Kind {
         ITEM,
-        FLUID
+        FLUID,
+        ASPECT
     }
 
     final Kind kind;
     final ItemStack item;
     final FluidStack fluid;
+    /** A Thaumcraft Aspect (see Aspects), for essentia. */
+    final Object aspect;
     /** Path inside images.zip. */
     final String imagePath;
-    /** {@code mod:internal:damage} for items, the bare Forge fluid name for fluids. */
+    /** {@code mod:internal:damage} for items, the bare Forge fluid name for fluids, the tag for aspects. */
     final String lookupKey;
     /** {@code mod:internal} for items (an item_catalog.txt line), null for fluids. */
     final String catalogId;
@@ -50,9 +54,15 @@ final class ExportJob {
 
     private ExportJob(Kind kind, ItemStack item, FluidStack fluid, String imagePath, String lookupKey,
             String catalogId, String label, boolean hasNbt) {
+        this(kind, item, fluid, null, imagePath, lookupKey, catalogId, label, hasNbt);
+    }
+
+    private ExportJob(Kind kind, ItemStack item, FluidStack fluid, Object aspect, String imagePath,
+            String lookupKey, String catalogId, String label, boolean hasNbt) {
         this.kind = kind;
         this.item = item;
         this.fluid = fluid;
+        this.aspect = aspect;
         this.imagePath = imagePath;
         this.lookupKey = lookupKey;
         this.catalogId = catalogId;
@@ -119,6 +129,20 @@ final class ExportJob {
                 name,
                 null,
                 label,
+                false);
+    }
+
+    /** An aspect by its tag ("ordo"), as Thaumcraft and OpenComputers name it. */
+    static ExportJob forAspect(String tag, Object aspect) {
+        return new ExportJob(
+                Kind.ASPECT,
+                null,
+                null,
+                aspect,
+                "aspect/" + sanitize(tag) + ".png",
+                tag,
+                null,
+                Aspects.label(aspect),
                 false);
     }
 
