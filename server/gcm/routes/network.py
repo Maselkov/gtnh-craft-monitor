@@ -346,7 +346,14 @@ def network_plan_get():
     the craft-request dialog: ?mod&internal&damage&kind&variant&amount,
     and optionally choose={item key: pattern id} for steps made with a
     pattern other than the default. {plan: null, reason} when there's
-    nothing to plan from."""
+    nothing to plan from.
+
+    The tree is sent a few levels at a time - a whole endgame plan can be
+    tens of MB. The first answer has two levels below the requested item;
+    a step with more below says how many (`more`), and asking again with
+    path (its child positions from the top, "0.3.1") and the first
+    answer's version gets the next level under it, or {stale: true} if
+    the patterns or stock have changed since."""
     internal = request.args.get("internal")
     if not internal:
         return jsonify({"error": "missing internal"}), 400
@@ -377,12 +384,33 @@ def network_plan_get():
     if patterns_at is None:
         return jsonify({"plan": None, "reason": "No pattern scan yet: connect an ME Interface Terminal "
                         "to the computer running network_browser.lua."})
-    stock_levels, stock_at = inventory.stock_levels()
+    path_raw = request.args.get("path")
+    path = None
+    if path_raw is not None:
+        try:
+            path = [int(p) for p in path_raw.split(".")] if path_raw else []
+        except ValueError:
+            return jsonify({"error": "bad path"}), 400
+    stock_levels, stock_at, stock_version = inventory.stock_levels()
+    version = f"{patterns_at}|{stock_version}"
+    if path is not None and request.args.get("version") != version:
+        return jsonify({"stale": True})
+
     user_id = g.user["id"]
     rules = [(a["key"], a["below"], "below your alert") for a in store.stock.alerts_for_user(user_id)]
     rules += [(t["key"], t["keep_at_least"], "below its keep-at-least target")
               for t in store.stock.targets() if t["enabled"]]
-    result = planner.plan(pattern_list, stock_levels, key, amount, choices, rules)
+    result = planner.cached_plan(pattern_list, stock_levels, stock_version, key, amount, choices, rules)
     if result is None:
         return jsonify({"plan": None, "reason": "None of the network's patterns makes this item."})
-    return jsonify({"plan": result, "patterns_updated_at": patterns_at, "stock_updated_at": stock_at})
+    if path is not None:
+        node = planner.subtree(result["root"], path)
+        if node is None:
+            return jsonify({"stale": True})
+        return jsonify({"node": planner.trim(node, 1)})
+    return jsonify({
+        "plan": {**result, "root": planner.trim(result["root"], 2)},
+        "version": version,
+        "patterns_updated_at": patterns_at,
+        "stock_updated_at": stock_at,
+    })

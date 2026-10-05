@@ -98,14 +98,21 @@ def test_patterns_give_plans_that_show_each_case(game, client):
     login_as(client, "usr_alice")
     assert client.get("/api/network/patterns").get_json()["summary"]["patterns"] == len(dev.PATTERNS)
 
-    def plan(name, amount=1):
+    def ask(name, amount=1, **extra):
         it = dev.BY_NAME[name]
         return client.get("/api/network/plan", query_string={
-            "mod": it["mod"], "internal": it["internal"], "damage": it["damage"], "amount": amount,
-        }).get_json()["plan"]
+            "mod": it["mod"], "internal": it["internal"], "damage": it["damage"], "amount": amount, **extra,
+        }).get_json()
 
-    gear = plan("Inconel-625 Gear", 100000)
-    plate = gear["root"]["children"][0]
+    def plan(name, amount=1):
+        return ask(name, amount)["plan"]
+
+    first = ask("Inconel-625 Gear", 100000)
+    plate = first["plan"]["root"]["children"][0]
     assert [a["provider"] for a in plate["alternatives"]] == ["Bending Machine T4:EV", "Fluid Solidifier {Plate}"]
-    assert "cycle" in json.dumps(gear)  # ingot <- molten <- ingot, once stock runs out
+    # Gear <- plate <- ingot <- molten <- ingot: the cycle is past the first
+    # answer's two levels, so ask for the molten step's own.
+    molten = ask("Inconel-625 Gear", 100000, path="0.0.0", version=first["version"])["node"]
+    assert molten["name"] == "Molten Inconel-625"
+    assert [c["status"] for c in molten["children"]] == ["cycle"]
     assert [m["name"] for m in plan("Ultimate Circuit")["missing"]] == ["Draconium Ingot"]

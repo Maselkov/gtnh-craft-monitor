@@ -1113,6 +1113,9 @@ h1 {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* A haloed icon (.icon-bleed) in the last column reaches past the
+     grid's edge; clipped there rather than scrolling the grid sideways. */
+  overflow-x: hidden;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
   /* max-content, not the default auto: in a height-capped scroll box,
@@ -1197,6 +1200,7 @@ h1 {
   margin: 0;
 }
 .craft-plan-summary {
+  flex-shrink: 0;
   font-size: 12px;
   display: flex;
   flex-direction: column;
@@ -1210,6 +1214,19 @@ h1 {
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 6px;
+}
+.plan-missing-strip.expanded {
+  max-height: 25vh;
+  overflow-y: auto;
+}
+.plan-more {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(128,128,128,0.35);
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
 }
 .plan-missing-label,
 .plan-missing-line,
@@ -1234,6 +1251,59 @@ h1 {
 .plan-warning-line {
   color: var(--busy);
 }
+.craft-plan-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.plan-rules {
+  position: relative;
+}
+.plan-rules[hidden] {
+  display: none;
+}
+.plan-rules-btn {
+  display: inline-block;
+  list-style: none;
+  color: var(--busy);
+  border-color: color-mix(in srgb, var(--busy) 50%, transparent);
+  user-select: none;
+}
+.plan-rules-btn::-webkit-details-marker {
+  display: none;
+}
+.plan-rules-btn::after {
+  content: " \25BE";
+}
+.plan-rules[open] > .plan-rules-btn {
+  background: color-mix(in srgb, var(--busy) 15%, transparent);
+}
+.plan-rules-list {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 10;
+  width: min(340px, calc(100vw - 48px));
+  max-height: 50vh;
+  overflow-y: auto;
+  padding: 8px 10px;
+  background: var(--card);
+  border: 1px solid rgba(128,128,128,0.3);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+  font-size: 12px;
+}
+.plan-rules-head {
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.plan-rules-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 4px 0;
+}
 .plan-meta,
 .craft-plan-foot {
   color: var(--muted);
@@ -1244,6 +1314,7 @@ h1 {
   min-height: 120px;
   max-height: min(55vh, 520px);
   overflow-y: auto;
+  overflow-x: hidden;  /* as .ingredients-grid: haloed icons at the edge */
   border: 1px solid rgba(128,128,128,0.2);
   border-radius: 8px;
   padding: 6px;
@@ -1319,6 +1390,11 @@ span.plan-caret {
 .plan-details {
   color: var(--muted);
   font-size: 11px;
+}
+.plan-loading {
+  color: var(--muted);
+  font-size: 12px;
+  padding: 3px 0 3px 24px;
 }
 .plan-alt {
   margin-top: 3px;

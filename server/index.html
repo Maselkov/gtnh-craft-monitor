@@ -133,7 +133,13 @@
             <button class="range-btn active" data-view="list" data-action="plan-view">List</button>
             <button class="range-btn" data-view="tree" data-action="plan-view">Tree</button>
           </div>
-          <button class="range-btn craft-plan-hide" id="craftPlanHide" data-action="plan-hide-available" aria-pressed="false" hidden>Hide all available</button>
+          <div class="craft-plan-tools">
+            <button class="range-btn craft-plan-hide" id="craftPlanHide" data-action="plan-hide-available" aria-pressed="false" hidden>Hide all available</button>
+            <details id="craftPlanRules" class="plan-rules" hidden>
+              <summary id="craftPlanRulesSummary" class="range-btn plan-rules-btn"></summary>
+              <div id="craftPlanRulesList" class="plan-rules-list"></div>
+            </details>
+          </div>
         </div>
         <div id="craftPlanSummary" class="craft-plan-summary"></div>
         <div id="craftPlanBody" class="craft-plan-body"></div>

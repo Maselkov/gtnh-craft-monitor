@@ -220,7 +220,9 @@ async function scanNetwork(base) {
 
 // ---------------------------------------------------------------- browser
 // Iron Ingot from Iron Dust (the default) or from Water; the dust from
-// Neutronium Ingot, of which there are only 5.
+// Neutronium Ingot, of which there are only 5; more Neutronium from
+// Neutronium Dust, which there is none of - four levels, one more than
+// the plan's first answer holds.
 const pattern = (provider, slot, outputs, inputs) => ({
   provider: { name: provider, x: slot, y: 64, z: 0, dim: 0 }, slot, crafting: false, outputs, inputs,
 });
@@ -231,6 +233,9 @@ const SEEDED_PATTERNS = [
   pattern('Fluid Solidifier', 1, [IRON_INGOT], [{ kind: 'fluid', internal: 'water', name: 'Water', size: 1000 }]),
   pattern('Macerator', 2, [IRON_DUST],
     [{ kind: 'item', mod: 'gregtech', internal: 'gt.metaitem.01', damage: 11028, name: 'Neutronium Ingot', size: 1 }]),
+  pattern('Compressor', 3,
+    [{ kind: 'item', mod: 'gregtech', internal: 'gt.metaitem.01', damage: 11028, name: 'Neutronium Ingot', size: 1 }],
+    [{ kind: 'item', mod: 'gregtech', internal: 'gt.metaitem.01', damage: 2129, name: 'Neutronium Dust', size: 1 }]),
 ];
 
 async function scanPatterns(base) {
@@ -618,14 +623,54 @@ async function main() {
     await waitFor('plan for 1', `visible($('#craftPlan')) && $('#craftPlanSummary').textContent.includes('Everything is in stock')`);
     // List view: every item the plan touches, Neutronium all from stock.
     await waitFor('list cells', `$$('#craftPlanBody .plan-cell').length === 3`);
+    // A stock rule shows only once the plan itself crosses it: 5 Neutronium
+    // in stock, an alert below 3 - fine for 1, broken by 3.
+    const neutronium = { label: 'Neutronium Ingot', mod: 'gregtech', internal: 'gt.metaitem.01', damage: 11028 };
+    await evaluate(`fetch('/api/stock/alert', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(${JSON.stringify({ ...neutronium, below: 3 })}) }).then(r => r.ok)`);
+    await evaluate(`typeInto('#craftRequestAmount', '2')`);
+    await waitFor('2 leaves 3: no rule broken', `$('#craftPlanSummary').textContent.includes('Everything')
+      && $('#craftPlanBody .plan-cell') && $('#craftPlanRules').hidden`);
+    await evaluate(`typeInto('#craftRequestAmount', '3')`);
+    await waitFor('rule dropdown', `!$('#craftPlanRules').hidden && $('#craftPlanRulesSummary').textContent === '1 stock rule'
+      && !$('#craftPlanSummary').textContent.includes('below your alert')`);
+    await click(`$('#craftPlanRulesSummary')`);
+    await waitFor('dropdown open', `$('#craftPlanRules').open && visible($('#craftPlanRulesList'))
+      && $('#craftPlanRulesList').textContent.includes('Neutronium Ingot')
+      && $('#craftPlanRulesList').textContent.includes('5 → 2 left, below your alert (3)')`);
+    await click(`$('#craftPlanSummary')`);
+    await waitFor('closed by a click elsewhere', `!$('#craftPlanRules').open`);
+    await evaluate(`fetch('/api/stock/alert/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(${JSON.stringify(neutronium)}) }).then(r => r.ok)`);
     await evaluate(`typeInto('#craftRequestAmount', '10')`);
-    await waitFor('5 Neutronium short', `$('#craftPlanSummary .plan-missing-strip')?.textContent.includes('Neutronium Ingot')
+    // 5 Neutronium from stock, 5 more from dust there's none of.
+    await waitFor('5 Neutronium Dust short', `$('#craftPlanSummary .plan-missing-strip')?.textContent.includes('Neutronium Dust')
       && $('#craftPlanSummary .plan-chip b').textContent === '5'`);
     await waitFor('missing cell first', `$('#craftPlanBody .plan-cell').classList.contains('missing')`);
+    // A haloed icon (drawn 2.5x its box, see .icon-bleed) in the rightmost
+    // cell mustn't make the list scroll sideways. No game data is
+    // installed yet, so one is put there by hand.
+    await evaluate(`(() => {
+      const cell = $$('#craftPlanBody .plan-cell').sort((a, b) =>
+        b.getBoundingClientRect().right - a.getBoundingClientRect().right)[0];
+      const icon = document.createElement('div');
+      icon.id = 'haloTest';
+      icon.className = 'ingredient-cell-icon icon-bleed';
+      cell.appendChild(icon);
+      return true;
+    })()`);
+    // A horizontal scrollbar would take height inside the box's 1px borders.
+    await waitFor('no sideways scrollbar', `$('#craftPlanBody').offsetHeight - $('#craftPlanBody').clientHeight === 2`);
+    await evaluate(`$('#haloTest').remove(), true`);
 
     await click(`$('#craftPlan [data-view="tree"]')`);
     await waitFor('tree', `$('#craftPlanBody .plan-tree') && $$('#craftPlanBody .plan-node').length === 3
       && $('#craftPlanBody .plan-row').textContent.includes('Furnace')`);
+    // The fourth level wasn't sent: opening the Neutronium step fetches it.
+    await click(`$$('#craftPlanBody [data-action="plan-toggle"]')[2]`);
+    await waitFor('branch fetched', `$$('#craftPlanBody .plan-node').length === 4 && !$('#craftPlanBody .plan-loading')
+      && $$('#craftPlanBody .plan-node')[3].textContent.includes('Neutronium Dust')
+      && $$('#craftPlanBody .plan-node')[3].textContent.includes('missing 5')`);
     // Collapsing survives a new amount.
     await click(`$$('#craftPlanBody [data-action="plan-toggle"]')[1]`);
     await waitFor('collapsed', `$$('#craftPlanBody .plan-node').length === 2`);
