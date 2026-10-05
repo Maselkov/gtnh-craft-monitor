@@ -91,3 +91,21 @@ def test_requested_job_reports_its_outcome(game, client):
     assert free.request_id is None
     statuses = [c["status"] for c in client.get("/api/completions").get_json()["completions"]]
     assert statuses == ["incomplete"]
+
+
+def test_patterns_give_plans_that_show_each_case(game, client):
+    game.tick()
+    login_as(client, "usr_alice")
+    assert client.get("/api/network/patterns").get_json()["summary"]["patterns"] == len(dev.PATTERNS)
+
+    def plan(name, amount=1):
+        it = dev.BY_NAME[name]
+        return client.get("/api/network/plan", query_string={
+            "mod": it["mod"], "internal": it["internal"], "damage": it["damage"], "amount": amount,
+        }).get_json()["plan"]
+
+    gear = plan("Inconel-625 Gear", 100000)
+    plate = gear["root"]["children"][0]
+    assert [a["provider"] for a in plate["alternatives"]] == ["Bending Machine T4:EV", "Fluid Solidifier {Plate}"]
+    assert "cycle" in json.dumps(gear)  # ingot <- molten <- ingot, once stock runs out
+    assert [m["name"] for m in plan("Ultimate Circuit")["missing"]] == ["Draconium Ingot"]

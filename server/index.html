@@ -127,6 +127,19 @@
       <label class="modal-label">Quantity</label>
       <input type="number" id="craftRequestAmount" class="modal-amount-input" value="1" min="1" step="1" spellcheck="false">
       <div id="craftRequestAmountPreview" class="modal-amount-preview" style="display:none;"></div>
+      <div id="craftPlan" class="craft-plan" hidden>
+        <div class="craft-plan-head">
+          <div class="range-buttons craft-plan-views">
+            <button class="range-btn active" data-view="list" data-action="plan-view">List</button>
+            <button class="range-btn" data-view="tree" data-action="plan-view">Tree</button>
+          </div>
+          <button class="range-btn craft-plan-hide" id="craftPlanHide" data-action="plan-hide-available" aria-pressed="false" hidden>Hide all available</button>
+        </div>
+        <div id="craftPlanSummary" class="craft-plan-summary"></div>
+        <div id="craftPlanBody" class="craft-plan-body"></div>
+        <div class="craft-plan-foot">An estimate from your patterns and the last network scan. AE2 may plan differently (substitutions, pattern priorities).</div>
+      </div>
+      <div id="craftPlanNote" class="modal-note craft-plan-note" hidden></div>
       <div id="craftRequestError" class="modal-error" style="display:none;"></div>
       <div class="modal-buttons">
         <button class="modal-btn secondary" data-action="close-craft-request">Cancel</button>

@@ -53,6 +53,7 @@ SCAN_EVERY_TICKS = 15
 # Between scans, the stock rules' items are checked this often, as
 # network_browser.lua does every WATCH_INTERVAL_SECONDS.
 WATCH_EVERY_TICKS = 5
+PATTERN_SCAN_EVERY_TICKS = 900  # half an hour, as patterns rarely change
 ADMIN_NAME = "Admin"
 
 # ---------------------------------------------------------------- items
@@ -126,6 +127,45 @@ def stack(name, size):
     it = BY_NAME[name]
     return {"name": it["name"], "mod": it["mod"], "internal": it["internal"],
             "damage": it["damage"], "size": int(size)}
+
+
+# ------------------------------------------------------------- patterns
+
+# What the fake network's patterns make, for the craft dialog's plan
+# (gcm/planner.py): (provider, crafting?, outputs, inputs), each a list
+# of (name, size). Covers a chain (gear <- plate <- ingot), a step with
+# two patterns (plates), a cycle (ingot <-> molten), an output made in
+# batches (bolts) and an input nothing makes and the network never has.
+PATTERNS = [
+    ("Molecular Assembler", True, [("Inconel-625 Gear", 1)], [("Inconel-625 Plate", 4), ("Steel Bolt", 1)]),
+    ("Bending Machine T4:EV", False, [("Inconel-625 Plate", 1)], [("Inconel-625 Ingot", 1)]),
+    ("Fluid Solidifier {Plate}", False, [("Inconel-625 Plate", 1)], [("Molten Inconel-625", 144)]),
+    ("Fluid Solidifier {Ingot}", False, [("Inconel-625 Ingot", 1)], [("Molten Inconel-625", 144)]),
+    ("Fluid Extractor", False, [("Molten Inconel-625", 144)], [("Inconel-625 Ingot", 1)]),
+    ("Lathe T3:HV", False, [("Steel Bolt", 4)], [("Iron Ingot", 1)]),
+    ("Circuit Assembler", False, [("Ultimate Circuit", 1)],
+     [("Draconium Ingot", 2), ("SMD Capacitor", 4), ("Lapotron Crystal", 1), ("Molten Inconel-625", 288)]),
+    ("Molecular Assembler", True, [("Titanium Gear", 1)], [("Neutronium Plate", 4), ("Iridium Screw", 1)]),
+]
+PATTERN_OUTPUTS = {name for _, _, outputs, _ in PATTERNS for name, _ in outputs}
+# Kept at none, so a plan for the Ultimate Circuit comes up short.
+ALWAYS_EMPTY = {"Draconium Ingot"}
+
+
+def pattern_entry(name, size):
+    """One side of a pattern, as network_browser.lua sends it."""
+    it = BY_NAME[name]
+    return {"kind": it["kind"], "mod": it["mod"], "internal": it["internal"], "damage": it["damage"],
+            "name": name, "size": size}
+
+
+def pattern_scan():
+    return [
+        {"provider": {"name": provider, "x": 10 * slot, "y": 64, "z": 0, "dim": 0}, "slot": slot,
+         "crafting": crafting,
+         "inputs": [pattern_entry(*i) for i in inputs], "outputs": [pattern_entry(*o) for o in outputs]}
+        for slot, (provider, crafting, outputs, inputs) in enumerate(PATTERNS)
+    ]
 
 
 # ---------------------------------------------------------------- icons
@@ -390,6 +430,7 @@ class FakeGame:
             out = random.choice(SMALL_JOBS)
             cpu.start(out, random_ingredients(random.randint(1, 6), out))
         self.stock = stock or {it["name"]: random.randint(0, 5000) for it in CATALOG}
+        self.stock.update(dict.fromkeys(ALWAYS_EMPTY, 0))
         self.ticks = 0
 
     def call(self, method, path, body=None):
@@ -414,6 +455,8 @@ class FakeGame:
                                           "jobs": [cpu.report() for cpu in self.cpus]})
         stored, trend = power_reading(time.time())
         self.call("POST", "/api/power", {"stored": stored, "capacity": CAPACITY, **trend})
+        if self.ticks % PATTERN_SCAN_EVERY_TICKS == 0:
+            self.scan_patterns()
         if self.ticks % SCAN_EVERY_TICKS == 0:
             self.scan()
         elif self.ticks % WATCH_EVERY_TICKS == 0:
@@ -456,7 +499,7 @@ class FakeGame:
     def _scanned(self, it):
         """`it` as a scan reports it, or None when AE2 wouldn't list it."""
         size = self.stock[it["name"]]
-        craftable = it["name"] in SMALL_JOBS or it["shape"] in ("ingot", "plate", "gear")
+        craftable = it["name"] in SMALL_JOBS or it["name"] in PATTERN_OUTPUTS or it["shape"] in ("ingot", "plate", "gear")
         if not size and not craftable:
             return None
         entry = {k: it[k] for k in ("name", "mod", "internal", "damage", "kind")}
@@ -465,13 +508,20 @@ class FakeGame:
     def scan(self):
         items = []
         for it in CATALOG:
-            self.stock[it["name"]] = max(0, self.stock[it["name"]] + random.randint(-50, 60))
+            if it["name"] not in ALWAYS_EMPTY:
+                self.stock[it["name"]] = max(0, self.stock[it["name"]] + random.randint(-50, 60))
             entry = self._scanned(it)
             if entry:
                 items.append(entry)
         token = self.call("POST", "/api/network/scan/start").get("scan_token")
         self.call("POST", "/api/network/scan/batch", {"scan_token": token, "items": items})
         self.call("POST", "/api/network/scan/finish",
+                  {"scan_token": token, "chunks_sent": 1, "total_errors": 0})
+
+    def scan_patterns(self):
+        token = self.call("POST", "/api/network/patterns/start").get("scan_token")
+        self.call("POST", "/api/network/patterns/batch", {"scan_token": token, "patterns": pattern_scan()})
+        self.call("POST", "/api/network/patterns/finish",
                   {"scan_token": token, "chunks_sent": 1, "total_errors": 0})
 
     def check_watched(self):

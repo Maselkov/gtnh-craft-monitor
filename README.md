@@ -651,6 +651,35 @@ The amount can be written as `10k`, `1.5M` or `2G`, or as arithmetic such as
 `4*64+10` or `(10k-2k)/2`; the dialog shows the result before you submit. The
 stock rule fields below take the same forms.
 
+When the network's patterns have been read (see
+[Reading patterns](#reading-patterns)), the dialog also shows the **crafting
+plan** for the amount you've typed, before you submit. Like AE2's own Request
+Craft screen, it has two views:
+
+- **List**: every item the plan touches. Each shows how much is available
+  and what share of it the plan uses, coloured the way the game colours it
+  (red for all of it, then orange, green and blue). Anything missing comes
+  first.
+- **Tree**: the recipes step by step, as a collapsible outline. Each step
+  says how much it needs, how much comes from stock, how much is crafted and
+  on which machine. **Hide all available** hides the steps fully covered by
+  stock. Where several patterns make the same item, pick another one to see
+  that plan instead.
+
+Above both views is everything the plan is short of, and any item the plan
+would take below your low-stock alert or a keep-in-stock target.
+
+The plan is the server's estimate from your patterns and the last network
+scan, worked out the way AE2 plans:
+- The requested item is always crafted in full.
+- Everything below it comes from stock first, and stock is only counted once
+  even when several steps need it.
+- Steps run in whole batches.
+
+AE2 may still differ. It can use ore-dictionary substitutions, and where
+several patterns make an item it picks by priority, which OpenComputers
+doesn't report. The Request button works whatever the plan says.
+
 Items that differ only in NBT (GregTech turbines of each material, seeds,
 bees) are separate entries in the grid, and requesting one crafts that
 variant. This needs `allowItemStackNBTTags` (see
@@ -830,6 +859,9 @@ What it reports, found with `oc/pattern_dump.lua` on a real network:
 - Fluids come either as fluid entries or, in older patterns, as ae2fc
   `fluid_drop` items whose NBT names the fluid. The server turns both into
   fluids. Thaumic essentia comes as an amount with no item ID.
+
+The craft dialog's plan is worked out from these patterns
+(`GET /api/network/plan`, `gcm/planner.py`).
 
 The server keeps the last complete scan, saved across restarts, and serves it
 to signed-in users at `GET /api/network/patterns` (it includes each machine's

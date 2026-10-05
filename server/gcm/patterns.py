@@ -133,6 +133,13 @@ def snapshot():
         }
 
 
+def current():
+    """(the live pattern list, when it was scanned). The list is
+    replaced, never changed in place, by each scan."""
+    with state.patterns_lock:
+        return state.patterns["patterns"], state.patterns["updated_at"]
+
+
 def version():
     """Changes whenever snapshot() could, for an ETag."""
     with state.patterns_lock:
