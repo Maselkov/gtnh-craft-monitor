@@ -8,7 +8,7 @@ import time
 
 from flask import abort, Blueprint, g, jsonify, request, Response, send_file
 
-from gcm import auth, charts, gamedata, icons, inventory, state, stock, store
+from gcm import auth, charts, gamedata, icons, inventory, patterns, state, stock, store
 
 log = logging.getLogger(__name__)
 
@@ -282,3 +282,52 @@ def network_item_pins_unpin():
 
     store.items.unpin(user_id, mod, internal, damage, kind, variant)
     return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------------
+# Pattern scans: network_browser.lua reading every pattern through an
+# ME Interface Terminal (gcm/patterns.py). Same protocol and refusals
+# as the item scan above.
+@bp.route("/api/network/patterns/start", methods=["POST"])
+@auth.api_key_required
+def network_patterns_start():
+    return jsonify({"ok": True, "scan_token": patterns.start_scan()})
+
+
+@bp.route("/api/network/patterns/batch", methods=["POST"])
+@auth.api_key_required
+def network_patterns_batch():
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict) or not isinstance(payload.get("patterns"), list):
+        return jsonify({"error": "invalid payload"}), 400
+    accepted = patterns.add_batch(payload.get("scan_token"), payload["patterns"])
+    if accepted is None:
+        return jsonify({"ok": False, "error": "stale_scan_token"})
+    buffered, chunks_received = accepted
+    return jsonify({"ok": True, "buffered": buffered, "chunks_received": chunks_received})
+
+
+@bp.route("/api/network/patterns/finish", methods=["POST"])
+@auth.api_key_required
+def network_patterns_finish():
+    payload = request.get_json(silent=True) or {}
+    return jsonify(
+        patterns.finish_scan(
+            payload.get("scan_token"), payload.get("chunks_sent"), payload.get("total_errors")
+        )
+    )
+
+
+# Signed-in only, unlike the item list: each pattern says where in the
+# world its machine is.
+@bp.route("/api/network/patterns", methods=["GET"])
+@auth.login_required
+def network_patterns_get():
+    etag = f"{_PROCESS_TAG}-{icons.data_version()}-{patterns.version()}"
+    if request.if_none_match.contains(etag):
+        response = Response(status=304)
+    else:
+        response = jsonify(patterns.snapshot())
+    response.set_etag(etag)
+    response.headers["Cache-Control"] = "private, no-cache"
+    return response

@@ -28,7 +28,7 @@ import threading
 import time
 import urllib.request
 
-from gcm import config, icons, inventory
+from gcm import config, icons, inventory, patterns
 
 TAG_PREFIX = "gtnh-data-"
 # data.json first: it holds the others' sizes and checksums.
@@ -320,6 +320,7 @@ def _select(version, textures):
     _write_selected(version, textures, previous)
     activate()
     inventory.refresh_icons()
+    patterns.refresh_icons()
     _prune()
 
 

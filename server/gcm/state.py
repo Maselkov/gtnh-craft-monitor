@@ -84,6 +84,20 @@ network = {
 }
 
 
+# The network's patterns, from network_browser.lua's pattern scans
+# (gcm/patterns.py): the same start/batch/finish protocol as the item
+# scan, buffered until a scan is known complete. Mirrored into SQLite.
+patterns_lock = threading.Lock()
+pattern_buffer = []
+patterns = {
+    "patterns": [],
+    "updated_at": None,
+    "in_progress": False,
+    "current_scan_token": None,
+    "chunks_received": 0,
+}
+
+
 # In-memory only, deliberately not persisted. After a restart, a CPU
 # whose pinned job finished while the server was down is first seen
 # idle with no prior state; routes/crafts.py drops its pins
@@ -132,6 +146,15 @@ def reset():
             chunks_received=0,
             levels_at=None,
             crash=None,
+        )
+    with patterns_lock:
+        pattern_buffer.clear()
+        patterns.update(
+            patterns=[],
+            updated_at=None,
+            in_progress=False,
+            current_scan_token=None,
+            chunks_received=0,
         )
     with tracking_lock:
         cpu_last_busy.clear()

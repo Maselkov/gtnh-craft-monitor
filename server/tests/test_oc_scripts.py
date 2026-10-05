@@ -6,6 +6,8 @@ can't read. Script logic on its own is tested in oc/tests/*_test.lua."""
 import pytest
 
 from conftest import login_as
+from gcm import nbt
+from nbt_fixtures import tag_hex
 from oc_game import OcGame, find_lua
 
 pytestmark = pytest.mark.skipif(find_lua() is None, reason="no Lua interpreter installed")
@@ -205,3 +207,51 @@ def test_a_crashed_scan_is_reported_and_scanning_starts_over(game, client):
     data = client.get("/api/network").get_json()
     assert data["crash"] is None
     assert {i["name"]: i["size"] for i in data["items"]} == {"Thing A": 5}
+
+
+def test_pattern_scan_lands_with_crafting_counts(game, client):
+    # Logs -> 4 planks: OC reports the sizes as 0, the pattern's NBT
+    # has the counts.
+    def stack(item_id, count):
+        return [("id", nbt.SHORT, item_id), ("Count", nbt.BYTE, count), ("Damage", nbt.SHORT, 0)]
+
+    planks_nbt = tag_hex([
+        ("in", nbt.LIST, (nbt.COMPOUND, [stack(17, 1)] + [[]] * 8)),
+        ("out", nbt.LIST, (nbt.COMPOUND, [stack(5, 4)])),
+        ("crafting", nbt.BYTE, 1),
+    ])
+    game.write_file("/home/item_catalog.txt", "testmod:a\n")
+    game.lua(
+        f"""
+        me = ae2.new(env)
+        me.items = {{ ae2.stack("testmod:a", "Thing A", 5) }}
+        local planks = terminal.pattern(
+          {{ [1] = terminal.item("minecraft:log", "Oak Wood", 0, {{ id = 17 }}) }},
+          {{ [1] = terminal.item("minecraft:planks", "Oak Wood Planks", 0, {{ id = 5 }}) }},
+          {{ crafting = true, tag = ("{planks_nbt}"):gsub("..", function(h) return string.char(tonumber(h, 16)) end) }})
+        local melt = terminal.pattern(
+          {{ [1] = terminal.item("gregtech:gt.metaitem.01", "Neodymium Ingot", 16, {{ damage = 11067 }}) }},
+          {{ [1] = terminal.fluid("molten.neodymium", "Molten Neodymium", 2304) }})
+        terminal.new(env, {{
+          terminal.interface("Molecular Assembler", -1413, 57, -123, {{ planks }}),
+          terminal.interface("Fluid Extractor p1", 1, 2, 3, {{ melt }}),
+        }})
+        env:start_service("network_browser")
+        """
+    )
+    game.run(30)
+    assert all(status == 200 for _, _, status in game.requests)
+    login_as(client, "alice")
+    data = client.get("/api/network/patterns").get_json()
+    assert data["summary"] == {"patterns": 2, "crafting": 1, "processing": 1, "inexact": 0, "providers": 2}
+    made = {
+        p["provider"]["name"]: (
+            [(e["name"], e["size"]) for e in p["inputs"]],
+            [(e["name"], e["size"], e["kind"]) for e in p["outputs"]],
+        )
+        for p in data["patterns"]
+    }
+    assert made == {
+        "Molecular Assembler": ([("Oak Wood", 1)], [("Oak Wood Planks", 4, "item")]),
+        "Fluid Extractor p1": ([("Neodymium Ingot", 16)], [("Molten Neodymium", 2304, "fluid")]),
+    }

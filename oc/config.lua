@@ -47,6 +47,7 @@ return {
   --   COMPONENT_ADDRESS = "put-a-gt_machine-address-here",
   -- },
   -- network_browser = {
-  --   SCAN_INTERVAL_SECONDS = 600,
+  --   SCAN_INTERVAL_SECONDS         = 600,
+  --   PATTERN_SCAN_INTERVAL_SECONDS = 3600,
   -- },
 }

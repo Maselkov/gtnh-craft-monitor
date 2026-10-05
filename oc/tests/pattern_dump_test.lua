@@ -1,36 +1,21 @@
 local t = require("testlib")
+local fake = require("fake_terminal")
 
 local suite = t.suite()
 local test = suite.test
 
--- me_interface_terminal as the GTNH OC source describes it:
--- getInterfaces() returns a list value that, called, gives the next
--- interface ({name, location, side, patterns}) and nil at the end.
 local function add_terminal(env, interfaces, opts)
-  opts = opts or {}
-  return env:add_component("me_interface_terminal", {
-    getInterfaces = function()
-      if opts.fail then error(opts.fail) end
-      local i = 0
-      return setmetatable({
-        count = function() return #interfaces end,
-      }, {
-        __call = function()
-          i = i + 1
-          return interfaces[i]
-        end,
-      })
-    end,
-  })
+  local term = fake.new(env, interfaces)
+  if opts and opts.fail then term:fail("getInterfaces", opts.fail) end
+  return term
 end
 
 local function item(name, size, label)
-  return { name = name, damage = 0, size = size, label = label }
+  return fake.item(name, label, size)
 end
 
 local function pattern(inputs, outputs, craftable)
-  return { name = "appliedenergistics2:item.ItemEncodedPattern", inputs = inputs, outputs = outputs,
-    isCraftable = craftable }
+  return fake.pattern(inputs, outputs, { crafting = craftable })
 end
 
 local function dumps(env)
