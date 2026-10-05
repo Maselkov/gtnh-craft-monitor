@@ -53,7 +53,7 @@ from pathlib import Path
 MOD_JAR = Path(os.environ.get("GCM_MOD_JAR", "/opt/gcm/gcmiconexport.jar"))
 # What the mod writes; export.py adds data.json once they're all there.
 GAME_OUTPUTS = (
-    "images.zip", "icons_lookup.json", "item_catalog.txt",
+    "images.zip", "icons_lookup.json", "item_catalog.txt", "ore_dict.json",
     "export-report.json",
 )
 # icons_lookup.json's key -> image path tables. Its "bleed" table maps the

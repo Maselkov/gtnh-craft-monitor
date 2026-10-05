@@ -344,6 +344,11 @@ The lookup contains four tables:
 - `by_label` — display name → icon. Least reliable fallback, because about 8%
   of labels collide across mods.
 
+Beside the lookup, `ore_dict.json` holds the game's ore dictionary
+(`{name: ["modid:internalname:damage", ...]}`, damage `*` for any), for the
+crafting plan's ore-dictionary substitutes. Bundles made before it existed
+work without it; plans then take no substitutes.
+
 ## In-game setup
 
 ### Requirements
@@ -364,8 +369,9 @@ The lookup contains four tables:
 - Optional, GTNH 2.9 or later: an Adapter touching (or MFU-linked to) a block
   holding an **ME Interface Terminal** part, on the same computer as
   `network_browser.lua`. With it, the scanner also reads every pattern on the
-  network (see [Reading patterns](#reading-patterns)). Crafting-table
-  patterns need `allowItemStackNBTTags` for their output counts.
+  network (see [Reading patterns](#reading-patterns)). Patterns need
+  `allowItemStackNBTTags`: crafting-table patterns for their output counts,
+  and all of them for their substitution settings.
 
 #### Connecting the Adapter
 
@@ -682,15 +688,30 @@ lists those items. An item that was already below its rule isn't listed,
 since the plan didn't cause it.
 
 The plan is the server's estimate from your patterns and the last network
-scan, worked out the way AE2 plans:
+scan, worked out the way GTNH's AE2 plans:
 - The requested item is always crafted in full.
-- Everything below it comes from stock first, and stock is only counted once
-  even when several steps need it.
+- Everything below it comes first from what other steps made too much of (a
+  batch's extra output, or a pattern's other outputs), then from stock. Both
+  are only counted once, even when several steps need them.
 - Steps run in whole batches.
+- Where several patterns make an item, they're tried in AE2's order: by
+  slot, the last first. Each makes as many whole batches as its inputs can
+  be had for, and the next makes the rest, so one item can come from two
+  patterns; the tree shows each part as a "via" row. Anything none of them
+  can cover is planned with the first, and what that lacks is missing.
+  Picking a pattern in the tree uses that one alone.
+- A crafting pattern with Substitute ticked takes, for each input, the item
+  itself first, then anything sharing an ore-dictionary name with it: from
+  stock, then crafted with the item's own patterns, then with patterns
+  marked "can be substituted" that make an alternative. The tree lists the
+  alternatives taken from stock under the step ("instead: …"), and a part
+  making one names it ("Industrial Diamond via …"). This needs game data
+  with the ore dictionary.
 
-AE2 may still differ. It can use ore-dictionary substitutions, and where
-several patterns make an item it picks by priority, which OpenComputers
-doesn't report. The Request button works whatever the plan says.
+AE2 may still differ. It also orders patterns by the interface's priority,
+which OpenComputers doesn't report, and it checks each substitute against
+the recipe itself, where the plan takes anything sharing an ore-dictionary
+name. The Request button works whatever the plan says.
 
 Items that differ only in NBT (GregTech turbines of each material, seeds,
 bees) are separate entries in the grid, and requesting one crafts that
@@ -869,11 +890,13 @@ What it reports, found with `oc/pattern_dump.lua` on a real network:
 
 - Processing patterns have real sizes.
 - Crafting-table patterns report every size as 0. AE2's converter reads its
-  own `Cnt` field, and crafting patterns store a vanilla `Count`. For those
-  patterns the script also sends the pattern's NBT, and the server reads the
-  counts from it the way AE2 does (`Count`, else `Cnt`). Without
-  `allowItemStackNBTTags` there's no NBT: inputs are still counted (one per
-  grid slot), but outputs have no count, and the pattern is marked inexact.
+  own `Cnt` field, and crafting patterns store a vanilla `Count`. The script
+  sends every pattern's NBT, and the server reads those counts from it the
+  way AE2 does (`Count`, else `Cnt`), along with the `substitute` and
+  `beSubstitute` settings the plan needs (OpenComputers reports neither).
+  Without `allowItemStackNBTTags` there's no NBT: inputs are still counted
+  (one per grid slot), but outputs have no count, the pattern is marked
+  inexact, and no pattern takes substitutes.
 - Fluids come either as fluid entries or, in older patterns, as ae2fc
   `fluid_drop` items whose NBT names the fluid. The server turns both into
   fluids. Thaumic essentia comes as an amount with no item ID.

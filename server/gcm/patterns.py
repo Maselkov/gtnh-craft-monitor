@@ -169,8 +169,11 @@ def _provider_key(provider):
 
 def normalize(raw):
     """One pattern as network_browser.lua sent it -> {provider, slot,
-    crafting, substitute, exact, inputs, outputs}. Entries for the same
-    stack are merged, sizes summed."""
+    crafting, substitute, be_substitute, exact, inputs, outputs}. Entries
+    for the same stack are merged, sizes summed. substitute: a crafting
+    pattern taking ore-dictionary alternatives for its inputs;
+    be_substitute: one AE2 may use to make such an alternative. Both
+    come from the pattern's NBT, so are left out without it."""
     crafting = bool(raw.get("crafting"))
     counts = _tag_counts(raw.get("tag"))
     # A crafting input fills one grid slot each, so counting the slots
@@ -187,6 +190,7 @@ def normalize(raw):
     }
     if counts:
         pattern["substitute"] = counts["substitute"]
+        pattern["be_substitute"] = counts["be_substitute"]
     return pattern
 
 
@@ -204,7 +208,7 @@ def _provider(raw):
 
 
 def _tag_counts(tag_hex):
-    """{in, out: {(id, damage): count}, substitute} from a pattern's NBT,
+    """{in, out: {(id, damage): count}, substitute, be_substitute} from a pattern's NBT,
     or None if there's none or it can't be read."""
     if not isinstance(tag_hex, str) or not tag_hex:
         return None
@@ -229,6 +233,7 @@ def _tag_counts(tag_hex):
         "in": counts(tree.get("in")),
         "out": counts(tree.get("out")),
         "substitute": bool(tree.get("substitute")),
+        "be_substitute": bool(tree.get("beSubstitute")),
     }
 
 

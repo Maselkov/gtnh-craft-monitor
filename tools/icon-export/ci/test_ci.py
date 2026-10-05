@@ -148,7 +148,7 @@ def faithful_export(tmp_path, textured_png):
     (tmp_path / "icons_lookup.json").write_text(json.dumps(
         {"by_key": {f"a:i{n}:0": p for n, p in enumerate(paths)}}))
     (tmp_path / "export-report.json").write_text(json.dumps(
-        {"by_keyEntries": 50000, "fluids_by_keyEntries": 2000, "aspects_by_keyEntries": 60,
+        {"by_keyEntries": 50000, "fluids_by_keyEntries": 2000, "aspects_by_keyEntries": 60, "oreNames": 5000,
          "catalogIds": 9000, "itemsRendered": 100, "itemsFailed": 0}))
     (tmp_path / "data.json").write_text(json.dumps(
         {"textures": {"faithful32": {"default_fallbacks": 0}}}))

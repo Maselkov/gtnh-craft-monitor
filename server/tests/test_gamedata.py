@@ -10,7 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from gcm import config, gamedata, icons, state
+from gcm import config, gamedata, icons, oredict, state
 from conftest import login_as
 
 PNG = b"\x89PNG\r\n\x1a\nnot really, but the server doesn't care"
@@ -26,7 +26,7 @@ def images_zip(png):
 
 
 def make_bundle(
-    version, catalog="test:thing\n", faithful=True, generated_at="2026-09-25T00:00:00Z", bleed=None
+    version, catalog="test:thing\n", faithful=True, generated_at="2026-09-25T00:00:00Z", bleed=None, ore_dict=None
 ):
     """The files CI publishes for one GTNH version, as {name: bytes}."""
     lookup = {
@@ -43,6 +43,8 @@ def make_bundle(
     }
     if faithful:
         files["images-faithful32.zip"] = images_zip(FAITHFUL_PNG)
+    if ore_dict is not None:
+        files["ore_dict.json"] = json.dumps(ore_dict).encode()
     files["data.json"] = json.dumps(
         {
             "format": 1,
@@ -197,6 +199,20 @@ def test_install_makes_the_bundle_live(admin, github, api_headers):
     assert catalog.headers["X-Catalog-Version"] == prefix("2.9.0-beta-3")
     start = admin.post("/api/network/scan/start", headers=api_headers, json={})
     assert start.get_json()["catalog_version"] == prefix("2.9.0-beta-3")
+
+
+def test_a_bundle_with_an_ore_dictionary_loads_it_and_one_without_still_installs(admin, github):
+    github.bundles["2.9.0"] = make_bundle("2.9.0", ore_dict={"gemDiamond": ["test:thing:0", "test:other:0"]})
+    github.bundles["2.8.4"] = make_bundle("2.8.4")
+    admin.post("/api/admin/gamedata/install", json={"version": "2.9.0"})
+    assert wait_for_install()["state"] == "done"
+    assert "ore_dict.json" in github.downloads and oredict.loaded()
+    thing, other = "test|thing|0|item", "test|other|0|item"
+    assert oredict.equivalents(thing, oredict.Known([thing, other])) == [other]
+
+    admin.post("/api/admin/gamedata/install", json={"version": "2.8.4"})
+    assert wait_for_install()["state"] == "done"
+    assert gamedata.selected_version() == "2.8.4" and not oredict.loaded()
 
 
 def test_checksum_mismatch_fails_and_keeps_the_old_data(admin, github):

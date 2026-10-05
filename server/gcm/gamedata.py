@@ -28,11 +28,14 @@ import threading
 import time
 import urllib.request
 
-from gcm import config, icons, inventory, patterns
+from gcm import config, icons, inventory, oredict, patterns
 
 TAG_PREFIX = "gtnh-data-"
 # data.json first: it holds the others' sizes and checksums.
 BASE_FILES = ("data.json", "icons_lookup.json", "item_catalog.txt")
+# Fetched with the base files when a release has them; older releases
+# don't, and work without (no ore-dictionary substitutions in plans).
+OPTIONAL_FILES = ("ore_dict.json",)
 TEXTURES = {
     "default": {"file": "images.zip", "name": "Default"},
     "faithful32": {
@@ -195,8 +198,10 @@ def activate():
             os.path.join(_bundle_dir(version), TEXTURES[textures]["file"]),
             prefix,
         )
+        oredict.load(os.path.join(_bundle_dir(version), "ore_dict.json"))
     else:
         icons.load(None, None)
+        oredict.load(None)
 
 
 def catalog_version():
@@ -249,7 +254,8 @@ def available(refresh=False):
                 {
                     "version": version,
                     "published_at": release.get("published_at"),
-                    "base_size": sum(assets[name]["size"] for name in BASE_FILES),
+                    "base_size": sum(assets[name]["size"] for name in BASE_FILES + OPTIONAL_FILES
+                                     if name in assets),
                     "textures": textures,
                     "data_asset_id": assets["data.json"].get("id"),
                     "assets": {name: a["browser_download_url"] for name, a in assets.items()},
@@ -376,7 +382,8 @@ def _install(release, textures):
                 _status["total_bytes"] = release["base_size"] + release["textures"][textures]
         names = [TEXTURES[textures]["file"]]
         if not reuse_base:
-            names = list(BASE_FILES[1:]) + names
+            optional = [n for n in OPTIONAL_FILES if n in expected and n in release["assets"]]
+            names = list(BASE_FILES[1:]) + optional + names
         for name in names:
             digest = _download(release["assets"][name], os.path.join(part, name))
             if digest != expected[name]["sha256"]:

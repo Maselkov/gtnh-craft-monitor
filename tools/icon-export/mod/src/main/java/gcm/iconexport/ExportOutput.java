@@ -33,6 +33,7 @@ import com.google.gson.GsonBuilder;
  * <li>{@code images.zip} - the icons (server/data/images.zip)</li>
  * <li>{@code icons_lookup.json} - key -> path tables</li>
  * <li>{@code item_catalog.txt} - {@code mod:internal} IDs for the OC scanner</li>
+ * <li>{@code ore_dict.json} - the ore dictionary, for the crafting plan's substitutions</li>
  * </ul>
  * plus {@code export-report.json} with counts and failures, and for animated icons
  * {@code animations.zip} (each icon's distinct frames) with {@code animations.json} (which frame
@@ -113,6 +114,10 @@ final class ExportOutput {
             text.append(id).append('\n');
         }
         writeText("item_catalog.txt", text.toString());
+
+        Map<String, List<String>> oreDict = OreDict.collect();
+        writeJson("ore_dict.json", oreDict, false);
+        report.put("oreNames", oreDict.size());
 
         report.put("catalogIds", catalog.size());
         for (Map.Entry<String, Object> table : lookup.entrySet()) {

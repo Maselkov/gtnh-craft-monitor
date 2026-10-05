@@ -184,7 +184,7 @@ jobs:
             --title "GTNH $VERSION data" \
             --notes "$notes" \
             out/data.json out/images.zip out/images-faithful32.zip \
-            out/icons_lookup.json out/item_catalog.txt out/export-report.json
+            out/icons_lookup.json out/item_catalog.txt out/ore_dict.json out/export-report.json
 
       - name: Keep logs
         if: failure()

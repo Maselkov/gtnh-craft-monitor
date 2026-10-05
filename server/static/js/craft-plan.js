@@ -66,14 +66,28 @@ export function usedPercent(item) {
 
 // "need 64 · 20 in stock · craft 44 (11×)" for a step of the tree.
 export function nodeQtyText(node, isRoot) {
+  const batches = (n) => `${qty(n.craft, n.kind)}` + (n.batches !== n.craft ? ` (${n.batches}×)` : '');
+  // One of the patterns a split step's item comes from.
+  if (node.status === 'via') return 'makes ' + batches(node);
   const parts = [];
   if (!isRoot) parts.push('need ' + qty(node.need, node.kind));
-  if (node.from_stock > 0) {
-    parts.push(node.status === 'stock' ? 'in stock' : qty(node.from_stock, node.kind) + ' in stock');
+  const fromLeftovers = node.from_leftovers || 0;
+  if (fromLeftovers > 0) {
+    parts.push(node.status === 'stock' && !node.from_stock ? 'left over from other steps'
+      : qty(fromLeftovers, node.kind) + ' left over');
   }
+  if (node.from_stock > 0) {
+    parts.push(node.status === 'stock' && !fromLeftovers && !node.substitutes
+      ? 'in stock' : qty(node.from_stock, node.kind) + ' in stock');
+  }
+  // Ore-dictionary alternatives taken instead (listed by name below it).
+  const substituted = (node.substitutes || []).reduce((n, s) => n + (s.from_stock || 0) + (s.from_leftovers || 0), 0);
+  if (substituted > 0) parts.push(qty(substituted, node.kind) + ' as substitutes');
   // Batches only say something when one makes more than one.
   if (node.status === 'craft') {
-    parts.push(`craft ${qty(node.craft, node.kind)}` + (node.batches !== node.craft ? ` (${node.batches}×)` : ''));
+    parts.push(node.split
+      ? `craft ${qty(node.craft, node.kind)} from ${node.children.length} patterns`
+      : 'craft ' + batches(node));
   }
   if (node.status === 'missing') parts.push('missing ' + qty(node.missing, node.kind));
   if (node.status === 'cycle') parts.push(`missing ${qty(node.missing, node.kind)}: its recipe needs itself`);
@@ -153,6 +167,7 @@ function cellTooltipHtml(it) {
   return `
     <div class="network-tooltip-name">${escapeHtml(displayName(it))}</div>
     ${stat('Needed', it.need)}
+    ${it.from_leftovers > 0 ? stat('Left over from other steps', it.from_leftovers) : ''}
     ${it.from_stock > 0 ? stat('From stock', it.from_stock) + stat('In stock', it.available) : ''}
     ${it.craft > 0 ? stat('Crafted', it.craft) : ''}
     ${it.missing > 0 ? stat('Missing', it.missing) : ''}
@@ -170,8 +185,15 @@ function renderList(plan) {
 // positions: the step's child positions from the top ("0.3.1"), how the
 // server finds a branch to send. path (item keys) is what open/shut is
 // remembered by, so it survives a re-plan that moves things around.
+// A step's part of its tree path: its item, and for one of a split
+// step's parts (the same item each), which part.
+function pathSegment(node, positions) {
+  return node.status === 'via' ? `${node.key}#${positions.split('.').pop()}` : node.key;
+}
+
 function nodeHtml(node, parentPath, depth, positions) {
-  const path = parentPath ? parentPath + ' > ' + node.key : node.key;
+  const segment = pathSegment(node, positions);
+  const path = parentPath ? parentPath + ' > ' + segment : segment;
   const children = shownChildren(node, hideAvailable);
   // Big plans come a few levels at a time: `more` says this step has
   // steps below it that haven't been fetched yet.
@@ -189,9 +211,16 @@ function nodeHtml(node, parentPath, depth, positions) {
     : '<span class="plan-caret"></span>';
 
   const details = [];
-  if (node.pattern) details.push(escapeHtml(node.pattern.provider || '?'));
+  // A split step's patterns are rows of their own, named by machine.
+  const via = node.status === 'via';
+  if (node.pattern && !via) details.push(escapeHtml(node.pattern.provider || '?'));
   if (node.inexact) details.push('output count unknown, counted as 1');
   for (const also of node.also_makes || []) details.push(`also makes ${qty(also.amount, also.kind)} ${escapeHtml(also.name || '?')}`);
+  for (const sub of node.substitutes || []) {
+    const from = sub.from_stock ? `${qty(sub.from_stock, sub.kind)} ${escapeHtml(sub.name || '?')} from stock`
+      : `${qty(sub.from_leftovers, sub.kind)} ${escapeHtml(sub.name || '?')} left over`;
+    details.push(`instead: ${from}`);
+  }
   if (node.truncated) details.push('plan cut short here');
   // Shut, a branch still says it has something short in it.
   const shortBelow = (node.missing_below || 0) - (node.missing ? 1 : 0);
@@ -214,7 +243,9 @@ function nodeHtml(node, parentPath, depth, positions) {
     <div class="plan-row">
       ${caret}${iconHtml(node, 'plan-icon')}
       <div class="plan-text">
-        <div><span class="plan-name">${escapeHtml(displayName(node))}</span> <span class="plan-qty">${nodeQtyText(node, depth === 0)}</span></div>
+        <div><span class="plan-name">${escapeHtml(via
+          ? (node.substitute ? displayName(node) + ' ' : '') + 'via ' + (node.pattern.provider || '?')
+          : displayName(node))}</span> <span class="plan-qty">${nodeQtyText(node, depth === 0)}</span></div>
         ${details.length ? `<div class="plan-details">${details.join(' · ')}</div>` : ''}
         ${alternatives}
       </div>
@@ -405,10 +436,12 @@ async function jumpTo(key) {
   // Open every step above it, by the item-key paths open/shut goes by.
   let node = planData.plan.root;
   let path = node.key;
+  let at = '';
   for (const p of positions === '' ? [] : positions.split('.')) {
     openState.set(path, true);
     node = node.children[Number(p)];
-    path += ' > ' + node.key;
+    at = at === '' ? p : `${at}.${p}`;
+    path += ' > ' + pathSegment(node, at);
   }
   render();
   const row = document.querySelector(`#craftPlanBody li[data-pos="${CSS.escape(positions)}"] > .plan-row`);

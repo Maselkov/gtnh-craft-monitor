@@ -31,12 +31,13 @@ def stack_nbt(item_id, count, damage=0):
     return [("id", nbt.SHORT, item_id), ("Count", nbt.BYTE, count), ("Damage", nbt.SHORT, damage)]
 
 
-def pattern_tag(inputs, outputs, crafting=True, substitute=False):
+def pattern_tag(inputs, outputs, crafting=True, substitute=False, be_substitute=False):
     return tag_hex([
         ("in", nbt.LIST, (nbt.COMPOUND, inputs)),
         ("out", nbt.LIST, (nbt.COMPOUND, outputs)),
         ("crafting", nbt.BYTE, 1 if crafting else 0),
         ("substitute", nbt.BYTE, 1 if substitute else 0),
+        ("beSubstitute", nbt.BYTE, 1 if be_substitute else 0),
     ])
 
 
@@ -138,12 +139,20 @@ class TestNormalize:
         p = patterns.normalize(PLANKS_PATTERN)
         assert p["crafting"] is True
         assert p["exact"] is True
-        assert p["substitute"] is False
+        assert p["substitute"] is False and p["be_substitute"] is False
         assert [entry(e) for e in p["inputs"]] == [
             {"mod": "minecraft", "internal": "log", "damage": 0, "kind": "item", "name": "Oak Wood", "size": 1}
         ]
         assert [(e["name"], e["size"]) for e in p["outputs"]] == [("Oak Wood Planks", 4)]
         assert p["provider"] == PROVIDER
+
+    def test_substitution_flags_come_from_the_nbt(self):
+        # A processing pattern's NBT is sent too, for its beSubstitute.
+        p = patterns.normalize({**PLANKS_PATTERN, "crafting": False, "tag": pattern_tag(
+            [stack_nbt(17, 1)], [stack_nbt(5, 4)], crafting=False, be_substitute=True)})
+        assert (p["substitute"], p["be_substitute"]) == (False, True)
+        p = patterns.normalize({**PLANKS_PATTERN, "tag": pattern_tag([stack_nbt(17, 1)], [stack_nbt(5, 4)], substitute=True)})
+        assert (p["substitute"], p["be_substitute"]) == (True, False)
 
     def test_repeated_inputs_are_merged(self):
         # The LV conveyor module: 6 rubber sheets, 2 motors, 1 cable.

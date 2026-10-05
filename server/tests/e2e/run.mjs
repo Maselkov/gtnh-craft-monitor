@@ -17,6 +17,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import zlib from 'node:zlib';
 
 const SERVER_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const API_KEY = 'e2e-api-key-0123456789abcdef0123456789abcdef';
@@ -117,13 +118,15 @@ open(out + "/icons_lookup.json", "w").write(json.dumps(
                 "gregtech:gt.metaitem.01:11028": "item/gregtech/gt.metaitem.01~11028.png"},
      "fluids_by_key": {}, "by_label": {}, "bleed": {"item/minecraft/iron_ingot~0.png": 12}}))
 open(out + "/item_catalog.txt", "w").write("minecraft:iron_ingot\\n")
+open(out + "/ore_dict.json", "w").write(json.dumps(
+    {"gemDiamond": ["minecraft:diamond:0", "IC2:itemPartIndustrialDiamond:0"]}))
 files = {}
-for name in ("images.zip", "images-faithful32.zip", "icons_lookup.json", "item_catalog.txt"):
+for name in ("images.zip", "images-faithful32.zip", "icons_lookup.json", "item_catalog.txt", "ore_dict.json"):
     data = open(out + "/" + name, "rb").read()
     files[name] = {"size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
 open(out + "/data.json", "w").write(json.dumps({"format": 1, "files": files, "generated_at": "2026-09-25T00:00:00Z"}))
 `;
-const BUNDLE_FILES = ['data.json', 'images.zip', 'images-faithful32.zip', 'icons_lookup.json', 'item_catalog.txt'];
+const BUNDLE_FILES = ['data.json', 'images.zip', 'images-faithful32.zip', 'icons_lookup.json', 'item_catalog.txt', 'ore_dict.json'];
 
 async function startFakeGitHub() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcm-e2e-gamedata-'));
@@ -219,24 +222,37 @@ async function scanNetwork(base) {
 }
 
 // ---------------------------------------------------------------- browser
-// Iron Ingot from Iron Dust (the default) or from Water; the dust from
-// Neutronium Ingot, of which there are only 5; more Neutronium from
-// Neutronium Dust, which there is none of - four levels, one more than
-// the plan's first answer holds.
+// Iron Ingot from Iron Dust (in the later slot, so AE2 tries it first) or
+// from Water, 20,000 a time; the dust from Neutronium Ingot, of which
+// there are only 5; more Neutronium from Neutronium Dust, which there is
+// none of - four levels, one more than the plan's first answer holds.
 const pattern = (provider, slot, outputs, inputs) => ({
   provider: { name: provider, x: slot, y: 64, z: 0, dim: 0 }, slot, crafting: false, outputs, inputs,
 });
 const IRON_INGOT = { kind: 'item', mod: 'minecraft', internal: 'iron_ingot', damage: 0, name: 'Iron Ingot', size: 1 };
 const IRON_DUST = { kind: 'item', mod: 'gregtech', internal: 'gt.metaitem.01', damage: 2032, name: 'Iron Dust', size: 1 };
 const SEEDED_PATTERNS = [
-  pattern('Furnace', 0, [IRON_INGOT], [IRON_DUST]),
-  pattern('Fluid Solidifier', 1, [IRON_INGOT], [{ kind: 'fluid', internal: 'water', name: 'Water', size: 1000 }]),
+  pattern('Fluid Solidifier', 0, [IRON_INGOT], [{ kind: 'fluid', internal: 'water', name: 'Water', size: 20000 }]),
+  pattern('Furnace', 1, [IRON_INGOT], [IRON_DUST]),
   pattern('Macerator', 2, [IRON_DUST],
     [{ kind: 'item', mod: 'gregtech', internal: 'gt.metaitem.01', damage: 11028, name: 'Neutronium Ingot', size: 1 }]),
   pattern('Compressor', 3,
     [{ kind: 'item', mod: 'gregtech', internal: 'gt.metaitem.01', damage: 11028, name: 'Neutronium Ingot', size: 1 }],
     [{ kind: 'item', mod: 'gregtech', internal: 'gt.metaitem.01', damage: 2129, name: 'Neutronium Dust', size: 1 }]),
 ];
+
+// A pattern's NBT holding only byte flags (substitute, beSubstitute),
+// gzipped and hex-encoded, as network_browser.lua sends it.
+function flagsTag(flags) {
+  const parts = [Buffer.from([0x0a, 0, 0])];
+  for (const [name, value] of Object.entries(flags)) {
+    const len = Buffer.alloc(2);
+    len.writeUInt16BE(name.length);
+    parts.push(Buffer.from([0x01]), len, Buffer.from(name), Buffer.from([value]));
+  }
+  parts.push(Buffer.from([0]));
+  return zlib.gzipSync(Buffer.concat(parts)).toString('hex');
+}
 
 async function scanPatterns(base) {
   const { data: scan } = await game(base, '/api/network/patterns/start', {});
@@ -646,16 +662,18 @@ async function main() {
     await evaluate(`fetch('/api/stock/alert/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(${JSON.stringify(neutronium)}) }).then(r => r.ok)`);
     await evaluate(`typeInto('#craftRequestAmount', '10')`);
-    // 5 Neutronium from stock, 5 more from dust there's none of.
-    await waitFor('5 Neutronium Dust short', `$('#craftPlanSummary .plan-missing-strip')?.textContent.includes('Neutronium Dust')
-      && $('#craftPlanSummary .plan-chip b').textContent === '5'`);
+    // As AE2 plans it: the furnace makes the 5 its Neutronium covers, the
+    // solidifier the 3 its water covers, and the furnace, first, takes the
+    // rest - 2 Neutronium Dust short.
+    await waitFor('2 Neutronium Dust short', `$('#craftPlanSummary .plan-missing-strip')?.textContent.includes('Neutronium Dust')
+      && $('#craftPlanSummary .plan-chip b').textContent === '2'`);
     await waitFor('missing cell first', `$('#craftPlanBody .plan-cell').classList.contains('missing')`);
-    // Neutronium: 5 from stock, 5 more crafted. Crafted cells say how many,
+    // Neutronium: 5 from stock, 2 more crafted. Crafted cells say how many,
     // not how much of the stock is used (all of it, always), and aren't
     // tinted, as in the game.
     await waitFor('crafted cells without use', `$$('#craftPlanBody .plan-cell').filter(c => c.textContent.includes('Crafting'))
       .every(c => !c.querySelector('.plan-used') && !c.textContent.includes('Available'))
-      && $$('#craftPlanBody .plan-cell').some(c => c.textContent.includes('Crafting: 5'))
+      && $$('#craftPlanBody .plan-cell').some(c => c.textContent.includes('Crafting: 2'))
       && !$('#craftPlanBody .plan-cell.crafting')`);
     // A haloed icon (drawn 2.5x its box, see .icon-bleed) in the rightmost
     // cell mustn't make the list scroll sideways. No game data is
@@ -673,22 +691,34 @@ async function main() {
     await waitFor('no sideways scrollbar', `$('#craftPlanBody').offsetHeight - $('#craftPlanBody').clientHeight === 2`);
     await evaluate(`$('#haloTest').remove(), true`);
 
+    // The tree: the ingot split over three parts, each a row of its own.
+    const rows = `$$('#craftPlanBody li.plan-node').map(li => li.querySelector(':scope > .plan-row').textContent.replace(/\\s+/g, ' '))`;
+    const toggle = (text, n = 0) => `$$('#craftPlanBody li.plan-node').filter(li =>
+      li.querySelector(':scope > .plan-row').textContent.includes(${JSON.stringify(text)}))[${n}]
+      .querySelector(':scope > .plan-row [data-action="plan-toggle"]')`;
     await click(`$('#craftPlan [data-view="tree"]')`);
-    await waitFor('tree', `$('#craftPlanBody .plan-tree') && $$('#craftPlanBody .plan-node').length === 3
-      && $('#craftPlanBody .plan-row').textContent.includes('Furnace')`);
-    // The fourth level came along, as it leads to what's missing: opening
-    // the Neutronium step shows it.
-    await click(`$$('#craftPlanBody [data-action="plan-toggle"]')[2]`);
-    await waitFor('branch fetched', `$$('#craftPlanBody .plan-node').length === 4 && !$('#craftPlanBody .plan-loading')
-      && $$('#craftPlanBody .plan-node')[3].textContent.includes('Neutronium Dust')
-      && $$('#craftPlanBody .plan-node')[3].textContent.includes('missing 5')`);
+    await waitFor('split tree', `$('#craftPlanBody .plan-tree') && $$('#craftPlanBody .plan-node').length === 7
+      && ${rows}[0].includes('craft 10 from 3 patterns')
+      && ${rows}[1].includes('via Furnace') && ${rows}[1].includes('makes 5')
+      && ${rows}[3].includes('via Fluid Solidifier') && ${rows}[3].includes('makes 3')
+      && ${rows}[5].includes('via Furnace') && ${rows}[5].includes('makes 2')
+      && !$('#craftPlanBody select.plan-alt')`);
+    // Down the last part to what's short.
+    await click(toggle('Iron Dust', 1));
+    await waitFor('dust open', `${rows}.some(r => r.includes('Neutronium Ingot') && r.includes('craft 2'))`);
+    await click(toggle('Neutronium Ingot', 0));
+    await waitFor('dust short', `${rows}.some(r => r.includes('Neutronium Dust') && r.includes('missing 2'))`);
     // Collapsing survives a new amount.
-    await click(`$$('#craftPlanBody [data-action="plan-toggle"]')[1]`);
-    await waitFor('collapsed', `$$('#craftPlanBody .plan-node').length === 2`);
+    await click(toggle('via Furnace', 0));
+    await waitFor('collapsed', `$$('#craftPlanBody .plan-node').length === 8`);
     await evaluate(`typeInto('#craftRequestAmount', '12')`);
-    await waitFor('re-planned, still collapsed', `$('#craftPlanBody .plan-qty').textContent.includes('craft 12')
-      && $$('#craftPlanBody .plan-node').length === 2`);
-    // The other pattern for the ingot: from Water, of which there's plenty.
+    await waitFor('re-planned, still collapsed', `${rows}[0].includes('craft 12 from 3 patterns')
+      && ${rows}.some(r => r.includes('via Furnace') && r.includes('makes 4'))
+      && $$('#craftPlanBody .plan-node').length === 8`);
+    // 3 the furnace alone covers; the other pattern for the ingot, from
+    // water, of which there's enough for 3.
+    await evaluate(`typeInto('#craftRequestAmount', '3')`);
+    await waitFor('one pattern', `$('#craftPlanBody select.plan-alt') && ${rows}[0].includes('Furnace')`);
     await evaluate(`(() => { const sel = $('#craftPlanBody select.plan-alt');
       sel.value = sel.options[1].value; sel.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
     await waitFor('from water', `$('#craftPlanBody .plan-row').textContent.includes('Fluid Solidifier')
@@ -959,6 +989,57 @@ async function main() {
     await click(`$('#tabBtnCrafts')`);
     await click(`$('#tabBtnNetwork')`);
     await waitFor('faithful icon', `$$('#networkList img.network-cell-icon').some((i) => i.src.includes('~faithful32') && i.complete && i.naturalWidth === 32)`);
+  });
+
+  step('ore-dictionary substitutes: a Substitute-ticked pattern takes Industrial Diamonds as diamonds', async () => {
+    // The bundle just installed says Diamond and Industrial Diamond are both
+    // gemDiamond. Block of Diamond from 9 diamonds, Substitute ticked;
+    // 4 diamonds and 20 industrial ones in stock, and an implosion
+    // compressor making more industrial ones, marked "can be substituted".
+    const diamond = { kind: 'item', mod: 'minecraft', internal: 'diamond', damage: 0, name: 'Diamond' };
+    const industrial = { kind: 'item', mod: 'IC2', internal: 'itemPartIndustrialDiamond', damage: 0, name: 'Industrial Diamond' };
+    const block = { kind: 'item', mod: 'minecraft', internal: 'diamond_block', damage: 0, name: 'Block of Diamond' };
+    const dust = { kind: 'item', mod: 'gregtech', internal: 'gt.metaitem.01', damage: 2500, name: 'Diamond Dust' };
+    const { data: scan } = await game(base, '/api/network/scan/start', {});
+    await game(base, '/api/network/scan/batch', { scan_token: scan.scan_token, items: [
+      ...SEEDED_ITEMS.map(it => ({ ...it })), { ...diamond, size: 4 }, { ...industrial, size: 20 },
+      { ...dust, size: 40 }, { ...block, size: 0, isCraftable: true }] });
+    await game(base, '/api/network/scan/finish', { scan_token: scan.scan_token, chunks_sent: 1, total_errors: 0 });
+    const { data: pscan } = await game(base, '/api/network/patterns/start', {});
+    await game(base, '/api/network/patterns/batch', { scan_token: pscan.scan_token, patterns: [
+      { ...pattern('Molecular Assembler', 0, [{ ...block, size: 1 }], [{ ...diamond, size: 9 }]),
+        crafting: true, tag: flagsTag({ substitute: 1 }) },
+      { ...pattern('Implosion Compressor', 1, [{ ...industrial, size: 3 }], [{ ...dust, size: 4 }]),
+        tag: flagsTag({ beSubstitute: 1 }) },
+    ] });
+    await game(base, '/api/network/patterns/finish', { scan_token: pscan.scan_token, chunks_sent: 1, total_errors: 0 });
+
+    await cdp.send('Page.navigate', { url: base + '/network' });
+    await waitFor('reloaded', `document.readyState === 'complete' && !window.byText`);
+    await evaluate(PAGE_LIB);
+    await waitFor('scanned', `$$('#networkList .network-cell').length === 7`);
+    await evaluate(`openItem('Block of Diamond'), true`);
+    await click(`$('#itemHistoryCraftBtn')`);
+    await waitFor('plan', `visible($('#craftPlan')) && $('#craftPlanSummary').textContent.includes('Everything is in stock')`);
+    await click(`$('#craftPlan [data-view="tree"]')`);
+    const rows = `$$('#craftPlanBody li.plan-node').map(li => li.querySelector(':scope > .plan-row').textContent.replace(/\\s+/g, ' '))`;
+    // 2 blocks: 18 diamonds, 4 of them diamonds, 14 industrial ones.
+    await evaluate(`typeInto('#craftRequestAmount', '2')`);
+    await waitFor('substitutes from stock', `${rows}.some(r => r.includes('need 18 · 4 in stock · 14 as substitutes')
+      && r.includes('instead: 14 Industrial Diamond from stock'))`);
+    // 3 blocks: 27 - 24 in stock, 3 more industrial ones from the compressor.
+    await evaluate(`typeInto('#craftRequestAmount', '3')`);
+    await waitFor('substitute made', `${rows}.some(r => r.includes('Industrial Diamond via Implosion Compressor') && r.includes('makes 3'))
+      && $('#craftPlanSummary').textContent.includes('Everything is in stock')`);
+    await click(`$('#craftPlan [data-view="list"]')`);
+    await click(`byText('#craftRequestModal button', 'Cancel')`);
+    await waitFor('dialog closed', `!visible($('#craftRequestModal'))`);
+    await scanNetwork(base);
+    await scanPatterns(base);
+    await cdp.send('Page.navigate', { url: base + '/network' });
+    await waitFor('reloaded', `document.readyState === 'complete' && !window.byText`);
+    await evaluate(PAGE_LIB);
+    await waitFor('back to 3', `$$('#networkList .network-cell').length === 3`);
   });
 
   step('sign out', async () => {

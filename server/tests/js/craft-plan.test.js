@@ -28,6 +28,17 @@ test('nodeQtyText says what each step needs and where it comes from', () => {
     'need 1 · missing 1: its recipe needs itself');
 });
 
+test('nodeQtyText for leftovers, and a step split over several patterns', () => {
+  assert.equal(nodeQtyText({ status: 'stock', need: 1, from_stock: 0, from_leftovers: 1 }), 'need 1 · left over from other steps');
+  assert.equal(nodeQtyText({ status: 'craft', need: 10, from_stock: 2, from_leftovers: 3, craft: 5, batches: 5 }),
+    'need 10 · 3 left over · 2 in stock · craft 5');
+  assert.equal(nodeQtyText({ status: 'craft', need: 10, from_stock: 0, craft: 10, split: true, children: [{}, {}] }),
+    'need 10 · craft 10 from 2 patterns');
+  assert.equal(nodeQtyText({ status: 'via', craft: 12, batches: 3 }), 'makes 12 (3×)');
+  assert.equal(nodeQtyText({ status: 'stock', need: 90, from_stock: 9, substitutes: [{ from_stock: 9 }, { from_leftovers: 3 }] }),
+    'need 90 · 9 in stock · 12 as substitutes');
+});
+
 test('sortListItems: missing first, then stock only by use, then crafted', () => {
   const items = [
     { name: 'Crafted', need: 2, from_stock: 0, craft: 2, missing: 0, available: 0 },

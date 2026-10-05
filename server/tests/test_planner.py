@@ -2,7 +2,9 @@
 
 import json
 
-from gcm import patterns, planner, store
+import pytest
+
+from gcm import oredict, patterns, planner, store
 from conftest import login_as
 from test_network_api import run_scan
 from test_patterns_api import run_pattern_scan
@@ -104,17 +106,88 @@ class TestPlan:
         root = plan([tesseract], {"Raw Tesseract": 5}, "Tesseract", 3)["root"]
         assert [(a["name"], a["amount"]) for a in root["also_makes"]] == [("Depleted Fuel", 192)]
 
-    def test_the_main_output_pattern_is_the_default_and_others_can_be_chosen(self):
-        # A byproduct-only pattern for plates, listed first, isn't the default.
+    def test_the_last_slot_is_tried_first_and_others_can_be_chosen(self):
+        # As AE2 orders patterns: a pattern's priority is its slot (with no
+        # interface priority, which OC doesn't report), the highest first.
         side = pat([it("Dust"), it("Plate")], [it("Ore")], "Washer", slot=1)
-        result = plan([side, PLATE], {"Ingot": 10, "Ore": 10}, "Plate", 1)
+        result = plan([PLATE, side], {"Ingot": 10, "Ore": 10}, "Plate", 1)
         root = result["root"]
-        assert root["pattern"]["provider"] == "Bender"
-        assert [a["provider"] for a in root["alternatives"]] == ["Bender", "Washer"]
-        washer = root["alternatives"][1]["id"]
-        chosen = plan([side, PLATE], {"Ore": 10}, "Plate", 1, choices={key("Plate"): washer})["root"]
-        assert chosen["pattern"]["provider"] == "Washer"
-        assert [c["name"] for c in chosen["children"]] == ["Ore"]
+        assert root["pattern"]["provider"] == "Washer"
+        assert [a["provider"] for a in root["alternatives"]] == ["Washer", "Bender"]
+        bender = root["alternatives"][1]["id"]
+        chosen = plan([PLATE, side], {"Ingot": 10, "Ore": 10}, "Plate", 1, choices={key("Plate"): bender})["root"]
+        assert chosen["pattern"]["provider"] == "Bender"
+        assert [c["name"] for c in chosen["children"]] == ["Ingot"]
+
+    def test_a_short_pattern_makes_what_it_can_and_the_next_makes_the_rest(self):
+        # Dust from diamonds (tried first: the later slot) or from industrial
+        # diamonds; 3 diamonds in stock, 10 dust asked for.
+        from_gem = pat([it("Dust")], [it("Diamond")], "Macerator", slot=1)
+        from_industrial = pat([it("Dust")], [it("Industrial Diamond")], "Macerator", slot=0)
+        result = plan([from_industrial, from_gem], {"Diamond": 3, "Industrial Diamond": 100}, "Dust", 10)
+        root = result["root"]
+        assert root["split"] is True and root["craft"] == 10 and result["missing"] == []
+        assert [(c["status"], c["craft"], c["children"][0]["name"]) for c in root["children"]] == [
+            ("via", 3, "Diamond"), ("via", 7, "Industrial Diamond")]
+        assert "alternatives" not in root
+
+    def test_when_every_pattern_is_short_the_first_takes_the_rest(self):
+        from_gem = pat([it("Dust")], [it("Diamond")], "Macerator", slot=1)
+        from_industrial = pat([it("Dust")], [it("Industrial Diamond")], "Macerator", slot=0)
+        result = plan([from_industrial, from_gem], {"Diamond": 3, "Industrial Diamond": 2}, "Dust", 10)
+        parts = result["root"]["children"]
+        assert [(c["children"][0]["name"], c["craft"]) for c in parts] == [
+            ("Diamond", 3), ("Industrial Diamond", 2), ("Diamond", 5)]
+        assert [(m["name"], m["missing"]) for m in result["missing"]] == [("Diamond", 5)]
+
+    def test_leftovers_are_used_before_stock(self):
+        # The frame and the gear each need a bolt; bolts come 4 a batch, so
+        # the gear's comes from what the frame's batch left over.
+        gear = pat([it("Gear")], [it("Frame"), it("Bolt")], "Assembler")
+        frame = pat([it("Frame")], [it("Bolt"), it("Ingot")], "Assembler", slot=1)
+        result = plan([gear, frame, BOLTS], {"Ingot": 100, "Bolt": 0}, "Gear", 1)
+        frame_step, bolt = result["root"]["children"]
+        assert (frame_step["children"][0]["craft"], frame_step["children"][0]["batches"]) == (4, 1)
+        assert (bolt["status"], bolt["from_leftovers"], bolt["from_stock"]) == ("stock", 1, 0)
+        assert (totals(result, "Bolt")["craft"], totals(result, "Bolt")["from_leftovers"]) == (4, 1)
+        # Leftovers go before stock too.
+        result = plan([gear, frame, BOLTS], {"Ingot": 100, "Bolt": 50}, "Gear", 1)
+        assert result["root"]["children"][1]["from_stock"] == 1  # nothing was made to be left over
+
+    def test_byproducts_are_leftovers_too(self):
+        washer = pat([it("Dust"), it("Tiny Dust", 2)], [it("Ore")], "Washer")
+        both = pat([it("Mix")], [it("Dust"), it("Tiny Dust", 2)], "Mixer")
+        result = plan([washer, both], {"Ore": 10}, "Mix", 1)
+        dust, tiny = result["root"]["children"]
+        assert dust["status"] == "craft" and tiny["from_leftovers"] == 2 and tiny["status"] == "stock"
+
+    def test_a_pattern_is_not_used_again_below_itself(self):
+        # Ingot <- Molten <- Ingot: the inner ingot can't use the solidifier
+        # again, but another pattern for ingots still can be.
+        to_ingot = pat([it("Ingot")], [fluid("Molten Iron", 144)], "Solidifier", slot=1)
+        to_molten = pat([fluid("Molten Iron", 144)], [it("Ingot")], "Extractor")
+        smelt = pat([it("Ingot")], [it("Dust")], "Furnace", slot=0)
+        root = plan([to_ingot, to_molten, smelt], {"Dust": 0}, "Ingot", 1)["root"]
+        assert root["pattern"]["provider"] == "Solidifier"
+        inner = child(child(root, "Molten Iron"), "Ingot")
+        assert inner["pattern"]["provider"] == "Furnace"
+
+    def test_past_its_work_budget_a_plan_stops_trying_patterns(self, monkeypatch):
+        from_gem = pat([it("Dust")], [it("Diamond")], "Macerator", slot=1)
+        from_industrial = pat([it("Dust")], [it("Industrial Diamond")], "Macerator", slot=0)
+        monkeypatch.setattr(planner, "MAX_WORK", 0)
+        result = plan([from_industrial, from_gem], {"Diamond": 3, "Industrial Diamond": 100}, "Dust", 10)
+        assert result["truncated"] is True
+        assert result["root"]["pattern"]["provider"] == "Macerator" and "split" not in result["root"]
+
+    def test_a_pattern_needing_what_it_makes_asks_for_it_once(self):
+        # A catalyst: 1 Seed in, 1 Seed back, plus the crop, per batch.
+        farm = pat([it("Seed"), it("Crop", 4)], [it("Seed"), it("Water")], "Farm")
+        result = plan([farm], {"Seed": 1, "Water": 100}, "Crop", 40)
+        root = result["root"]
+        assert root["batches"] == 10
+        assert [(c["name"], c["need"]) for c in root["children"]] == [("Seed", 1), ("Water", 10)]
+        assert result["missing"] == []
 
     def test_an_unknown_choice_falls_back_to_the_default(self):
         root = plan(CHAIN, {}, "Plate", 1, choices={key("Plate"): "nope"})["root"]
@@ -158,6 +231,74 @@ class TestPlan:
         b = pat([it("Plate")], [it("Dust")], "Interface")
         ids = [a_["id"] for a_ in plan([a, b], {}, "Plate", 1)["root"]["alternatives"]]
         assert len(set(ids)) == 2
+
+
+@pytest.fixture
+def ore_dict(tmp_path):
+    """Loads an ore dictionary of {name: [item names]} (items as it()
+    makes them), and unloads it afterwards."""
+    def load(names):
+        path = tmp_path / "ore_dict.json"
+        path.write_text(json.dumps({
+            name: [f"gregtech:gt.metaitem.01:{it(n)['damage']}" for n in members] for name, members in names.items()
+        }))
+        oredict.load(str(path))
+    yield load
+    oredict.load(None)
+
+
+def crafting(outputs, inputs, provider="Molecular Assembler", slot=0, substitute=False):
+    p = pat(outputs, inputs, provider, slot)
+    p["crafting"] = True
+    p["substitute"] = substitute
+    return p
+
+
+class TestSubstitutes:
+    """A crafting pattern with Substitute ticked, as AE2 plans one: Block
+    of Diamond from 9 diamonds, where Industrial Diamond is a diamond too
+    (gemDiamond)."""
+
+    def patterns(self, substitute=True):
+        block = crafting([it("Block")], [it("Diamond", 9)], substitute=substitute)
+        sledge = pat([it("Diamond", 2)], [it("Flawless")], "Sledgehammer", slot=2)
+        implosion = pat([it("Industrial Diamond", 3)], [it("Diamond Dust", 4)], "Implosion", slot=1)
+        implosion["be_substitute"] = True
+        return [block, sledge, implosion]
+
+    def test_the_item_then_alternatives_from_stock_then_patterns_then_stand_ins(self, ore_dict):
+        ore_dict({"gemDiamond": ["Diamond", "Industrial Diamond"]})
+        stock = {"Diamond": 9, "Industrial Diamond": 9, "Flawless": 9, "Diamond Dust": 400}
+        result = plan(self.patterns(), stock, "Block", 10)
+        diamond = child(result["root"], "Diamond")
+        assert result["missing"] == []
+        assert diamond["from_stock"] == 9
+        assert [(s["name"], s["from_stock"]) for s in diamond["substitutes"]] == [("Industrial Diamond", 9)]
+        # 72 to make: the diamonds' own pattern makes the 18 its flawless
+        # diamonds cover, the implosion compressor the other 54, as
+        # Industrial Diamond.
+        assert diamond["split"] is True
+        assert [(c["name"], c["pattern"]["provider"], c["craft"], c.get("substitute", False))
+                for c in diamond["children"]] == [
+            ("Diamond", "Sledgehammer", 18, False), ("Industrial Diamond", "Implosion", 54, True)]
+        industrial = totals(result, "Industrial Diamond")
+        assert (industrial["from_stock"], industrial["craft"]) == (9, 54)
+
+    def test_an_alternative_alone_still_shows_which(self, ore_dict):
+        ore_dict({"gemDiamond": ["Diamond", "Industrial Diamond"]})
+        diamond = child(plan(self.patterns(), {"Diamond Dust": 400}, "Block", 1)["root"], "Diamond")
+        # The sledgehammer has nothing to work with: everything from the
+        # implosion compressor, a part of its own row.
+        assert [(c["name"], c["craft"]) for c in diamond["children"]] == [("Industrial Diamond", 9)]
+
+    def test_without_substitute_ticked_only_the_item_will_do(self, ore_dict):
+        ore_dict({"gemDiamond": ["Diamond", "Industrial Diamond"]})
+        result = plan(self.patterns(substitute=False), {"Industrial Diamond": 900}, "Block", 1)
+        assert [(m["name"], m["missing"]) for m in result["missing"]] == [("Flawless", 5)]
+
+    def test_without_an_ore_dictionary_nothing_substitutes(self):
+        result = plan(self.patterns(), {"Industrial Diamond": 900}, "Block", 1)
+        assert "substitutes" not in child(result["root"], "Diamond")
 
 
 class TestPaging:
