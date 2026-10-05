@@ -3,7 +3,7 @@ startup work happens - importing any gcm module has no side effects."""
 
 from flask import Flask
 
-from gcm import auth, charts, commands, config, db, gamedata, inventory, patterns, push, security, state, store
+from gcm import auth, charts, commands, config, db, gamedata, inventory, patterns, planner, push, security, state, store
 from gcm.routes import craft_requests, crafts, network, pages, power, users
 from gcm.routes import gamedata as gamedata_routes
 from gcm.routes import push as push_routes
@@ -59,3 +59,4 @@ def reset_runtime_state():
     commands.reset()
     charts.reset()
     gamedata.reset()
+    planner.reset()

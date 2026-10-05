@@ -23,6 +23,7 @@ let lastPlan = null;    // the last /api/network/plan answer's plan
 let itemsByKey = new Map();
 let fetchTimer = null;
 let inFlight = null;    // AbortController of the request under way
+let branchesLoading = new Set();  // child-position paths being fetched
 
 function readSetting(key, fallback) {
   try { return localStorage.getItem(key) || fallback; } catch (e) { return fallback; }
@@ -35,6 +36,11 @@ function writeSetting(key, value) {
 // Per viewer, read in setupCraftPlanActions().
 let view = 'list';
 let hideAvailable = false;
+
+// An endgame plan can be short of a hundred things or more; the strip
+// shows this many until asked for the rest.
+const MISSING_SHOWN = 8;
+let missingExpanded = false;
 
 // ---------- formatting (pure, tested under server/tests/js/) ----------
 
@@ -135,11 +141,20 @@ function renderList(plan) {
 
 // ---------- tree view ----------
 
-function nodeHtml(node, parentPath, depth) {
+// positions: the step's child positions from the top ("0.3.1"), how the
+// server finds a branch to send. path (item keys) is what open/shut is
+// remembered by, so it survives a re-plan that moves things around.
+function nodeHtml(node, parentPath, depth, positions) {
   const path = parentPath ? parentPath + ' > ' + node.key : node.key;
-  const children = (node.children || []).filter(c => !(hideAvailable && c.status === 'stock'));
+  const children = (node.children || [])
+    .map((c, i) => [c, i])
+    .filter(([c]) => !(hideAvailable && c.status === 'stock'));
+  // Big plans come a few levels at a time: `more` says this step has
+  // steps below it that haven't been fetched yet.
+  const unfetched = !node.children && node.more > 0;
   const open = openState.has(path) ? openState.get(path) : depth < 2;
-  const caret = children.length
+  if (open && unfetched) loadBranchSoon(positions);
+  const caret = children.length || unfetched
     ? `<button class="plan-caret" data-action="plan-toggle" data-path="${escapeHtml(path)}" aria-expanded="${open}" title="${open ? 'Collapse' : 'Expand'}">${open ? '▾' : '▸'}</button>`
     : '<span class="plan-caret"></span>';
 
@@ -169,12 +184,14 @@ function nodeHtml(node, parentPath, depth) {
         ${alternatives}
       </div>
     </div>
-    ${open && children.length ? `<ul>${children.map(c => nodeHtml(c, path, depth + 1)).join('')}</ul>` : ''}
+    ${open && unfetched ? '<ul><li class="plan-loading">Loading…</li></ul>' : ''}
+    ${open && children.length ? `<ul>${children.map(([c, i]) =>
+    nodeHtml(c, path, depth + 1, positions === '' ? String(i) : `${positions}.${i}`)).join('')}</ul>` : ''}
   </li>`;
 }
 
 function renderTree(plan) {
-  return `<ul class="plan-tree">${nodeHtml(plan.root, '', 0)}</ul>`;
+  return `<ul class="plan-tree">${nodeHtml(plan.root, '', 0, '')}</ul>`;
 }
 
 // ---------- the whole panel ----------
@@ -183,21 +200,44 @@ function summaryHtml(data) {
   const plan = data.plan;
   const parts = [];
   if (plan.missing.length) {
-    const chips = plan.missing.map(m => `<span class="plan-chip">${iconHtml(m, 'plan-chip-icon')}<b>${qty(m.missing, m.kind)}</b> ${escapeHtml(displayName(m))}</span>`);
-    parts.push(`<div class="plan-missing-strip"><span class="plan-missing-label">Missing:</span> ${chips.join('')}</div>`);
+    const shown = missingExpanded ? plan.missing : plan.missing.slice(0, MISSING_SHOWN);
+    const chips = shown.map(m => `<span class="plan-chip">${iconHtml(m, 'plan-chip-icon')}<b>${qty(m.missing, m.kind)}</b> ${escapeHtml(displayName(m))}</span>`);
+    const hidden = plan.missing.length - shown.length;
+    if (hidden > 0) chips.push(`<button class="plan-more" data-action="plan-missing-more">+${hidden} more</button>`);
+    else if (missingExpanded) chips.push('<button class="plan-more" data-action="plan-missing-more">Show fewer</button>');
+    parts.push(`<div class="plan-missing-strip${missingExpanded ? ' expanded' : ''}"><span class="plan-missing-label">Missing ${plan.missing.length}:</span> ${chips.join('')}</div>`);
   } else {
     parts.push('<div class="plan-ok">Everything is in stock or craftable.</div>');
-  }
-  for (const it of plan.items.filter(i => i.warnings)) {
-    parts.push(`<div class="plan-warning-line">${escapeHtml(displayName(it))}: ${qty(it.left, it.kind)} left, ${
-      it.warnings.map(w => escapeHtml(warningText(w, it.kind))).join(', ')}</div>`);
   }
   const meta = [`${plan.steps.toLocaleString()} steps`];
   if (data.patterns_updated_at) meta.push('patterns read ' + formatRelativeTime(data.patterns_updated_at));
   if (data.stock_updated_at) meta.push('stock scanned ' + formatRelativeTime(data.stock_updated_at));
-  if (plan.truncated) meta.push('too big to show in full');
+  if (plan.truncated) meta.push('stopped there: too big to plan in full');
   parts.push(`<div class="plan-meta">${meta.join(' · ')}</div>`);
   return parts.join('');
+}
+
+// The stock rules this plan would take an item below, in a dropdown
+// beside the view buttons rather than in the summary: worth a look, but
+// not worth pushing the plan itself down the dialog. The <details>
+// stays in the page across re-renders, so it stays open or shut.
+function renderRules(plan) {
+  const rules = document.getElementById('craftPlanRules');
+  const broken = plan.items.filter(i => i.warnings);
+  rules.hidden = broken.length === 0;
+  if (!broken.length) {
+    rules.open = false;
+    return;
+  }
+  document.getElementById('craftPlanRulesSummary').textContent =
+    `${broken.length} stock rule${broken.length === 1 ? '' : 's'}`;
+  document.getElementById('craftPlanRulesList').innerHTML =
+    '<div class="plan-rules-head">This craft would take these below a stock rule:</div>'
+    + broken.map(it => `<div class="plan-rules-row">${iconHtml(it, 'plan-chip-icon')}<div>
+        <div class="plan-name">${escapeHtml(displayName(it))}</div>
+        <div class="plan-details">${qty(it.available, it.kind)} → ${qty(it.left, it.kind)} left, ${
+          it.warnings.map(w => escapeHtml(warningText(w, it.kind))).join(', ')}</div>
+      </div></div>`).join('');
 }
 
 function setModalWide(wide) {
@@ -213,6 +253,7 @@ function showNote(text) {
 function render() {
   const panel = document.getElementById('craftPlan');
   if (!lastPlan) {
+    document.getElementById('craftPlanRules').open = false;
     panel.hidden = true;
     setModalWide(false);
     return;
@@ -230,8 +271,59 @@ function render() {
   body.innerHTML = view === 'tree' ? renderTree(lastPlan.plan) : renderList(lastPlan.plan);
   body.scrollTop = scrollTop;
   document.getElementById('craftPlanSummary').innerHTML = summaryHtml(lastPlan);
+  renderRules(lastPlan.plan);
   panel.hidden = false;
   setModalWide(true);
+}
+
+function planParams() {
+  const params = new URLSearchParams({ internal: target.internal, amount: String(amount), kind: target.kind || 'item' });
+  if (target.mod) params.set('mod', target.mod);
+  if (target.damage != null) params.set('damage', String(target.damage));
+  if (target.variant) params.set('variant', target.variant);
+  if (Object.keys(choices).length) params.set('choose', JSON.stringify(choices));
+  return params;
+}
+
+function nodeAt(root, positions) {
+  let node = root;
+  for (const p of positions === '' ? [] : positions.split('.')) {
+    node = node && node.children ? node.children[Number(p)] : null;
+  }
+  return node;
+}
+
+// Called while drawing, so the fetch starts once the drawing is done.
+function loadBranchSoon(positions) {
+  if (branchesLoading.has(positions)) return;
+  branchesLoading.add(positions);
+  setTimeout(() => loadBranch(positions, lastPlan), 0);
+}
+
+// The next level under one step, from the same plan (version): if the
+// patterns or stock changed since, the whole plan is fetched again.
+async function loadBranch(positions, planData) {
+  const params = planParams();
+  params.set('path', positions);
+  params.set('version', planData.version);
+  try {
+    const res = await fetch('/api/network/plan?' + params);
+    const data = await res.json().catch(() => ({}));
+    if (planData !== lastPlan) return;  // a newer plan replaced it
+    if (data.stale) {
+      scheduleFetch(0);
+      return;
+    }
+    const node = res.ok && data.node ? nodeAt(planData.plan.root, positions) : null;
+    if (!node) return;
+    node.children = data.node.children || [];
+    delete node.more;
+    render();
+  } catch (e) {
+    // Left showing "Loading…"; closing and opening the step tries again.
+  } finally {
+    if (planData === lastPlan) branchesLoading.delete(positions);
+  }
 }
 
 async function fetchPlan() {
@@ -240,11 +332,7 @@ async function fetchPlan() {
   if (inFlight) inFlight.abort();
   const controller = new AbortController();
   inFlight = controller;
-  const params = new URLSearchParams({ internal: target.internal, amount: String(amount), kind: target.kind || 'item' });
-  if (target.mod) params.set('mod', target.mod);
-  if (target.damage != null) params.set('damage', String(target.damage));
-  if (target.variant) params.set('variant', target.variant);
-  if (Object.keys(choices).length) params.set('choose', JSON.stringify(choices));
+  const params = planParams();
   try {
     const res = await fetch('/api/network/plan?' + params, { signal: controller.signal });
     const data = await res.json().catch(() => ({}));
@@ -254,6 +342,7 @@ async function fetchPlan() {
       showNote(res.ok ? data.reason : (data.error || 'Couldn\'t work out a plan.'));
     } else {
       lastPlan = data;
+      branchesLoading = new Set();
       itemsByKey = new Map(data.plan.items.map(i => [i.key, i]));
       showNote(null);
     }
@@ -277,6 +366,7 @@ export function openCraftPlan(it, amountValue) {
   target = it;
   choices = {};
   openState = new Map();
+  missingExpanded = false;
   lastPlan = null;
   itemsByKey = new Map();
   amount = null;
@@ -315,6 +405,10 @@ export function setupCraftPlanActions() {
       writeSetting(VIEW_KEY, view);
       render();
     },
+    'plan-missing-more': () => {
+      missingExpanded = !missingExpanded;
+      render();
+    },
     'plan-hide-available': () => {
       hideAvailable = !hideAvailable;
       writeSetting(HIDE_KEY, hideAvailable ? '1' : '0');
@@ -325,6 +419,11 @@ export function setupCraftPlanActions() {
       openState.set(path, el.getAttribute('aria-expanded') !== 'true');
       render();
     },
+  });
+  // Like a menu: a click anywhere else shuts the dropdown.
+  document.addEventListener('click', (e) => {
+    const rules = document.getElementById('craftPlanRules');
+    if (rules.open && !rules.contains(e.target)) rules.open = false;
   });
   panel.addEventListener('change', (e) => {
     const select = e.target.closest('select.plan-alt');

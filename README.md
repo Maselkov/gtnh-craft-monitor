@@ -664,10 +664,14 @@ Craft screen, it has two views:
   says how much it needs, how much comes from stock, how much is crafted and
   on which machine. **Hide all available** hides the steps fully covered by
   stock. Where several patterns make the same item, pick another one to see
-  that plan instead.
+  that plan instead. Endgame plans can run past 100,000 steps; they're
+  planned in full, so the list and the missing items cover all of it, and
+  the tree loads deeper steps as you open them.
 
-Above both views is everything the plan is short of, and any item the plan
-would take below your low-stock alert or a keep-in-stock target.
+Above both views is everything the plan is short of. If the plan would take
+an item from at or above your low-stock alert or a keep-in-stock target to
+below it, a **stock rules** button beside the views lists those items. An item
+that was already below its rule isn't listed, since the plan didn't cause it.
 
 The plan is the server's estimate from your patterns and the last network
 scan, worked out the way AE2 plans:

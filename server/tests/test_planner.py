@@ -143,11 +143,57 @@ class TestPlan:
         assert (ingot["left"], ingot["warnings"]) == (11, [{"rule": "below your alert", "threshold": 15}])
         assert "warnings" not in totals(result, "Plate")
 
+    def test_no_warning_for_an_item_already_below_its_rule(self):
+        # 20 in stock under a rule of 30: low before the plan touched it.
+        result = plan(CHAIN, {"Ingot": 20}, "Gear", 2, rules=[(key("Ingot"), 30, "below your alert")])
+        assert "warnings" not in totals(result, "Ingot")
+
+    def test_a_warning_when_the_plan_crosses_the_rule_exactly(self):
+        # 20 in stock, rule at 20: at it before, 11 after.
+        result = plan(CHAIN, {"Ingot": 20}, "Gear", 2, rules=[(key("Ingot"), 20, "below your alert")])
+        assert totals(result, "Ingot")["warnings"] == [{"rule": "below your alert", "threshold": 20}]
+
     def test_two_same_named_interfaces_on_one_block_get_different_ids(self):
         a = pat([it("Plate")], [it("Ingot")], "Interface")
         b = pat([it("Plate")], [it("Dust")], "Interface")
         ids = [a_["id"] for a_ in plan([a, b], {}, "Plate", 1)["root"]["alternatives"]]
         assert len(set(ids)) == 2
+
+
+class TestPaging:
+    def test_plans_far_past_the_old_2000_step_cap(self):
+        # A chain 3000 deep: each step needs the next.
+        chain = [pat([it(f"Part {i}")], [it(f"Part {i + 1}")], slot=i) for i in range(3000)]
+        result = plan(chain, {}, "Part 0", 1)
+        assert result["steps"] == 3001 and result["truncated"] is False
+        assert [m["name"] for m in result["missing"]] == ["Part 3000"]
+
+    def test_trim_keeps_levels_and_counts_the_rest(self):
+        root = plan(CHAIN, {}, "Gear", 2)["root"]
+        top = planner.trim(root, 1)
+        plate = child(top, "Plate")
+        assert "children" not in plate and plate["more"] == 1
+        assert planner.trim(root, 2)["children"][0]["children"][0]["name"] == "Ingot"
+        # A step that was planned but has nothing below keeps an empty list.
+        assert planner.trim(plan(CHAIN, {"Plate": 10, "Bolt": 10}, "Gear", 1)["root"], 0)["more"] == 2
+
+    def test_subtree_by_child_positions(self):
+        root = plan(CHAIN, {}, "Gear", 2)["root"]
+        assert planner.subtree(root, [])["name"] == "Gear"
+        assert planner.subtree(root, [1, 0])["name"] == "Ingot"
+        assert planner.subtree(root, [5]) is None
+        assert planner.subtree(root, [0, 0, 0]) is None
+
+    def test_the_last_plans_are_reused_until_stock_changes(self, monkeypatch):
+        calls = []
+        real = planner.plan
+        monkeypatch.setattr(planner, "plan", lambda *a, **k: calls.append(1) or real(*a, **k))
+        stock = {key("Ingot"): 5}
+        first = planner.cached_plan(CHAIN, stock, "v1", key("Gear"), 2)
+        assert planner.cached_plan(CHAIN, stock, "v1", key("Gear"), 2) is first
+        planner.cached_plan(CHAIN, stock, "v2", key("Gear"), 2)
+        planner.cached_plan(list(CHAIN), stock, "v2", key("Gear"), 2)  # a new pattern scan
+        assert len(calls) == 3
 
 
 class TestRoute:
@@ -209,6 +255,30 @@ class TestRoute:
         data = client.get(self.URL, query_string=params).get_json()
         assert totals(data["plan"], "Ingot")["warnings"] == [{"rule": "below your alert", "threshold": 15}]
         assert child(data["plan"]["root"], "Plate")["pattern"]["provider"] == "Bender"
+
+    def test_the_tree_comes_two_levels_at_a_time(self, client, api_headers):
+        self.scan(client, api_headers, {})
+        login_as(client, "usr_alice")
+        first = client.get(self.URL, query_string=self.params("Gear", 2)).get_json()
+        plate = child(first["plan"]["root"], "Plate")
+        ingot = child(plate, "Ingot")
+        assert "children" not in ingot and "more" not in ingot  # missing: nothing below
+        # The whole plan still counts: the list view and Missing see every step.
+        assert {m["name"] for m in first["plan"]["missing"]} == {"Ingot"}
+
+        bigger = client.get(self.URL, query_string=self.params("Gear", 2, path="0", version=first["version"]))
+        assert child(bigger.get_json()["node"], "Ingot")["need"] == 8
+        bad = client.get(self.URL, query_string=self.params("Gear", 2, path="9.9", version=first["version"]))
+        assert bad.get_json() == {"stale": True}
+        assert client.get(self.URL, query_string=self.params("Gear", 2, path="x")).status_code == 400
+
+    def test_a_branch_asked_for_after_a_new_scan_is_stale(self, client, api_headers):
+        self.scan(client, api_headers, {})
+        login_as(client, "usr_alice")
+        first = client.get(self.URL, query_string=self.params("Gear", 2)).get_json()
+        run_scan(client, api_headers, [[{**it("Ingot"), "size": 3, "isCraftable": False}]])
+        res = client.get(self.URL, query_string=self.params("Gear", 2, path="0", version=first["version"]))
+        assert res.get_json() == {"stale": True}
 
     def test_a_malformed_choose_is_ignored(self, client, api_headers):
         self.scan(client, api_headers, {})

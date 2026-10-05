@@ -412,11 +412,14 @@ def item_display_info(mod, internal, damage, kind, variant=None):
 
 
 def stock_levels():
-    """({item key: size} from the live snapshot, when it was scanned)."""
+    """({item key: size} from the live snapshot, when it was last fully
+    scanned, a version that changes whenever any size can have: a full
+    scan or a check of the watched items)."""
     with state.network_lock:
         items = state.network["items"]
         updated_at = state.network["updated_at"]
-    return {store.items.key_of(it): it.get("size") or 0 for it in items}, updated_at
+        version = f"{updated_at}|{state.network['levels_at']}"
+    return {store.items.key_of(it): it.get("size") or 0 for it in items}, updated_at, version
 
 
 def variant_tag(mod, internal, damage, kind, variant):
