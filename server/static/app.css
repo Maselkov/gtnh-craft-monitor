@@ -1243,6 +1243,32 @@ h1 {
   border-radius: 999px;
   background: color-mix(in srgb, var(--stale) 12%, var(--card));
   border: 1px solid color-mix(in srgb, var(--stale) 40%, transparent);
+  /* A button: jumps to where the item is short (craft-plan.js jumpTo). */
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.plan-chip:hover {
+  border-color: var(--stale);
+}
+.plan-jump-count {
+  color: var(--muted);
+  font-size: 11px;
+}
+.plan-short-below {
+  color: var(--stale);
+}
+/* The step a Missing chip jumped to, flashed once. */
+.plan-row.plan-jump {
+  animation: plan-jump-flash 1.6s ease-out;
+  border-radius: 6px;
+}
+@keyframes plan-jump-flash {
+  0%, 30% { background: color-mix(in srgb, var(--stale) 28%, transparent); }
+  100% { background: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .plan-row.plan-jump { animation: none; background: color-mix(in srgb, var(--stale) 18%, transparent); }
 }
 .plan-chip-icon {
   width: 18px;
@@ -1392,7 +1418,8 @@ span.plan-caret {
   color: var(--muted);
   font-size: 11px;
 }
-.plan-loading {
+.plan-loading,
+.plan-none {
   color: var(--muted);
   font-size: 12px;
   padding: 3px 0 3px 24px;

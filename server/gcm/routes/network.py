@@ -409,7 +409,13 @@ def network_plan_get():
             return jsonify({"stale": True})
         return jsonify({"node": planner.trim(node, 1)})
     return jsonify({
-        "plan": {**result, "root": planner.trim(result["root"], 2)},
+        "plan": {
+            **result,
+            "root": planner.trim(result["root"], 2),
+            # A missing item's places (`at`) only once, in `missing`: the
+            # same item is in both lists.
+            "items": [{k: v for k, v in i.items() if k != "at"} for i in result["items"]],
+        },
         "version": version,
         "patterns_updated_at": patterns_at,
         "stock_updated_at": stock_at,

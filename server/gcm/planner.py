@@ -22,7 +22,7 @@ output, and the dialog can pick another."""
 import hashlib
 import math
 import threading
-from collections import OrderedDict
+from collections import OrderedDict, deque
 
 from gcm import store
 
@@ -38,6 +38,14 @@ MAX_NODES = 300_000
 # a level at a time, see trim()) doesn't plan it all again. Few, as the
 # biggest take tens of MB.
 PLAN_CACHE_SIZE = 2
+
+# A missing item's places in the tree (`at`) listed for the dialog to
+# jump to, at most; `places` says how many there are in all.
+MAX_JUMPS = 50
+# How many steps past the levels asked for trim() sends to lead the way
+# to what's missing, so the dialog can show it without asking for every
+# branch in between. Past this, branches come as they're opened.
+MISSING_PATH_BUDGET = 600
 
 _index_lock = threading.Lock()
 _index_cache = (None, None)  # (the pattern list it was built from, _Index)
@@ -252,6 +260,8 @@ def plan(patterns, stock, key, amount, choices=None, rules=None):
     planner = _Planner(patterns, stock, choices or {})
     root = planner.run(target, amount)
 
+    _mark_missing(root, planner.items)
+
     items = list(planner.items.values())
     for item in items:
         left = item["available"] - item["from_stock"]
@@ -270,6 +280,32 @@ def plan(patterns, stock, key, amount, choices=None, rules=None):
         "steps": planner.nodes,
         "truncated": planner.truncated,
     }
+
+
+def _mark_missing(root, items):
+    """Sets missing_below on each step that has something short in its
+    subtree (itself included): how many steps, as amounts of different
+    items don't add up. And on each missing item, `at`: the child
+    positions ("0.3.1") of the steps it's short at, in tree order, and
+    `places`, how many. Without recursion, as plans can be thousands of
+    steps deep."""
+    order = []  # pre-order: a step before its own steps
+    stack = [(root, "")]
+    while stack:
+        node, pos = stack.pop()
+        order.append(node)
+        if node.get("missing"):
+            item = items[node["key"]]
+            item["places"] = item.get("places", 0) + 1
+            if len(item.setdefault("at", [])) < MAX_JUMPS:
+                item["at"].append(pos)
+        children = node.get("children") or []
+        for i in range(len(children) - 1, -1, -1):
+            stack.append((children[i], f"{pos}.{i}" if pos else str(i)))
+    for node in reversed(order):  # each step after its own steps
+        below = (1 if node.get("missing") else 0) + sum(c.get("missing_below", 0) for c in node.get("children") or [])
+        if below:
+            node["missing_below"] = below
 
 
 def cached_plan(patterns, stock, stock_version, key, amount, choices=None, rules=None):
@@ -293,19 +329,35 @@ def cached_plan(patterns, stock, stock_version, key, amount, choices=None, rules
     return result
 
 
-def trim(node, depth):
-    """A copy of node with only `depth` levels of steps below it. A step
-    whose own steps are left out says how many with `more`, for the
-    dialog to ask for them (subtree()) when it's opened."""
-    out = {k: v for k, v in node.items() if k != "children"}
-    children = node.get("children")
-    if children:
-        if depth > 0:
-            out["children"] = [trim(c, depth - 1) for c in children]
-        else:
-            out["more"] = len(children)
-    elif children is not None:
-        out["children"] = []
+def trim(node, depth, budget=MISSING_PATH_BUDGET):
+    """A copy of node with `depth` levels of steps below it, and past
+    those, the steps leading to anything missing (missing_below), up to
+    `budget` more, nearest first. A step whose own steps are left out
+    says how many with `more`, for the dialog to ask for them
+    (subtree()) when it's opened."""
+    def copy(n):
+        return {k: v for k, v in n.items() if k != "children"}
+
+    out = copy(node)
+    queue = deque([(node, out, 0)])
+    while queue:
+        src, dst, level = queue.popleft()
+        children = src.get("children")
+        if children is None:
+            continue
+        if not children:
+            dst["children"] = []
+            continue
+        if level >= depth:
+            if not src.get("missing_below") or budget < len(children):
+                dst["more"] = len(children)
+                continue
+            budget -= len(children)
+        dst["children"] = []
+        for c in children:
+            cc = copy(c)
+            dst["children"].append(cc)
+            queue.append((c, cc, level + 1))
     return out
 
 

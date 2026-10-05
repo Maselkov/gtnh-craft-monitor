@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { nodeQtyText, qty, sortListItems, usedBand, warningText } from '../../static/js/craft-plan.js';
+import { jumpCounterText, nodeQtyText, qty, shownChildren, sortListItems, usedBand, warningText } from '../../static/js/craft-plan.js';
 
 test('usedBand follows the game\'s colours', () => {
   assert.equal(usedBand(100), 'used-all');
@@ -45,4 +45,16 @@ test('warningText formats the rule\'s level like any amount', () => {
   assert.equal(warningText({ rule: 'below your alert', threshold: 10620 }, 'item'), 'below your alert (10.6k)');
   assert.equal(warningText({ rule: 'below its keep-at-least target', threshold: 1000 }, 'fluid'),
     'below its keep-at-least target (1.0k mB)');
+});
+
+test('jumpCounterText counts places, with a + past the listed ones', () => {
+  assert.equal(jumpCounterText(1, { at: ['0', '1', '2', '3', '4'], places: 5 }), '2/5');
+  assert.equal(jumpCounterText(0, { at: ['0', '1'], places: 900 }), '1/2+');
+});
+
+test('shownChildren hides branches with nothing short only when asked, keeping positions', () => {
+  const node = { children: [{ name: 'fine' }, { name: 'short', missing_below: 2 }, { name: 'also fine', missing_below: 0 }] };
+  assert.deepEqual(shownChildren(node, false).map(([c, i]) => [c.name, i]), [['fine', 0], ['short', 1], ['also fine', 2]]);
+  assert.deepEqual(shownChildren(node, true).map(([c, i]) => [c.name, i]), [['short', 1]]);
+  assert.deepEqual(shownChildren({ more: 3 }, true), []);
 });

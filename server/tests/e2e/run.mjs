@@ -676,7 +676,8 @@ async function main() {
     await click(`$('#craftPlan [data-view="tree"]')`);
     await waitFor('tree', `$('#craftPlanBody .plan-tree') && $$('#craftPlanBody .plan-node').length === 3
       && $('#craftPlanBody .plan-row').textContent.includes('Furnace')`);
-    // The fourth level wasn't sent: opening the Neutronium step fetches it.
+    // The fourth level came along, as it leads to what's missing: opening
+    // the Neutronium step shows it.
     await click(`$$('#craftPlanBody [data-action="plan-toggle"]')[2]`);
     await waitFor('branch fetched', `$$('#craftPlanBody .plan-node').length === 4 && !$('#craftPlanBody .plan-loading')
       && $$('#craftPlanBody .plan-node')[3].textContent.includes('Neutronium Dust')
@@ -699,6 +700,53 @@ async function main() {
     await click(`$('#craftPlan [data-view="list"]')`);
     await click(`byText('#craftRequestModal button', 'Cancel')`);
     await waitFor('closed, plan cleared', `!visible($('#craftRequestModal')) && $('#craftPlan').hidden`);
+  });
+
+  step('finding what is missing: hide all available, and jumping from the chips', async () => {
+    // Neutronium Dust is short in two places: under the dust, and three
+    // levels down under the rod, past the levels the tree first sends.
+    const NEUTRONIUM_DUST = { kind: 'item', mod: 'gregtech', internal: 'gt.metaitem.01', damage: 2129, name: 'Neutronium Dust', size: 1 };
+    const IRON_ROD = { kind: 'item', mod: 'gregtech', internal: 'gt.metaitem.01', damage: 23032, name: 'Iron Rod', size: 1 };
+    const IRON_PLATE = { kind: 'item', mod: 'gregtech', internal: 'gt.metaitem.01', damage: 17032, name: 'Iron Plate', size: 1 };
+    const { data: pscan } = await game(base, '/api/network/patterns/start', {});
+    await game(base, '/api/network/patterns/batch', { scan_token: pscan.scan_token, patterns: [
+      pattern('Assembler', 0, [IRON_INGOT], [IRON_DUST, IRON_ROD]),
+      pattern('Macerator', 1, [IRON_DUST], [NEUTRONIUM_DUST]),
+      pattern('Lathe', 2, [IRON_ROD], [IRON_PLATE]),
+      pattern('Bender', 3, [IRON_PLATE], [NEUTRONIUM_DUST]),
+    ] });
+    await game(base, '/api/network/patterns/finish', { scan_token: pscan.scan_token, chunks_sent: 1, total_errors: 0 });
+
+    await evaluate(`openItem('Iron Ingot'), true`);
+    await click(`$('#itemHistoryCraftBtn')`);
+    await waitFor('plan', `visible($('#craftPlan')) && $('#craftPlanSummary .plan-chip')?.textContent.includes('Neutronium Dust')`);
+    await click(`$('#craftPlan [data-view="tree"]')`);
+    // Shut, the plate's step says something is short under it.
+    await waitFor('short below', `$('#craftPlanBody li[data-pos="1.0"]')?.textContent.includes('1 short below')`);
+
+    // Only the way to what's missing, opened all the way down.
+    await click(`$('#craftPlanHide')`);
+    await waitFor('missing paths only', `$$('#craftPlanBody .plan-node').length === 6
+      && $$('#craftPlanBody li[data-pos="0.0"], #craftPlanBody li[data-pos="1.0.0"]').length === 2
+      && !$('#craftPlanBody [data-action="plan-toggle"][aria-expanded="false"]')`);
+    await click(`$('#craftPlanHide')`);
+
+    // From the list view, a chip goes to the tree and the first place.
+    await click(`$('#craftPlan [data-view="list"]')`);
+    await click(`$('#craftPlanSummary .plan-chip')`);
+    await waitFor('first place', `$('#craftPlanBody .plan-tree')
+      && $('#craftPlanBody li[data-pos="0.0"] > .plan-row').classList.contains('plan-jump')
+      && $('#craftPlanSummary .plan-jump-count').textContent === '1/2'`);
+    await click(`$('#craftPlanSummary .plan-chip')`);
+    await waitFor('second place, opened down to it', `$('#craftPlanBody li[data-pos="1.0.0"] > .plan-row')?.classList.contains('plan-jump')
+      && $('#craftPlanSummary .plan-jump-count').textContent === '2/2'`);
+    await click(`$('#craftPlanSummary .plan-chip')`);
+    await waitFor('round again', `$('#craftPlanSummary .plan-jump-count').textContent === '1/2'`);
+
+    await click(`$('#craftPlan [data-view="list"]')`);
+    await click(`byText('#craftRequestModal button', 'Cancel')`);
+    await waitFor('dialog closed', `!visible($('#craftRequestModal'))`);
+    await scanPatterns(base);
   });
 
   step('essentia: its own URL, a stand-in icon, and stock in the plan', async () => {
