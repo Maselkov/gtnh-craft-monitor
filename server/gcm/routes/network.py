@@ -2,13 +2,14 @@
 oc/network_browser.lua, the live item list, per-item quantity history
 and item pins. The logic behind them is in gcm/inventory.py."""
 
+import json
 import logging
 import secrets
 import time
 
 from flask import abort, Blueprint, g, jsonify, request, Response, send_file
 
-from gcm import auth, charts, gamedata, icons, inventory, patterns, state, stock, store
+from gcm import auth, charts, gamedata, icons, inventory, patterns, planner, state, stock, store
 
 log = logging.getLogger(__name__)
 
@@ -331,3 +332,57 @@ def network_patterns_get():
     response.set_etag(etag)
     response.headers["Cache-Control"] = "private, no-cache"
     return response
+
+
+# The most a plan can be asked for: AE2 takes a long, but a plan for
+# more than this is no use to anyone.
+MAX_PLAN_AMOUNT = 10**12
+
+
+@bp.route("/api/network/plan", methods=["GET"])
+@auth.login_required
+def network_plan_get():
+    """What crafting `amount` of an item would take (gcm/planner.py), for
+    the craft-request dialog: ?mod&internal&damage&kind&variant&amount,
+    and optionally choose={item key: pattern id} for steps made with a
+    pattern other than the default. {plan: null, reason} when there's
+    nothing to plan from."""
+    internal = request.args.get("internal")
+    if not internal:
+        return jsonify({"error": "missing internal"}), 400
+    try:
+        amount = int(request.args.get("amount", "1"))
+    except ValueError:
+        return jsonify({"error": "amount must be a whole number"}), 400
+    if not 1 <= amount <= MAX_PLAN_AMOUNT:
+        return jsonify({"error": "amount out of range"}), 400
+    damage_raw = request.args.get("damage")
+    try:
+        damage = int(damage_raw) if damage_raw not in (None, "") else None
+    except ValueError:
+        return jsonify({"error": "bad damage"}), 400
+    try:
+        choose = json.loads(request.args.get("choose") or "{}")
+    except ValueError:
+        choose = {}
+    if not isinstance(choose, dict):
+        choose = {}
+    choices = {k: v for k, v in choose.items() if isinstance(k, str) and isinstance(v, str)}
+
+    key = store.items.item_key(
+        request.args.get("mod") or None, internal, damage,
+        request.args.get("kind") or "item", request.args.get("variant") or None,
+    )
+    pattern_list, patterns_at = patterns.current()
+    if patterns_at is None:
+        return jsonify({"plan": None, "reason": "No pattern scan yet: connect an ME Interface Terminal "
+                        "to the computer running network_browser.lua."})
+    stock_levels, stock_at = inventory.stock_levels()
+    user_id = g.user["id"]
+    rules = [(a["key"], a["below"], "below your alert") for a in store.stock.alerts_for_user(user_id)]
+    rules += [(t["key"], t["keep_at_least"], "below its keep-at-least target")
+              for t in store.stock.targets() if t["enabled"]]
+    result = planner.plan(pattern_list, stock_levels, key, amount, choices, rules)
+    if result is None:
+        return jsonify({"plan": None, "reason": "None of the network's patterns makes this item."})
+    return jsonify({"plan": result, "patterns_updated_at": patterns_at, "stock_updated_at": stock_at})

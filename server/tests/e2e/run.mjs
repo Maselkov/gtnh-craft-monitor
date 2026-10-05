@@ -202,6 +202,7 @@ async function seed(base) {
     await game(base, '/api/power', { stored, capacity: 1000000, avg_eu_in_5s: 50, avg_eu_out_5s: 20, timestamp: now - ago });
   }
   await scanNetwork(base);
+  await scanPatterns(base);
 }
 
 const SEEDED_ITEMS = [
@@ -218,6 +219,25 @@ async function scanNetwork(base) {
 }
 
 // ---------------------------------------------------------------- browser
+// Iron Ingot from Iron Dust (the default) or from Water; the dust from
+// Neutronium Ingot, of which there are only 5.
+const pattern = (provider, slot, outputs, inputs) => ({
+  provider: { name: provider, x: slot, y: 64, z: 0, dim: 0 }, slot, crafting: false, outputs, inputs,
+});
+const IRON_INGOT = { kind: 'item', mod: 'minecraft', internal: 'iron_ingot', damage: 0, name: 'Iron Ingot', size: 1 };
+const IRON_DUST = { kind: 'item', mod: 'gregtech', internal: 'gt.metaitem.01', damage: 2032, name: 'Iron Dust', size: 1 };
+const SEEDED_PATTERNS = [
+  pattern('Furnace', 0, [IRON_INGOT], [IRON_DUST]),
+  pattern('Fluid Solidifier', 1, [IRON_INGOT], [{ kind: 'fluid', internal: 'water', name: 'Water', size: 1000 }]),
+  pattern('Macerator', 2, [IRON_DUST],
+    [{ kind: 'item', mod: 'gregtech', internal: 'gt.metaitem.01', damage: 11028, name: 'Neutronium Ingot', size: 1 }]),
+];
+
+async function scanPatterns(base) {
+  const { data: scan } = await game(base, '/api/network/patterns/start', {});
+  await game(base, '/api/network/patterns/batch', { scan_token: scan.scan_token, patterns: SEEDED_PATTERNS });
+  await game(base, '/api/network/patterns/finish', { scan_token: scan.scan_token, chunks_sent: 1, total_errors: 0 });
+}
 
 class Cdp {
   constructor(wsUrl) {
@@ -590,6 +610,40 @@ async function main() {
     await waitFor('amount preview', `/\\b10\\b/.test($('#craftRequestAmountPreview').textContent)`);
     await click(`$('#craftRequestSubmitBtn')`);
     await waitFor('craft dialog closed', `!visible($('#craftRequestModal'))`);
+  });
+
+  step('the craft dialog shows the crafting plan: list, tree, alternatives', async () => {
+    await evaluate(`openItem('Iron Ingot'), true`);
+    await click(`$('#itemHistoryCraftBtn')`);
+    await waitFor('plan for 1', `visible($('#craftPlan')) && $('#craftPlanSummary').textContent.includes('Everything is in stock')`);
+    // List view: every item the plan touches, Neutronium all from stock.
+    await waitFor('list cells', `$$('#craftPlanBody .plan-cell').length === 3`);
+    await evaluate(`typeInto('#craftRequestAmount', '10')`);
+    await waitFor('5 Neutronium short', `$('#craftPlanSummary .plan-missing-strip')?.textContent.includes('Neutronium Ingot')
+      && $('#craftPlanSummary .plan-chip b').textContent === '5'`);
+    await waitFor('missing cell first', `$('#craftPlanBody .plan-cell').classList.contains('missing')`);
+
+    await click(`$('#craftPlan [data-view="tree"]')`);
+    await waitFor('tree', `$('#craftPlanBody .plan-tree') && $$('#craftPlanBody .plan-node').length === 3
+      && $('#craftPlanBody .plan-row').textContent.includes('Furnace')`);
+    // Collapsing survives a new amount.
+    await click(`$$('#craftPlanBody [data-action="plan-toggle"]')[1]`);
+    await waitFor('collapsed', `$$('#craftPlanBody .plan-node').length === 2`);
+    await evaluate(`typeInto('#craftRequestAmount', '12')`);
+    await waitFor('re-planned, still collapsed', `$('#craftPlanBody .plan-qty').textContent.includes('craft 12')
+      && $$('#craftPlanBody .plan-node').length === 2`);
+    // The other pattern for the ingot: from Water, of which there's plenty.
+    await evaluate(`(() => { const sel = $('#craftPlanBody select.plan-alt');
+      sel.value = sel.options[1].value; sel.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+    await waitFor('from water', `$('#craftPlanBody .plan-row').textContent.includes('Fluid Solidifier')
+      && $$('#craftPlanBody .plan-node')[1].textContent.includes('Water')
+      && $('#craftPlanSummary').textContent.includes('Everything is in stock')`);
+    await click(`$('#craftPlanHide')`);
+    await waitFor('water hidden, it is all in stock', `$$('#craftPlanBody .plan-node').length === 1`);
+    await click(`$('#craftPlanHide')`);
+    await click(`$('#craftPlan [data-view="list"]')`);
+    await click(`byText('#craftRequestModal button', 'Cancel')`);
+    await waitFor('closed, plan cleared', `!visible($('#craftRequestModal')) && $('#craftPlan').hidden`);
   });
 
   step('item history closes via its button and via the backdrop', async () => {

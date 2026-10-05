@@ -2,6 +2,7 @@
 
 import { evaluateAmountExpression } from './amount.js';
 import { AUTH_USER, closeAdminUsersModal, closeSettingsMenu } from './auth.js';
+import { closeCraftPlan, openCraftPlan, updateCraftPlanAmount } from './craft-plan.js';
 import { lastData, render } from './crafts.js';
 import { closeGameDataModal } from './gamedata.js';
 import { closeItemHistory } from './history.js';
@@ -31,11 +32,19 @@ export function openCraftRequestModal(it) {
   btn.disabled = false;
   btn.textContent = 'Request';
   document.getElementById('craftRequestModal').style.display = 'flex';
+  openCraftPlan(it, 1);
 }
 
 function closeCraftRequestModal() {
   document.getElementById('craftRequestModal').style.display = 'none';
   craftRequestTarget = null;
+  closeCraftPlan();
+}
+
+// The plan follows the quantity box whenever it holds a valid amount.
+function updateCraftPlanFromInput() {
+  const result = evaluateAmountExpression(document.getElementById('craftRequestAmount').value.trim());
+  if (result.ok) updateCraftPlanAmount(Math.round(result.value));
 }
 
 export function showToast(message, isError) {
@@ -348,6 +357,7 @@ export function setupCraftDialogActions() {
   });
 
   document.getElementById('craftRequestAmount').addEventListener('input', updateCraftRequestAmountPreview);
+  document.getElementById('craftRequestAmount').addEventListener('input', updateCraftPlanFromInput);
   delegateActions(document, {
     'close-craft-request': () => closeCraftRequestModal(),
     'submit-craft-request': () => submitCraftRequest(),

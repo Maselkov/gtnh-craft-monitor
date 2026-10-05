@@ -9,6 +9,7 @@ import {
   setupCraftRequestActions,
 } from './craft-actions.js';
 import { setupCraftHistory } from './craft-history.js';
+import { setupCraftPlanActions } from './craft-plan.js';
 import { refresh, setupCraftsActions, setupNotifications, tickSourceLine } from './crafts.js';
 import { setupGameDataActions } from './gamedata.js';
 import { setupIngredientsActions } from './ingredients.js';
@@ -47,6 +48,7 @@ setupNetworkActions();
 setupStockActions();
 setupHistoryActions();
 setupCraftDialogActions();
+setupCraftPlanActions();
 setupCraftRequestActions();
 
 // Reflect whatever URL the page actually loaded on (/, /crafts,

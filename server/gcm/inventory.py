@@ -411,6 +411,14 @@ def item_display_info(mod, internal, damage, kind, variant=None):
     return store.items.last_recorded(store.items.item_key(mod, internal, damage, kind, variant))
 
 
+def stock_levels():
+    """({item key: size} from the live snapshot, when it was scanned)."""
+    with state.network_lock:
+        items = state.network["items"]
+        updated_at = state.network["updated_at"]
+    return {store.items.key_of(it): it.get("size") or 0 for it in items}, updated_at
+
+
 def variant_tag(mod, internal, damage, kind, variant):
     """The NBT tag (hex) the last scan saw on this variant, or None."""
     if not variant:

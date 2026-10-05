@@ -1165,6 +1165,171 @@ h1 {
   flex-shrink: 0;
   image-rendering: pixelated;
 }
+/* Crafting plan in the craft-request dialog (craft-plan.js). The dialog
+   widens while a plan is shown, and the plan scrolls inside it. */
+.modal-box.with-plan {
+  width: min(760px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+}
+.craft-plan {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 8px;
+  margin: 4px 0 12px;
+}
+.craft-plan[hidden],
+.craft-plan-note[hidden],
+.craft-plan-hide[hidden] {
+  display: none;
+}
+.craft-plan-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.craft-plan-views {
+  margin: 0;
+}
+.craft-plan-summary {
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.plan-ok {
+  color: var(--idle);
+}
+.plan-missing-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+.plan-missing-label,
+.plan-missing-line,
+.plan-missing-line b {
+  color: var(--stale);
+  font-weight: 600;
+}
+.plan-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px 2px 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--stale) 12%, var(--card));
+  border: 1px solid color-mix(in srgb, var(--stale) 40%, transparent);
+}
+.plan-chip-icon {
+  width: 18px;
+  height: 18px;
+  image-rendering: pixelated;
+}
+.plan-warning-line {
+  color: var(--busy);
+}
+.plan-meta,
+.craft-plan-foot {
+  color: var(--muted);
+  font-size: 11px;
+}
+.craft-plan-body {
+  flex: 1;
+  min-height: 120px;
+  max-height: min(55vh, 520px);
+  overflow-y: auto;
+  border: 1px solid rgba(128,128,128,0.2);
+  border-radius: 8px;
+  padding: 6px;
+}
+.plan-grid {
+  overflow: visible;
+}
+.ingredient-cell.missing {
+  background: color-mix(in srgb, var(--stale) 12%, var(--card));
+  border-color: color-mix(in srgb, var(--stale) 45%, transparent);
+}
+/* The game's colours for how much of an item's stock the plan uses. */
+.plan-used.used-all { color: var(--stale); }
+.plan-used.used-high { color: var(--busy); }
+.plan-used.used-mid { color: var(--idle); }
+.plan-used.used-low { color: var(--accent); }
+.plan-tree,
+.plan-tree ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.plan-tree ul {
+  margin-left: 11px;
+  padding-left: 10px;
+  border-left: 1px solid rgba(128,128,128,0.25);
+}
+.plan-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 3px 0;
+  font-size: 13px;
+}
+.plan-caret {
+  flex: 0 0 18px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 20px;
+}
+span.plan-caret {
+  cursor: default;
+}
+.plan-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  image-rendering: pixelated;
+}
+.plan-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.plan-name {
+  font-weight: 600;
+}
+.plan-qty {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.status-missing > .plan-row .plan-qty,
+.status-cycle > .plan-row .plan-qty {
+  color: var(--stale);
+}
+.status-stock > .plan-row .plan-qty {
+  color: var(--idle);
+}
+.plan-details {
+  color: var(--muted);
+  font-size: 11px;
+}
+.plan-alt {
+  margin-top: 3px;
+  max-width: 100%;
+  font-size: 11px;
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid rgba(128,128,128,0.3);
+  border-radius: 6px;
+  padding: 2px 4px;
+}
 section.group {
   margin-bottom: 22px;
 }
