@@ -623,6 +623,9 @@ async function main() {
     await waitFor('plan for 1', `visible($('#craftPlan')) && $('#craftPlanSummary').textContent.includes('Everything is in stock')`);
     // List view: every item the plan touches, Neutronium all from stock.
     await waitFor('list cells', `$$('#craftPlanBody .plan-cell').length === 3`);
+    // Of Neutronium's 5, the 1 the plan takes, as the game shows it.
+    await waitFor('available is what the plan takes', `$$('#craftPlanBody .plan-cell').some(c =>
+      c.textContent.includes('Available: 1') && c.textContent.includes('Used: 20.0%'))`);
     // A stock rule shows only once the plan itself crosses it: 5 Neutronium
     // in stock, an alert below 3 - fine for 1, broken by 3.
     const neutronium = { label: 'Neutronium Ingot', mod: 'gregtech', internal: 'gt.metaitem.01', damage: 11028 };

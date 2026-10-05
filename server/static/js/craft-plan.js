@@ -115,7 +115,9 @@ function cellHtml(it) {
   // always say 100%.
   if (it.from_stock > 0 && !(it.craft > 0)) {
     const pct = usedPercent(it);
-    lines.push(`<div>Available: <b>${qty(it.available, it.kind)}</b></div>`);
+    // The game's "Available" is what the plan takes, not all there is
+    // (the tooltip has that); Used is it as a share of all there is.
+    lines.push(`<div>Available: <b>${qty(it.from_stock, it.kind)}</b></div>`);
     lines.push(`<div class="plan-used ${usedBand(pct)}">Used: ${pct >= 99.95 ? '100' : pct.toFixed(pct < 10 ? 2 : 1)}%</div>`);
   }
   if (it.craft > 0) lines.push(`<div>Crafting: <b>${qty(it.craft, it.kind)}</b></div>`);
