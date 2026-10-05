@@ -31,6 +31,8 @@ from PIL import Image, ImageStat
 MINIMUMS = {
     "by_keyEntries": 40000,
     "fluids_by_keyEntries": 1000,
+    # Thaumcraft has about 50 aspects, and GTNH's addons add more.
+    "aspects_by_keyEntries": 40,
     "catalogIds": 8000,
 }
 MAX_FAILED_SHARE = 0.05
