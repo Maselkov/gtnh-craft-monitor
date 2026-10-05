@@ -1,5 +1,6 @@
 local t = require("testlib")
 local ae2 = require("fake_ae2")
+local fake_terminal = require("fake_terminal")
 
 local suite = t.suite()
 local test = suite.test
@@ -22,6 +23,8 @@ local function scan_server(overrides)
     ["POST /api/network/scan/start"] = { ok = true, scan_token = "tok-1", catalog_version = "2.8.0" },
     ["GET /api/network/catalog"] = { status = 200, body = catalog_of(250) },
     ["POST /api/network/scan/finish"] = { ok = true },
+    ["POST /api/network/patterns/start"] = { ok = true, scan_token = "ptok-1" },
+    ["POST /api/network/patterns/finish"] = { ok = true, pattern_count = 0 },
   }
   for k, v in pairs(overrides or {}) do routes[k] = v end
   return routes
@@ -302,6 +305,150 @@ test("the debug log records free memory", function()
   env:start_service("network_browser")
   env:run({ seconds = 30 })
   t.truthy(env:read_file("network_browser_debug.log"):find("mem=512k", 1, true))
+end)
+
+-- ------------------------------------------------------------ patterns
+
+local function pattern_batches(env)
+  local out = {}
+  for _, r in ipairs(env:requests_to("^/api/network/patterns/batch$", "POST")) do out[#out + 1] = r.json end
+  return out
+end
+
+-- Logs -> 4 planks, the way OC reports a crafting pattern: sizes 0,
+-- the counts only in its NBT (here just some bytes).
+local function planks_pattern()
+  return fake_terminal.pattern(
+    { [1] = fake_terminal.item("minecraft:log", "Oak Wood", 0, { id = 17 }) },
+    { [1] = fake_terminal.item("minecraft:planks", "Oak Wood Planks", 0, { id = 5 }) },
+    { crafting = true, tag = "\31\139AB" })
+end
+
+local function neodymium_pattern()
+  return fake_terminal.pattern(
+    { [1] = fake_terminal.item("gregtech:gt.metaitem.01", "Neodymium Ingot", 16, { damage = 11067, id = 7444 }) },
+    { [1] = fake_terminal.fluid("molten.neodymium", "Molten Neodymium", 2304),
+      [2] = fake_terminal.essentia("ordo", "Ordo", 2) },
+    { tag = "not sent" })
+end
+
+test("after an item scan, every pattern goes to the server in chunks", function()
+  local env, me = setup({ config = { PATTERN_CHUNK_SIZE = 2 } })
+  fill(me, 3)
+  fake_terminal.new(env, {
+    fake_terminal.interface("Molecular Assembler", -1413, 57, -123, { planks_pattern() }),
+    fake_terminal.interface("Nothing", 0, 0, 0, {}),
+    fake_terminal.interface("Fluid Extractor p1", 1, 2, 3, { neodymium_pattern(), neodymium_pattern() }),
+  })
+  env:start_service("network_browser")
+  env:run({ seconds = 60 })
+
+  local order = {}
+  for i, r in ipairs(env.requests) do order[r.path] = order[r.path] or i end
+  t.truthy(order["/api/network/scan/finish"] < order["/api/network/patterns/start"],
+    "patterns come after the item scan")
+
+  local b = pattern_batches(env)
+  t.eq(#b, 2)
+  t.eq(b[1].scan_token, "ptok-1")
+  t.eq(#b[1].patterns, 2)
+  t.eq(#b[2].patterns, 1)
+  t.eq(b[1].patterns[1], {
+    provider = { name = "Molecular Assembler", x = -1413, y = 57, z = -123, dim = 0 },
+    slot = 0,
+    crafting = true,
+    inputs = { { name = "Oak Wood", size = 0, mod = "minecraft", internal = "log", damage = 0,
+      isCraftable = false, kind = "item", id = 17 } },
+    outputs = { { name = "Oak Wood Planks", size = 0, mod = "minecraft", internal = "planks", damage = 0,
+      isCraftable = false, kind = "item", id = 5 } },
+    tag = "1f8b4142",
+  })
+  -- A processing pattern's sizes are real, so its NBT isn't sent.
+  t.eq(b[1].patterns[2].tag, nil)
+  t.eq(b[1].patterns[2].crafting, false)
+  t.eq(b[1].patterns[2].outputs, {
+    { name = "Molten Neodymium", size = 2304, internal = "molten.neodymium", isCraftable = false, kind = "fluid" },
+    { name = "Ordo", size = 2, internal = "ordo", isCraftable = false, kind = "essentia" },
+  })
+  t.eq(b[2].patterns[1].slot, 1)
+
+  t.eq(env:requests_to("^/api/network/patterns/finish$")[1].json,
+    { scan_token = "ptok-1", chunks_sent = 2, total_errors = 0 })
+end)
+
+test("without an interface terminal there are no pattern scans", function()
+  local env, me = setup()
+  fill(me, 3)
+  env:start_service("network_browser")
+  env:run({ seconds = 60 })
+  t.eq(#env:requests_to("^/api/network/patterns"), 0)
+  t.eq(#batches(env), 1)
+end)
+
+test("patterns are scanned every PATTERN_SCAN_INTERVAL_SECONDS, not every item scan", function()
+  local env, me = setup({ config = { SCAN_INTERVAL_SECONDS = 100, PATTERN_SCAN_INTERVAL_SECONDS = 250,
+    WATCH_INTERVAL_SECONDS = 0 } })
+  fill(me, 3)
+  fake_terminal.new(env, { fake_terminal.interface("EBF", 0, 0, 0, { neodymium_pattern() }) })
+  env:start_service("network_browser")
+  env:run({ seconds = 450 })
+  t.eq(#env:requests_to("^/api/network/scan/finish$"), 5)
+  t.eq(#env:requests_to("^/api/network/patterns/finish$"), 2)
+end)
+
+test("PATTERN_SCAN_INTERVAL_SECONDS = 0 turns pattern scans off", function()
+  local env, me = setup({ config = { PATTERN_SCAN_INTERVAL_SECONDS = 0 } })
+  fill(me, 3)
+  fake_terminal.new(env, { fake_terminal.interface("EBF", 0, 0, 0, { neodymium_pattern() }) })
+  env:start_service("network_browser")
+  env:run({ seconds = 60 })
+  t.eq(#env:requests_to("^/api/network/patterns"), 0)
+end)
+
+test("a broken pattern list is reported as an error, tried again, and item scans go on", function()
+  local env, me = setup({ config = { SCAN_INTERVAL_SECONDS = 100, WATCH_INTERVAL_SECONDS = 0 } })
+  fill(me, 3)
+  local term = fake_terminal.new(env, {
+    fake_terminal.interface("A", 0, 0, 0, { neodymium_pattern() }),
+    fake_terminal.interface("B", 0, 0, 1, { neodymium_pattern() }),
+  })
+  term.fail_list_at = 2
+  env:start_service("network_browser")
+  env:run({ seconds = 60 })
+  t.eq(env:requests_to("^/api/network/patterns/finish$")[1].json,
+    { scan_token = "ptok-1", chunks_sent = 1, total_errors = 1 })
+  t.truthy(env:read_file("network_browser_debug.log"):find("pattern list failed after 1 interfaces", 1, true))
+
+  -- Not an hour later: after the next item scan.
+  env:run({ seconds = 100 })
+  t.eq(#env:requests_to("^/api/network/scan/finish$"), 2)
+  t.eq(#env:requests_to("^/api/network/patterns/finish$"), 2)
+end)
+
+test("a failing getInterfaces() finishes the scan with an error", function()
+  local env, me = setup()
+  fill(me, 3)
+  local term = fake_terminal.new(env, {})
+  term:fail("getInterfaces", "no grid")
+  env:start_service("network_browser")
+  env:run({ seconds = 60 })
+  t.eq(#pattern_batches(env), 0)
+  t.eq(env:requests_to("^/api/network/patterns/finish$")[1].json,
+    { scan_token = "ptok-1", chunks_sent = 0, total_errors = 1 })
+end)
+
+test("a stale pattern scan token stops sending", function()
+  local env, me = setup({ config = { PATTERN_CHUNK_SIZE = 1 }, routes = {
+    ["POST /api/network/patterns/batch"] = { ok = false, error = "stale_scan_token" },
+  } })
+  fill(me, 3)
+  fake_terminal.new(env, { fake_terminal.interface("EBF", 0, 0, 0,
+    { neodymium_pattern(), neodymium_pattern(), neodymium_pattern() }) })
+  env:start_service("network_browser")
+  env:run({ seconds = 60 })
+  t.eq(#pattern_batches(env), 1)
+  t.eq(#env:requests_to("^/api/network/patterns/finish$"), 0)
+  t.truthy(env:read_file("network_browser_debug.log"):find("stale_scan_token", 1, true))
 end)
 
 return suite

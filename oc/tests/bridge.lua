@@ -7,7 +7,7 @@
   header says.
 
   The other end sends a command: "<n>\n" + n bytes of Lua. It runs with
-  env (the oc_env computer), ae2, gt and json in scope; globals it sets
+  env (the oc_env computer), ae2, gt, terminal and json in scope; globals it sets
   stay set for later commands. This end answers
     "RESULT <n>\n" + its return value as JSON, or
     "ERROR <n>\n" + the error with traceback.
@@ -53,6 +53,7 @@ local scope = setmetatable({
   env = env,
   ae2 = require("fake_ae2"),
   gt = require("fake_gt"),
+  terminal = require("fake_terminal"),
   json = json,
 }, { __index = _G })
 

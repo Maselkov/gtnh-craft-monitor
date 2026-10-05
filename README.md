@@ -77,6 +77,7 @@ never connects into the game.
 | `oc/config.lua` | Server URL, API key and per-script settings for all scripts |
 | `oc/http.lua`, `oc/json.lua` | Libraries used by the scripts |
 | `oc/sensor_info_dump.lua` | One-off diagnostic: prints a GT machine's full sensor info |
+| `oc/pattern_dump.lua` | One-off diagnostic: sends what the ME Interface Terminal reports about the network's patterns to `/api/debug` |
 | `tools/icon-export/` | Builds game data (item icons, icon lookup, item catalog) from a GTNH pack; CI runs it for each GTNH release |
 
 ## Server setup
@@ -356,6 +357,11 @@ The lookup contains four tables:
   `OpenComputers.cfg`. Items that share an id but differ in NBT (seeds with
   different stats, bees of one species) are then listed separately, as AE2
   does. Without it they're only told apart by name.
+- Optional, GTNH 2.9 or later: an Adapter touching (or MFU-linked to) a block
+  holding an **ME Interface Terminal** part, on the same computer as
+  `network_browser.lua`. With it, the scanner also reads every pattern on the
+  network (see [Reading patterns](#reading-patterns)). Crafting-table
+  patterns need `allowItemStackNBTTags` for their output counts.
 
 #### Connecting the Adapter
 
@@ -514,6 +520,8 @@ the output, then remove it again.
 |---|---|---|
 | `SCAN_INTERVAL_SECONDS` | `600` | Time between full network scans |
 | `WATCH_INTERVAL_SECONDS` | `60` | Between full scans, how often to check just the items with a [stock rule](#stock-rules); `0` turns it off |
+| `PATTERN_SCAN_INTERVAL_SECONDS` | `3600` | How often to [read every pattern](#reading-patterns), if an ME Interface Terminal is connected; `0` turns it off |
+| `PATTERN_CHUNK_SIZE` | `20` | Patterns sent to the server per POST |
 | `CRASH_RESTART_SECONDS` | `30` | After an error stops scanning, how long to wait before starting over |
 | `CATALOG_PATH` | `/home/item_catalog.txt` | Item catalog to use when the server has no game data |
 | `BATCH_SIZE` | `300` | Item IDs queried per call |
@@ -793,6 +801,39 @@ values, so a GregTech material brings back every stack sharing its ID
 (hundreds, for `gt.metaitem.01`), roughly one full-scan batch, and the script
 keeps only the watched ones. Each call's size and duration go to the
 script's debug log, `network_browser_debug.log`, in the directory it runs from.
+
+### Reading patterns
+
+GTNH 2.9's OpenComputers can read an ME Interface Terminal
+(`me_interface_terminal`). Its `getInterfaces()` lists everything the
+terminal would show: interfaces, molecular assemblers and GregTech pattern
+hatches, each with its name, location and patterns. The list is a copy taken
+when it's called, so the network changing during the walk doesn't disturb it,
+unlike `allItems()`. Each pattern comes with its inputs and outputs.
+
+After a full item scan, at most every `PATTERN_SCAN_INTERVAL_SECONDS`,
+`network_browser.lua` walks that list and posts the patterns in chunks, with
+the same `start` → `batch` × N → `finish` protocol as the item scan
+(`/api/network/patterns/...`). Running after the item scan rather than
+alongside it keeps the two from holding memory at the same time. A failed
+pattern scan is only logged, and is tried again after the next item scan.
+
+What it reports, found with `oc/pattern_dump.lua` on a real network:
+
+- Processing patterns have real sizes.
+- Crafting-table patterns report every size as 0. AE2's converter reads its
+  own `Cnt` field, and crafting patterns store a vanilla `Count`. For those
+  patterns the script also sends the pattern's NBT, and the server reads the
+  counts from it the way AE2 does (`Count`, else `Cnt`). Without
+  `allowItemStackNBTTags` there's no NBT: inputs are still counted (one per
+  grid slot), but outputs have no count, and the pattern is marked inexact.
+- Fluids come either as fluid entries or, in older patterns, as ae2fc
+  `fluid_drop` items whose NBT names the fluid. The server turns both into
+  fluids. Thaumic essentia comes as an amount with no item ID.
+
+The server keeps the last complete scan, saved across restarts, and serves it
+to signed-in users at `GET /api/network/patterns` (it includes each machine's
+coordinates). Items are keyed like the Network tab's, NBT variants included.
 
 ### Fluid items
 

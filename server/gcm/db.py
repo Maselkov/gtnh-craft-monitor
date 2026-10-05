@@ -435,6 +435,19 @@ def _item_history_variants(conn):
     conn.execute("INSERT INTO pending_nbt_cleanup (id) VALUES (1)")
 
 
+def _item_history_pattern_snapshot(conn):
+    # The last complete pattern scan (gcm/patterns.py) as one JSON list,
+    # so a restart doesn't leave the server without patterns until the
+    # next one, up to an hour away. Only ever read and written whole.
+    conn.execute("""
+        CREATE TABLE pattern_snapshot (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            patterns TEXT NOT NULL,
+            updated_at REAL NOT NULL
+        )
+    """)
+
+
 def _app_push_subscriptions(conn):
     # One row per browser that turned notifications on (gcm/push.py).
     # A browser has one endpoint whoever is signed in, so it's the key.
@@ -525,7 +538,7 @@ APP_MIGRATIONS = [
     _app_craft_event_auto,
 ]
 POWER_MIGRATIONS = [_power_baseline]
-ITEM_HISTORY_MIGRATIONS = [_item_history_baseline, _item_history_variants]
+ITEM_HISTORY_MIGRATIONS = [_item_history_baseline, _item_history_variants, _item_history_pattern_snapshot]
 
 
 def migrate(open_db, steps):

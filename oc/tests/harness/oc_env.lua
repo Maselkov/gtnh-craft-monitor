@@ -468,6 +468,20 @@ function Env:_libs()
     end
     return nil, "no such component"
   end
+  -- Every function on the fake's proxy, none of them direct. The fakes
+  -- carry no doc strings.
+  function component.methods(address)
+    local proxy = component.proxy(address)
+    if not proxy then return nil, "no such component" end
+    local methods = {}
+    for k, v in pairs(proxy) do
+      if type(v) == "function" then methods[k] = false end
+    end
+    return methods
+  end
+  function component.doc(address, method)
+    return nil
+  end
   function component.type(address)
     for _, c in ipairs(env.components) do
       if c.address == address then return c.type end

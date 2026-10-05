@@ -1,7 +1,9 @@
 --[[
   network_browser.lua - periodically scans the full ME network's item
   contents and reports them to the server, powering the site's Network
-  tab (searchable/sortable browse of everything currently stored).
+  tab (searchable/sortable browse of everything currently stored). With
+  an ME Interface Terminal connected, it also reads every pattern on the
+  network every hour or so (see run_pattern_scan).
 
   Deployed as an OpenOS rc service - lives at /etc/rc.d/network_browser.lua.
   Manage it with:
@@ -125,6 +127,12 @@ local CONFIG = {
   WATCH_INTERVAL_SECONDS = 60,  -- between full scans, how often to check
                                 -- just the items with a stock rule on them
                                 -- (see run_watch); 0 turns it off
+  PATTERN_SCAN_INTERVAL_SECONDS = 3600,  -- how often to read every pattern
+                                         -- (see run_pattern_scan), if an ME
+                                         -- Interface Terminal is connected;
+                                         -- 0 turns it off
+  PATTERN_CHUNK_SIZE = 20,  -- patterns per POST: a crafting pattern
+                            -- carries its NBT, a few KB with 9 inputs
   CRASH_RESTART_SECONDS = 30,  -- after an error kills the scan loop (see
                                -- service_loop), wait this long and start over
   MAX_CONSECUTIVE_ERRORS = 5,
@@ -188,10 +196,12 @@ end
 -- succeeded. A 200 with {"ok": false, ...} in the body and an actual
 -- transport failure both come back as "the read succeeded", so the two
 -- have to be told apart by decoding and checking the body every time.
-local function post_result_subchunk(subChunk, scanToken)
+--
+-- The pattern scan's batches (post_scan_chunk("/patterns/batch", ...))
+-- work the same way.
+local function post_scan_chunk(path, payloadTable)
   local sendOk, transportOk, body = pcall(function()
-    local payload = json_encode({ items = subChunk, scan_token = scanToken })
-    return post_json("/scan/batch", payload)
+    return post_json(path, json_encode(payloadTable))
   end)
   if not sendOk then
     -- pcall itself failed (e.g. json_encode threw - see the comment on
@@ -208,6 +218,10 @@ local function post_result_subchunk(subChunk, scanToken)
     return false, "scan rejected by server (stale_scan_token)", true
   end
   return true, body, false
+end
+
+local function post_result_subchunk(subChunk, scanToken)
+  return post_scan_chunk("/scan/batch", { items = subChunk, scan_token = scanToken })
 end
 
 local function safe_free_memory()
@@ -644,6 +658,206 @@ local function run_scan(me)
   return true, { total_items = totalItems, total_fluids = totalFluids, total_errors = totalErrors, batches = batchNum, chunks_sent = chunksSent }
 end
 
+-- ---------------------------------------------------------------------
+-- Pattern scans: every pattern on the network, read through GTNH 2.9's
+-- ME Interface Terminal driver (an Adapter against a block holding an
+-- Interface Terminal part) - what the server builds recipe trees from.
+-- Skipped without that component. Patterns rarely change, so this runs
+-- every PATTERN_SCAN_INTERVAL_SECONDS, after an item scan rather than
+-- alongside it, so the two never hold memory at the same time.
+--
+-- As oc/pattern_dump.lua found on a real network: getInterfaces()
+-- snapshots every interface, machine and pattern hatch the terminal
+-- lists, and the network changing can't disturb it the way it does
+-- allItems(). Calling it gives the next {name, location, patterns},
+-- then nil. patterns is keyed by slot from 0; a pattern's inputs and
+-- outputs by position from 1, with gaps where a crafting grid is empty.
+-- A crafting pattern reports every size as 0, so its own NBT (`tag`),
+-- which has the real counts, goes to the server too - see
+-- gcm/patterns.py.
+
+local MAX_PATTERN_TAG_BYTES = 8192
+
+local function find_interface_terminal()
+  for address in component.list("me_interface_terminal", true) do
+    return component.proxy(address)
+  end
+  return nil
+end
+
+-- Fluids and essentia carry an amount, and essentia no item id. id is
+-- for the server to find an item in the pattern's NBT.
+local function simplify_pattern_stack(stack)
+  if stack.amount ~= nil then
+    local s = simplify_fluid(stack)
+    if stack.id == nil then s.kind = "essentia" end
+    return s
+  end
+  local s = simplify_item(stack)
+  s.id = stack.id
+  return s
+end
+
+local function sorted_keys(t)
+  local keys = {}
+  for k in pairs(t) do
+    if type(k) == "number" then keys[#keys + 1] = k end
+  end
+  table.sort(keys)
+  return keys
+end
+
+local function simplify_stacks(stacks)
+  local out = {}
+  if type(stacks) == "table" then
+    for _, k in ipairs(sorted_keys(stacks)) do
+      if type(stacks[k]) == "table" then out[#out + 1] = simplify_pattern_stack(stacks[k]) end
+    end
+  end
+  return out
+end
+
+local function simplify_pattern(p, slot, provider)
+  local inputs, outputs = simplify_stacks(p.inputs), simplify_stacks(p.outputs)
+  local needsTag = p.isCraftable or #outputs == 0
+  for _, s in ipairs(outputs) do
+    if not s.size or s.size == 0 then needsTag = true end
+  end
+  local tag, tagTooLarge
+  if needsTag and type(p.tag) == "string" then
+    if #p.tag <= MAX_PATTERN_TAG_BYTES then
+      tag = hex(p.tag)
+    else
+      tagTooLarge = true
+    end
+  end
+  return {
+    provider = provider,
+    slot = slot,
+    crafting = p.isCraftable and true or false,
+    inputs = inputs,
+    outputs = outputs,
+    tag = tag,
+    tag_too_large = tagTooLarge,
+  }
+end
+
+-- The same start/batch/finish protocol as run_scan(), so the server only
+-- replaces its patterns with a scan it got all of. Returns ok,
+-- {patterns=, providers=} or an error message.
+local function run_pattern_scan(terminal)
+  scanStartUptime = computer.uptime()
+  set_phase("Patterns: calling patterns/start...")
+  local ok, body = post_json("/patterns/start", "{}")
+  if not ok then
+    return false, "patterns/start failed: " .. tostring(body)
+  end
+  local started = json_decode(body)
+  local token = started and started.scan_token
+  if not token then
+    return false, "patterns/start response missing a scan_token: " .. tostring(body)
+  end
+
+  local chunk, chunksSent, errors, total, providers = {}, 0, 0, 0, 0
+  local rejected = false
+  local function flush()
+    if #chunk == 0 or rejected then return end
+    chunksSent = chunksSent + 1
+    set_phase(string.format("Patterns: POSTing chunk %d (%d patterns)...", chunksSent, #chunk))
+    local postOk, err, wasRejected = post_scan_chunk("/patterns/batch", { patterns = chunk, scan_token = token })
+    if wasRejected then
+      rejected = true
+    elseif not postOk then
+      errors = errors + 1
+      debug_log("pattern batch POST failed: " .. tostring(err))
+    end
+    chunk = {}
+    pcall(collectgarbage, "collect")
+  end
+
+  set_phase("Patterns: calling getInterfaces()...")
+  local listOk, list = pcall(terminal.getInterfaces)
+  if listOk then
+    local countOk, count = pcall(function() return list.count() end)
+    -- Bounded in case the list never returns nil.
+    for i = 1, (countOk and tonumber(count) or 100000) + 1 do
+      if rejected then break end
+      local callOk, info = pcall(list)
+      if not callOk then
+        errors = errors + 1
+        debug_log("pattern list failed after " .. (i - 1) .. " interfaces: " .. tostring(info))
+        break
+      end
+      if info == nil then break end
+      if type(info.patterns) == "table" then
+        local loc = type(info.location) == "table" and info.location or {}
+        local provider = { name = info.name, x = loc.x, y = loc.y, z = loc.z, dim = loc.dimId }
+        local slots = sorted_keys(info.patterns)
+        if #slots > 0 then providers = providers + 1 end
+        for _, slot in ipairs(slots) do
+          chunk[#chunk + 1] = simplify_pattern(info.patterns[slot], slot, provider)
+          total = total + 1
+          if #chunk >= CONFIG.PATTERN_CHUNK_SIZE then flush() end
+        end
+      end
+      info = nil
+      -- Long runs of empty interfaces never reach a POST, the usual
+      -- place this thread lets the others run.
+      if i % 50 == 0 then os.sleep(0) end
+    end
+    list = nil
+  else
+    errors = errors + 1
+    debug_log("getInterfaces() failed: " .. tostring(list))
+  end
+  flush()
+
+  if rejected then
+    return false, "pattern scan rejected by server (stale_scan_token)"
+  end
+  set_phase("Patterns: calling patterns/finish...")
+  local finishOk, finishBody = post_json("/patterns/finish",
+    json_encode({ scan_token = token, chunks_sent = chunksSent, total_errors = errors }))
+  if not finishOk then
+    return false, "patterns/finish failed: " .. tostring(finishBody)
+  end
+  local finished = json_decode(finishBody)
+  if finished and finished.ok == false then
+    return false, "patterns/finish refused: " .. tostring(finished.error)
+  end
+  if finished and finished.rejected == true then
+    return false, "pattern scan discarded by server: " .. tostring(finished.reason)
+  end
+  if errors > 0 then
+    return false, errors .. " error(s) during the pattern scan"
+  end
+  debug_log(string.format("pattern scan OK - %d patterns from %d providers, %d chunks", total, providers, chunksSent))
+  return true, { patterns = total, providers = providers }
+end
+
+local lastPatternScan = nil
+
+-- After an item scan: a pattern scan, if one's due and there's a
+-- terminal to read. A failed one is tried again after the next item
+-- scan. Its errors are only logged - they mustn't stop the item scans.
+local function maybe_scan_patterns()
+  local interval = CONFIG.PATTERN_SCAN_INTERVAL_SECONDS or 0
+  if interval <= 0 then return end
+  if lastPatternScan and computer.uptime() - lastPatternScan < interval then return end
+  local terminal = find_interface_terminal()
+  if not terminal then return end
+  local startedAt = computer.uptime()
+  local ok, okOrErr, result = pcall(run_pattern_scan, terminal)
+  if not ok then
+    debug_log("pattern scan crashed: " .. tostring(okOrErr))
+  elseif not okOrErr then
+    debug_log("pattern scan failed: " .. tostring(result))
+  else
+    lastPatternScan = startedAt
+  end
+  pcall(collectgarbage, "collect")
+end
+
 
 local function draw_status(lastResult, lastError, nextScanIn)
   term.clear()
@@ -840,6 +1054,8 @@ local function scan_forever(me)
     -- flag-checking deep inside run_scan(), and would risk leaving the
     -- server's in_progress flag stuck at true forever since scan/finish
     -- would never get called).
+    if not running then break end
+    maybe_scan_patterns()
     if not running then break end
 
     -- A single os.sleep(SCAN_INTERVAL_SECONDS) here would mean stop()
