@@ -59,7 +59,9 @@ ADMIN_NAME = "Admin"
 # ---------------------------------------------------------------- items
 
 # (name, shape, colour). Items get mod gregtech and a made-up damage value;
-# fluids have no mod, which is how the game reports them.
+# fluids have no mod, which is how the game reports them, and neither
+# does essentia, named by its aspect tag. Essentia gets no icon, as
+# game data before aspect icons has none.
 ITEMS = [
     ("Tungstensteel Ingot", "ingot", (70, 70, 120)),
     ("Kanthal Dust", "dust", (190, 160, 110)),
@@ -103,6 +105,9 @@ ITEMS = [
     ("Iron Ingot", "ingot", (215, 215, 215)),
     # A real GTNH name, long enough to wrap on a crafting card.
     ("Exquisite Cerium-doped Lutetium Aluminium Garnet (Ce:LuAG)", "gem", (130, 220, 60)),
+    ("Ordo", "essentia", None),
+    ("Metallum", "essentia", None),
+    ("Praecantatio", "essentia", None),
 ]
 
 
@@ -111,6 +116,9 @@ def _slug(name):
 
 
 def _item(index, name, shape, colour):
+    if shape == "essentia":
+        return {"name": name, "mod": None, "internal": name.lower(), "damage": None,
+                "kind": "essentia", "shape": shape, "colour": colour}
     if shape == "fluid":
         return {"name": name, "mod": None, "internal": _slug(name), "damage": None,
                 "kind": "fluid", "shape": shape, "colour": colour}
@@ -135,7 +143,8 @@ def stack(name, size):
 # (gcm/planner.py): (provider, crafting?, outputs, inputs), each a list
 # of (name, size). Covers a chain (gear <- plate <- ingot), a step with
 # two patterns (plates), a cycle (ingot <-> molten), an output made in
-# batches (bolts) and an input nothing makes and the network never has.
+# batches (bolts), an input nothing makes and the network never has, and
+# essentia (the framework).
 PATTERNS = [
     ("Molecular Assembler", True, [("Inconel-625 Gear", 1)], [("Inconel-625 Plate", 4), ("Steel Bolt", 1)]),
     ("Bending Machine T4:EV", False, [("Inconel-625 Plate", 1)], [("Inconel-625 Ingot", 1)]),
@@ -146,6 +155,7 @@ PATTERNS = [
     ("Circuit Assembler", False, [("Ultimate Circuit", 1)],
      [("Draconium Ingot", 2), ("SMD Capacitor", 4), ("Lapotron Crystal", 1), ("Molten Inconel-625", 288)]),
     ("Molecular Assembler", True, [("Titanium Gear", 1)], [("Neutronium Plate", 4), ("Iridium Screw", 1)]),
+    ("Infusion Altar", False, [("Integral Framework I", 1)], [("Iron Ingot", 2), ("Ordo", 64), ("Praecantatio", 16)]),
 ]
 PATTERN_OUTPUTS = {name for _, _, outputs, _ in PATTERNS for name, _ in outputs}
 # Kept at none, so a plan for the Ultimate Circuit comes up short.
@@ -237,6 +247,8 @@ def install_icons(data_dir):
     by_key, fluids_by_key = {}, {}
     with zipfile.ZipFile(os.path.join(bundle, "images.zip"), "w") as zf:
         for it in CATALOG:
+            if it["kind"] == "essentia":
+                continue
             if it["kind"] == "fluid":
                 path = f"fluid/{it['internal']}.png"
                 fluids_by_key[it["internal"]] = path
@@ -404,7 +416,7 @@ class Cpu:
 
 
 def random_ingredients(count, exclude):
-    names = [it["name"] for it in CATALOG if it["name"] != exclude]
+    names = [it["name"] for it in CATALOG if it["name"] != exclude and it["kind"] != "essentia"]
     return [(name, random.randint(1, 64) * random.choice((1, 1, 4, 16)))
             for name in random.sample(names, count)]
 
@@ -530,7 +542,7 @@ class FakeGame:
         checks have something to show."""
         watch = self.call("GET", "/api/network/watch")
         wanted = {(w["name"], w["damage"]) for w in watch.get("items", [])} | {
-            (f, None) for f in watch.get("fluids", [])}
+            (f, None) for f in watch.get("fluids", []) + watch.get("essentia", [])}
         found = []
         for it in CATALOG:
             name = f"{it['mod']}:{it['internal']}" if it["mod"] else it["internal"]
@@ -556,7 +568,7 @@ class FakeGame:
 def seed_stock_rules(stock):
     """A few stock rules for the dev admin, some already low: targets
     the fake game fills (Iron Ingot), turns down (Inconel-625 Plate) or
-    has plenty of (Titanium Gear), and two alerts."""
+    has plenty of (Titanium Gear), and three alerts, one on essentia."""
     user_id = store.users.id_for_display_name(ADMIN_NAME)
 
     def item(name):
@@ -571,6 +583,7 @@ def seed_stock_rules(stock):
                            max(2, stock["Titanium Gear"] // 2), True)
     store.stock.set_alert(user_id, item("Glass Dust"), stock["Glass Dust"] + 200)
     store.stock.set_alert(user_id, item("Osmium Rod"), max(1, stock["Osmium Rod"] // 3))
+    store.stock.set_alert(user_id, item("Ordo"), stock["Ordo"] + 100)
 
 
 def admin_token():

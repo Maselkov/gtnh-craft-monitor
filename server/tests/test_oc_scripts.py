@@ -161,6 +161,7 @@ def test_watched_items_are_checked_between_scans(game, client):
         gear.size = 50
         me.items = {{ gear, ae2.stack("gregtech:gt.metaitem.01", "Iron Dust", 900, {{ damage = 2032 }}) }}
         me.fluids = {{ ae2.fluid("water", "Water", 64000) }}
+        me.essentia = {{ ae2.essentia("ordo", "Ordo", 500), ae2.essentia("aer", "Aer", 12) }}
         env:start_service("network_browser")
         """
     )
@@ -169,18 +170,19 @@ def test_watched_items_are_checked_between_scans(game, client):
     for item in (
         {"label": "Titanium Gear", "mod": "gregtech", "internal": "gt.metaitem.01", "damage": 32600},
         {"label": "Water", "internal": "water", "kind": "fluid"},
+        {"label": "Ordo", "internal": "ordo", "kind": "essentia"},
     ):
         assert client.post("/api/stock/alert", json={**item, "below": 10}).status_code == 200
-    game.lua("gear.size = 3; me.fluids[1].amount = 5")
+    game.lua("gear.size = 3; me.fluids[1].amount = 5; me.essentia[1].amount = 4")
     game.run(60)
 
     assert all(status == 200 for _, _, status in game.requests)
     levels = [r for r in game.requests if r[1].endswith("/api/network/levels")]
     assert levels
     sizes = {i["name"]: i["size"] for i in client.get("/api/network").get_json()["items"]}
-    assert sizes == {"Titanium Gear": 3, "Iron Dust": 900, "Water": 5}
+    assert sizes == {"Titanium Gear": 3, "Iron Dust": 900, "Water": 5, "Ordo": 4, "Aer": 12}
     assert {a["label"]: a["low"] for a in client.get("/api/stock/rules").get_json()["alerts"]} == {
-        "Titanium Gear": True, "Water": True,
+        "Titanium Gear": True, "Water": True, "Ordo": True,
     }
 
 

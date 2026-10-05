@@ -7,6 +7,7 @@ from conftest import login_as
 from test_stock import GOLD, IRON, auto_requests, cpus, pushes, scan, scanned, set_target  # noqa: F401
 
 WATER = {"label": "Water", "mod": None, "internal": "water", "damage": None, "kind": "fluid"}
+ORDO = {"label": "Ordo", "mod": None, "internal": "ordo", "damage": None, "kind": "essentia"}
 CHECK_IRON = {"items": [{"name": "minecraft:iron_ingot", "damage": 0}], "fluids": []}
 
 
@@ -39,18 +40,20 @@ class TestWatchList:
         set_target(client)
         client.post("/api/stock/alert", json={**IRON, "below": 5})
         client.post("/api/stock/alert", json={**WATER, "below": 1000})
+        client.post("/api/stock/alert", json={**ORDO, "below": 64})
         login_as(client, "alice")
         client.post("/api/stock/alert", json={**GOLD, "below": 5})
         assert watch(client, api_headers) == {
             "items": [{"name": "minecraft:gold_ingot", "damage": 0}, {"name": "minecraft:iron_ingot", "damage": 0}],
             "fluids": ["water"],
+            "essentia": ["ordo"],
         }
 
     def test_paused_targets_are_left_out(self, client, api_headers):
         scan(client, api_headers, scanned(IRON, 500))
         login_as(client, "olive", role="operator")
         set_target(client, enabled=False)
-        assert watch(client, api_headers) == {"items": [], "fluids": []}
+        assert watch(client, api_headers) == {"items": [], "fluids": [], "essentia": []}
 
 
 class TestLevels:
@@ -76,6 +79,15 @@ class TestLevels:
         scan(client, api_headers, water)
         levels(client, api_headers, {**water, "size": 1000}, checked={"items": [], "fluids": ["water"]})
         assert sizes(client) == {"Water": 1000}
+
+    def test_essentia(self, client, api_headers):
+        ordo = {"name": "Ordo", "internal": "ordo", "kind": "essentia", "size": 500}
+        # A fluid of the same name isn't the essentia, nor the other way round.
+        water = {"name": "Water", "internal": "ordo", "kind": "fluid", "size": 64000}
+        scan(client, api_headers, ordo, water)
+        levels(client, api_headers, {**ordo, "size": 40}, checked={"items": [], "fluids": [], "essentia": ["ordo"]})
+        assert sizes(client) == {"Ordo": 40, "Water": 64000}
+        assert history_sizes({**ORDO}) == [500, 40]
 
     def test_survives_a_restart(self, client, api_headers):
         scan(client, api_headers, scanned(IRON, 500), scanned(GOLD, 500))
@@ -106,6 +118,14 @@ class TestLevels:
 
 
 class TestRulesBetweenScans:
+    def test_an_essentia_alert_fires_from_a_check(self, client, api_headers, pushes):
+        ordo = {"name": "Ordo", "internal": "ordo", "kind": "essentia", "size": 500}
+        scan(client, api_headers, ordo)
+        login_as(client, "alice")
+        assert client.post("/api/stock/alert", json={**ORDO, "below": 100}).get_json() == {"ok": True}
+        levels(client, api_headers, {**ordo, "size": 50}, checked={"items": [], "fluids": [], "essentia": ["ordo"]})
+        assert "Ordo is at 50 (below 100)" in pushes[0][1]["body"]
+
     def test_an_alert_fires_from_a_check(self, client, api_headers, pushes):
         scan(client, api_headers, scanned(IRON, 500))
         login_as(client, "alice")

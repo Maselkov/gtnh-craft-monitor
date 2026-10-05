@@ -44,18 +44,22 @@ def evaluate_scan(started_at=None):
 def watch_list():
     """What network_browser.lua checks between full scans: every item
     with an alert or an enabled target, as {items: [{name: "mod:internal",
-    damage}], fluids: [name]}. getItemsInNetworkById() takes the name;
-    the damage picks out this item from the others sharing that id."""
-    items, fluids = set(), set()
+    damage}], fluids: [name], essentia: [aspect tag]}.
+    getItemsInNetworkById() takes the name; the damage picks out this
+    item from the others sharing that id."""
+    items, fluids, essentia = set(), set(), set()
     rules = [t for t in store.stock.targets() if t["enabled"]] + store.stock.all_alerts()
     for rule in rules:
         if rule["kind"] == "fluid":
             fluids.add(rule["internal"])
+        elif rule["kind"] == "essentia":
+            essentia.add(rule["internal"])
         elif rule["mod"]:
             items.add((f"{rule['mod']}:{rule['internal']}", rule["damage"]))
     return {
         "items": [{"name": name, "damage": damage} for name, damage in sorted(items, key=str)],
         "fluids": sorted(fluids),
+        "essentia": sorted(essentia),
     }
 
 
@@ -77,7 +81,7 @@ def _check_alerts(sizes):
             push.notify_users([alert["user_id"]], push.stock_message(
                 alert["key"],
                 alert["label"],
-                icons.resolve_icon(alert["mod"], alert["internal"], alert["damage"], alert["label"], alert["variant"]),
+                icons.resolve_icon(alert["mod"], alert["internal"], alert["damage"], alert["label"], alert["variant"], alert["kind"]),
                 f"{alert['label']} is at {_amount_text(current, alert['kind'])} "
                 f"(below {_amount_text(alert['below'], alert['kind'])}).",
             ))

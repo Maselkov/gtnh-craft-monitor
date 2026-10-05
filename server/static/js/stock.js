@@ -8,7 +8,7 @@ import { AUTH_USER, isOperator } from './auth.js';
 import { showToast } from './craft-actions.js';
 import { openItemHistory, redrawItemHistoryChart } from './history.js';
 import { lastNetworkData, networkItemKey, rerenderNetworkList } from './network.js';
-import { BELL_ICON, delegateActions, escapeHtml, formatQty, formatRelativeTime, iconClass, iconUrl, RESTOCK_ICON } from './util.js';
+import { BELL_ICON, delegateActions, escapeHtml, essentiaBadgeHtml, formatQty, formatRelativeTime, iconClass, iconUrl, RESTOCK_ICON } from './util.js';
 
 let targets = new Map();  // item key -> target, for the whole base
 let alerts = new Map();   // item key -> this user's alert
@@ -120,7 +120,7 @@ function rowsByItem() {
 function renderRow({ item, target, alert }) {
   const icon = item.icon
     ? `<img class="${iconClass('craft-icon', item.icon)}" src="${iconUrl(item.icon)}" alt="" loading="lazy" data-remove-on-error>`
-    : '<span class="craft-icon"></span>';
+    : (essentiaBadgeHtml(item, 'craft-icon') || '<span class="craft-icon"></span>');
   const parts = [];
   let chip = '';
   let threshold = null;

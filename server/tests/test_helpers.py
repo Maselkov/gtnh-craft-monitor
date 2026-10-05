@@ -57,6 +57,11 @@ class TestParseItemUrlPath:
             "mod": None, "internal": "molten.silicone", "damage": None, "kind": "fluid", "variant": None,
         }
 
+    def test_essentia_is_an_at_sign_and_its_aspect(self):
+        assert pages.parse_item_url_path("@ordo") == {
+            "mod": None, "internal": "ordo", "damage": None, "kind": "essentia", "variant": None,
+        }
+
     def test_matches_the_frontend_js_parser_shape(self):
         # Both sides need to agree exactly - this mirrors the manual
         # cross-check already done for the real feature (see the
@@ -124,6 +129,16 @@ class TestResolveIcon:
         monkeypatch.setattr(icons, "_icons_by_label", {})
         result = icons.resolve_icon(None, "cryotheum", None, "Cryotheum")
         assert result == "path/to/cryotheum.png"
+
+    def test_essentia_only_from_the_aspect_table(self, monkeypatch):
+        # Never a namesake fluid or item: "Ordo" by label is a block of it.
+        monkeypatch.setattr(icons, "_aspects_by_key", {"ordo": "aspect/ordo.png"})
+        monkeypatch.setattr(icons, "_fluids_by_key", {"ordo": "fluid/ordo.png", "aer": "fluid/aer.png"})
+        monkeypatch.setattr(icons, "_icons_by_label", {"Ordo": "item/block_of_ordo.png", "Aer": "item/aer.png"})
+        assert icons.resolve_icon(None, "ordo", None, "Ordo", kind="essentia") == "aspect/ordo.png"
+        assert icons.resolve_icon(None, "aer", None, "Aer", kind="essentia") is None
+        assert icons.attach_item_icons([{"internal": "ordo", "name": "Ordo", "kind": "essentia"}])[0]["icon"] == (
+            "aspect/ordo.png")
 
     def test_falls_back_to_label(self, monkeypatch):
         monkeypatch.setattr(icons, "_icons_by_key", {})

@@ -34,7 +34,7 @@ Basically, it's web AE2 for your base.
 - **Power** — stored EU of a GregTech multiblock (e.g. a Lapotronic Super
   Capacitor) charted over time, with its EU/s and the time until it's full
   or empty.
-- **Network** — sortable list of every item and fluid in the ME network,
+- **Network** — sortable list of every item, fluid and essentia in the ME network,
   with NEI-style search and per-item stock history charts that show how fast
   an item is running out.
 - **Remote crafting** — request or cancel AE2 crafts from the browser.
@@ -337,6 +337,10 @@ The lookup contains four tables:
   Tried first for items the scan reports with NBT.
 - `fluids_by_key` — Forge fluid registry name → icon, for fluid pseudo-items
   (see [Fluid items](#fluid-items)).
+- `aspects_by_key` — Thaumcraft aspect tag (`ordo`) → icon, for essentia.
+  Essentia never falls back to `by_label`, where an aspect's name finds
+  blocks and items named after it. Game data without this table shows a
+  round badge with the aspect's initial instead.
 - `by_label` — display name → icon. Least reliable fallback, because about 8%
   of labels collide across mods.
 
@@ -613,11 +617,12 @@ at that rate. The estimate needs at least 10 minutes of readings.
 ### Network tab
 
 Every item and fluid in the ME network, with icon, name, and amount (fluids in
-mB). It refreshes every minute, but its data changes only when a scan
-finishes.
+mB), and its essentia with Thaumic Energistics installed. It refreshes every
+minute, but its data changes only when a scan finishes.
 
 - Click an item to open its stock history chart. Each item has its own URL
-  (`/network/item/<mod:internal:damage>`) that can be shared; link previews
+  (`/network/item/<mod:internal:damage>`, `/network/item/@<aspect>` for
+  essentia) that can be shared; link previews
   include the current amount and a chart. Under the amount, the popup shows
   how fast it changed over the chosen range and, if it's falling, when it
   runs out at that rate.
@@ -713,7 +718,8 @@ default) in between.
   item drops below N, and another only after it has been back at or above N.
   Alerts are your own; other users don't see them.
 - **Keep at least N, refill to M** — operators and admins, craftable items
-  only. When the item drops below N, the server requests a craft of
+  only (so not essentia, which OpenComputers can't ask AE2 to make). When
+  the item drops below N, the server requests a craft of
   (M − current) and AE2 plans it like any other request. There's one target
   per item for the whole base.
 
@@ -807,7 +813,12 @@ loaded all at once, which roughly doubles free memory during a scan compared
 with loading the full list.
 
 Fluids are read with a single `getFluidsInNetwork()` call, since networks
-hold far fewer fluid types than item types.
+hold far fewer fluid types than item types. Essentia likewise, with one
+`getEssentiaInNetwork()` call: Thaumic Energistics adds it to the same
+`me_controller`/`me_interface` component, and it names each aspect by its
+tag (`ordo`), as the Interface Terminal does in patterns, so the crafting
+plan finds essentia in stock. Without Thaumic Energistics there's no such
+method and the scan skips it.
 
 If an error escapes the scan loop (most likely the computer running out of
 memory, which the three scripts share), `network_browser.lua` writes it, with

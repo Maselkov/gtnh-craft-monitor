@@ -8,9 +8,14 @@ test('item URLs round-trip, NBT variant included', () => {
     { mod: 'gregtech', internal: 'gt.metaitem.01', damage: 11129, kind: 'item', variant: null },
     { mod: 'cropsnh', internal: 'genericSeed', damage: 0, kind: 'item', variant: '0123456789ab' },
     { mod: null, internal: 'molten.silicone', damage: null, kind: 'fluid', variant: null },
+    { mod: null, internal: 'ordo', damage: null, kind: 'essentia', variant: null },
   ]) {
     assert.deepEqual(parseItemUrlPath(itemUrlPath(it)), it);
   }
+});
+
+test('essentia is an @ and its aspect', () => {
+  assert.equal(itemUrlPath({ internal: 'ordo', kind: 'essentia' }), '/network/item/@ordo');
 });
 
 test('a variant keeps an explicit damage in the URL', () => {

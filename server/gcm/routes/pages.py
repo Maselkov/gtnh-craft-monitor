@@ -57,9 +57,12 @@ def parse_item_url_path(identifier):
     name never contains one, an item's mod:internal always does - same
     heuristic already trusted elsewhere in this codebase for exactly this
     distinction, see the Cryotheum fix). An NBT variant's id follows a
-    "~" (mod:internal:damage~variant)."""
+    "~" (mod:internal:damage~variant). Essentia is "@" and its aspect
+    tag (@ordo): neither a fluid name nor an item id has an "@"."""
     identifier, _, variant = identifier.partition("~")
     parts = [unquote(p) for p in identifier.split(":")]
+    if len(parts) == 1 and parts[0].startswith("@"):
+        return {"mod": None, "internal": parts[0][1:], "damage": None, "kind": "essentia", "variant": None}
     if len(parts) == 1:
         return {"mod": None, "internal": parts[0], "damage": None, "kind": "fluid", "variant": None}
     mod = parts[0] or None
@@ -140,9 +143,12 @@ def _build_og_tags(path, args):
             items = state.network["items"]
         item_count = sum(1 for it in items if (it.get("kind") or "item") == "item")
         fluid_count = sum(1 for it in items if it.get("kind") == "fluid")
+        essentia_count = sum(1 for it in items if it.get("kind") == "essentia")
         title = "Network"
         desc = (
-            f"{item_count} items, {fluid_count} fluids tracked"
+            f"{item_count} items, {fluid_count} fluids"
+            + (f", {essentia_count} essentia" if essentia_count else "")
+            + " tracked"
             if items
             else "No network scan yet"
         )

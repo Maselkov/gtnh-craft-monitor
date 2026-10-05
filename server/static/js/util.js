@@ -29,6 +29,22 @@ export function iconClass(base, path) {
   return /^[^/]*~bleed12\//.test(path || '') ? `${base} icon-bleed` : base;
 }
 
+// Game data from before aspect icons were exported has none for
+// essentia: a round badge with the aspect's initial stands in, in the
+// icon's own place (cls). '' for anything else without an icon.
+export function essentiaBadgeHtml(it, cls) {
+  if (it.icon || it.kind !== 'essentia') return '';
+  const initial = String(it.name || it.internal || '?').charAt(0).toUpperCase();
+  return `<span class="${cls} essentia-badge" aria-hidden="true">${escapeHtml(initial)}</span>`;
+}
+
+// The tooltip's line saying what a fluid or essentia entry is.
+export function kindTooltipHtml(kind) {
+  if (kind === 'fluid') return '<div class="network-tooltip-fluid">Fluid</div>';
+  if (kind === 'essentia') return '<div class="network-tooltip-fluid">Essentia</div>';
+  return '';
+}
+
 // A one-colour pushpin in the text colour around it (currentColor),
 // rather than the 📌 emoji, whose own colours ignore the page's.
 export const PIN_ICON = '<svg class="ui-icon" viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true"><g transform="rotate(45 8 8)" fill="currentColor"><rect x="5" y="1" width="6" height="2" rx="0.6"/><path d="M6.2 3h3.6l1 5H5.2z"/><rect x="3.5" y="7.6" width="9" height="1.8" rx="0.9"/><rect x="7.35" y="9" width="1.3" height="6" rx="0.65"/></g></svg>';

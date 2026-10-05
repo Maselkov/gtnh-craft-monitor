@@ -310,6 +310,19 @@ local function simplify_fluid(item)
   }
 end
 
+-- Essentia from getEssentiaInNetwork(): name is the aspect's tag
+-- ("ordo"), label its display name. The tag is what the ME Interface
+-- Terminal calls it in a pattern too, so the two match on the server.
+local function simplify_essentia(stack)
+  return {
+    name = stack.label or stack.name or "?",
+    size = stack.amount or 0,
+    internal = stack.name,
+    isCraftable = false,
+    kind = "essentia",
+  }
+end
+
 -- ---------------------------------------------------------------------
 -- Diagnostics for an intermittent hang: after ~2 hours of runtime
 -- (several successful scan cycles), the script sometimes stops making
@@ -588,46 +601,59 @@ local function run_scan(me)
   -- chunked on the way OUT (same RESULT_CHUNK_SIZE discipline as items)
   -- as cheap insurance in case that assumption is ever wrong for a
   -- particular network.
-  local totalFluids = 0
-  if me.getFluidsInNetwork then
-    set_phase("Calling getFluidsInNetwork()...")
-    local fluidOk, fluids = pcall(me.getFluidsInNetwork)
-    set_phase("getFluidsInNetwork() returned (ok=" .. tostring(fluidOk) .. ")")
-    if fluidOk then
-      local count = #fluids
-      totalFluids = count
-      local subChunk = {}
-      local subChunkNum = 0
-      for j = 1, count do
-        subChunk[#subChunk + 1] = simplify_fluid(fluids[j])
-        if (#subChunk >= CONFIG.RESULT_CHUNK_SIZE or j == count) and not scanRejected then
-          subChunkNum = subChunkNum + 1
-          set_phase(string.format("Fluids: POSTing sub-chunk %d (%d fluids)...", subChunkNum, #subChunk))
-          chunksSent = chunksSent + 1
-          local postOk, postErr, rejected = post_result_subchunk(subChunk, scanToken)
-          set_phase(string.format("Fluids: sub-chunk %d POST returned (ok=%s)", subChunkNum, tostring(postOk)))
-          if rejected then
-            scanRejected = true
-            debug_log("scan rejected by server mid-fluids-scan (stale_scan_token) - aborting")
-          elseif not postOk then
-            totalErrors = totalErrors + 1
-            if CONFIG.SHOW_STATUS then print("[network_browser] fluid batch POST failed: " .. tostring(postErr)) end
-            debug_log("fluid batch POST failed: " .. tostring(postErr))
-          end
-          subChunk = {}
-          pcall(collectgarbage, "collect")
-        end
-      end
-      fluids = nil
-    else
+  -- Essentia (Thaumic Energistics) the same way, in the same chunks.
+  -- getEssentiaInNetwork() is only there with Thaumic Energistics
+  -- installed, and returns nil rather than a list when the network has
+  -- no essentia storage to ask.
+  local function bulk_scan(what, method, simplify)
+    local total = 0
+    if not me[method] then return total end
+    set_phase("Calling " .. method .. "()...")
+    local callOk, stacks = pcall(me[method])
+    set_phase(method .. "() returned (ok=" .. tostring(callOk) .. ")")
+    if not callOk then
       totalErrors = totalErrors + 1
-      debug_log("getFluidsInNetwork() failed: " .. tostring(fluids))
-      if CONFIG.SHOW_STATUS then print("[network_browser] getFluidsInNetwork() failed: " .. tostring(fluids)) end
+      debug_log(method .. "() failed: " .. tostring(stacks))
+      if CONFIG.SHOW_STATUS then print("[network_browser] " .. method .. "() failed: " .. tostring(stacks)) end
+      return total
     end
+    stacks = stacks or {}
+    local count = #stacks
+    total = count
+    local subChunk = {}
+    local subChunkNum = 0
+    for j = 1, count do
+      subChunk[#subChunk + 1] = simplify(stacks[j])
+      if (#subChunk >= CONFIG.RESULT_CHUNK_SIZE or j == count) and not scanRejected then
+        subChunkNum = subChunkNum + 1
+        set_phase(string.format("%s: POSTing sub-chunk %d (%d stacks)...", what, subChunkNum, #subChunk))
+        chunksSent = chunksSent + 1
+        local postOk, postErr, rejected = post_result_subchunk(subChunk, scanToken)
+        set_phase(string.format("%s: sub-chunk %d POST returned (ok=%s)", what, subChunkNum, tostring(postOk)))
+        if rejected then
+          scanRejected = true
+          debug_log("scan rejected by server mid-" .. what .. "-scan (stale_scan_token) - aborting")
+        elseif not postOk then
+          totalErrors = totalErrors + 1
+          if CONFIG.SHOW_STATUS then print("[network_browser] " .. what .. " batch POST failed: " .. tostring(postErr)) end
+          debug_log(what .. " batch POST failed: " .. tostring(postErr))
+        end
+        subChunk = {}
+        pcall(collectgarbage, "collect")
+      end
+    end
+    return total
+  end
+
+  local totalFluids = bulk_scan("Fluids", "getFluidsInNetwork", simplify_fluid)
+  local totalEssentia = 0
+  if not scanRejected then
+    set_phase("Fluids done, moving to essentia...")
+    totalEssentia = bulk_scan("Essentia", "getEssentiaInNetwork", simplify_essentia)
   end
 
   if scanRejected then
-    debug_log("Scan aborted during fluids (stale_scan_token) - skipping scan/finish; the next scheduled scan will start fresh")
+    debug_log("Scan aborted during fluids/essentia (stale_scan_token) - skipping scan/finish; the next scheduled scan will start fresh")
     return false, "scan rejected mid-way by server (stale_scan_token) - a restart or newer scan invalidated it"
   end
 
@@ -653,9 +679,9 @@ local function run_scan(me)
     debug_log("scan/finish REJECTED by server (incomplete scan): " .. tostring(decoded2.reason))
     return false, "scan discarded by server as incomplete: " .. tostring(decoded2.reason)
   end
-  debug_log(string.format("scan/finish OK - %d items, %d fluids, %d errors, %d chunks", totalItems, totalFluids, totalErrors, chunksSent))
+  debug_log(string.format("scan/finish OK - %d items, %d fluids, %d essentia, %d errors, %d chunks", totalItems, totalFluids, totalEssentia, totalErrors, chunksSent))
 
-  return true, { total_items = totalItems, total_fluids = totalFluids, total_errors = totalErrors, batches = batchNum, chunks_sent = chunksSent }
+  return true, { total_items = totalItems, total_fluids = totalFluids, total_essentia = totalEssentia, total_errors = totalErrors, batches = batchNum, chunks_sent = chunksSent }
 end
 
 -- ---------------------------------------------------------------------
@@ -867,8 +893,9 @@ local function draw_status(lastResult, lastError, nextScanIn)
   if lastError then
     print("Last result:  FAILED - " .. tostring(lastError))
   elseif lastResult then
-    print(string.format("Last result:  %d items, %d fluids, %d batch errors, %d batches",
-      lastResult.total_items, lastResult.total_fluids or 0, lastResult.total_errors, lastResult.batches))
+    print(string.format("Last result:  %d items, %d fluids, %d essentia, %d batch errors, %d batches",
+      lastResult.total_items, lastResult.total_fluids or 0, lastResult.total_essentia or 0,
+      lastResult.total_errors, lastResult.batches))
   else
     print("Last result:  (scanning...)")
   end
@@ -926,7 +953,13 @@ local function run_watch(me)
   end
   local wantedFluids = {}
   for _, name in ipairs(watch.fluids) do wantedFluids[name] = true end
-  if #ids == 0 and #watch.fluids == 0 then
+  -- Only from servers that know about essentia, and only checked (so
+  -- only reported as checked) with Thaumic Energistics there to ask.
+  local checkedEssentia = me.getEssentiaInNetwork and type(watch.essentia) == "table" and watch.essentia or nil
+  local watchEssentia = checkedEssentia or {}
+  local wantedEssentia = {}
+  for _, name in ipairs(watchEssentia) do wantedEssentia[name] = true end
+  if #ids == 0 and #watch.fluids == 0 and #watchEssentia == 0 then
     return true, 0  -- no rules: nothing to check
   end
 
@@ -965,11 +998,23 @@ local function run_watch(me)
     end
   end
 
+  if #watchEssentia > 0 then
+    local essentiaOk, essentia = pcall(me.getEssentiaInNetwork)
+    if not essentiaOk then
+      return false, "getEssentiaInNetwork() failed: " .. tostring(essentia)
+    end
+    for _, stack in ipairs(essentia or {}) do
+      if wantedEssentia[stack.name] then
+        found[#found + 1] = simplify_essentia(stack)
+      end
+    end
+  end
+
   -- checked: exactly what was looked up, so the server only replaces
   -- those items - a rule added since /watch answered waits for next time.
   local sendOk, postOk, reply = pcall(function()
     return post_json("/levels", json_encode({
-      checked = { items = watch.items, fluids = watch.fluids },
+      checked = { items = watch.items, fluids = watch.fluids, essentia = checkedEssentia },
       items = found,
       elapsed = computer.uptime() - started,
     }))
