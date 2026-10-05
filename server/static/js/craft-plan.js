@@ -120,7 +120,10 @@ function cellHtml(it) {
   }
   if (it.craft > 0) lines.push(`<div>Crafting: <b>${qty(it.craft, it.kind)}</b></div>`);
   if (it.warnings) lines.push('<div class="plan-warning-line">Below a stock rule</div>');
-  const state = it.missing > 0 ? ' missing' : (it.craft > 0 && !it.from_stock ? ' crafting' : '');
+  // Only missing items stand out, as in the game's plain grid. (Not the
+  // Ingredients dialog's green .crafting: there it means a CPU is making
+  // the item right now.)
+  const state = it.missing > 0 ? ' missing' : '';
   return `<div class="ingredient-cell plan-cell${state}" data-key="${escapeHtml(it.key)}">
     <div class="ingredient-cell-lines">${lines.join('')}</div>${iconHtml(it, 'ingredient-cell-icon')}
   </div>`;
