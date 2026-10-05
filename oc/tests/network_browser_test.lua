@@ -69,6 +69,41 @@ test("a full scan: catalog download, chunked batches, fluids, finish", function(
   t.eq(finish[1].json, { scan_token = "tok-1", chunks_sent = 4, total_errors = 0 })
 end)
 
+test("essentia follows the fluids, in its own chunk", function()
+  local env, me = setup()
+  fill(me, 250)
+  me.essentia = { ae2.essentia("ordo", "Ordo", 24900), ae2.essentia("aer", "Aer", 12) }
+  env:start_service("network_browser")
+  env:run({ seconds = 60 })
+
+  local b = batches(env)
+  t.eq(#b, 4, "three chunks of items, no fluids, one of essentia")
+  t.eq(b[4].items, {
+    { name = "Ordo", size = 24900, internal = "ordo", isCraftable = false, kind = "essentia" },
+    { name = "Aer", size = 12, internal = "aer", isCraftable = false, kind = "essentia" },
+  })
+  t.eq(env:requests_to("^/api/network/scan/finish$")[1].json.chunks_sent, 4)
+end)
+
+test("without Thaumic Energistics the scan is items and fluids, as before", function()
+  local env = t.env({ routes = scan_server() })
+  local me = ae2.new(env, { without = { "getEssentiaInNetwork" } })
+  fill(me, 250)
+  env:start_service("network_browser")
+  env:run({ seconds = 60 })
+  t.eq(#batches(env), 3)
+  t.eq(env:requests_to("^/api/network/scan/finish$")[1].json, { scan_token = "tok-1", chunks_sent = 3, total_errors = 0 })
+end)
+
+test("a failing getEssentiaInNetwork() fails the scan, as a failing fluid list does", function()
+  local env, me = setup()
+  fill(me, 250)
+  me:fail("getEssentiaInNetwork", "no essentia grid")
+  env:start_service("network_browser")
+  env:run({ seconds = 60 })
+  t.eq(env:requests_to("^/api/network/scan/finish$")[1].json.total_errors, 1)
+end)
+
 test("the catalog is only downloaded again when its version changes", function()
   local env, me = setup({ config = { SCAN_INTERVAL_SECONDS = 100 } })
   fill(me, 10)
@@ -187,6 +222,27 @@ test("between full scans, checks just the watched items every WATCH_INTERVAL_SEC
   t.eq(sent[1].items[2], { name = "Water", size = 64000, internal = "water", isCraftable = false, kind = "fluid" })
   t.eq(type(sent[1].elapsed), "number")
   t.eq(#env:requests_to("^/api/network/scan/start$"), 1, "no full scan in between")
+end)
+
+test("watched essentia is checked too", function()
+  local watch = { items = {}, fluids = {}, essentia = { "ordo" } }
+  local env, me = setup({ routes = { ["GET /api/network/watch"] = watch } })
+  me.essentia = { ae2.essentia("ordo", "Ordo", 300), ae2.essentia("aer", "Aer", 12) }
+  env:start_service("network_browser")
+  env:run({ seconds = 70 })
+  local sent = levels(env)[1]
+  t.eq(sent.checked, watch)
+  t.eq(sent.items, { { name = "Ordo", size = 300, internal = "ordo", isCraftable = false, kind = "essentia" } })
+end)
+
+test("watched essentia without Thaumic Energistics isn't claimed as checked", function()
+  local env = t.env({ routes = scan_server({
+    ["GET /api/network/watch"] = { items = {}, fluids = { "water" }, essentia = { "ordo" } } }) })
+  local me = ae2.new(env, { without = { "getEssentiaInNetwork" } })
+  me.fluids = { ae2.fluid("water", "Water", 64000) }
+  env:start_service("network_browser")
+  env:run({ seconds = 70 })
+  t.eq(levels(env)[1].checked, { items = {}, fluids = { "water" } })
 end)
 
 test("a watched item that's gone is reported as not found", function()

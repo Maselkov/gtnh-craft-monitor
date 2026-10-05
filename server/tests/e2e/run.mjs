@@ -691,6 +691,47 @@ async function main() {
     await waitFor('closed, plan cleared', `!visible($('#craftRequestModal')) && $('#craftPlan').hidden`);
   });
 
+  step('essentia: its own URL, a stand-in icon, and stock in the plan', async () => {
+    // Thaumium from an Iron Ingot and 64 Ordo, of which there are 500.
+    const ordo = { kind: 'essentia', internal: 'ordo', name: 'Ordo' };
+    const thaumium = { kind: 'item', mod: 'Thaumcraft', internal: 'ItemResource', damage: 2, name: 'Thaumium Ingot' };
+    const { data: scan } = await game(base, '/api/network/scan/start', {});
+    await game(base, '/api/network/scan/batch', { scan_token: scan.scan_token, items: [
+      ...SEEDED_ITEMS.map(it => ({ ...it })), { ...ordo, size: 500 }, { ...thaumium, size: 0, isCraftable: true }] });
+    await game(base, '/api/network/scan/finish', { scan_token: scan.scan_token, chunks_sent: 1, total_errors: 0 });
+    const { data: pscan } = await game(base, '/api/network/patterns/start', {});
+    await game(base, '/api/network/patterns/batch', { scan_token: pscan.scan_token, patterns: [...SEEDED_PATTERNS,
+      pattern('Infusion Altar', 4, [{ ...thaumium, size: 1 }], [{ ...IRON_INGOT }, { ...ordo, size: 64 }])] });
+    await game(base, '/api/network/patterns/finish', { scan_token: pscan.scan_token, chunks_sent: 1, total_errors: 0 });
+
+    await cdp.send('Page.navigate', { url: base + '/network/item/@ordo' });
+    await waitFor('reloaded', `document.readyState === 'complete' && !window.byText`);
+    await evaluate(PAGE_LIB);
+    await waitFor('essentia history', `visible($('#itemHistoryModal')) && $('#itemHistoryName').textContent === 'Ordo'
+      && $('#itemHistoryCurrent').textContent === 'Currently stored: 500'`);
+    await click(`$('#itemHistoryModal .history-close-btn')`);
+    await waitFor('closed', `!visible($('#itemHistoryModal'))`);
+    await evaluate(`typeInto('#networkSearch', 'ordo')`);
+    await waitFor('badge', `$$('#networkList .network-cell').length === 1
+      && $('#networkList .network-cell .essentia-badge')?.textContent === 'O'`);
+
+    await evaluate(`openItem('Thaumium Ingot'), true`);
+    await click(`$('#itemHistoryCraftBtn')`);
+    await waitFor('plan for 1', `visible($('#craftPlan')) && $('#craftPlanSummary').textContent.includes('Everything is in stock')
+      && $$('#craftPlanBody .plan-cell .essentia-badge').length === 1`);
+    await evaluate(`typeInto('#craftRequestAmount', '10')`);
+    await waitFor('140 Ordo short', `$('#craftPlanSummary .plan-chip')?.textContent.includes('Ordo')
+      && $('#craftPlanSummary .plan-chip b').textContent === '140'`);
+    await click(`byText('#craftRequestModal button', 'Cancel')`);
+    await waitFor('dialog closed', `!visible($('#craftRequestModal'))`);
+    await scanNetwork(base);
+    await scanPatterns(base);
+    await cdp.send('Page.navigate', { url: base + '/network' });
+    await waitFor('reloaded', `document.readyState === 'complete' && !window.byText`);
+    await evaluate(PAGE_LIB);
+    await waitFor('back to 3', `$$('#networkList .network-cell').length === 3`);
+  });
+
   step('item history closes via its button and via the backdrop', async () => {
     await evaluate(`openItem('Iron Ingot'), true`);
     await waitFor('history open', `visible($('#itemHistoryModal'))`);

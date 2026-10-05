@@ -10,6 +10,8 @@
       and request(amount) -> status with isComputing/hasFailed/isDone/
       isCanceled
     getItemsInNetworkById(ids), getFluidsInNetwork()
+    getEssentiaInNetwork() (Thaumic Energistics; leave it out with
+      opts.without = { "getEssentiaInNetwork" })
 
   State follows the env's virtual clock: every call first catches the
   network up to env.now, so a job started with duration = 10 is busy for
@@ -37,6 +39,12 @@ function M.fluid(name, label, amount, extra)
   return f
 end
 
+-- Essentia as getEssentiaInNetwork() reports it: the aspect's tag,
+-- its display name, and the amount.
+function M.essentia(name, label, amount)
+  return { name = name, label = label, amount = amount or 1 }
+end
+
 local function copy(t)
   local c = {}
   for k, v in pairs(t) do c[k] = v end
@@ -54,6 +62,7 @@ function M.new(env, opts)
     craftables = {},
     items = {},
     fluids = {},
+    essentia = {},
     statuses = {},
     failures = {},
     calls = {},
@@ -349,6 +358,13 @@ function FakeME:_methods()
       me:_call("getFluidsInNetwork")
       local out = {}
       for i, f in ipairs(me.fluids) do out[i] = copy(f) end
+      return out
+    end,
+
+    getEssentiaInNetwork = function()
+      me:_call("getEssentiaInNetwork")
+      local out = {}
+      for i, e in ipairs(me.essentia) do out[i] = copy(e) end
       return out
     end,
   }

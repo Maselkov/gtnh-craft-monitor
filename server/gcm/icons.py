@@ -1,4 +1,4 @@
-"""Item/fluid icon lookup and on-demand reads out of images.zip (never
+"""Item/fluid/essentia icon lookup and on-demand reads out of images.zip (never
 unpacked to disk). Which lookup and zip are live is decided by
 gcm/gamedata.py: an installed game data bundle, or the files that shipped
 before bundles existed."""
@@ -28,10 +28,14 @@ from urllib.parse import quote
 # stacks only. by_key holds the stack WITHOUT NBT, so every NBT variant
 # of an item (each crop's seeds, each bee species) resolved to that one
 # generic icon; their labels are what tell them apart.
+# aspects_by_key: Thaumcraft aspect tag ("ordo") -> image path, for
+# essentia. Only that: an aspect's label would find namesake items
+# ("Ordo" -> some block of it), so essentia never falls back to by_label.
 _icons_by_key = {}
 _icons_by_key_label = {}
 _icons_by_label = {}
 _fluids_by_key = {}
+_aspects_by_key = {}
 # The GTNH version of the live bundle, or None for the pre-bundle files.
 # Resolved icon paths are prefixed with it, so switching versions changes
 # every icon URL and browsers don't keep showing the old version's images
@@ -51,12 +55,12 @@ _zip_lock = threading.Lock()
 
 # Top-level folders inside images.zip. A path starting with anything else
 # carries a version prefix.
-_ZIP_ROOTS = ("item", "fluid")
+_ZIP_ROOTS = ("item", "fluid", "aspect")
 
 
 def load(lookup_path, images_zip_path, version=None):
     """Makes the given lookup and zip the live ones."""
-    global _icons_by_key, _icons_by_key_label, _icons_by_label, _fluids_by_key
+    global _icons_by_key, _icons_by_key_label, _icons_by_label, _fluids_by_key, _aspects_by_key
     global _images_zip, _images_zip_missing_logged, _images_zip_path, _version, _bleed
     icon_data = {}
     if lookup_path and os.path.exists(lookup_path):
@@ -72,6 +76,7 @@ def load(lookup_path, images_zip_path, version=None):
         _icons_by_key_label = icon_data.get("by_key_label", {})
         _icons_by_label = icon_data.get("by_label", {})
         _fluids_by_key = icon_data.get("fluids_by_key", {})
+        _aspects_by_key = icon_data.get("aspects_by_key", {})
         _bleed = icon_data.get("bleed", {})
         _version = version
 
@@ -182,11 +187,14 @@ def damage_str(damage):
     return str(damage)
 
 
-def resolve_icon(mod, internal, damage, label, variant=None):
-    """Returns the image path inside images.zip for an item or fluid,
-    prefixed with the data version if a bundle is live, or None. variant:
-    set for an NBT variant (gcm/inventory.py), whose own icon is found by
-    label before falling back to its item id's generic one."""
+def resolve_icon(mod, internal, damage, label, variant=None, kind=None):
+    """Returns the image path inside images.zip for an item, fluid or
+    essentia, prefixed with the data version if a bundle is live, or
+    None. variant: set for an NBT variant (gcm/inventory.py), whose own
+    icon is found by label before falling back to its item id's generic
+    one."""
+    if kind == "essentia":
+        return _prefixed(_aspects_by_key.get(internal)) if internal else None
     return _prefixed(
         (variant and _lookup_variant(mod, internal, damage, label))
         or _lookup(mod, internal, damage, label)
@@ -255,6 +263,7 @@ def attach_item_icons(items):
             item.get("damage"),
             item.get("name"),
             item.get("variant"),
+            item.get("kind"),
         )
         if icon:
             item["icon"] = icon

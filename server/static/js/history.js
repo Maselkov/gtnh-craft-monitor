@@ -43,6 +43,10 @@ export function setPendingItemFromUrl(item) {
 export const NETWORK_ITEM_PATH_PREFIX = '/network/item/';
 
 export function itemUrlPath(it) {
+  // Essentia: "@" and the aspect tag - "@" is in no fluid or item name.
+  if (it.kind === 'essentia') {
+    return NETWORK_ITEM_PATH_PREFIX + '@' + encodeURIComponent(it.internal);
+  }
   if (it.kind === 'fluid') {
     return NETWORK_ITEM_PATH_PREFIX + encodeURIComponent(it.internal);
   }
@@ -63,6 +67,9 @@ export function parseItemUrlPath(pathname) {
   const raw = tilde < 0 ? full : full.slice(0, tilde);
   const variant = tilde < 0 ? null : (decodeURIComponent(full.slice(tilde + 1)) || null);
   const parts = raw.split(':').map(p => decodeURIComponent(p));
+  if (parts.length === 1 && parts[0].startsWith('@')) {
+    return { mod: null, internal: parts[0].slice(1), damage: null, kind: 'essentia', variant: null };
+  }
   if (parts.length === 1) {
     return { mod: null, internal: parts[0], damage: null, kind: 'fluid', variant: null };
   }

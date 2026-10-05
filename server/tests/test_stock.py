@@ -145,6 +145,13 @@ class TestTargetEditing:
         assert set_target(client).status_code == 400
         assert set_target(client, GOLD).status_code == 400  # not in the network at all
 
+    def test_not_essentia(self, client, api_headers):
+        # OC can't ask AE2 to make essentia, so nothing can keep it stocked.
+        ordo = {"label": "Ordo", "mod": None, "internal": "ordo", "damage": None, "kind": "essentia"}
+        scan(client, api_headers, {"name": "Ordo", "internal": "ordo", "kind": "essentia", "size": 5})
+        login_as(client, "olive", role="operator")
+        assert set_target(client, ordo).status_code == 400
+
 
 class TestRestock:
     def test_low_target_requests_the_refill(self, operator, api_headers):

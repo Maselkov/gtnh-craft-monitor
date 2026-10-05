@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { escapeHtml, formatDuration, formatQty, formatRate, iconClass } from '../../static/js/util.js';
+import { escapeHtml, essentiaBadgeHtml, formatDuration, formatQty, formatRate, iconClass, kindTooltipHtml } from '../../static/js/util.js';
 
 test('formatQty abbreviates like the in-game terminal', () => {
   assert.equal(formatQty(null), '?');
@@ -39,4 +39,17 @@ test('formatRate signs the amount and picks hours or days', () => {
   assert.equal(formatRate(12 / 86400), '+12/d');
   assert.equal(formatRate(0), null);
   assert.equal(formatRate(0.1 / 86400), null);
+});
+
+test('essentia without an icon gets a badge with its initial; nothing else does', () => {
+  assert.equal(essentiaBadgeHtml({ kind: 'essentia', name: 'ordo' }, 'plan-icon'),
+    '<span class="plan-icon essentia-badge" aria-hidden="true">O</span>');
+  assert.equal(essentiaBadgeHtml({ kind: 'essentia', name: 'Ordo', icon: 'v/aspect/ordo.png' }, 'plan-icon'), '');
+  assert.equal(essentiaBadgeHtml({ kind: 'item', name: 'Iron Ingot' }, 'plan-icon'), '');
+});
+
+test('the tooltip says what a fluid or essentia is', () => {
+  assert.match(kindTooltipHtml('fluid'), />Fluid</);
+  assert.match(kindTooltipHtml('essentia'), />Essentia</);
+  assert.equal(kindTooltipHtml('item'), '');
 });

@@ -23,8 +23,8 @@ def _item_from(payload):
     }
     if not item["label"] or not item["internal"]:
         return None, "missing label/internal"
-    if item["kind"] not in ("item", "fluid"):
-        return None, "kind must be item or fluid"
+    if item["kind"] not in ("item", "fluid", "essentia"):
+        return None, "kind must be item, fluid or essentia"
     if item["damage"] is not None and (isinstance(item["damage"], bool) or not isinstance(item["damage"], int)):
         return None, "damage must be a whole number"
     if item["variant"] is not None and not isinstance(item["variant"], str):
@@ -68,7 +68,7 @@ def stock_rules_get():
             "damage": rule["damage"],
             "kind": rule["kind"],
             "variant": rule["variant"],
-            "icon": icons.resolve_icon(rule["mod"], rule["internal"], rule["damage"], rule["label"], rule["variant"]),
+            "icon": icons.resolve_icon(rule["mod"], rule["internal"], rule["damage"], rule["label"], rule["variant"], rule["kind"]),
             "current": current,
         }
 

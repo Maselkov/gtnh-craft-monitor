@@ -9,7 +9,7 @@
 // a phone, keeping the game's "Hide all available".
 
 import { bindCellTooltip } from './tooltip.js';
-import { delegateActions, escapeHtml, formatQty, formatRelativeTime, iconClass, iconUrl } from './util.js';
+import { delegateActions, escapeHtml, essentiaBadgeHtml, formatQty, formatRelativeTime, iconClass, iconUrl, kindTooltipHtml } from './util.js';
 
 const VIEW_KEY = 'gtnhCraftMonitor.planView';
 const HIDE_KEY = 'gtnhCraftMonitor.planHideAvailable';
@@ -91,7 +91,7 @@ export function sortListItems(items) {
 function iconHtml(it, cls) {
   return it.icon
     ? `<img class="${iconClass(cls, it.icon)}" src="${iconUrl(it.icon)}" alt="" loading="lazy" data-remove-on-error>`
-    : '';
+    : essentiaBadgeHtml(it, cls);
 }
 
 // "below your alert (10k)" for a stock rule the plan would break.
@@ -107,7 +107,7 @@ function displayName(it) {
 
 function cellHtml(it) {
   const lines = [];
-  if (!it.icon) lines.push(`<div class="ingredient-cell-name">${escapeHtml(displayName(it))}</div>`);
+  if (!it.icon && it.kind !== 'essentia') lines.push(`<div class="ingredient-cell-name">${escapeHtml(displayName(it))}</div>`);
   if (it.missing > 0) lines.push(`<div class="plan-missing-line">Missing: <b>${qty(it.missing, it.kind)}</b></div>`);
   if (it.from_stock > 0) {
     const pct = usedPercent(it);
@@ -131,7 +131,7 @@ function cellTooltipHtml(it) {
     ${it.craft > 0 ? stat('Crafted', it.craft) : ''}
     ${it.missing > 0 ? stat('Missing', it.missing) : ''}
     ${(it.warnings || []).map(w => `<div class="network-tooltip-stat plan-warning-line">${qty(it.left, it.kind)} left: ${escapeHtml(warningText(w, it.kind))}</div>`).join('')}
-    ${it.kind === 'fluid' ? '<div class="network-tooltip-fluid">Fluid</div>' : ''}
+    ${kindTooltipHtml(it.kind)}
   `;
 }
 

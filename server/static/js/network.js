@@ -7,7 +7,7 @@ import { buildSearchHighlightHtml, itemMatchesSearch, parseSearchQuery } from '.
 import { stockBadgeFor } from './stock.js';
 import { activeTab } from './tabs.js';
 import { bindCellTooltip, hideTooltip } from './tooltip.js';
-import { delegateActions, escapeHtml, formatQty, formatRelativeTime, iconClass, iconUrl, PIN_ICON } from './util.js';
+import { delegateActions, escapeHtml, essentiaBadgeHtml, formatQty, formatRelativeTime, iconClass, iconUrl, kindTooltipHtml, PIN_ICON } from './util.js';
 
 // ---------- Network browser ----------
 export let lastNetworkData = null;
@@ -85,7 +85,7 @@ function networkTooltipHtml(cell) {
     <div class="network-tooltip-name">${escapeHtml(it.name || '?')}</div>
     ${it.variant_name ? `<div class="network-tooltip-variant">${escapeHtml(it.variant_name)}</div>` : ''}
     <div class="network-tooltip-stat">${statLine}</div>
-    ${it.kind === 'fluid' ? `<div class="network-tooltip-fluid">Fluid</div>` : ''}
+    ${kindTooltipHtml(it.kind)}
     ${it.isCraftable ? `<div class="network-tooltip-craftable">Craftable</div>` : ''}
     ${it.mod ? `<div class="network-tooltip-mod">${escapeHtml(it.mod)}</div>` : ''}
   `;
@@ -242,7 +242,7 @@ let lastNetworkSort = null;
 function buildNetworkCellHtml(it, idx) {
   const icon = it.icon
     ? `<img class="${iconClass('network-cell-icon', it.icon)}" src="${iconUrl(it.icon)}" alt="" loading="lazy" data-remove-on-error>`
-    : '';
+    : essentiaBadgeHtml(it, 'network-cell-icon');
   const qty = `<span class="network-cell-qty">${formatQty(it.size)}</span>`;
   // Blank Pattern icon (appliedenergistics2:item.ItemMultiMaterial
   // damage 52, confirmed against the real NESQL export) - shown for

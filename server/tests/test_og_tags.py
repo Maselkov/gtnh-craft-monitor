@@ -119,6 +119,15 @@ class TestNetworkItemOgTags:
         html = client.get(self._item_path(None, "molten.silicone", None, "fluid")).get_data(as_text=True)
         assert "Currently stored: 9,500 mB" in html
 
+    def test_essentia(self, client, api_headers):
+        run_scan(client, api_headers, [
+            {"name": "Ordo", "size": 24900, "mod": None, "internal": "ordo", "damage": None, "kind": "essentia"},
+        ])
+        html = client.get("/network/item/@ordo").get_data(as_text=True)
+        assert '<meta property="og:title" content="Ordo">' in html
+        assert 'content="Currently stored: 24,900"' in html  # no unit, unlike a fluid
+        assert "1 essentia tracked" in client.get("/network").get_data(as_text=True)
+
     def test_nbt_variant_url_shows_that_variant(self, client, api_headers):
         from nbt_fixtures import seed_tag
         seed = {"name": "Sugar Beet Seeds", "size": 27, "mod": "cropsnh", "internal": "genericSeed",

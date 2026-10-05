@@ -50,7 +50,7 @@ def assign_variant(item):
     has_tag = item.pop("hasTag", False)
     tag_hex = item.pop("tag", None)
     item.pop("tag_too_large", None)
-    if not has_tag or item.get("kind") == "fluid":
+    if not has_tag or item.get("kind") in ("fluid", "essentia"):
         return None
     if isinstance(tag_hex, str) and tag_hex:
         try:
@@ -264,15 +264,16 @@ def record_crash(error, phase, free_memory):
 
 def _base_identity(item):
     """What a watched-items check asks AE2 for: an item id and damage
-    (every NBT variant of it included), or a fluid's name."""
-    if item.get("kind") == "fluid":
-        return ("fluid", item.get("internal"))
+    (every NBT variant of it included), or a fluid's or aspect's name."""
+    if item.get("kind") in ("fluid", "essentia"):
+        return (item["kind"], item.get("internal"))
     return ("item", item.get("mod"), item.get("internal"), item.get("damage"))
 
 
 def checked_identities(checked):
-    """The {items: [{name, damage}], fluids: [name]} a check reports it
-    asked for, as _base_identity() tuples. Malformed entries are skipped."""
+    """The {items: [{name, damage}], fluids: [name], essentia: [tag]} a
+    check reports it asked for, as _base_identity() tuples. Malformed
+    entries are skipped."""
     out = set()
     for entry in (checked or {}).get("items") or []:
         if not isinstance(entry, dict) or not isinstance(entry.get("name"), str):
@@ -280,9 +281,10 @@ def checked_identities(checked):
         mod, _, internal = entry["name"].partition(":")
         if internal:
             out.add(("item", mod, internal, entry.get("damage")))
-    for name in (checked or {}).get("fluids") or []:
-        if isinstance(name, str):
-            out.add(("fluid", name))
+    for kind, field in (("fluid", "fluids"), ("essentia", "essentia")):
+        for name in (checked or {}).get(field) or []:
+            if isinstance(name, str):
+                out.add((kind, name))
     return out
 
 

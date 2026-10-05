@@ -229,6 +229,22 @@ class TestRoute:
         assert data["plan"] is None
         assert "No pattern scan yet" in data["reason"]
 
+    def test_essentia_comes_from_the_scanned_stock(self, client, api_headers):
+        # The Interface Terminal and getEssentiaInNetwork() both name an
+        # aspect by its tag, so the two scans' keys meet.
+        ordo = {"kind": "essentia", "internal": "ordo", "name": "Ordo"}
+        frame = {**it("Frame"), "size": 1}
+        run_pattern_scan(client, api_headers, [[{
+            "provider": {"name": "Infusion", "x": 0, "y": 0, "z": 0, "dim": 0}, "slot": 0, "crafting": False,
+            "inputs": [{**ordo, "size": 64}], "outputs": [frame],
+        }]])
+        run_scan(client, api_headers, [[{**ordo, "size": 100, "isCraftable": False}]])
+        login_as(client, "usr_alice")
+        root = client.get(self.URL, query_string=self.params("Frame", 2)).get_json()["plan"]["root"]
+        essentia = child(root, "Ordo")
+        assert (essentia["kind"], essentia["need"], essentia["from_stock"], essentia.get("missing")) == (
+            "essentia", 128, 100, 28)
+
     def test_a_plan_from_the_scans(self, client, api_headers):
         self.scan(client, api_headers, {"Ingot": 6, "Plate": 1})
         login_as(client, "usr_alice")
