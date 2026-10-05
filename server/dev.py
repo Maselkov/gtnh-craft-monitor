@@ -17,6 +17,7 @@ Nothing here touches server/data/.
 """
 
 import argparse
+import gzip
 import hashlib
 import json
 import math
@@ -105,6 +106,11 @@ ITEMS = [
     ("Iron Ingot", "ingot", (215, 215, 215)),
     # A real GTNH name, long enough to wrap on a crafting card.
     ("Exquisite Cerium-doped Lutetium Aluminium Garnet (Ce:LuAG)", "gem", (130, 220, 60)),
+    ("Diamond", "gem", (110, 230, 230)),
+    ("Industrial Diamond", "gem", (200, 240, 240)),
+    ("Flawless Diamond", "gem", (150, 250, 250)),
+    ("Diamond Dust", "dust", (110, 230, 230)),
+    ("Block of Diamond", "block", (110, 230, 230)),
     ("Ordo", "essentia", None),
     ("Metallum", "essentia", None),
     ("Praecantatio", "essentia", None),
@@ -143,8 +149,11 @@ def stack(name, size):
 # (gcm/planner.py): (provider, crafting?, outputs, inputs), each a list
 # of (name, size). Covers a chain (gear <- plate <- ingot), a step with
 # two patterns (plates), a cycle (ingot <-> molten), an output made in
-# batches (bolts), an input nothing makes and the network never has, and
-# essentia (the framework).
+# batches (bolts), an input nothing makes and the network never has,
+# essentia (the framework), and ore-dictionary substitutes: Block of
+# Diamond takes Industrial Diamonds as diamonds too, the way the real
+# Substitute-ticked pattern does. A fifth field holds a pattern's NBT
+# flags.
 PATTERNS = [
     ("Molecular Assembler", True, [("Inconel-625 Gear", 1)], [("Inconel-625 Plate", 4), ("Steel Bolt", 1)]),
     ("Bending Machine T4:EV", False, [("Inconel-625 Plate", 1)], [("Inconel-625 Ingot", 1)]),
@@ -156,8 +165,14 @@ PATTERNS = [
      [("Draconium Ingot", 2), ("SMD Capacitor", 4), ("Lapotron Crystal", 1), ("Molten Inconel-625", 288)]),
     ("Molecular Assembler", True, [("Titanium Gear", 1)], [("Neutronium Plate", 4), ("Iridium Screw", 1)]),
     ("Infusion Altar", False, [("Integral Framework I", 1)], [("Iron Ingot", 2), ("Ordo", 64), ("Praecantatio", 16)]),
+    ("Molecular Assembler", True, [("Block of Diamond", 1)], [("Diamond", 9)], {"substitute": True}),
+    ("Industrial Sledgehammer", False, [("Diamond", 2)], [("Flawless Diamond", 1)]),
+    ("Electric Implosion Compressor", False, [("Industrial Diamond", 3)], [("Diamond Dust", 4)],
+     {"beSubstitute": True}),
 ]
-PATTERN_OUTPUTS = {name for _, _, outputs, _ in PATTERNS for name, _ in outputs}
+# What the ore dictionary says about CATALOG (gcm/oredict.py).
+ORE_DICT = {"gemDiamond": ["Diamond", "Industrial Diamond"]}
+PATTERN_OUTPUTS = {name for _, _, outputs, *_ in PATTERNS for name, _ in outputs}
 # Kept at none, so a plan for the Ultimate Circuit comes up short.
 ALWAYS_EMPTY = {"Draconium Ingot"}
 
@@ -169,13 +184,29 @@ def pattern_entry(name, size):
             "name": name, "size": size}
 
 
+def ore_dict():
+    """ORE_DICT as the bundle's ore_dict.json has it."""
+    return {name: [f"{BY_NAME[n]['mod']}:{BY_NAME[n]['internal']}:{BY_NAME[n]['damage']}" for n in members]
+            for name, members in ORE_DICT.items()}
+
+
+def flags_tag(flags):
+    """A pattern's NBT holding only byte flags (substitute, beSubstitute),
+    gzipped and hex-encoded, as network_browser.lua sends a pattern's."""
+    body = b"".join(b"\x01" + struct.pack(">H", len(n)) + n.encode() + bytes([1 if v else 0]) for n, v in flags.items())
+    return gzip.compress(b"\x0a\x00\x00" + body + b"\x00").hex()
+
+
 def pattern_scan():
-    return [
-        {"provider": {"name": provider, "x": 10 * slot, "y": 64, "z": 0, "dim": 0}, "slot": slot,
-         "crafting": crafting,
-         "inputs": [pattern_entry(*i) for i in inputs], "outputs": [pattern_entry(*o) for o in outputs]}
-        for slot, (provider, crafting, outputs, inputs) in enumerate(PATTERNS)
-    ]
+    scanned = []
+    for slot, (provider, crafting, outputs, inputs, *flags) in enumerate(PATTERNS):
+        p = {"provider": {"name": provider, "x": 10 * slot, "y": 64, "z": 0, "dim": 0}, "slot": slot,
+             "crafting": crafting,
+             "inputs": [pattern_entry(*i) for i in inputs], "outputs": [pattern_entry(*o) for o in outputs]}
+        if flags:
+            p["tag"] = flags_tag(flags[0])
+        scanned.append(p)
+    return scanned
 
 
 # ---------------------------------------------------------------- icons
@@ -258,6 +289,8 @@ def install_icons(data_dir):
             zf.writestr(path, _png(it["shape"], it["colour"]))
     with open(os.path.join(bundle, "icons_lookup.json"), "w", encoding="utf-8") as f:
         json.dump({"by_key": by_key, "fluids_by_key": fluids_by_key, "by_label": {}}, f)
+    with open(os.path.join(bundle, "ore_dict.json"), "w", encoding="utf-8") as f:
+        json.dump(ore_dict(), f)
     with open(os.path.join(bundle, "item_catalog.txt"), "w", encoding="utf-8") as f:
         f.write("".join(f"{it['mod']}:{it['internal']}\n" for it in CATALOG if it["mod"]))
     # Its hash is the bundle's build id, which busts icon caches: new

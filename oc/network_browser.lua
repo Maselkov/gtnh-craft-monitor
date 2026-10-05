@@ -698,9 +698,11 @@ end
 -- allItems(). Calling it gives the next {name, location, patterns},
 -- then nil. patterns is keyed by slot from 0; a pattern's inputs and
 -- outputs by position from 1, with gaps where a crafting grid is empty.
--- A crafting pattern reports every size as 0, so its own NBT (`tag`),
--- which has the real counts, goes to the server too - see
--- gcm/patterns.py.
+-- Every pattern's own NBT (`tag`) goes to the server too - see
+-- gcm/patterns.py. A crafting pattern reports every size as 0, and the
+-- NBT has the real counts; and only the NBT says whether a pattern
+-- takes ore-dictionary substitutes, or can stand in for one, which the
+-- crafting plan needs to plan the way AE2 does.
 
 local MAX_PATTERN_TAG_BYTES = 8192
 
@@ -745,12 +747,8 @@ end
 
 local function simplify_pattern(p, slot, provider)
   local inputs, outputs = simplify_stacks(p.inputs), simplify_stacks(p.outputs)
-  local needsTag = p.isCraftable or #outputs == 0
-  for _, s in ipairs(outputs) do
-    if not s.size or s.size == 0 then needsTag = true end
-  end
   local tag, tagTooLarge
-  if needsTag and type(p.tag) == "string" then
+  if type(p.tag) == "string" then
     if #p.tag <= MAX_PATTERN_TAG_BYTES then
       tag = hex(p.tag)
     else

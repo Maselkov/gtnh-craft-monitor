@@ -424,6 +424,13 @@ def stock_levels():
     return {store.items.key_of(it): it.get("size") or 0 for it in items}, updated_at, version
 
 
+def describe(key):
+    """The live snapshot's entry for an item key (name, icon...), or None."""
+    with state.network_lock:
+        items = state.network["items"]
+    return next((it for it in items if store.items.key_of(it) == key), None)
+
+
 def variant_tag(mod, internal, damage, kind, variant):
     """The NBT tag (hex) the last scan saw on this variant, or None."""
     if not variant:

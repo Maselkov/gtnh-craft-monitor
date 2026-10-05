@@ -7,6 +7,7 @@ import zipfile
 import dev
 import pytest
 from conftest import TEST_API_KEY, login_as
+from gcm import oredict
 
 
 @pytest.fixture()
@@ -94,7 +95,7 @@ def test_requested_job_reports_its_outcome(game, client):
     assert statuses == ["incomplete"]
 
 
-def test_patterns_give_plans_that_show_each_case(game, client):
+def test_patterns_give_plans_that_show_each_case(game, client, tmp_path):
     game.tick()
     login_as(client, "usr_alice")
     assert client.get("/api/network/patterns").get_json()["summary"]["patterns"] == len(dev.PATTERNS)
@@ -110,10 +111,29 @@ def test_patterns_give_plans_that_show_each_case(game, client):
 
     first = ask("Inconel-625 Gear", 100000)
     plate = first["plan"]["root"]["children"][0]
-    assert [a["provider"] for a in plate["alternatives"]] == ["Bending Machine T4:EV", "Fluid Solidifier {Plate}"]
-    # Gear <- plate <- ingot <- molten <- ingot: the cycle is past the first
-    # answer's two levels, so ask for the molten step's own.
-    molten = ask("Inconel-625 Gear", 100000, path="0.0.0", version=first["version"])["node"]
-    assert molten["name"] == "Molten Inconel-625"
-    assert [c["status"] for c in molten["children"]] == ["cycle"]
+    # More plates than either pattern can make: the later slot (the
+    # solidifier) first, then the rest, split over parts.
+    assert plate["split"] is True
+    assert plate["children"][0]["pattern"]["provider"] == "Fluid Solidifier {Plate}"
+    assert {c["status"] for c in plate["children"]} == {"via"}
+    # Gear <- plate <- molten <- ingot <- molten: the loop is short, and
+    # where is listed - ask for that step's own answer.
+    short = next(m for m in first["plan"]["missing"] if m["name"] in ("Molten Inconel-625", "Inconel-625 Ingot"))
+    at = short["at"][0]
+    step = ask("Inconel-625 Gear", 100000, path=at, version=first["version"])["node"]
+    assert step["name"] == short["name"] and step["status"] in ("cycle", "missing")
     assert [m["name"] for m in plan("Ultimate Circuit")["missing"]] == ["Draconium Ingot"]
+    # Block of Diamond's pattern takes Industrial Diamonds too (the dev
+    # bundle's ore dictionary): more than any stock covers takes them from
+    # stock, and makes some with the implosion compressor.
+    path = tmp_path / "ore_dict.json"
+    path.write_text(json.dumps(dev.ore_dict()))
+    oredict.load(str(path))
+    try:
+        diamond = plan("Block of Diamond", 100000)["root"]["children"][0]
+    finally:
+        oredict.load(None)
+    assert diamond["name"] == "Diamond"
+    assert [s["name"] for s in diamond["substitutes"]] == ["Industrial Diamond"]
+    assert any(c.get("substitute") and c["pattern"]["provider"] == "Electric Implosion Compressor"
+               for c in diamond["children"])

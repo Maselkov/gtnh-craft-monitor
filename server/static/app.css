@@ -1411,6 +1411,10 @@ span.plan-caret {
 .status-cycle > .plan-row .plan-qty {
   color: var(--stale);
 }
+.status-via > .plan-row .plan-name {
+  font-weight: 500;
+  color: var(--muted);
+}
 .status-stock > .plan-row .plan-qty {
   color: var(--idle);
 }

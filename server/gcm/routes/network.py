@@ -400,7 +400,8 @@ def network_plan_get():
     rules = [(a["key"], a["below"], "below your alert") for a in store.stock.alerts_for_user(user_id)]
     rules += [(t["key"], t["keep_at_least"], "below its keep-at-least target")
               for t in store.stock.targets() if t["enabled"]]
-    result = planner.cached_plan(pattern_list, stock_levels, stock_version, key, amount, choices, rules)
+    result = planner.cached_plan(pattern_list, stock_levels, stock_version, key, amount, choices, rules,
+                                 describe=inventory.describe)
     if result is None:
         return jsonify({"plan": None, "reason": "None of the network's patterns makes this item."})
     if path is not None:

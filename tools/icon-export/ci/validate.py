@@ -33,6 +33,8 @@ MINIMUMS = {
     "fluids_by_keyEntries": 1000,
     # Thaumcraft has about 50 aspects, and GTNH's addons add more.
     "aspects_by_keyEntries": 40,
+    # GTNH 2.9 has about 1,200 names that can stand in for something.
+    "oreNames": 500,
     "catalogIds": 8000,
 }
 MAX_FAILED_SHARE = 0.05

@@ -385,7 +385,7 @@ local function neodymium_pattern()
     { [1] = fake_terminal.item("gregtech:gt.metaitem.01", "Neodymium Ingot", 16, { damage = 11067, id = 7444 }) },
     { [1] = fake_terminal.fluid("molten.neodymium", "Molten Neodymium", 2304),
       [2] = fake_terminal.essentia("ordo", "Ordo", 2) },
-    { tag = "not sent" })
+    { tag = "\31\139CD" })
 end
 
 test("after an item scan, every pattern goes to the server in chunks", function()
@@ -419,8 +419,8 @@ test("after an item scan, every pattern goes to the server in chunks", function(
       isCraftable = false, kind = "item", id = 5 } },
     tag = "1f8b4142",
   })
-  -- A processing pattern's sizes are real, so its NBT isn't sent.
-  t.eq(b[1].patterns[2].tag, nil)
+  -- A processing pattern's too: it says whether it takes substitutes.
+  t.eq(b[1].patterns[2].tag, "1f8b4344")
   t.eq(b[1].patterns[2].crafting, false)
   t.eq(b[1].patterns[2].outputs, {
     { name = "Molten Neodymium", size = 2304, internal = "molten.neodymium", isCraftable = false, kind = "fluid" },
