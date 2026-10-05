@@ -77,6 +77,7 @@ never connects into the game.
 | `oc/config.lua` | Server URL, API key and per-script settings for all scripts |
 | `oc/http.lua`, `oc/json.lua` | Libraries used by the scripts |
 | `oc/sensor_info_dump.lua` | One-off diagnostic: prints a GT machine's full sensor info |
+| `oc/pattern_dump.lua` | One-off diagnostic: sends what the ME Interface Terminal reports about the network's patterns to `/api/debug` |
 | `tools/icon-export/` | Builds game data (item icons, icon lookup, item catalog) from a GTNH pack; CI runs it for each GTNH release |
 
 ## Server setup
