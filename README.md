@@ -661,22 +661,25 @@ When the network's patterns have been read (see
 plan** for the amount you've typed, before you submit. Like AE2's own Request
 Craft screen, it has two views:
 
-- **List**: every item the plan touches. Each shows how much is available
-  and what share of it the plan uses, coloured the way the game colours it
-  (red for all of it, then orange, green and blue). Anything missing comes
-  first.
+- **List**: every item the plan touches, missing ones first. As in the game,
+  an item taken from stock shows how much the plan takes ("Available") and
+  what share of the stock that is ("Used", red for all of it, then orange,
+  green and blue). An item that's crafted shows how many.
 - **Tree**: the recipes step by step, as a collapsible outline. Each step
   says how much it needs, how much comes from stock, how much is crafted and
-  on which machine. **Hide all available** hides the steps fully covered by
-  stock. Where several patterns make the same item, pick another one to see
-  that plan instead. Endgame plans can run past 100,000 steps; they're
-  planned in full, so the list and the missing items cover all of it, and
-  the tree loads deeper steps as you open them.
+  on which machine. A closed step with something short under it says how
+  many steps are short there. **Hide all available** shows only the way to
+  what's missing, already opened. Where several patterns make the same
+  item, pick another one to see that plan instead. Endgame plans can run
+  past 100,000 steps; they're planned in full, so the list and the missing
+  items cover all of it, and the tree loads deeper steps as you open them.
 
-Above both views is everything the plan is short of. If the plan would take
-an item from at or above your low-stock alert or a keep-in-stock target to
-below it, a **stock rules** button beside the views lists those items. An item
-that was already below its rule isn't listed, since the plan didn't cause it.
+Above both views is everything the plan is short of. Click an item there to
+jump to where it's short in the tree; click it again for the next place. If
+the plan would take an item from at or above your low-stock alert or a
+keep-in-stock target to below it, a **stock rules** button beside the views
+lists those items. An item that was already below its rule isn't listed,
+since the plan didn't cause it.
 
 The plan is the server's estimate from your patterns and the last network
 scan, worked out the way AE2 plans:

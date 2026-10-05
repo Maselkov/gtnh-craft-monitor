@@ -169,13 +169,51 @@ class TestPaging:
         assert [m["name"] for m in result["missing"]] == ["Part 3000"]
 
     def test_trim_keeps_levels_and_counts_the_rest(self):
-        root = plan(CHAIN, {}, "Gear", 2)["root"]
+        root = plan(CHAIN, {"Ingot": 100}, "Gear", 2)["root"]  # nothing short
         top = planner.trim(root, 1)
         plate = child(top, "Plate")
         assert "children" not in plate and plate["more"] == 1
         assert planner.trim(root, 2)["children"][0]["children"][0]["name"] == "Ingot"
         # A step that was planned but has nothing below keeps an empty list.
         assert planner.trim(plan(CHAIN, {"Plate": 10, "Bolt": 10}, "Gear", 1)["root"], 0)["more"] == 2
+
+    def test_missing_below_counts_short_steps_under_each_step(self):
+        # 8 ingots for 9 needed: the plates take them all, the bolt is short.
+        root = plan(CHAIN, {"Ingot": 8}, "Gear", 2)["root"]
+        plate, bolt = child(root, "Plate"), child(root, "Bolt")
+        assert root["missing_below"] == 1 and bolt["missing_below"] == 1
+        assert "missing_below" not in plate and "missing_below" not in child(plate, "Ingot")
+        # Nothing in stock: both ingot steps are short.
+        assert plan(CHAIN, {}, "Gear", 2)["root"]["missing_below"] == 2
+
+    def test_a_missing_item_lists_where_it_is_short(self, monkeypatch):
+        result = plan(CHAIN, {}, "Gear", 2)
+        ingot = totals(result, "Ingot")
+        assert (ingot["at"], ingot["places"]) == (["0.0", "1.0"], 2)
+        assert planner.subtree(result["root"], [1, 0])["missing"] == 1
+        monkeypatch.setattr(planner, "MAX_JUMPS", 1)
+        ingot = totals(plan(CHAIN, {}, "Gear", 2), "Ingot")
+        assert (ingot["at"], ingot["places"]) == (["0.0"], 2)
+
+    def test_trim_follows_the_way_to_what_is_missing(self):
+        # Only the bolt's branch is short: it comes whole, the plates' doesn't.
+        root = planner.trim(plan(CHAIN, {"Ingot": 8}, "Gear", 2)["root"], 0)
+        assert [c["name"] for c in root["children"]] == ["Plate", "Bolt"]
+        plate, bolt = child(root, "Plate"), child(root, "Bolt")
+        assert plate["more"] == 1 and "children" not in plate
+        assert child(bolt, "Ingot")["status"] == "missing"
+
+    def test_trim_follows_a_deep_missing_path_until_its_budget(self):
+        chain = [pat([it(f"Part {i}")], [it(f"Part {i + 1}")], slot=i) for i in range(3000)]
+        root = plan(chain, {}, "Part 0", 1)["root"]
+        node, depth = planner.trim(root, 2, budget=100), 0
+        while node.get("children"):
+            node, depth = node["children"][0], depth + 1
+        assert depth == 102 and node["more"] == 1
+        node = planner.trim(root, 2)
+        while node.get("children"):
+            node = node["children"][0]
+        assert node["name"] == f"Part {2 + planner.MISSING_PATH_BUDGET}"
 
     def test_subtree_by_child_positions(self):
         root = plan(CHAIN, {}, "Gear", 2)["root"]
@@ -253,6 +291,9 @@ class TestRoute:
         assert (root["name"], root["craft"]) == ("Gear", 2)
         assert child(root, "Plate")["from_stock"] == 1
         assert [m["name"] for m in data["plan"]["missing"]] == ["Ingot"]
+        # Where it's short, once: in `missing`, not again in `items`.
+        assert data["plan"]["missing"][0]["at"] == ["0.0", "1.0"]  # under the plates and the bolt
+        assert all("at" not in i for i in data["plan"]["items"])
         assert data["patterns_updated_at"] and data["stock_updated_at"]
 
     def test_nothing_makes_it(self, client, api_headers):

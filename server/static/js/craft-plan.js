@@ -41,6 +41,9 @@ let hideAvailable = false;
 // shows this many until asked for the rest.
 const MISSING_SHOWN = 8;
 let missingExpanded = false;
+// The Missing strip's chip last clicked, and which of its item's places
+// in the tree (`at`) it went to; reset with every new plan.
+let jump = null;  // { key, index }
 
 // ---------- formatting (pure, tested under server/tests/js/) ----------
 
@@ -93,6 +96,20 @@ function iconHtml(it, cls) {
   return it.icon
     ? `<img class="${iconClass(cls, it.icon)}" src="${iconUrl(it.icon)}" alt="" loading="lazy" data-remove-on-error>`
     : essentiaBadgeHtml(it, cls);
+}
+
+// "2/5" on a Missing chip being cycled through, "2/200+" past the list.
+export function jumpCounterText(index, item) {
+  const listed = (item.at || []).length;
+  return `${index + 1}/${listed}${(item.places || 0) > listed ? '+' : ''}`;
+}
+
+// The steps a tree step shows: with "Hide all available", only those
+// with something short somewhere below them (or short themselves).
+export function shownChildren(node, hide) {
+  return (node.children || [])
+    .map((c, i) => [c, i])
+    .filter(([c]) => !hide || c.missing_below > 0);
 }
 
 // "below your alert (10k)" for a stock rule the plan would break.
@@ -155,13 +172,17 @@ function renderList(plan) {
 // remembered by, so it survives a re-plan that moves things around.
 function nodeHtml(node, parentPath, depth, positions) {
   const path = parentPath ? parentPath + ' > ' + node.key : node.key;
-  const children = (node.children || [])
-    .map((c, i) => [c, i])
-    .filter(([c]) => !(hideAvailable && c.status === 'stock'));
+  const children = shownChildren(node, hideAvailable);
   // Big plans come a few levels at a time: `more` says this step has
   // steps below it that haven't been fetched yet.
   const unfetched = !node.children && node.more > 0;
-  const open = openState.has(path) ? openState.get(path) : depth < 2;
+  // "Hide all available" opens the way to everything short, however
+  // deep - as far as the server sent it (see planner.trim). Past that, a
+  // plan short of nearly everything would fetch and redraw hundreds of
+  // branches at once; those stay shut, saying what's short below, until
+  // opened.
+  const open = openState.has(path) ? openState.get(path)
+    : (hideAvailable ? node.missing_below > 0 && !unfetched : depth < 2);
   if (open && unfetched) loadBranchSoon(positions);
   const caret = children.length || unfetched
     ? `<button class="plan-caret" data-action="plan-toggle" data-path="${escapeHtml(path)}" aria-expanded="${open}" title="${open ? 'Collapse' : 'Expand'}">${open ? '▾' : '▸'}</button>`
@@ -172,6 +193,11 @@ function nodeHtml(node, parentPath, depth, positions) {
   if (node.inexact) details.push('output count unknown, counted as 1');
   for (const also of node.also_makes || []) details.push(`also makes ${qty(also.amount, also.kind)} ${escapeHtml(also.name || '?')}`);
   if (node.truncated) details.push('plan cut short here');
+  // Shut, a branch still says it has something short in it.
+  const shortBelow = (node.missing_below || 0) - (node.missing ? 1 : 0);
+  if (!open && shortBelow > 0) {
+    details.push(`<span class="plan-short-below">${shortBelow.toLocaleString()} short below</span>`);
+  }
   const item = itemsByKey.get(node.key);
   if (item && item.warnings) {
     details.push(`<span class="plan-warning-line">${item.warnings.map(w => escapeHtml(warningText(w, item.kind))).join(', ')}</span>`);
@@ -184,7 +210,7 @@ function nodeHtml(node, parentPath, depth, positions) {
     }</select>`
     : '';
 
-  return `<li class="plan-node status-${escapeHtml(node.status)}">
+  return `<li class="plan-node status-${escapeHtml(node.status)}" data-pos="${escapeHtml(positions)}">
     <div class="plan-row">
       ${caret}${iconHtml(node, 'plan-icon')}
       <div class="plan-text">
@@ -200,7 +226,9 @@ function nodeHtml(node, parentPath, depth, positions) {
 }
 
 function renderTree(plan) {
-  return `<ul class="plan-tree">${nodeHtml(plan.root, '', 0, '')}</ul>`;
+  const nothingShort = hideAvailable && !plan.root.missing_below
+    ? '<li class="plan-none">Nothing is short: everything is in stock or craftable.</li>' : '';
+  return `<ul class="plan-tree">${nodeHtml(plan.root, '', 0, '')}${nothingShort}</ul>`;
 }
 
 // ---------- the whole panel ----------
@@ -210,7 +238,13 @@ function summaryHtml(data) {
   const parts = [];
   if (plan.missing.length) {
     const shown = missingExpanded ? plan.missing : plan.missing.slice(0, MISSING_SHOWN);
-    const chips = shown.map(m => `<span class="plan-chip">${iconHtml(m, 'plan-chip-icon')}<b>${qty(m.missing, m.kind)}</b> ${escapeHtml(displayName(m))}</span>`);
+    // Each chip jumps to where its item is short, and on to the next place.
+    const chips = shown.map(m => {
+      const counter = jump && jump.key === m.key && (m.at || []).length > 1
+        ? ` <span class="plan-jump-count">${jumpCounterText(jump.index, m)}</span>` : '';
+      return `<button class="plan-chip" data-action="plan-jump" data-key="${escapeHtml(m.key)}" title="Show where it's short in the tree">${
+        iconHtml(m, 'plan-chip-icon')}<b>${qty(m.missing, m.kind)}</b> ${escapeHtml(displayName(m))}${counter}</button>`;
+    });
     const hidden = plan.missing.length - shown.length;
     if (hidden > 0) chips.push(`<button class="plan-more" data-action="plan-missing-more">+${hidden} more</button>`);
     else if (missingExpanded) chips.push('<button class="plan-more" data-action="plan-missing-more">Show fewer</button>');
@@ -318,21 +352,71 @@ async function loadBranch(positions, planData) {
   try {
     const res = await fetch('/api/network/plan?' + params);
     const data = await res.json().catch(() => ({}));
-    if (planData !== lastPlan) return;  // a newer plan replaced it
+    if (planData !== lastPlan) return false;  // a newer plan replaced it
     if (data.stale) {
       scheduleFetch(0);
-      return;
+      return false;
     }
     const node = res.ok && data.node ? nodeAt(planData.plan.root, positions) : null;
-    if (!node) return;
+    if (!node) return false;
     node.children = data.node.children || [];
     delete node.more;
     render();
+    return true;
   } catch (e) {
     // Left showing "Loading…"; closing and opening the step tries again.
+    return false;
   } finally {
     if (planData === lastPlan) branchesLoading.delete(positions);
   }
+}
+
+// Fetches whatever the server left out on the way down to a step; false
+// if it couldn't (a newer plan, or no answer).
+async function ensureLoaded(positions, planData) {
+  const steps = positions === '' ? [] : positions.split('.');
+  for (let depth = 0; depth <= steps.length; depth++) {
+    const prefix = steps.slice(0, depth).join('.');
+    const node = nodeAt(planData.plan.root, prefix);
+    if (!node) return false;
+    if (depth < steps.length && !node.children && node.more > 0) {
+      branchesLoading.add(prefix);
+      if (!await loadBranch(prefix, planData)) return false;
+    }
+  }
+  return planData === lastPlan;
+}
+
+// The next place the item is short at: opens the tree down to it,
+// scrolls it into view and flashes it.
+async function jumpTo(key) {
+  const item = lastPlan && lastPlan.plan.missing.find(m => m.key === key);
+  const places = (item && item.at) || [];
+  if (!places.length || !lastPlan) return;
+  jump = jump && jump.key === key ? { key, index: (jump.index + 1) % places.length } : { key, index: 0 };
+  const positions = places[jump.index];
+  const planData = lastPlan;
+  if (view !== 'tree') {
+    view = 'tree';
+    writeSetting(VIEW_KEY, view);
+  }
+  render();
+  if (!await ensureLoaded(positions, planData)) return;
+  // Open every step above it, by the item-key paths open/shut goes by.
+  let node = planData.plan.root;
+  let path = node.key;
+  for (const p of positions === '' ? [] : positions.split('.')) {
+    openState.set(path, true);
+    node = node.children[Number(p)];
+    path += ' > ' + node.key;
+  }
+  render();
+  const row = document.querySelector(`#craftPlanBody li[data-pos="${CSS.escape(positions)}"] > .plan-row`);
+  if (!row) return;
+  row.scrollIntoView({ block: 'center' });
+  row.classList.remove('plan-jump');
+  void row.offsetWidth;  // restart the flash on a second jump to the same row
+  row.classList.add('plan-jump');
 }
 
 async function fetchPlan() {
@@ -351,6 +435,7 @@ async function fetchPlan() {
       showNote(res.ok ? data.reason : (data.error || 'Couldn\'t work out a plan.'));
     } else {
       lastPlan = data;
+      jump = null;
       branchesLoading = new Set();
       itemsByKey = new Map(data.plan.items.map(i => [i.key, i]));
       showNote(null);
@@ -413,6 +498,9 @@ export function setupCraftPlanActions() {
       view = el.dataset.view === 'tree' ? 'tree' : 'list';
       writeSetting(VIEW_KEY, view);
       render();
+    },
+    'plan-jump': (el) => {
+      jumpTo(el.dataset.key);
     },
     'plan-missing-more': () => {
       missingExpanded = !missingExpanded;
