@@ -28,16 +28,17 @@ test('nodeQtyText says what each step needs and where it comes from', () => {
     'need 1 · missing 1: its recipe needs itself');
 });
 
-test('sortListItems: missing first, then by stock used, then crafted only', () => {
+test('sortListItems: missing first, then stock only by use, then crafted', () => {
   const items = [
     { name: 'Crafted', need: 2, from_stock: 0, craft: 2, missing: 0, available: 0 },
+    { name: 'Crafted after its stock', need: 9, from_stock: 1, craft: 8, missing: 0, available: 1 },
     { name: 'Little used', need: 1, from_stock: 1, craft: 0, missing: 0, available: 100 },
     { name: 'Short a bit', need: 5, from_stock: 0, craft: 0, missing: 1, available: 0 },
     { name: 'All used', need: 10, from_stock: 10, craft: 0, missing: 0, available: 10 },
     { name: 'Short a lot', need: 50, from_stock: 0, craft: 0, missing: 50, available: 0 },
   ];
   assert.deepEqual(sortListItems(items).map(i => i.name),
-    ['Short a lot', 'Short a bit', 'All used', 'Little used', 'Crafted']);
+    ['Short a lot', 'Short a bit', 'All used', 'Little used', 'Crafted', 'Crafted after its stock']);
 });
 
 test('warningText formats the rule\'s level like any amount', () => {

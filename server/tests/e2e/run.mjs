@@ -647,6 +647,11 @@ async function main() {
     await waitFor('5 Neutronium Dust short', `$('#craftPlanSummary .plan-missing-strip')?.textContent.includes('Neutronium Dust')
       && $('#craftPlanSummary .plan-chip b').textContent === '5'`);
     await waitFor('missing cell first', `$('#craftPlanBody .plan-cell').classList.contains('missing')`);
+    // Neutronium: 5 from stock, 5 more crafted. Crafted cells say how many,
+    // not how much of the stock is used (all of it, always), as in the game.
+    await waitFor('crafted cells without use', `$$('#craftPlanBody .plan-cell').filter(c => c.textContent.includes('Crafting'))
+      .every(c => !c.querySelector('.plan-used') && !c.textContent.includes('Available'))
+      && $$('#craftPlanBody .plan-cell').some(c => c.textContent.includes('Crafting: 5'))`);
     // A haloed icon (drawn 2.5x its box, see .icon-bleed) in the rightmost
     // cell mustn't make the list scroll sideways. No game data is
     // installed yet, so one is put there by hand.

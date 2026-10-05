@@ -77,11 +77,12 @@ export function nodeQtyText(node, isRoot) {
   return parts.join(' · ');
 }
 
-// Missing first, then by how much of the stock is used, then what's
-// only crafted; by name within each, so cells don't jump around as the
-// amount changes.
+// Missing first, then what comes only from stock, by how much of it is
+// used, then what's crafted (its stock all goes first, so its use says
+// nothing); by name within each, so cells don't jump around as the
+// amount changes. The game's list sorts the same way.
 export function sortListItems(items) {
-  const rank = (i) => (i.missing > 0 ? 0 : i.from_stock > 0 ? 1 : 2);
+  const rank = (i) => (i.missing > 0 ? 0 : i.craft > 0 ? 2 : 1);
   return [...items].sort((a, b) => rank(a) - rank(b)
     || (rank(a) === 0 ? b.missing - a.missing : 0)
     || (rank(a) === 1 ? usedPercent(b) - usedPercent(a) : 0)
@@ -109,7 +110,10 @@ function cellHtml(it) {
   const lines = [];
   if (!it.icon && it.kind !== 'essentia') lines.push(`<div class="ingredient-cell-name">${escapeHtml(displayName(it))}</div>`);
   if (it.missing > 0) lines.push(`<div class="plan-missing-line">Missing: <b>${qty(it.missing, it.kind)}</b></div>`);
-  if (it.from_stock > 0) {
+  // As in the game, only for what the plan takes from stock alone: an
+  // item that's crafted has used up all its stock first, so it would
+  // always say 100%.
+  if (it.from_stock > 0 && !(it.craft > 0)) {
     const pct = usedPercent(it);
     lines.push(`<div>Available: <b>${qty(it.available, it.kind)}</b></div>`);
     lines.push(`<div class="plan-used ${usedBand(pct)}">Used: ${pct >= 99.95 ? '100' : pct.toFixed(pct < 10 ? 2 : 1)}%</div>`);
