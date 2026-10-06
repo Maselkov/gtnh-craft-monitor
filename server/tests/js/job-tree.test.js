@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { branchDone, branchSummary, stepPercent, stepText } from '../../static/js/job-tree.js';
+import { branchCounts, branchDone, stepPercent, stepText } from '../../static/js/job-tree.js';
 
 test('stepText and stepPercent say how much of a step is made', () => {
   assert.equal(stepText({ total: 4000, left: 2800 }), '1.2k / 4.0k');
@@ -17,14 +17,14 @@ const steps = {
   ingot: { state: 'done' },
 };
 
-test('branchSummary counts what is under a shut step, each item once', () => {
+test('branchCounts counts what is under a shut step, each item once', () => {
   const node = { step: 'gear', children: [
     { step: 'plate', children: [{ step: 'ingot', status: 'stock' }] },
     { step: 'bolt', children: [{ step: 'rod', children: [] }] },
     { step: 'plate', children: [] },  // the same item again: counted once
   ] };
-  assert.equal(branchSummary(node, steps), '2 stuck · 1 active');
-  assert.equal(branchSummary({ step: 'ingot', children: [] }, steps), '');
+  assert.deepEqual(branchCounts(node, steps), [['stuck', 2], ['active', 1]]);
+  assert.deepEqual(branchCounts({ step: 'ingot', children: [] }, steps), []);
 });
 
 test('branchDone: every crafted step under it done, storage leaves aside', () => {

@@ -525,9 +525,15 @@ async function main() {
     await report(4);
     await waitFor('stuck', `$$('#ingredientsTree li.job-node')[1].classList.contains('job-stuck')
       && !$('#ingredientsStuck').hidden && $('#ingredientsStuck').textContent.includes('Iron Dust')`);
+    const tint = await evaluate(`(() => {
+      const bg = (li) => getComputedStyle(li.querySelector(':scope > .plan-row')).backgroundColor;
+      const [root, stuck] = $$('#ingredientsTree li.job-node');
+      return { stuck: bg(stuck), other: bg(root) };
+    })()`);
+    if (tint.stuck === tint.other) throw new Error(`a stuck step's row isn't tinted: ${JSON.stringify(tint)}`);
     await click(`$$('#ingredientsTree [data-action="job-tree-toggle"]')[0]`);
     await waitFor('shut, saying what is under it', `$$('#ingredientsTree li.job-node').length === 1
-      && $('#ingredientsTree .job-step-note').textContent === '1 stuck'`);
+      && $('#ingredientsTree .job-step-note .job-count-stuck')?.textContent === '1 stuck'`);
     await click(`$('#ingredientsStuck .plan-chip')`);
     await waitFor('jumped to it', `$('#ingredientsTree li[data-pos="0"] > .plan-row')?.classList.contains('plan-jump')`);
     await click(`$('#ingredientsModal [data-view="grid"]')`);

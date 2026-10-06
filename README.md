@@ -575,10 +575,12 @@ One card per crafting CPU, updated every 3 seconds. A busy card shows:
 - **Ingredients (N)** — opens a grid of everything the job holds, is crafting
   and is waiting on, laid out like AE2's crafting status screen. It stays
   live while open. Switch it to **Tree** to see the job step by step:
-  each step shows how much of it is made, active steps pulse, finished
-  branches fold away, and a step that's crafting but hasn't moved for
-  `CRAFT_STALL_SECONDS` (10 minutes by default) is marked stuck. Stuck
-  steps are also listed above the tree; click one to jump to it.
+  each step shows how much of it is made, steps being crafted are green
+  as in the grid, finished branches fold away, and a step that's crafting
+  but hasn't moved for `CRAFT_STALL_SECONDS` (10 minutes by default) turns
+  amber as stuck. A folded branch says what's under it ("1 stuck · 2
+  active"). Stuck steps are also listed above the tree; click one to jump
+  to it.
 
   AE2 doesn't tell OpenComputers a job's own plan, so the tree is rebuilt
   from the network's patterns (see [Reading patterns](#reading-patterns)):
