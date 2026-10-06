@@ -32,8 +32,9 @@ export function stepPercent(s) {
   return s.total > 0 ? Math.min(100, Math.max(0, (1 - s.left / s.total) * 100)) : 0;
 }
 
-// What's under a shut step, from its loaded steps: "2 active · 1 stuck".
-export function branchSummary(node, stepsByKey) {
+// What's under a shut step, from its loaded steps, each item once:
+// [['stuck', 2], ['active', 1]], the worst first.
+export function branchCounts(node, stepsByKey) {
   const counts = { active: 0, stuck: 0, waiting: 0 };
   const seen = new Set();
   const stack = [...(node.children || [])];
@@ -46,10 +47,7 @@ export function branchSummary(node, stepsByKey) {
     }
     stack.push(...(n.children || []));
   }
-  return ['stuck', 'active', 'waiting']
-    .filter(k => counts[k] > 0)
-    .map(k => `${counts[k]} ${k}`)
-    .join(' · ');
+  return ['stuck', 'active', 'waiting'].filter(k => counts[k] > 0).map(k => [k, counts[k]]);
 }
 
 // Whether a crafted step and every loaded one under it are finished.
@@ -139,14 +137,20 @@ function patch() {
     const fill = row.querySelector('.job-bar-fill');
     text.textContent = s && !storage ? stepText(s) : '';
     if (fill) fill.style.width = `${s ? stepPercent(s) : 0}%`;
+    // Each part in its own span, so a shut branch's counts take the
+    // colours of the rows they stand for (.job-count-stuck, ...).
     const notes = [];
-    if (state === 'stuck' && s.moved_at) notes.push(`no progress for ${formatDuration(now - s.moved_at)}`);
+    if (state === 'stuck' && s.moved_at) notes.push(['', `no progress for ${formatDuration(now - s.moved_at)}`]);
     const shut = node && node.children && node.children.length && !li.querySelector(':scope > ul');
     if (shut) {
-      const summary = branchSummary(node, steps);
-      if (summary) notes.push(summary);
+      for (const [k, n] of branchCounts(node, steps)) notes.push([`job-count-${k}`, `${n} ${k}`]);
     }
-    note.textContent = notes.join(' · ');
+    note.replaceChildren(...notes.flatMap(([cls, text], i) => {
+      const span = document.createElement('span');
+      if (cls) span.className = cls;
+      span.textContent = text;
+      return i ? [' · ', span] : [span];
+    }));
   }
   renderStuck();
 }
