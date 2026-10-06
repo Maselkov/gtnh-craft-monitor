@@ -285,3 +285,49 @@ class TestAutoRequestResults:
         login_as(client, "admin", role="admin")
         events = client.get("/api/admin/users/olive/history").get_json()["events"]
         assert events[0]["source"] == "auto"
+
+
+def _nbt_string(text):
+    data = text.encode()
+    return len(data).to_bytes(2, "big") + data
+
+
+# A Neutronium Huge Turbine: only GT.ToolStats' PrimaryMaterial tells it
+# apart from every other material's.
+TURBINE_TAG = (
+    b"\x0a" + _nbt_string("") + b"\x0a" + _nbt_string("GT.ToolStats")
+    + b"\x08" + _nbt_string("PrimaryMaterial") + _nbt_string("Neutronium") + b"\x00\x00"
+).hex()
+GENERIC_TURBINE = "item/gregtech/gt.metatool.01~176.png"
+NEUTRONIUM_TURBINE = "item/gregtech/gt.metatool.01~176~neutronium.png"
+
+
+class TestToolIcons:
+    @pytest.fixture()
+    def turbine(self, client, api_headers, monkeypatch):
+        """A Neutronium Huge Turbine scanned with its NBT; the rule body
+        for it, as the page sends one (variant id, no variant_name)."""
+        from gcm import icons
+        monkeypatch.setattr(icons, "_icons_by_key", {"gregtech:gt.metatool.01:176": GENERIC_TURBINE})
+        monkeypatch.setattr(icons, "_icons_by_key_material", {"gregtech:gt.metatool.01:176|Neutronium": NEUTRONIUM_TURBINE})
+        item = {"name": "Huge Turbine", "mod": "gregtech", "internal": "gt.metatool.01", "damage": 176,
+                "size": 1, "isCraftable": True, "hasTag": True, "tag": TURBINE_TAG}
+        scan(client, api_headers, item)
+        [scanned_item] = client.get("/api/network").get_json()["items"]
+        assert scanned_item["icon"] == NEUTRONIUM_TURBINE
+        return item, {"label": "Huge Turbine", "mod": "gregtech", "internal": "gt.metatool.01", "damage": 176,
+                      "kind": "item", "variant": scanned_item["variant"]}
+
+    def test_rules_and_alert_pushes_show_the_material(self, client, api_headers, pushes, turbine):
+        item, rule = turbine
+        login_as(client, "olive", role="operator")
+        assert client.post("/api/stock/alert", json={**rule, "below": 2}).status_code == 200
+        assert set_target(client, rule, keep=2, refill=4).status_code == 200
+        listed = rules(client)
+        assert listed["alerts"][0]["icon"] == NEUTRONIUM_TURBINE
+        assert listed["targets"][0]["icon"] == NEUTRONIUM_TURBINE
+        cpus(client, api_headers)
+        scan(client, api_headers, item)  # 1 < 2: alert and restock
+        assert NEUTRONIUM_TURBINE.replace("/", "%2F") in pushes[0][1]["icon"]
+        [req] = auto_requests()
+        assert req["icon"] == NEUTRONIUM_TURBINE

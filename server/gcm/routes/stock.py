@@ -4,7 +4,7 @@ they queue real crafts."""
 
 from flask import Blueprint, g, jsonify, request
 
-from gcm import auth, icons, state, stock, store
+from gcm import auth, state, stock, store
 
 
 bp = Blueprint("stock", __name__)
@@ -54,6 +54,7 @@ def stock_rules_get():
         items = state.network["items"]
         scanned = state.network["updated_at"] is not None or bool(items)
     sizes = stock.current_sizes(items)
+    names = stock.variant_names(items)
     with state.crafts_lock:
         jobs = list(state.crafts["jobs"])
     pending = stock.pending_auto_requests()
@@ -68,7 +69,7 @@ def stock_rules_get():
             "damage": rule["damage"],
             "kind": rule["kind"],
             "variant": rule["variant"],
-            "icon": icons.resolve_icon(rule["mod"], rule["internal"], rule["damage"], rule["label"], rule["variant"], rule["kind"]),
+            "icon": stock.rule_icon(rule, names),
             "current": current,
         }
 
