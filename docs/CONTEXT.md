@@ -456,17 +456,20 @@ still sharing a key (label fallback) are summed. The first scan after the
 change deleted the mixed history under the old plain keys
 (`pending_nbt_cleanup`).
 
-Craft requests for a variant pick the pattern by NBT too: `getCraftables()`
-can only filter on name, damage and label, and GregTech tools share all
-three per tool type (every material's "Huge Turbine"). The server keeps
+Craft requests for a variant pick the pattern by NBT too. GregTech tools
+share id, damage and label per tool type (every material's "Huge
+Turbine"), so only the NBT tells their patterns apart. The server keeps
 each variant's raw tag from the last scan (`state.network["tags"]`, in
-memory only) and sends it with the request; `craft_monitor.lua`'s
-`pick_craftable()` requests the pattern whose `getItemStack().tag` matches
-it - byte for byte, or else by asking the server
-(`/api/craft/requests/<id>/match`), which compares the parsed NBT by the
-variant hash, since the same NBT can serialize in a different key order.
-A miss posts every tag involved to `/api/debug`. Without a tag it requires the label to leave exactly one
-pattern, and otherwise fails the request rather than craft the wrong one.
+memory only) and sends it with the request; `craft_monitor.lua` passes it
+back as the `tag` of `getCraftable({name, damage, tag}, "item")`
+(OpenComputers 1.12.47+, GTNH 2.9.0-beta-2+). OC decodes it the way it
+encoded it, and AE2 matches the stack exactly (`findPrecise`), so key
+order doesn't matter. Craftable-only stacks are found too: the lookup
+goes through every inventory handler, the crafting grid's list of
+craftables included. A variant without a tag (none scanned since a
+restart) fails rather than craft the wrong one. This replaced filtering
+`getCraftables()` by name, damage and label and comparing each pattern's
+NBT, with a server round trip for key-order differences.
 
 **GT5's item-icon "meta items" are rendered procedurally, not shipped as
 static files.** There's no way to get correct icons for most GTNH items

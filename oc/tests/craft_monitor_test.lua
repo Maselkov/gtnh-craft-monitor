@@ -183,6 +183,57 @@ test("a request with no pattern fails without calling request()", function()
   t.eq(results_for(env, 4), { { status = "failed", reason = "no matching craftable pattern found" } })
 end)
 
+-- Each material's turbine: one id, damage and label, only the NBT differs.
+local NEUTRONIUM_TAG, STEEL_TAG = "\31\139nbt-neutronium", "\31\139nbt-steel"
+local function turbine(tag)
+  return ae2.stack("gregtech:gt.metatool.01", "Huge Turbine", 1, { damage = 176, hasTag = true, tag = tag })
+end
+
+local function hex(bytes)
+  return (bytes:gsub(".", function(c) return string.format("%02x", c:byte()) end))
+end
+
+test("an NBT variant's request crafts that exact variant", function()
+  local req = request_for(5, turbine(NEUTRONIUM_TAG))
+  req.variant, req.tag = "v1", hex(NEUTRONIUM_TAG)
+  local env, me = setup({ ["GET /api/craft/requests/pending"] = queue({ req }) })
+  me:add_craftable({ stack = turbine(STEEL_TAG) })
+  me:add_craftable({ stack = turbine(NEUTRONIUM_TAG) })
+  env:start_service("craft_monitor")
+  env:run({ seconds = 5 })
+  t.eq(results_for(env, 5)[1].status, "accepted")
+  t.eq(me:cpu("CPU 1").job.output.tag, NEUTRONIUM_TAG)
+end)
+
+test("a plain request doesn't craft an NBT variant of the item", function()
+  local env, me = setup({ ["GET /api/craft/requests/pending"] = queue({ request_for(6, GEAR) }) })
+  local tagged = ae2.stack(GEAR.name, GEAR.label, 1, { damage = GEAR.damage, hasTag = true, tag = STEEL_TAG })
+  me:add_craftable({ stack = tagged })
+  env:start_service("craft_monitor")
+  env:run({ seconds = 3 })
+  t.eq(results_for(env, 6), { { status = "failed", reason = "no matching craftable pattern found" } })
+end)
+
+test("a variant whose NBT the server doesn't have yet isn't guessed at", function()
+  local req = request_for(8, turbine(NEUTRONIUM_TAG))
+  req.variant = "v1"
+  local env, me = setup({ ["GET /api/craft/requests/pending"] = queue({ req }) })
+  me:add_craftable({ stack = turbine(NEUTRONIUM_TAG) })
+  env:start_service("craft_monitor")
+  env:run({ seconds = 3 })
+  t.eq(results_for(env, 8), { {
+    status = "failed", reason = "this item's NBT isn't known yet - wait for the next network scan" } })
+end)
+
+test("a fluid is found by its name", function()
+  local req = { id = 10, kind = "fluid", internal = "molten.neutronium", label = "Molten Neutronium", amount = 144 }
+  local env, me = setup({ ["GET /api/craft/requests/pending"] = queue({ req }) })
+  me:add_craftable({ stack = { name = "molten.neutronium", label = "Molten Neutronium" }, fluid = true })
+  env:start_service("craft_monitor")
+  env:run({ seconds = 5 })
+  t.eq(results_for(env, 10)[1].status, "accepted")
+end)
+
 test("a cancel stops the job it was meant for", function()
   local env, me = setup({
     ["GET /api/craft/cancel/pending"] = queue({

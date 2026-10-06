@@ -12,7 +12,7 @@ import time
 
 from flask import Blueprint, g, jsonify, request
 
-from gcm import auth, commands, nbt, state, stock, store, tracking
+from gcm import auth, commands, state, stock, store, tracking
 
 
 bp = Blueprint("craft_requests", __name__)
@@ -83,34 +83,6 @@ def craft_request_dismiss(req_id):
 def craft_requests_pending():
     # Lua polling for work - every user's pending requests at once.
     return jsonify({"requests": commands.craft_requests.claim_pending()})
-
-
-@bp.route("/api/craft/requests/<int:req_id>/match", methods=["POST"])
-@auth.api_key_required
-def craft_request_match(req_id):
-    """Which of the patterns craft_monitor.lua found makes this request's
-    NBT variant. It sends each pattern output's NBT tag (hex, or null if
-    it couldn't read one); they're compared by the same key-order-
-    independent hash that made the variant id, since the same NBT can
-    serialize to different bytes. Returns the 1-based index of the match,
-    or null, plus each tag's variant id for diagnosing a miss."""
-    payload = request.get_json(silent=True) or {}
-    tags = payload.get("tags")
-    if not isinstance(tags, list):
-        return jsonify({"error": "tags must be a list"}), 400
-    found = commands.craft_requests.select(lambda r: r["id"] == req_id)
-    if not found:
-        return jsonify({"error": "unknown request id"}), 404
-    variant = found[0].get("variant")
-
-    variants = []
-    for tag in tags:
-        try:
-            variants.append(nbt.canonical_hash(nbt.parse_hex(tag)) if isinstance(tag, str) else None)
-        except nbt.NbtError:
-            variants.append(None)
-    index = next((i + 1 for i, v in enumerate(variants) if v and v == variant), None)
-    return jsonify({"index": index, "variant": variant, "variants": variants})
 
 
 @bp.route("/api/craft/requests/<int:req_id>/result", methods=["POST"])

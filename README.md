@@ -362,8 +362,10 @@ work without it; plans then take no substitutes.
   server's host not blocked by its whitelist. If this is off, the scripts
   can't POST, and nothing on the Lua side can fix it. The installer also
   needs `raw.githubusercontent.com` and `api.github.com`.
-- Recommended: `allowItemStackNBTTags=true` (under `integration.vanilla`) in
-  `OpenComputers.cfg`. Items that share an id but differ in NBT (seeds with
+- For craft requests, GTNH 2.9.0-beta-2 or later: they use OpenComputers'
+  `getCraftable()`, added in 1.12.47.
+- `allowItemStackNBTTags=true` (under `integration.vanilla`) in
+  `OpenComputers.cfg`, which is GTNH's default. Items that share an id but differ in NBT (seeds with
   different stats, bees of one species) are then listed separately, as AE2
   does. Without it they're only told apart by name, and GregTech tools
   (turbines, drills...) all show one icon whatever their material.
@@ -716,9 +718,10 @@ name. The Request button works whatever the plan says.
 
 Items that differ only in NBT (GregTech turbines of each material, seeds,
 bees) are separate entries in the grid, and requesting one crafts that
-variant. This needs `allowItemStackNBTTags` (see
-[Requirements](#requirements)). Without it, the name has to pick out a single
-pattern, or the request fails rather than crafting the wrong item.
+variant: `getCraftable()` finds the pattern making exactly that stack, NBT
+included. The NBT comes from the last network scan, so a variant that hasn't
+been scanned since the server started fails rather than crafting the wrong
+item.
 
 After you submit, a pending card appears. Planning a large craft can take from
 under a second to several minutes, and the request survives closing the tab.
@@ -816,8 +819,7 @@ isn't used, because it only reports whether a crafting link was created. A
 rejected request never creates one, so `isDone()` would stay `false` forever
 in exactly the case where an error must be shown.
 
-Fluid craftables use a different `getCraftables()` filter: by label instead
-of by name and damage. The script handles this automatically.
+Fluids are requested by their Forge name, through the same `getCraftable()`.
 
 ### Scanning the network
 
