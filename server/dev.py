@@ -41,10 +41,13 @@ import zlib
 for _name in ("API_KEY", "DATA_DIR", "GCM_BOOTSTRAP_ADMIN_TOKEN", "GCM_BOOTSTRAP_ADMIN_NAME",
               "GTNH_VERSION", "GTNH_TEXTURES", "GAMEDATA_API_URL", "GAMEDATA_REPO",
               "TRUSTED_PROXIES", "VAPID_SUBJECT", "STALE_AFTER_SECONDS", "SESSION_LIFETIME_SECONDS",
-              "AUTOCRAFT_KEEP_IDLE_CPUS", "AUTOCRAFT_RETRY_SECONDS"):
+              "AUTOCRAFT_KEEP_IDLE_CPUS", "AUTOCRAFT_RETRY_SECONDS", "CRAFT_STALL_SECONDS"):
     os.environ.pop(_name, None)
 # Read by gcm.config at import: session cookies over plain http.
 os.environ["SESSION_COOKIE_SECURE"] = "0"
+# The crafting tree calls a step stuck after this long unmoved: well
+# within T00's stalled bolts (CHAIN_JOB), so the dev page shows one.
+os.environ["CRAFT_STALL_SECONDS"] = "30"
 
 from gcm import create_app, db, icons, store  # noqa: E402
 
@@ -392,6 +395,43 @@ class Cpu:
             for name, amount in ingredients
         }}
 
+    def start_chain(self, output, stages, raw, stuck=None):
+        """A job that follows the dev patterns, for the live crafting
+        tree: `stages` [[(name, amount)]], crafted in turn (a step only
+        starts once the stage before is done); `raw` [(name, amount)] in
+        the CPU's storage from the start, used up as the first stage
+        goes; `stuck` (name, ticks) holds that step still a while,
+        crafting but not moving."""
+        items = {name: [0, 0, amount] for name, amount in raw}
+        for stage in stages:
+            for name, amount in stage:
+                items[name] = [amount, 0, 0]
+        self.job = {"output": output, "items": items, "stages": [[n for n, _ in st] for st in stages],
+                    "raw": [n for n, _ in raw], "stuck": list(stuck) if stuck else None}
+
+    def _tick_chain(self):
+        items = self.job["items"]
+        stage = next((st for st in self.job["stages"] if any(items[n][0] or items[n][1] for n in st)), None)
+        if stage is None:
+            return
+        for name in stage:
+            counts = items[name]
+            stuck = self.job["stuck"]
+            if stuck and stuck[0] == name and counts[1]:
+                stuck[1] -= 1
+                if stuck[1] > 0:
+                    continue
+                self.job["stuck"] = None
+            if counts[1]:
+                counts[1] = max(0, counts[1] - random.randint(1, max(1, counts[1] // 2 + 1)))
+            if counts[0] and random.random() < 0.6:
+                moved = random.randint(1, max(1, counts[0] // 3 + 1))
+                counts[0] -= moved
+                counts[1] += moved
+        if stage is self.job["stages"][0]:
+            for name in self.job["raw"]:
+                items[name][2] = max(0, items[name][2] - random.randint(0, 6))
+
     def tick(self):
         """Moves some scheduled items to crafting and finishes some
         crafting ones. Returns True when the job just finished."""
@@ -399,7 +439,9 @@ class Cpu:
             self.idle_ticks += 1
             return False
         before = self._lists()
-        for counts in self.job["items"].values():
+        if "stages" in self.job:
+            self._tick_chain()
+        for counts in ([] if "stages" in self.job else self.job["items"].values()):
             if counts[1] and random.random() < 0.35:
                 counts[1] = max(0, counts[1] - random.randint(1, max(1, counts[1] // 2 + 1)))
             elif counts[0] and random.random() < 0.3:
@@ -457,6 +499,13 @@ def random_ingredients(count, exclude):
 # The big job restarts on M00 forever, so there's always a long
 # ingredient list to look at.
 BIG_JOB = ("Dangote Distillus", 30)
+# The job that restarts on T00 forever: Inconel-625 Gears over the dev
+# PATTERNS chain, for the live crafting tree - plates and bolts first,
+# then the gears, from ingots in the CPU's storage. Its bolts stall for a
+# while, long enough for the low CRAFT_STALL_SECONDS set above to call
+# them stuck.
+CHAIN_JOB = ("Inconel-625 Gear", [[("Inconel-625 Plate", 64), ("Steel Bolt", 16)], [("Inconel-625 Gear", 16)]],
+             [("Inconel-625 Ingot", 64), ("Iron Ingot", 4)], ("Steel Bolt", 40))
 # Requests the fake game turns down, and why - so a failed keep-in-stock
 # target has something to show.
 FAILS = {"Inconel-625 Plate": "request failed (missing resources?)"}
@@ -469,8 +518,10 @@ class FakeGame:
     def __init__(self, app, stock=None):
         self.client = app.test_client()
         self.cpus = [Cpu("M00", 131072, 256), Cpu("a00", 16384, 16), Cpu("a01", 16384, 16),
-                     Cpu("a02", 16384, 16), Cpu("a03", 16384, 16), Cpu("B01", 65536, 64)]
+                     Cpu("a02", 16384, 16), Cpu("a03", 16384, 16), Cpu("B01", 65536, 64),
+                     Cpu("T00", 65536, 64)]
         self.cpus[0].start(BIG_JOB[0], random_ingredients(BIG_JOB[1], BIG_JOB[0]))
+        self.cpus[-1].start_chain(*CHAIN_JOB)
         for cpu in self.cpus[1:4]:
             out = random.choice(SMALL_JOBS)
             cpu.start(out, random_ingredients(random.randint(1, 6), out))
@@ -492,7 +543,9 @@ class FakeGame:
                     cpu.delivers = None
             if cpu.job is None and cpu.name == "M00" and cpu.idle_ticks >= 5:
                 cpu.start(BIG_JOB[0], random_ingredients(BIG_JOB[1], BIG_JOB[0]))
-            elif cpu.job is None and cpu.name != "B01" and cpu.idle_ticks >= 8 and random.random() < 0.1:
+            elif cpu.job is None and cpu.name == "T00" and cpu.idle_ticks >= 5:
+                cpu.start_chain(*CHAIN_JOB)
+            elif cpu.job is None and cpu.name not in ("B01", "T00") and cpu.idle_ticks >= 8 and random.random() < 0.1:
                 out = random.choice(SMALL_JOBS)
                 cpu.start(out, random_ingredients(random.randint(1, 6), out))
         self.answer_requests()

@@ -237,8 +237,14 @@ class _Planner:
     patterns in use above) - and is sent back (node, how much of it can
     really be had), so run() can drive any depth without recursion."""
 
-    def __init__(self, patterns, stock, choices, describe=None):
+    def __init__(self, patterns, stock, choices, describe=None, storage=None, prefer=None):
+        """storage(key) and prefer(pattern), for rebuilding a running
+        job's tree (reconstruct()): whether a step's item came out of
+        storage in full rather than being crafted, and whether a pattern
+        is one the job is using."""
         self.describe = describe or (lambda key: None)
+        self.storage = storage
+        self.prefer = prefer
         self.index = index(patterns)
         self.available = dict(stock)
         self.leftovers = {}
@@ -336,8 +342,15 @@ class _Planner:
         j.add(totals, "need", need)
 
         rest = need
-        equivalents = self.equivalents(key) if fuzzy else []
-        if not is_root:
+        equivalents = self.equivalents(key) if fuzzy and self.storage is None else []
+        if not is_root and self.storage is not None:
+            if self.storage(key):
+                node["from_stock"] = need
+                j.add(totals, "from_stock", need)
+                rest = 0
+            else:
+                rest = self.take(self.leftovers, key, "from_leftovers", node, totals, rest)
+        elif not is_root:
             rest = self.take(self.leftovers, key, "from_leftovers", node, totals, rest)
             rest = self.take(self.available, key, "from_stock", node, totals, rest)
             if rest > 0 and equivalents:
@@ -363,6 +376,8 @@ class _Planner:
         chosen = self.choices.get(key)
         if chosen and any(p.id == chosen for p, _ in candidates):
             candidates = [(p, k) for p, k in candidates if p.id == chosen]
+        elif self.prefer is not None:
+            candidates.sort(key=lambda c: not self.prefer(c[0]))  # stable: AE2's order otherwise
         if not candidates:
             # Nothing makes it, or only patterns already in use above
             # (making it needs itself): either way, the rest isn't there.
@@ -517,6 +532,20 @@ def plan(patterns, stock, key, amount, choices=None, rules=None, describe=None):
         "steps": planner.nodes,
         "truncated": planner.truncated,
     }
+
+
+def reconstruct(patterns, key, amount, storage, prefer):
+    """A running job's tree, rebuilt from the patterns: AE2 doesn't tell
+    OC a job's own plan, only the items it's crafting and holding (see
+    gcm/job_tree.py). storage(key): whether the job took that item from
+    storage rather than crafting it - crafted ones are crafted in full.
+    prefer(pattern): whether the job is using that pattern, tried before
+    AE2's order. None if no pattern makes the item."""
+    target = find_output(patterns, key)
+    if target is None:
+        return None
+    planner = _Planner(patterns, {}, {}, storage=storage, prefer=prefer)
+    return planner.run(target, amount), planner.nodes, planner.truncated
 
 
 def _mark_missing(root, items):

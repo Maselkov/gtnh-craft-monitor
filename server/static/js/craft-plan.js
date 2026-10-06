@@ -10,6 +10,7 @@
 
 import { itemMatchesSearch, parseSearchQuery } from './search.js';
 import { bindCellTooltip } from './tooltip.js';
+import { ensureLoaded, flashRow, nodeAt, openAbove } from './tree-nav.js';
 import { bindFilterInput, delegateActions, escapeHtml, essentiaBadgeHtml, formatQty, formatRelativeTime, iconClass, iconUrl, kindTooltipHtml } from './util.js';
 
 const VIEW_KEY = 'gtnhCraftMonitor.planView';
@@ -398,14 +399,6 @@ function planParams() {
   return params;
 }
 
-function nodeAt(root, positions) {
-  let node = root;
-  for (const p of positions === '' ? [] : positions.split('.')) {
-    node = node && node.children ? node.children[Number(p)] : null;
-  }
-  return node;
-}
-
 // Called while drawing, so the fetch starts once the drawing is done.
 function loadBranchSoon(positions) {
   if (branchesLoading.has(positions)) return;
@@ -441,22 +434,6 @@ async function loadBranch(positions, planData) {
   }
 }
 
-// Fetches whatever the server left out on the way down to a step; false
-// if it couldn't (a newer plan, or no answer).
-async function ensureLoaded(positions, planData) {
-  const steps = positions === '' ? [] : positions.split('.');
-  for (let depth = 0; depth <= steps.length; depth++) {
-    const prefix = steps.slice(0, depth).join('.');
-    const node = nodeAt(planData.plan.root, prefix);
-    if (!node) return false;
-    if (depth < steps.length && !node.children && node.more > 0) {
-      branchesLoading.add(prefix);
-      if (!await loadBranch(prefix, planData)) return false;
-    }
-  }
-  return planData === lastPlan;
-}
-
 // The next place the item is short at: opens the tree down to it,
 // scrolls it into view and flashes it.
 async function jumpTo(key) {
@@ -477,24 +454,14 @@ async function jumpTo(key) {
     writeSetting(VIEW_KEY, view);
   }
   render();
-  if (!await ensureLoaded(positions, planData)) return;
-  // Open every step above it, by the item-key paths open/shut goes by.
-  let node = planData.plan.root;
-  let path = node.key;
-  let at = '';
-  for (const p of positions === '' ? [] : positions.split('.')) {
-    openState.set(path, true);
-    node = node.children[Number(p)];
-    at = at === '' ? p : `${at}.${p}`;
-    path += ' > ' + pathSegment(node, at);
-  }
+  const loaded = await ensureLoaded(planData.plan.root, positions, (prefix) => {
+    branchesLoading.add(prefix);
+    return loadBranch(prefix, planData);
+  });
+  if (!loaded || planData !== lastPlan) return;
+  openAbove(planData.plan.root, positions, openState, pathSegment);
   render();
-  const row = document.querySelector(`#craftPlanBody li[data-pos="${CSS.escape(positions)}"] > .plan-row`);
-  if (!row) return;
-  row.scrollIntoView({ block: 'center' });
-  row.classList.remove('plan-jump');
-  void row.offsetWidth;  // restart the flash on a second jump to the same row
-  row.classList.add('plan-jump');
+  flashRow(document.getElementById('craftPlanBody'), positions);
 }
 
 async function fetchPlan() {

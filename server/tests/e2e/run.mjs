@@ -72,6 +72,8 @@ async function startServer(extraEnv = {}) {
       GCM_BOOTSTRAP_ADMIN_TOKEN: BOOTSTRAP_TOKEN,
       GCM_BOOTSTRAP_ADMIN_NAME: 'Administrator',
       SESSION_COOKIE_SECURE: '0',
+      // The live crafting tree calls a step stuck after this long unmoved.
+      CRAFT_STALL_SECONDS: '4',
       PORT: String(port),
       ...extraEnv,
     },
@@ -472,6 +474,58 @@ async function main() {
     await waitFor('service worker registered', `navigator.serviceWorker.getRegistration('/').then(r => Boolean(r && r.active))`);
     await evaluate(`pressKey('Escape'), true`);
     await waitFor('menu closed', `!visible($('#settingsMenu'))`);
+  });
+
+  step('a CPU\'s live crafting tree: rebuilt from patterns, updated in place, stuck steps', async () => {
+    // J01 makes 10 Iron Ingots: the dust (crafting) from the Neutronium
+    // it pulled - so the Furnace's pattern, not the Fluid Solidifier AE2
+    // would try first.
+    const ironIngot = { name: 'Iron Ingot', mod: 'minecraft', internal: 'iron_ingot', damage: 0 };
+    const ironDust = { name: 'Iron Dust', mod: 'gregtech', internal: 'gt.metaitem.01', damage: 2032 };
+    const neutronium = { name: 'Neutronium Ingot', mod: 'gregtech', internal: 'gt.metaitem.01', damage: 11028 };
+    const report = (dustLeft) => game(base, '/api/crafts', { source: 'me_controller', jobs: [
+      { name: 'W01', busy: true, final_output: 'Iron Ingot', final_output_mod: 'minecraft',
+        final_output_internal: 'iron_ingot', final_output_damage: 0,
+        active: [{ name: 'Iron Ingot', size: 3 }], pending: [{ name: 'Iron Ore', size: 6 }], stored: [] },
+      { name: 'W02', busy: false },
+      { name: 'J01', busy: true, final_output: 'Iron Ingot', final_output_mod: 'minecraft',
+        final_output_internal: 'iron_ingot', final_output_damage: 0,
+        pending: [{ ...ironIngot, size: 10 }], active: [{ ...ironDust, size: dustLeft }],
+        stored: [{ ...neutronium, size: 10 }] },
+    ] });
+    await report(10);
+    await waitFor('J01 card', `card('J01')?.querySelector('.ingredients-btn')`);
+    await click(`card('J01').querySelector('.ingredients-btn')`);
+    await click(`$('#ingredientsModal [data-view="tree"]')`);
+    await waitFor('tree', `$$('#ingredientsTree li.job-node').length === 3 && !visible($('#ingredientsGrid'))`);
+    await waitFor('rows', `(() => {
+      const [ingot, dust, raw] = $$('#ingredientsTree li.job-node');
+      const row = (li) => li.querySelector(':scope > .plan-row').textContent;
+      return row(ingot).includes('0 / 10') && row(ingot).includes('Furnace') && ingot.classList.contains('job-waiting')
+        && row(dust).includes('Macerator')
+        && row(dust).includes('0 / 10') && dust.classList.contains('job-active')
+        && raw.classList.contains('job-storage') && raw.textContent.includes('from storage');
+    })()`);
+    await evaluate(`window.dustText = $$('#ingredientsTree li.job-node')[1].querySelector('.job-step-text'), true`);
+    // A new report: the numbers change in place, the row isn't redrawn.
+    await report(4);
+    await waitFor('updated in place', `window.dustText.textContent === '6 / 10' && window.dustText.isConnected
+      && $$('#ingredientsTree .job-bar-fill')[1].style.width === '60%'`);
+    // Unmoved past CRAFT_STALL_SECONDS: stuck, with a chip to jump to it.
+    await sleep(4500);
+    await report(4);
+    await waitFor('stuck', `$$('#ingredientsTree li.job-node')[1].classList.contains('job-stuck')
+      && !$('#ingredientsStuck').hidden && $('#ingredientsStuck').textContent.includes('Iron Dust')`);
+    await click(`$$('#ingredientsTree [data-action="job-tree-toggle"]')[0]`);
+    await waitFor('shut, saying what is under it', `$$('#ingredientsTree li.job-node').length === 1
+      && $('#ingredientsTree .job-step-note').textContent === '1 stuck'`);
+    await click(`$('#ingredientsStuck .plan-chip')`);
+    await waitFor('jumped to it', `$('#ingredientsTree li[data-pos="0"] > .plan-row')?.classList.contains('plan-jump')`);
+    await click(`$('#ingredientsModal [data-view="grid"]')`);
+    await waitFor('grid again', `visible($('#ingredientsGrid')) && $('#ingredientsTreeWrap').hidden`);
+    await evaluate(`pressKey('Escape'), true`);
+    await waitFor('closed', `!visible($('#ingredientsModal'))`);
+    await postCrafts(base, true);
   });
 
   step('ingredients modal; stays open across a refresh, Escape closes it', async () => {
