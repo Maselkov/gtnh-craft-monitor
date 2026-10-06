@@ -482,6 +482,19 @@ async function main() {
       && $('#ingredientsGrid .ingredient-cell').textContent.includes('Crafting: 3')`);
     await sleep(3500);  // the crafts tab re-renders every 3s
     await waitFor('still open after re-render', `visible($('#ingredientsModal')) && $$('#ingredientsGrid .ingredient-cell').length === 2`);
+    // The filter box keeps what it matches through the next refresh.
+    await evaluate(`typeInto('#ingredientsFilter', 'ore'), true`);
+    await waitFor('filtered to the ore', `$$('#ingredientsGrid .ingredient-cell').length === 1
+      && $('#ingredientsGrid .ingredient-cell').dataset.name === 'Iron Ore'`);
+    await sleep(3500);
+    await waitFor('still filtered after re-render', `$$('#ingredientsGrid .ingredient-cell').length === 1`);
+    await evaluate(`typeInto('#ingredientsFilter', 'gold'), true`);
+    await waitFor('nothing matches', `!$('#ingredientsGrid .ingredient-cell')
+      && $('#ingredientsGrid').textContent.includes('Nothing matches')`);
+    // Escape in the box clears it; the next one closes the dialog.
+    await evaluate(`pressKey('Escape', '#ingredientsFilter'), true`);
+    await waitFor('cleared, still open', `visible($('#ingredientsModal')) && $('#ingredientsFilter').value === ''
+      && $$('#ingredientsGrid .ingredient-cell').length === 2`);
     await evaluate(`pressKey('Escape'), true`);
     await waitFor('closed', `!visible($('#ingredientsModal'))`);
   });
@@ -708,6 +721,18 @@ async function main() {
     await waitFor('dust open', `${rows}.some(r => r.includes('Neutronium Ingot') && r.includes('craft 2'))`);
     await click(toggle('Neutronium Ingot', 0));
     await waitFor('dust short', `${rows}.some(r => r.includes('Neutronium Dust') && r.includes('missing 2'))`);
+    // The filter keeps only the way down to what matches, and that
+    // step's own steps below it; Enter in it doesn't send the request.
+    await evaluate(`typeInto('#craftPlanFilter', 'neutronium dust'), true`);
+    await evaluate(`pressEnter('#craftPlanFilter'), true`);
+    await waitFor('filtered tree', `${rows}.length === 5 && ${rows}[4].includes('Neutronium Dust')
+      && $$('#craftPlanBody .filter-match').length === 1 && visible($('#craftRequestModal'))`);
+    await click(`$('#craftPlan [data-view="list"]')`);
+    await waitFor('filtered list', `$$('#craftPlanBody .plan-cell').length === 1`);
+    await click(`$('#craftPlan [data-view="tree"]')`);
+    await evaluate(`typeInto('#craftPlanFilter', ''), true`);
+    await waitFor('unfiltered', `${rows}.some(r => r.includes('Neutronium Dust') && r.includes('missing 2'))
+      && !$('#craftPlanBody .filter-match')`);
     // Collapsing survives a new amount.
     await click(toggle('via Furnace', 0));
     await waitFor('collapsed', `$$('#craftPlanBody .plan-node').length === 8`);

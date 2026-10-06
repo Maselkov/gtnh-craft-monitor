@@ -134,6 +134,7 @@
             <button class="range-btn" data-view="tree" data-action="plan-view">Tree</button>
           </div>
           <div class="craft-plan-tools">
+            <input type="search" id="craftPlanFilter" class="modal-filter" placeholder="Filter&hellip;" title="Filter by name, as in the network search (-exclude, a|b)" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off">
             <button class="range-btn craft-plan-hide" id="craftPlanHide" data-action="plan-hide-available" aria-pressed="false" title="Show only the steps leading to something missing" hidden>Hide all available</button>
             <details id="craftPlanRules" class="plan-rules" hidden>
               <summary id="craftPlanRulesSummary" class="range-btn plan-rules-btn"></summary>
@@ -176,6 +177,7 @@
           <div id="ingredientsTitle" class="craft-title"></div>
           <div id="ingredientsCpu" class="cpu-id"></div>
         </div>
+        <input type="search" id="ingredientsFilter" class="modal-filter" placeholder="Filter&hellip;" title="Filter by name, as in the network search (@mod, -exclude, a|b)" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off">
         <button class="history-close-btn" data-action="close-ingredients" title="Close">&times;</button>
       </div>
       <div id="ingredientsProgress" class="ingredients-progress"></div>
