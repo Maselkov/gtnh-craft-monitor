@@ -210,7 +210,7 @@ def queue_craft(user_id, label, mod, internal, damage, amount, kind, variant=Non
             # filter shape (confirmed via a real successful
             # fluid request: items filter by name+damage,
             # fluids only matched when filtered by label)
-            "icon": icons.resolve_icon(mod, internal, damage, label, variant),
+            "icon": icons.resolve_icon(mod, internal, damage, label, variant, variant_name=variant_name),
             # An NBT variant (gcm/inventory.py): craft_monitor.lua picks
             # the pattern whose output has exactly this NBT (tag, from the
             # last scan), or, without one, the only pattern with this label.

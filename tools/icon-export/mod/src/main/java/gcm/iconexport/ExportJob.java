@@ -45,6 +45,11 @@ final class ExportJob {
     /** Display name, or null if the item throws when asked for one. */
     final String label;
     final boolean hasNbt;
+    /**
+     * A GregTech tool's primary material (its {@code GT.ToolStats} NBT), else null. Every material's
+     * tool shares one id, damage and label ("Huge Turbine"), so this is what tells their icons apart.
+     */
+    String gtMaterial;
 
     boolean rendered;
     /** Its icon covers more than the item box (IconRenderer.BLEED): a halo, for one. */
@@ -92,7 +97,7 @@ final class ExportJob {
             fileId += "~" + encodeNbt(nbt);
         }
 
-        return new ExportJob(
+        ExportJob job = new ExportJob(
                 Kind.ITEM,
                 stack,
                 null,
@@ -101,6 +106,11 @@ final class ExportJob {
                 id.modId + ":" + id.name,
                 safeLabel(stack),
                 nbt != null);
+        if (nbt != null && nbt.hasKey("GT.ToolStats", 10)) {
+            String material = nbt.getCompoundTag("GT.ToolStats").getString("PrimaryMaterial");
+            job.gtMaterial = material.isEmpty() ? null : material;
+        }
+        return job;
     }
 
     /** Returns null for fluids the registry can't name. */

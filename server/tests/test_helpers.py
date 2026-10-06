@@ -161,6 +161,27 @@ class TestResolveIcon:
         assert icons.resolve_icon("cropsnh", "genericSeed", 0, "Odd Seeds", "v2") == (
             "item/cropsnh/genericSeed~0.png")
 
+    def test_gt_tool_finds_its_material_icon(self, monkeypatch):
+        monkeypatch.setattr(icons, "_icons_by_key", {"gregtech:gt.metatool.01:176": "item/gregtech/gt.metatool.01~176.png"})
+        monkeypatch.setattr(icons, "_icons_by_key_label", {
+            "gregtech:gt.metatool.01:176|Huge Turbine": "item/gregtech/gt.metatool.01~176~steel.png"})
+        monkeypatch.setattr(icons, "_icons_by_key_material", {
+            "gregtech:gt.metatool.01:176|Neutronium": "item/gregtech/gt.metatool.01~176~neutronium.png"})
+        monkeypatch.setattr(icons, "_icons_by_label", {})
+        tool = ("gregtech", "gt.metatool.01", 176, "Huge Turbine", "v1")
+        assert icons.resolve_icon(*tool, variant_name="Neutronium") == (
+            "item/gregtech/gt.metatool.01~176~neutronium.png")
+        # Told apart from another worn Neutronium turbine by merge_variants().
+        assert icons.resolve_icon(*tool, variant_name="Neutronium #a1b2") == (
+            "item/gregtech/gt.metatool.01~176~neutronium.png")
+        # A material GT's recipes don't make it from: as before.
+        assert icons.resolve_icon(*tool, variant_name="Dirt") == "item/gregtech/gt.metatool.01~176~steel.png"
+        # A scan without NBT tags has no variant_name to go by.
+        assert icons.resolve_icon(*tool) == "item/gregtech/gt.metatool.01~176~steel.png"
+        item = {"mod": "gregtech", "internal": "gt.metatool.01", "damage": 176, "name": "Huge Turbine",
+                "variant": "v1", "variant_name": "Neutronium"}
+        assert icons.attach_item_icons([item])[0]["icon"] == "item/gregtech/gt.metatool.01~176~neutronium.png"
+
     def test_nbt_variant_uses_label_only_from_the_same_item(self, monkeypatch):
         # Lookups exported before by_key_label.
         monkeypatch.setattr(icons, "_icons_by_key", {"cropsnh:genericSeed:0": "item/cropsnh/genericSeed~0.png"})

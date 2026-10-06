@@ -28,11 +28,16 @@ from urllib.parse import quote
 # stacks only. by_key holds the stack WITHOUT NBT, so every NBT variant
 # of an item (each crop's seeds, each bee species) resolved to that one
 # generic icon; their labels are what tell them apart.
+# by_key_material: "modid:internalname:damage|material" -> image path, for
+# GregTech tools. Every material's Huge Turbine shares one id, damage and
+# label; only GT.ToolStats' PrimaryMaterial differs, which gcm/nbt.py
+# reads into the stack's variant_name.
 # aspects_by_key: Thaumcraft aspect tag ("ordo") -> image path, for
 # essentia. Only that: an aspect's label would find namesake items
 # ("Ordo" -> some block of it), so essentia never falls back to by_label.
 _icons_by_key = {}
 _icons_by_key_label = {}
+_icons_by_key_material = {}
 _icons_by_label = {}
 _fluids_by_key = {}
 _aspects_by_key = {}
@@ -60,7 +65,7 @@ _ZIP_ROOTS = ("item", "fluid", "aspect")
 
 def load(lookup_path, images_zip_path, version=None):
     """Makes the given lookup and zip the live ones."""
-    global _icons_by_key, _icons_by_key_label, _icons_by_label, _fluids_by_key, _aspects_by_key
+    global _icons_by_key, _icons_by_key_label, _icons_by_key_material, _icons_by_label, _fluids_by_key, _aspects_by_key
     global _images_zip, _images_zip_missing_logged, _images_zip_path, _version, _bleed
     icon_data = {}
     if lookup_path and os.path.exists(lookup_path):
@@ -74,6 +79,7 @@ def load(lookup_path, images_zip_path, version=None):
         _images_zip_path = images_zip_path
         _icons_by_key = icon_data.get("by_key", {})
         _icons_by_key_label = icon_data.get("by_key_label", {})
+        _icons_by_key_material = icon_data.get("by_key_material", {})
         _icons_by_label = icon_data.get("by_label", {})
         _fluids_by_key = icon_data.get("fluids_by_key", {})
         _aspects_by_key = icon_data.get("aspects_by_key", {})
@@ -187,16 +193,17 @@ def damage_str(damage):
     return str(damage)
 
 
-def resolve_icon(mod, internal, damage, label, variant=None, kind=None):
+def resolve_icon(mod, internal, damage, label, variant=None, kind=None, variant_name=None):
     """Returns the image path inside images.zip for an item, fluid or
     essentia, prefixed with the data version if a bundle is live, or
     None. variant: set for an NBT variant (gcm/inventory.py), whose own
-    icon is found by label before falling back to its item id's generic
-    one."""
+    icon is found by its variant_name (a GregTech tool's material) or
+    label before falling back to its item id's generic one."""
     if kind == "essentia":
         return _prefixed(_aspects_by_key.get(internal)) if internal else None
     return _prefixed(
-        (variant and _lookup_variant(mod, internal, damage, label))
+        (variant and _lookup_material(mod, internal, damage, variant_name))
+        or (variant and _lookup_variant(mod, internal, damage, label))
         or _lookup(mod, internal, damage, label)
     )
 
@@ -217,6 +224,16 @@ def _prefixed(path):
         return path
     bleed = _bleed.get(path)
     return f"{_version}~bleed{bleed}/{path}" if bleed else f"{_version}/{path}"
+
+
+def _lookup_material(mod, internal, damage, variant_name):
+    dmg = damage_str(damage)
+    if not (mod and internal and dmg is not None and variant_name):
+        return None
+    # merge_variants() tells same-named variants apart with a " #1a2b"
+    # suffix: two Neutronium turbines worn differently, say.
+    material = re.sub(r" #[0-9A-Za-z]{4}$", "", variant_name)
+    return _icons_by_key_material.get(f"{mod}:{internal}:{dmg}|{material}")
 
 
 def _lookup_variant(mod, internal, damage, label):
@@ -264,6 +281,7 @@ def attach_item_icons(items):
             item.get("name"),
             item.get("variant"),
             item.get("kind"),
+            item.get("variant_name"),
         )
         if icon:
             item["icon"] = icon
