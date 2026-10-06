@@ -96,6 +96,14 @@ def _new_job_entry(started_at, seen_from_start=True):
         "steps_left": None,
         "steps_total": None,
         "peaks": {},  # gcm/progress.py's per-step baseline for this job
+        # For the live tree (gcm/job_tree.py): each step's amount left in
+        # the last report, and when that last changed - a step crafting
+        # that hasn't moved in a while is stuck.
+        "last_left": {},
+        "moved_at": {},
+        # The CPU's stored items in the first report with steps: the raw
+        # inputs it pulled at the start, which tell its patterns apart.
+        "first_stored": None,
         "output": None,
         "started_at": started_at,
         "seen_from_start": seen_from_start,
@@ -307,6 +315,14 @@ def _fold_last_busy(entry, last_busy, now):
 
 def _update_progress(entry, job, sampled_at):
     percent, steps_done, steps_total = progress.update(entry["peaks"], job)
+    left = progress.remaining(job)
+    for key in entry["peaks"]:
+        now_left = left.get(key, 0)
+        if entry["last_left"].get(key) != now_left:
+            entry["last_left"][key] = now_left
+            entry["moved_at"][key] = sampled_at
+    if entry["first_stored"] is None and percent is not None and isinstance(job.get("stored"), list):
+        entry["first_stored"] = progress.amounts(job["stored"])
     if percent is not None:
         # Never backwards, even if a step's remaining amount grows mid-job.
         percent = max(percent, entry["progress"] or 0)

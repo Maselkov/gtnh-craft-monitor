@@ -5,6 +5,8 @@ from conftest import login_as
 PUBLIC_ENDPOINTS = {
     "crafts.crafts_get",
     "crafts.crafts_history_get",
+    "crafts.crafts_tree_get",  # the job tree: what the crafts list shows, arranged
+    "crafts.crafts_steps_get",
     "power.power_get",
     "stock.stock_rules_get",
     "power.power_chart_png",

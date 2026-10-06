@@ -29,7 +29,8 @@ Basically, it's web AE2 for your base.
 ## Features
 
 - **Crafts** — every AE2 crafting CPU with its current job, output item,
-  progress and a live grid of its ingredients. Pin a job to get a
+  progress, and a live grid of its ingredients or a live tree of its steps
+  that points out the ones that are stuck. Pin a job to get a
   notification when it finishes. Recent crafts lists every job that ended.
 - **Power** — stored EU of a GregTech multiblock (e.g. a Lapotronic Super
   Capacitor) charted over time, with its EU/s and the time until it's full
@@ -160,6 +161,7 @@ Environment variables (set in `.env` for Docker):
 | `GAMEDATA_API_URL` | `https://api.github.com` | GitHub API base for that list (for mirrors). |
 | `AUTOCRAFT_KEEP_IDLE_CPUS` | `1` | Keep-in-stock crafts only start while more crafting CPUs than this are idle; see [Stock rules](#stock-rules). |
 | `AUTOCRAFT_RETRY_SECONDS` | `1800` | How long a keep-in-stock target waits after a failed craft before trying again. |
+| `CRAFT_STALL_SECONDS` | `600` | How long a step of a running job can be crafting without moving before its live tree calls it stuck. |
 
 ### Exposing it beyond your LAN
 
@@ -572,7 +574,18 @@ One card per crafting CPU, updated every 3 seconds. A busy card shows:
   It never moves backwards. It counts steps done, not time left.
 - **Ingredients (N)** — opens a grid of everything the job holds, is crafting
   and is waiting on, laid out like AE2's crafting status screen. It stays
-  live while open.
+  live while open. Switch it to **Tree** to see the job step by step:
+  each step shows how much of it is made, active steps pulse, finished
+  branches fold away, and a step that's crafting but hasn't moved for
+  `CRAFT_STALL_SECONDS` (10 minutes by default) is marked stuck. Stuck
+  steps are also listed above the tree; click one to jump to it.
+
+  AE2 doesn't tell OpenComputers a job's own plan, so the tree is rebuilt
+  from the network's patterns (see [Reading patterns](#reading-patterns)):
+  an item the CPU reports crafting or waiting to craft is a crafted step,
+  anything else came from storage, and where several patterns make an
+  item, the one whose inputs the job holds is used. An item used in two
+  places shares one count, as the CPU reports it.
 
 Below the cards, **Recent crafts** lists every job that ended on any CPU,
 newest first and grouped by day. Each row shows the CPU, how long the job ran,

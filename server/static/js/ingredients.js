@@ -6,6 +6,7 @@
 // its scroll position. This lives outside #root, and a re-render only
 // swaps the grid's contents, so the scroll position survives.
 
+import { hideJobTree, refreshJobTree, setupJobTreeActions, showJobTree } from './job-tree.js';
 import { bindCellTooltip, hideTooltip, showTooltip, tooltipVisible } from './tooltip.js';
 import { itemMatchesSearch, parseSearchQuery } from './search.js';
 import { bindFilterInput, delegateActions, escapeHtml, formatQty, iconClass, iconUrl, onBackdropClick } from './util.js';
@@ -14,6 +15,28 @@ let openCpu = null;       // CPU name the modal is showing, null when closed
 let shownItems = new Map(); // item key -> merged item, from the last render
 let hoveredKey = null;    // item key the tooltip was last shown for
 let lastJob = null;       // the job last drawn, redrawn as the filter changes
+// Grid (the game's own screen) or tree (job-tree.js), per viewer.
+const VIEW_KEY = 'gtnhCraftMonitor.ingredientsView';
+let view = 'grid';
+
+function readView() {
+  try { return localStorage.getItem(VIEW_KEY) === 'tree' ? 'tree' : 'grid'; } catch (e) { return 'grid'; }
+}
+
+function writeView() {
+  try { localStorage.setItem(VIEW_KEY, view); } catch (e) { /* per-viewer nicety only */ }
+}
+
+function showView() {
+  document.querySelectorAll('#ingredientsModal [data-action="ingredients-view"]').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.view === view);
+  });
+  const tree = view === 'tree';
+  document.getElementById('ingredientsGrid').hidden = tree;
+  document.getElementById('ingredientsFilter').hidden = tree;
+  document.getElementById('ingredientsTreeWrap').hidden = !tree;
+  if (tree && openCpu) showJobTree(openCpu); else hideJobTree();
+}
 
 function itemKey(it) {
   return [it.mod || '', it.internal || '', it.damage ?? '', it.name || ''].join('|');
@@ -154,11 +177,14 @@ export function openIngredientsModal(cpuName, data) {
   document.getElementById('ingredientsCpu').textContent = `CPU ${cpuName}`;
   document.getElementById('ingredientsGrid').scrollTop = 0;
   document.getElementById('ingredientsModal').style.display = 'flex';
+  hideJobTree();
+  showView();
   refreshIngredientsModal(data);
 }
 
 export function closeIngredientsModal() {
   openCpu = null;
+  hideJobTree();
   hoveredKey = null;
   lastJob = null;
   hideTooltip();
@@ -180,13 +206,21 @@ export function refreshIngredientsModal(data) {
   }
   renderHead(job);
   renderGrid(job);
+  if (view === 'tree') refreshJobTree();
 }
 
 export function setupIngredientsActions() {
   const modal = document.getElementById('ingredientsModal');
+  view = readView();
   delegateActions(modal, {
     'close-ingredients': () => closeIngredientsModal(),
+    'ingredients-view': (el) => {
+      view = el.dataset.view === 'tree' ? 'tree' : 'grid';
+      writeView();
+      showView();
+    },
   });
+  setupJobTreeActions();
   onBackdropClick('ingredientsModal', closeIngredientsModal);
   const filter = document.getElementById('ingredientsFilter');
   bindFilterInput(filter, () => {

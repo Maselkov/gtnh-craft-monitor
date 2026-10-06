@@ -20,8 +20,24 @@ Why this shape:
     The result says how many steps are done, not how much time is left."""
 
 
-def _key(item):
+def step_key(item):
     return (item.get("mod"), item.get("internal"), item.get("damage"), item.get("name"))
+
+
+def amounts(items):
+    """{step key: total size} over a list of reported stacks."""
+    out = {}
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        key = step_key(item)
+        out[key] = out.get(key, 0) + (item.get("size") or 0)
+    return out
+
+
+def remaining(job):
+    """What each step still has to make: its pending and active amounts."""
+    return amounts((job.get("pending") or []) + (job.get("active") or []))
 
 
 def update(peaks, job):
@@ -29,23 +45,18 @@ def update(peaks, job):
     step key -> largest remaining amount seen, updated in place) and
     returns (percent, steps_done, steps_total). percent is None when no
     step has been seen yet."""
-    remaining = {}
-    for item in (job.get("pending") or []) + (job.get("active") or []):
-        if not isinstance(item, dict):
-            continue
-        key = _key(item)
-        remaining[key] = remaining.get(key, 0) + (item.get("size") or 0)
+    left = remaining(job)
 
-    for key, amount in remaining.items():
+    for key, amount in left.items():
         if amount > peaks.get(key, 0):
             peaks[key] = amount
     # A step seen earlier that's missing now has nothing left: done.
     for key in peaks:
-        remaining.setdefault(key, 0)
+        left.setdefault(key, 0)
 
-    steps = [key for key in remaining if peaks.get(key, 0) > 0]
+    steps = [key for key in left if peaks.get(key, 0) > 0]
     if not steps:
         return None, 0, 0
-    done = sum(1 - remaining[key] / peaks[key] for key in steps)
-    steps_done = sum(1 for key in steps if remaining[key] == 0)
+    done = sum(1 - left[key] / peaks[key] for key in steps)
+    steps_done = sum(1 for key in steps if left[key] == 0)
     return int(done / len(steps) * 100), steps_done, len(steps)

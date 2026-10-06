@@ -5,7 +5,7 @@ import time
 
 from flask import Blueprint, g, jsonify, request, Response
 
-from gcm import auth, config, icons, state, store, tracking
+from gcm import auth, config, icons, job_tree, planner, state, store, tracking
 
 
 bp = Blueprint("crafts", __name__)
@@ -82,6 +82,51 @@ def crafts_get():
                 "stale": age is None or age > config.STALE_AFTER_SECONDS,
             }
         )
+
+
+@bp.route("/api/crafts/<cpu>/tree", methods=["GET"])
+@auth.public
+def crafts_tree_get(cpu):
+    """A busy CPU's job as a tree (gcm/job_tree.py), the first levels of
+    it; ?path=0.3.1&version=... sends one step's steps, as the craft
+    plan's tree does. {tree: null, reason} when there's none to show,
+    {stale: true} when the job or patterns changed since `version`."""
+    path_raw = request.args.get("path")
+    path = None
+    if path_raw is not None:
+        try:
+            path = [int(p) for p in path_raw.split(".")] if path_raw else []
+        except ValueError:
+            return jsonify({"error": "bad path"}), 400
+    version = job_tree.version(cpu)
+    if path is not None and (version is None or request.args.get("version") != version):
+        return jsonify({"stale": True})
+    result, reason = job_tree.tree(cpu)
+    if result is None:
+        return jsonify({"tree": None, "reason": reason})
+    if path is not None:
+        node = planner.subtree(result["root"], path)
+        if node is None:
+            return jsonify({"stale": True})
+        return jsonify({"node": planner.trim(node, 1)})
+    return jsonify({
+        "tree": {**result, "root": planner.trim(result["root"], 2)},
+        "version": version,
+    })
+
+
+@bp.route("/api/crafts/<cpu>/steps", methods=["GET"])
+@auth.public
+def crafts_steps_get(cpu):
+    """How far each step of a busy CPU's job has got, for the live tree:
+    {steps: {item key: {total, left, crafting, moved_at, state}},
+    version, stall_seconds}. {steps: null} once the CPU is idle."""
+    return jsonify({
+        "steps": job_tree.steps(cpu),
+        "version": job_tree.version(cpu),
+        "stall_seconds": config.CRAFT_STALL_SECONDS,
+        "now": time.time(),
+    })
 
 
 # Most rows /api/crafts/history returns at once.

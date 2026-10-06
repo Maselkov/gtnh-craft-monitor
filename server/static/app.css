@@ -1678,3 +1678,92 @@ details.stock-rules {
 }
 .network-cell-icon.essentia-badge { font-size: 14px; }
 .ingredient-cell-icon.essentia-badge { font-size: 15px; }
+
+/* Live crafting tree in a CPU's details (job-tree.js). Drawn once and
+   then only updated in place, so these transitions carry each step
+   from one report (every 5s) to the next. */
+.ingredients-views {
+  margin: 10px 0 8px;
+}
+.ingredients-tree-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ingredients-tree-wrap[hidden],
+.ingredients-grid[hidden],
+.modal-filter[hidden],
+.job-stuck-strip[hidden] {
+  display: none;
+}
+.ingredients-tree {
+  max-height: none;
+  min-height: 0;
+}
+.job-provider:not(:empty) + .job-step-note:not(:empty)::before {
+  content: " · ";
+}
+.job-bar {
+  height: 3px;
+  margin-top: 3px;
+  width: 180px;
+  max-width: 100%;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+  overflow: hidden;
+}
+.job-bar-fill {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 4.5s linear, background-color 0.6s;
+}
+.job-node.job-done > .plan-row {
+  opacity: 0.55;
+  transition: opacity 0.8s;
+}
+.job-node.job-done > .plan-row .job-bar-fill {
+  background: var(--idle);
+}
+.job-node.job-storage > .plan-row {
+  opacity: 0.6;
+}
+.job-node.job-active > .plan-row .plan-icon,
+.job-node.job-active > .plan-row .job-bar-fill {
+  animation: job-pulse 2s ease-in-out infinite;
+}
+@keyframes job-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+/* Stuck: steady amber, so it stands out from the pulsing active steps. */
+.job-node.job-stuck > .plan-row .job-bar-fill {
+  background: var(--busy);
+}
+.job-node.job-stuck > .plan-row .plan-name,
+.job-node.job-stuck > .plan-row .job-step-note {
+  color: var(--busy);
+}
+.job-stuck-strip {
+  font-size: 12px;  /* as the plan's Missing strip (.craft-plan-summary) */
+  flex-shrink: 0;
+}
+.job-stuck-strip .plan-chip {
+  background: color-mix(in srgb, var(--busy) 12%, var(--card));
+  border-color: color-mix(in srgb, var(--busy) 45%, transparent);
+}
+.job-stuck-strip .plan-missing-label {
+  color: var(--busy);
+}
+@media (prefers-reduced-motion: reduce) {
+  .job-bar-fill,
+  .job-node.job-done > .plan-row {
+    transition: none;
+  }
+  .job-node.job-active > .plan-row .plan-icon,
+  .job-node.job-active > .plan-row .job-bar-fill {
+    animation: none;
+  }
+}

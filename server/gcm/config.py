@@ -54,6 +54,10 @@ VAPID_SUBJECT = os.environ.get("VAPID_SUBJECT", "").strip()
 AUTOCRAFT_KEEP_IDLE_CPUS = int(os.environ.get("AUTOCRAFT_KEEP_IDLE_CPUS", "1"))
 AUTOCRAFT_RETRY_SECONDS = int(os.environ.get("AUTOCRAFT_RETRY_SECONDS", "1800"))
 
+# The live crafting tree (gcm/job_tree.py): a step that's crafting but
+# hasn't moved for this long is shown as stuck.
+CRAFT_STALL_SECONDS = int(os.environ.get("CRAFT_STALL_SECONDS", "600"))
+
 DATA_DIR = None
 GAMEDATA_DIR = None
 POWER_DB_PATH = None

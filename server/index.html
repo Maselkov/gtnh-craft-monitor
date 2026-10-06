@@ -181,8 +181,16 @@
         <button class="history-close-btn" data-action="close-ingredients" title="Close">&times;</button>
       </div>
       <div id="ingredientsProgress" class="ingredients-progress"></div>
+      <div class="range-buttons ingredients-views">
+        <button class="range-btn active" data-view="grid" data-action="ingredients-view">Grid</button>
+        <button class="range-btn" data-view="tree" data-action="ingredients-view" title="The job step by step, rebuilt from the network's patterns">Tree</button>
+      </div>
       <div id="ingredientsNote" class="modal-note" style="display:none;"></div>
       <div id="ingredientsGrid" class="ingredients-grid"></div>
+      <div id="ingredientsTreeWrap" class="ingredients-tree-wrap" hidden>
+        <div id="ingredientsStuck" class="plan-missing-strip job-stuck-strip" hidden></div>
+        <div id="ingredientsTree" class="craft-plan-body ingredients-tree"></div>
+      </div>
     </div>
   </div>
 
