@@ -270,51 +270,6 @@ class TestNbtVariantRequests:
         assert mine[0]["variant_name"] == "Steel"
         assert "tag" not in mine[0]
 
-    def test_match_finds_the_pattern_with_the_same_nbt_in_any_key_order(self, client, api_headers):
-        from gcm import nbt
-        from nbt_fixtures import tag_hex
-
-        def stats(material, order=1):
-            entries = [("PrimaryMaterial", nbt.STRING, material), ("MaxDamage", nbt.INT, 100)]
-            return tag_hex([("GT.ToolStats", nbt.COMPOUND, entries[::order])])
-
-        token = client.post("/api/network/scan/start", headers=api_headers).get_json()["scan_token"]
-        client.post("/api/network/scan/batch", headers=api_headers, json={"scan_token": token, "items": [
-            dict(self.TURBINE, name="Huge Turbine", size=0, isCraftable=True, hasTag=True, tag=stats("Steel"))]})
-        client.post("/api/network/scan/finish", headers=api_headers,
-                    json={"scan_token": token, "chunks_sent": 1, "total_errors": 0})
-        steel = client.get("/api/network").get_json()["items"][0]
-
-        login_as(client, "usr_operator", role="operator")
-        req_id = client.post("/api/craft/request", json=valid_request_payload(
-            label="Huge Turbine", amount=1, variant=steel["variant"], **self.TURBINE)).get_json()["id"]
-
-        # The pattern reports the same NBT with its keys the other way
-        # round - different bytes, so Lua's own comparison misses it.
-        reordered = stats("Steel", -1)
-        assert reordered != stats("Steel")
-        res = client.post(f"/api/craft/requests/{req_id}/match", headers=api_headers,
-                          json={"tags": [stats("Neutronium"), False, reordered]})
-        assert res.get_json()["index"] == 3
-
-    def test_match_miss_reports_each_patterns_variant(self, client, api_headers):
-        items, tags = self._scan_turbines(client, api_headers)
-        login_as(client, "usr_operator", role="operator")
-        req_id = client.post("/api/craft/request", json=valid_request_payload(
-            label="Huge Turbine", amount=1, variant=items["Steel"]["variant"], **self.TURBINE)).get_json()["id"]
-        body = client.post(f"/api/craft/requests/{req_id}/match", headers=api_headers,
-                           json={"tags": [tags["Neutronium"], "zz", None]}).get_json()
-        assert body["index"] is None
-        assert body["variant"] == items["Steel"]["variant"]
-        assert body["variants"] == [items["Neutronium"]["variant"], None, None]
-
-    def test_match_needs_the_api_key_and_a_known_request(self, client, api_headers):
-        assert client.post("/api/craft/requests/1/match", json={"tags": []}).status_code == 401
-        assert client.post("/api/craft/requests/999/match", headers=api_headers,
-                           json={"tags": []}).status_code == 404
-        assert client.post("/api/craft/requests/999/match", headers=api_headers,
-                           json={"tags": "x"}).status_code == 400
-
     def test_unknown_variant_has_no_tag(self, client, api_headers):
         login_as(client, "usr_operator", role="operator")
         client.post("/api/craft/request", json=valid_request_payload(variant="Labc"))

@@ -6,9 +6,10 @@
     getCpus() -> rows { name, storage, coprocessors, busy, cpu }, where
       cpu has isBusy/isActive/activeItems/pendingItems/storedItems/
       finalOutput/cancel
-    getCraftables(filter) -> craftables with getItemStack() (items only)
-      and request(amount) -> status with isComputing/hasFailed/isDone/
-      isCanceled
+    getCraftable(detail, type) -> the craftable making exactly that stack
+      (type "item": name, damage, tag; "fluid": name) or nil, with
+      getItemStack() (items only) and request(amount) -> status with
+      isComputing/hasFailed/isDone/isCanceled
     getItemsInNetworkById(ids), getFluidsInNetwork()
     getEssentiaInNetwork() (Thaumic Energistics; leave it out with
       opts.without = { "getEssentiaInNetwork" })
@@ -191,11 +192,13 @@ function FakeME:add_craftable(opts)
   return c
 end
 
-local function matches(stack, filter)
-  for k, v in pairs(filter or {}) do
-    if stack[k] ~= v then return false end
+-- getCraftable()'s match: AE2 finds this exact stack, NBT included.
+local function makes(c, detail, stackType)
+  if stackType == "fluid" then
+    return c.fluid and c.stack.name == detail.name
   end
-  return true
+  return not c.fluid and c.stack.name == detail.name and c.stack.damage == (detail.damage or 0)
+    and c.stack.tag == detail.tag
 end
 
 function FakeME:_request(craftable, amount)
@@ -326,21 +329,23 @@ function FakeME:_methods()
       return rows
     end,
 
-    getCraftables = function(filter)
-      me:_call("getCraftables")
-      local out = {}
+    getCraftable = function(detail, stackType)
+      me:_call("getCraftable")
+      if stackType ~= "item" and stackType ~= "fluid" then
+        error("Type " .. tostring(stackType) .. " hasn't been registered")
+      end
       for _, c in ipairs(me.craftables) do
-        if matches(c.stack, filter) then
+        if makes(c, detail, stackType) then
           local craftable = {
             request = function(amount) return me:_request(c, amount or 1) end,
           }
           if not c.fluid then
             craftable.getItemStack = function() return copy(c.stack) end
           end
-          out[#out + 1] = craftable
+          return craftable
         end
       end
-      return out
+      return nil
     end,
 
     getItemsInNetworkById = function(ids)

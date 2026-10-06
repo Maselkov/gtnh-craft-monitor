@@ -363,7 +363,7 @@ end
 
 -- ---------------------------------------------------------------------
 -- Craft requests: a separate, much faster thread than the main status
--- loop, handling getCraftables() -> .request() -> CraftingStatus.
+-- loop, handling getCraftable() -> .request() -> CraftingStatus.
 --
 -- KEY TIMING FACT, confirmed through real testing (not assumed): once a
 -- request is accepted, isDone() on the returned handle does NOT
@@ -399,23 +399,6 @@ local function craft_post_json(path, payload)
   }, CONFIG.HTTP_TIMEOUT_SECONDS)
 end
 
--- label narrows an NBT variant's search (see pick_craftable()) - AE2
--- matches it against each pattern output's display name, the same way
--- the fluid filter below relies on.
-local function build_craftable_filter(mod, internal, damage, label)
-  local filter = {}
-  if mod and mod ~= "" and internal then
-    filter.name = mod .. ":" .. internal
-  elseif internal then
-    filter.name = internal
-  end
-  if damage ~= nil then
-    filter.damage = damage
-  end
-  filter.label = label
-  return filter
-end
-
 -- Same encoding as network_browser.lua uses to send NBT tags, so a tag
 -- read here compares equal to the one the server got from the scan.
 local function hex(bytes)
@@ -427,88 +410,35 @@ local function stack_tag_hex(stack)
   return nil
 end
 
--- For pick_craftable(): which pattern the server says makes the
--- variant. Byte-equal tags are the same NBT, but the same NBT can be
--- written in a different key order (Java compounds are HashMaps), so
--- the server compares them parsed. Returns the index or nil, and a
--- summary of the server's answer for the debug dump.
-local function match_on_server(reqData, tags)
-  local ok, body = craft_post_json("/requests/" .. reqData.id .. "/match", { tags = tags })
-  if not ok then return nil, "match request failed: " .. tostring(body) end
-  local decoded = json_decode(body)
-  if type(decoded) ~= "table" then return nil, "match reply unreadable" end
-  local variants = {}
-  for i = 1, #tags do variants[i] = tostring(decoded.variants and decoded.variants[i]) end
-  local index = tonumber(decoded.index)
-  return index, "server: want " .. tostring(decoded.variant) .. ", patterns " .. table.concat(variants, ", ")
+local function unhex(text)
+  return (text:gsub("..", function(pair) return string.char(tonumber(pair, 16)) end))
 end
 
--- Which of getCraftables()'s matches to request. Several patterns can
--- share an item id, damage and even label, differing only in NBT (a
--- GregTech turbine per material, all named "Huge Turbine"), and
--- getCraftables() can't filter on NBT - so for an NBT variant each
--- pattern's output is compared against the NBT the scan saw on it
--- (reqData.tag, needs allowItemStackNBTTags in OpenComputers.cfg).
--- Without that, the label filter has to leave exactly one. Never
--- guesses: a craft of the wrong material is worse than a failed request.
--- Returns the craftable, or nil and why not. A miss also goes to
--- /api/debug with every tag involved.
-local function pick_craftable(craftables, reqData)
-  if not reqData.variant then
-    -- A plain item: prefer a pattern whose output has no NBT at all.
-    for _, c in ipairs(craftables) do
-      local ok, stack = pcall(c.getItemStack)
-      if ok and stack and not stack.hasTag then return c end
+-- The pattern that makes exactly the requested stack, via getCraftable()
+-- (OpenComputers 1.12.47+): AE2 finds the stack in the network's list,
+-- craftable-only entries included, matching name, damage and NBT
+-- exactly - so each material's "Huge Turbine" is its own pattern. The
+-- NBT is the scan's (reqData.tag): the same compressed bytes OC gave
+-- network_browser.lua, which getCraftable() reads back the same way.
+-- Fluids go by their Forge name (internal). Returns the craftable, or
+-- nil and why not.
+local function find_craftable(me, reqData)
+  local detail, stackType
+  if reqData.kind == "fluid" then
+    detail, stackType = { name = reqData.internal }, "fluid"
+  else
+    if reqData.variant and not reqData.tag then
+      return nil, "this item's NBT isn't known yet - wait for the next network scan"
     end
-    return craftables[1]
+    local name = reqData.internal
+    if reqData.mod and reqData.mod ~= "" then name = reqData.mod .. ":" .. name end
+    detail = { name = name, damage = reqData.damage, tag = reqData.tag and unhex(reqData.tag) }
+    stackType = "item"
   end
-  if reqData.tag then
-    -- false, not nil, for an unreadable one: keeps the list an array.
-    local tags, unreadable, untagged = {}, 0, 0
-    for i, c in ipairs(craftables) do
-      local ok, stack = pcall(c.getItemStack)
-      local tag = ok and stack and stack_tag_hex(stack)
-      if tag == reqData.tag then return c end
-      if not (ok and stack) then
-        unreadable = unreadable + 1
-      elseif not tag then
-        untagged = untagged + 1
-      end
-      tags[i] = tag or false
-    end
-    local index, summary = nil, "no pattern had NBT to compare"
-    if unreadable + untagged < #craftables then
-      index, summary = match_on_server(reqData, tags)
-      if index and craftables[index] then return craftables[index] end
-    end
-    local lines = { "request " .. tostring(reqData.id) .. " " .. tostring(reqData.label)
-      .. " variant " .. tostring(reqData.variant), summary, "scan tag: " .. reqData.tag }
-    for i = 1, #craftables do
-      lines[#lines + 1] = "pattern " .. i .. ": " .. tostring(tags[i])
-    end
-    post_debug("craft-nbt-miss", table.concat(lines, "\n"))
-    return nil, string.format(
-      "no pattern makes this item with exactly this NBT (%d found: %d unreadable, %d without NBT) - see /api/debug",
-      #craftables, unreadable, untagged)
-  end
-  if #craftables == 1 then return craftables[1] end
-  return nil, "several patterns match this item and its NBT isn't known "
-    .. "(allowItemStackNBTTags off in OpenComputers.cfg, or no scan since a restart)"
-end
-
--- Fluids need a DIFFERENT filter shape than items - confirmed via a
--- real, successful Molten Neutronium craft request test: filtering
--- getCraftables() by {name=..., damage=...} (the item-style filter)
--- never matched a fluid pattern, but {label=...} did, and .request()
--- on the resulting match genuinely succeeded. The matched object also
--- lacked getItemStack() entirely (confirmed via that same test), so
--- GTNH's fork is very likely returning some fluid-specific Craftable
--- variant here rather than the vanilla item one - but since we never
--- call getItemStack() ourselves (all display data already comes from
--- what the browser sent), that difference doesn't affect this loop at
--- all, only the filter shape used to find it in the first place does.
-local function build_fluid_craftable_filter(label)
-  return { label = label }
+  local ok, craftable, reason = pcall(me.getCraftable, detail, stackType)
+  if not ok then return nil, tostring(craftable) end
+  if not craftable then return nil, reason or "no matching craftable pattern found" end
+  return craftable
 end
 
 local function busy_map(cpus)
@@ -628,29 +558,16 @@ local function run_craft_request_loop(me)
 
   while running do
     -- Pick up any new pending requests.
-    if me.getCraftables then
+    do
       local pendingResp, err = craft_get_json("/requests/pending")
       if pendingResp and pendingResp.requests then
         for _, reqData in ipairs(pendingResp.requests) do
           if not tracked[reqData.id] then
-            local filter = (reqData.kind == "fluid")
-              and build_fluid_craftable_filter(reqData.label)
-              or build_craftable_filter(reqData.mod, reqData.internal, reqData.damage,
-                                        (reqData.variant and not reqData.tag) and reqData.label or nil)
-            local foundOk, craftables = pcall(me.getCraftables, filter)
-            local craftable, pickErr
-            if foundOk and #craftables > 0 then
-              if reqData.kind == "fluid" then
-                craftable = craftables[1]
-              else
-                craftable, pickErr = pick_craftable(craftables, reqData)
-              end
-            end
-
+            local craftable, findErr = find_craftable(me, reqData)
             if not craftable then
               craft_post_json("/requests/" .. reqData.id .. "/result", {
                 status = "failed",
-                reason = pickErr or "no matching craftable pattern found",
+                reason = findErr,
               })
             else
               local before = snapshot_cpu_busy(me)
@@ -906,14 +823,14 @@ local function service_loop()
     return
   end
 
-  if me.getCraftables then
+  if me.getCraftable then
     thread.create(function()
       run_craft_request_loop(me)
     end):detach()
     print("[craft_monitor] Craft-request thread started (polling every " ..
       CONFIG.CRAFT_REQUEST_POLL_SECONDS .. "s).")
   else
-    print("[craft_monitor] No getCraftables() method on this component - craft requests won't be available.")
+    print("[craft_monitor] No getCraftable() method on this component (OpenComputers older than 1.12.47?) - craft requests won't be available.")
   end
 
   print("[craft_monitor] Polling every " .. CONFIG.POLL_SECONDS .. "s.")
