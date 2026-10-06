@@ -126,6 +126,12 @@ jobs:
       - uses: docker/build-push-action@v7
         with:
           context: server
+          # Both platforms, so a dependency without an arm64 wheel fails
+          # here instead of at release. Cheap: no emulation (see Dockerfile).
+          platforms: linux/amd64,linux/arm64
           push: false
-          cache-from: type=gha
+          # Also reads the cache the last release wrote (publish.yml).
+          cache-from: |
+            type=gha
+            type=registry,ref=ghcr.io/maselkov/gtnh-craft-monitor:buildcache
           cache-to: type=gha,mode=max
