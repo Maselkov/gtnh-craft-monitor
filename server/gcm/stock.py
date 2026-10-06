@@ -37,8 +37,9 @@ def evaluate_scan(started_at=None):
         items = state.network["items"]
         started_at = started_at or state.network["scan_started_at"]
     sizes = current_sizes(items)
-    _check_alerts(sizes)
-    _restock(sizes, started_at or time.time())
+    names = variant_names(items)
+    _check_alerts(sizes, names)
+    _restock(sizes, names, started_at or time.time())
 
 
 def watch_list():
@@ -67,11 +68,25 @@ def current_sizes(items):
     return {store.items.key_of(it): it.get("size") or 0 for it in items}
 
 
+def variant_names(items):
+    """Each NBT variant's variant_name (a GregTech tool's material) by
+    item key. Rules keep only the variant id; the name is what finds a
+    tool's own icon."""
+    return {store.items.key_of(it): it["variant_name"] for it in items if it.get("variant_name")}
+
+
+def rule_icon(rule, names):
+    return icons.resolve_icon(
+        rule["mod"], rule["internal"], rule["damage"], rule["label"], rule["variant"], rule["kind"],
+        names.get(rule["key"]),
+    )
+
+
 def _amount_text(n, kind):
     return charts.format_qty(n) + (" mB" if kind == "fluid" else "")
 
 
-def _check_alerts(sizes):
+def _check_alerts(sizes, names):
     changes = []
     for alert in store.stock.all_alerts():
         current = sizes.get(alert["key"], 0)  # gone from the network: none left
@@ -81,7 +96,7 @@ def _check_alerts(sizes):
             push.notify_users([alert["user_id"]], push.stock_message(
                 alert["key"],
                 alert["label"],
-                icons.resolve_icon(alert["mod"], alert["internal"], alert["damage"], alert["label"], alert["variant"], alert["kind"]),
+                rule_icon(alert, names),
                 f"{alert['label']} is at {_amount_text(current, alert['kind'])} "
                 f"(below {_amount_text(alert['below'], alert['kind'])}).",
             ))
@@ -122,7 +137,7 @@ def _cpu_budget(jobs, received_at):
     return idle - config.AUTOCRAFT_KEEP_IDLE_CPUS - waiting
 
 
-def _restock(sizes, scan_started_at):
+def _restock(sizes, names, scan_started_at):
     low = []
     for target in store.stock.targets():
         current = sizes.get(target["key"], 0)
@@ -164,6 +179,7 @@ def _restock(sizes, scan_started_at):
             target["refill_to"] - current,
             target["kind"],
             target["variant"],
+            names.get(key),
             source="auto",
             target_key=key,
         )
