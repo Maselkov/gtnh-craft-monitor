@@ -1724,6 +1724,12 @@ details.stock-rules {
   opacity: 0.55;
   transition: opacity 0.8s;
 }
+/* Set while the tree is redrawn (job-tree.js render): bars go straight
+   to where they were. */
+.job-tree-instant .job-bar-fill,
+.job-tree-instant .job-node.job-done > .plan-row {
+  transition: none;
+}
 .job-node.job-done > .plan-row .job-bar-fill {
   background: var(--idle);
 }

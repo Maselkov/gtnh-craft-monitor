@@ -114,7 +114,13 @@ function render() {
   body.innerHTML = `<ul class="plan-tree job-tree">${nodeHtml(treeData.tree.root, '', 0, '')}</ul>`;
   body.scrollTop = scrollTop;
   doneShape = doneSignature();
+  // A redrawn bar starts from nothing: put it straight where it was,
+  // with no transition, so opening a step doesn't replay every bar
+  // from 0. Only a report's change animates (refreshJobTree -> patch).
+  body.classList.add('job-tree-instant');
   patch();
+  void body.offsetWidth;  // apply the widths before transitions come back
+  body.classList.remove('job-tree-instant');
 }
 
 // Numbers, bars and states in place: no redraw, so transitions run.

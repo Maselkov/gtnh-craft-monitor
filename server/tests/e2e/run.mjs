@@ -511,8 +511,17 @@ async function main() {
     await report(4);
     await waitFor('updated in place', `window.dustText.textContent === '6 / 10' && window.dustText.isConnected
       && $$('#ingredientsTree .job-bar-fill')[1].style.width === '60%'`);
+    // Shutting and opening a step redraws the tree: the bar is drawn where
+    // it was, not replayed from 0.
+    await sleep(5000);  // the update's own transition (4.5s) is over
+    await click(`$$('#ingredientsTree [data-action="job-tree-toggle"]')[0]`);
+    await click(`$$('#ingredientsTree [data-action="job-tree-toggle"]')[0]`);
+    const ratio = await evaluate(`(() => {
+      const fill = $$('#ingredientsTree .job-bar-fill')[1];
+      return parseFloat(getComputedStyle(fill).width) / parseFloat(getComputedStyle(fill.parentElement).width);
+    })()`);
+    if (Math.abs(ratio - 0.6) > 0.02) throw new Error(`bar replayed from 0 on redraw: at ${ratio} of its track, not 0.6`);
     // Unmoved past CRAFT_STALL_SECONDS: stuck, with a chip to jump to it.
-    await sleep(4500);
     await report(4);
     await waitFor('stuck', `$$('#ingredientsTree li.job-node')[1].classList.contains('job-stuck')
       && !$('#ingredientsStuck').hidden && $('#ingredientsStuck').textContent.includes('Iron Dust')`);
