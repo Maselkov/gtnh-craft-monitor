@@ -89,6 +89,24 @@ export function onBackdropClick(overlayId, close) {
   });
 }
 
+// A dialog's filter box: onChange on every edit. Escape clears it
+// rather than closing the dialog, and Enter does nothing rather than
+// submit the craft request (the page's key handler is on document, so
+// stopping them here is enough).
+export function bindFilterInput(input, onChange) {
+  input.addEventListener('input', onChange);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.stopPropagation();
+      e.preventDefault();
+    } else if (e.key === 'Escape' && input.value) {
+      e.stopPropagation();
+      input.value = '';
+      onChange();
+    }
+  });
+}
+
 // <img data-remove-on-error> removes itself when it fails to load (an
 // icon missing from images.zip) rather than showing a broken-image
 // glyph. error events don't bubble, hence the capture-phase listener.

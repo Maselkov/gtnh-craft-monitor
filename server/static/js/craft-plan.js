@@ -8,8 +8,9 @@
 // around; here it's an outline, readable without hovering and usable on
 // a phone, keeping the game's "Hide all available".
 
+import { itemMatchesSearch, parseSearchQuery } from './search.js';
 import { bindCellTooltip } from './tooltip.js';
-import { delegateActions, escapeHtml, essentiaBadgeHtml, formatQty, formatRelativeTime, iconClass, iconUrl, kindTooltipHtml } from './util.js';
+import { bindFilterInput, delegateActions, escapeHtml, essentiaBadgeHtml, formatQty, formatRelativeTime, iconClass, iconUrl, kindTooltipHtml } from './util.js';
 
 const VIEW_KEY = 'gtnhCraftMonitor.planView';
 const HIDE_KEY = 'gtnhCraftMonitor.planHideAvailable';
@@ -24,6 +25,9 @@ let itemsByKey = new Map();
 let fetchTimer = null;
 let inFlight = null;    // AbortController of the request under way
 let branchesLoading = new Set();  // child-position paths being fetched
+let filterTerms = [];   // parsed filter box, [] for none
+let filterOpen = new Map();  // tree path -> open, toggled while filtering
+let filterHits = new Map();  // tree step -> { self, below }, for this render
 
 function readSetting(key, fallback) {
   try { return localStorage.getItem(key) || fallback; } catch (e) { return fallback; }
@@ -135,6 +139,27 @@ function displayName(it) {
   return (it.name || '?') + (it.variant_name ? ` (${it.variant_name})` : '');
 }
 
+export function nameMatches(it, terms) {
+  // Plan items carry no mod, so an @mod term matches nothing.
+  return itemMatchesSearch({ name: displayName(it), mod: '' }, terms);
+}
+
+// For the tree filter: which steps match themselves (self), and which
+// have a match somewhere under them (below) - only as far as the tree
+// has been fetched; a branch not loaded yet can't be searched.
+export function filterTree(root, terms) {
+  const hits = new Map();
+  const walk = (node) => {
+    let below = false;
+    for (const c of node.children || []) if (walk(c)) below = true;
+    const self = nameMatches(node, terms);
+    if (self || below) hits.set(node, { self, below });
+    return self || below;
+  };
+  walk(root);
+  return hits;
+}
+
 // ---------- list view ----------
 
 function cellHtml(it) {
@@ -177,7 +202,9 @@ function cellTooltipHtml(it) {
 }
 
 function renderList(plan) {
-  return `<div class="ingredients-grid plan-grid">${sortListItems(plan.items).map(cellHtml).join('')}</div>`;
+  const items = plan.items.filter(it => nameMatches(it, filterTerms));
+  if (!items.length) return '<div class="plan-none">Nothing in this plan matches the filter.</div>';
+  return `<div class="ingredients-grid plan-grid">${sortListItems(items).map(cellHtml).join('')}</div>`;
 }
 
 // ---------- tree view ----------
@@ -191,10 +218,16 @@ function pathSegment(node, positions) {
   return node.status === 'via' ? `${node.key}#${positions.split('.').pop()}` : node.key;
 }
 
-function nodeHtml(node, parentPath, depth, positions) {
+// filtering: the filter box applies here - true until a step that
+// matches it, under which the tree shows as usual, to see what it takes.
+function nodeHtml(node, parentPath, depth, positions, filtering) {
   const segment = pathSegment(node, positions);
   const path = parentPath ? parentPath + ' > ' + segment : segment;
-  const children = shownChildren(node, hideAvailable);
+  const hit = filtering ? filterHits.get(node) : null;
+  // On the way to a match: only the steps leading to one, opened.
+  const leading = filtering && !(hit && hit.self);
+  let children = shownChildren(node, hideAvailable);
+  if (leading) children = children.filter(([c]) => filterHits.has(c));
   // Big plans come a few levels at a time: `more` says this step has
   // steps below it that haven't been fetched yet.
   const unfetched = !node.children && node.more > 0;
@@ -203,11 +236,12 @@ function nodeHtml(node, parentPath, depth, positions) {
   // plan short of nearly everything would fetch and redraw hundreds of
   // branches at once; those stay shut, saying what's short below, until
   // opened.
-  const open = openState.has(path) ? openState.get(path)
-    : (hideAvailable ? node.missing_below > 0 && !unfetched : depth < 2);
+  const open = leading ? filterOpen.get(path) ?? true
+    : openState.has(path) ? openState.get(path)
+      : (hideAvailable ? node.missing_below > 0 && !unfetched : depth < 2);
   if (open && unfetched) loadBranchSoon(positions);
   const caret = children.length || unfetched
-    ? `<button class="plan-caret" data-action="plan-toggle" data-path="${escapeHtml(path)}" aria-expanded="${open}" title="${open ? 'Collapse' : 'Expand'}">${open ? '▾' : '▸'}</button>`
+    ? `<button class="plan-caret" data-action="plan-toggle" data-path="${escapeHtml(path)}"${leading ? ' data-filter' : ''} aria-expanded="${open}" title="${open ? 'Collapse' : 'Expand'}">${open ? '▾' : '▸'}</button>`
     : '<span class="plan-caret"></span>';
 
   const details = [];
@@ -239,7 +273,8 @@ function nodeHtml(node, parentPath, depth, positions) {
     }</select>`
     : '';
 
-  return `<li class="plan-node status-${escapeHtml(node.status)}" data-pos="${escapeHtml(positions)}">
+  const matched = hit && hit.self ? ' filter-match' : '';
+  return `<li class="plan-node status-${escapeHtml(node.status)}${matched}" data-pos="${escapeHtml(positions)}">
     <div class="plan-row">
       ${caret}${iconHtml(node, 'plan-icon')}
       <div class="plan-text">
@@ -252,14 +287,18 @@ function nodeHtml(node, parentPath, depth, positions) {
     </div>
     ${open && unfetched ? '<ul><li class="plan-loading">Loading…</li></ul>' : ''}
     ${open && children.length ? `<ul>${children.map(([c, i]) =>
-    nodeHtml(c, path, depth + 1, positions === '' ? String(i) : `${positions}.${i}`)).join('')}</ul>` : ''}
+    nodeHtml(c, path, depth + 1, positions === '' ? String(i) : `${positions}.${i}`, leading)).join('')}</ul>` : ''}
   </li>`;
 }
 
 function renderTree(plan) {
+  const filtering = filterTerms.length > 0;
+  filterHits = filtering ? filterTree(plan.root, filterTerms) : new Map();
   const nothingShort = hideAvailable && !plan.root.missing_below
     ? '<li class="plan-none">Nothing is short: everything is in stock or craftable.</li>' : '';
-  return `<ul class="plan-tree">${nodeHtml(plan.root, '', 0, '')}${nothingShort}</ul>`;
+  const noMatch = filtering && !filterHits.has(plan.root)
+    ? '<li class="plan-none">No step matches the filter (of those loaded so far).</li>' : '';
+  return `<ul class="plan-tree">${nodeHtml(plan.root, '', 0, '', filtering)}${nothingShort}${noMatch}</ul>`;
 }
 
 // ---------- the whole panel ----------
@@ -427,6 +466,12 @@ async function jumpTo(key) {
   jump = jump && jump.key === key ? { key, index: (jump.index + 1) % places.length } : { key, index: 0 };
   const positions = places[jump.index];
   const planData = lastPlan;
+  // The filter could hide the very step; it goes, as in the game when
+  // a search is cleared to look at something else.
+  if (filterTerms.length) {
+    document.getElementById('craftPlanFilter').value = '';
+    filterTerms = [];
+  }
   if (view !== 'tree') {
     view = 'tree';
     writeSetting(VIEW_KEY, view);
@@ -493,6 +538,9 @@ export function openCraftPlan(it, amountValue) {
   target = it;
   choices = {};
   openState = new Map();
+  filterTerms = [];
+  filterOpen = new Map();
+  document.getElementById('craftPlanFilter').value = '';
   missingExpanded = false;
   lastPlan = null;
   itemsByKey = new Map();
@@ -546,9 +594,17 @@ export function setupCraftPlanActions() {
     },
     'plan-toggle': (el) => {
       const path = el.dataset.path;
-      openState.set(path, el.getAttribute('aria-expanded') !== 'true');
+      (el.hasAttribute('data-filter') ? filterOpen : openState).set(path, el.getAttribute('aria-expanded') !== 'true');
       render();
     },
+  });
+  bindFilterInput(document.getElementById('craftPlanFilter'), () => {
+    filterTerms = parseSearchQuery(document.getElementById('craftPlanFilter').value);
+    filterOpen = new Map();
+    if (lastPlan) {
+      document.getElementById('craftPlanBody').scrollTop = 0;
+      render();
+    }
   });
   // Like a menu: a click anywhere else shuts the dropdown.
   document.addEventListener('click', (e) => {

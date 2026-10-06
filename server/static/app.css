@@ -894,6 +894,30 @@ h1 {
   color: var(--muted);
   cursor: pointer;
 }
+/* The small search box at the top right of the Ingredients and plan
+   dialogs, like the game's on its crafting status screen. */
+.modal-filter {
+  width: 160px;
+  min-width: 0;
+  height: 30px;
+  flex-shrink: 1;
+  margin-left: auto;
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid rgba(128,128,128,0.3);
+  border-radius: 8px;
+  padding: 0 10px;
+  font-size: 13px;
+  font-family: inherit;
+}
+.modal-filter::placeholder {
+  color: var(--muted);
+}
+.craft-plan-tools .modal-filter {
+  width: 140px;
+  height: auto;
+  align-self: stretch;
+}
 .history-chart-wrap {
   height: 320px;
   margin: 14px 0;
@@ -1257,6 +1281,11 @@ h1 {
 }
 .plan-short-below {
   color: var(--stale);
+}
+/* A step whose name matches the filter box. */
+.plan-node.filter-match > .plan-row .plan-name {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border-radius: 3px;
 }
 /* The step a Missing chip jumped to, flashed once. */
 .plan-row.plan-jump {

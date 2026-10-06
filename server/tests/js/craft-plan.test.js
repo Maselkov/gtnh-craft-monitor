@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { jumpCounterText, nodeQtyText, qty, shownChildren, sortListItems, usedBand, warningText } from '../../static/js/craft-plan.js';
+import { parseSearchQuery } from '../../static/js/search.js';
+import { filterTree, jumpCounterText, nameMatches, nodeQtyText, qty, shownChildren, sortListItems, usedBand, warningText } from '../../static/js/craft-plan.js';
 
 test('usedBand follows the game\'s colours', () => {
   assert.equal(usedBand(100), 'used-all');
@@ -68,4 +69,25 @@ test('shownChildren hides branches with nothing short only when asked, keeping p
   assert.deepEqual(shownChildren(node, false).map(([c, i]) => [c.name, i]), [['fine', 0], ['short', 1], ['also fine', 2]]);
   assert.deepEqual(shownChildren(node, true).map(([c, i]) => [c.name, i]), [['short', 1]]);
   assert.deepEqual(shownChildren({ more: 3 }, true), []);
+});
+
+test('nameMatches uses the network search syntax on the shown name', () => {
+  const it = { name: 'Neutronium Dust', variant_name: 'Tiny' };
+  assert.ok(nameMatches(it, parseSearchQuery('dust neutronium')));
+  assert.ok(nameMatches(it, parseSearchQuery('tiny')));
+  assert.ok(!nameMatches(it, parseSearchQuery('-dust')));
+  assert.ok(nameMatches(it, parseSearchQuery('')));
+});
+
+test('filterTree marks matches and the steps leading to them', () => {
+  const dust = { name: 'Neutronium Dust' };
+  const ingot = { name: 'Neutronium Ingot', children: [dust] };
+  const water = { name: 'Water' };
+  const root = { name: 'Iron Ingot', children: [ingot, water] };
+  const hits = filterTree(root, parseSearchQuery('dust'));
+  assert.deepEqual(hits.get(dust), { self: true, below: false });
+  assert.deepEqual(hits.get(ingot), { self: false, below: true });
+  assert.deepEqual(hits.get(root), { self: false, below: true });
+  assert.ok(!hits.has(water));
+  assert.equal(filterTree(root, parseSearchQuery('gold')).size, 0);
 });

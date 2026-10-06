@@ -7,11 +7,13 @@
 // swaps the grid's contents, so the scroll position survives.
 
 import { bindCellTooltip, hideTooltip, showTooltip, tooltipVisible } from './tooltip.js';
-import { delegateActions, escapeHtml, formatQty, iconClass, iconUrl, onBackdropClick } from './util.js';
+import { itemMatchesSearch, parseSearchQuery } from './search.js';
+import { bindFilterInput, delegateActions, escapeHtml, formatQty, iconClass, iconUrl, onBackdropClick } from './util.js';
 
 let openCpu = null;       // CPU name the modal is showing, null when closed
 let shownItems = new Map(); // item key -> merged item, from the last render
 let hoveredKey = null;    // item key the tooltip was last shown for
+let lastJob = null;       // the job last drawn, redrawn as the filter changes
 
 function itemKey(it) {
   return [it.mod || '', it.internal || '', it.damage ?? '', it.name || ''].join('|');
@@ -113,15 +115,20 @@ function renderHead(job) {
 }
 
 function renderGrid(job) {
+  lastJob = job;
   shownItems = mergeItems(job);
-  const items = Array.from(shownItems.values()).sort((a, b) =>
-    sortRank(a) - sortRank(b) || String(a.name || '').localeCompare(String(b.name || '')));
+  // The filter box sits outside the grid, so what's typed in it stays
+  // through the 3s refresh, like the game's own search on this screen.
+  const query = parseSearchQuery(document.getElementById('ingredientsFilter').value);
+  const items = Array.from(shownItems.values())
+    .filter(m => itemMatchesSearch(m, query))
+    .sort((a, b) => sortRank(a) - sortRank(b) || String(a.name || '').localeCompare(String(b.name || '')));
 
   const grid = document.getElementById('ingredientsGrid');
   const scrollTop = grid.scrollTop;
   grid.innerHTML = items.length
     ? items.map(cellHtml).join('')
-    : '<div class="network-note">No ingredients reported.</div>';
+    : `<div class="network-note">${shownItems.size ? 'Nothing matches the filter.' : 'No ingredients reported.'}</div>`;
   grid.scrollTop = scrollTop;
 
   // The cell under a still cursor was just replaced, and no mouseout
@@ -138,6 +145,9 @@ export function openIngredientsModal(cpuName, data) {
   // Cleared first: if the CPU went idle since its card was drawn, the
   // refresh below keeps what's here, which would be another CPU's grid.
   shownItems = new Map();
+  lastJob = null;
+  document.getElementById('ingredientsFilter').value = '';
+  document.querySelector('#ingredientsModal .modal-box').style.minHeight = '';
   for (const id of ['ingredientsTitle', 'ingredientsProgress', 'ingredientsGrid']) {
     document.getElementById(id).innerHTML = '';
   }
@@ -150,6 +160,7 @@ export function openIngredientsModal(cpuName, data) {
 export function closeIngredientsModal() {
   openCpu = null;
   hoveredKey = null;
+  lastJob = null;
   hideTooltip();
   document.getElementById('ingredientsModal').style.display = 'none';
 }
@@ -177,6 +188,16 @@ export function setupIngredientsActions() {
     'close-ingredients': () => closeIngredientsModal(),
   });
   onBackdropClick('ingredientsModal', closeIngredientsModal);
+  const filter = document.getElementById('ingredientsFilter');
+  bindFilterInput(filter, () => {
+    if (!lastJob) return;
+    // Kept at the height it opened at, so the box doesn't shrink and
+    // jump under the cursor as a filter takes cells out.
+    const box = document.querySelector('#ingredientsModal .modal-box');
+    if (filter.value && !box.style.minHeight) box.style.minHeight = `${box.offsetHeight}px`;
+    document.getElementById('ingredientsGrid').scrollTop = 0;
+    renderGrid(lastJob);
+  });
   bindCellTooltip(document.getElementById('ingredientsGrid'), '.ingredient-cell', (cell) => {
     const m = shownItems.get(cell.dataset.key);
     hoveredKey = m ? m.key : null;
