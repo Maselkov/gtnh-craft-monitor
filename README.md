@@ -365,7 +365,8 @@ work without it; plans then take no substitutes.
 - Recommended: `allowItemStackNBTTags=true` (under `integration.vanilla`) in
   `OpenComputers.cfg`. Items that share an id but differ in NBT (seeds with
   different stats, bees of one species) are then listed separately, as AE2
-  does. Without it they're only told apart by name.
+  does. Without it they're only told apart by name, and GregTech tools
+  (turbines, drills...) all show one icon whatever their material.
 - Optional, GTNH 2.9 or later: an Adapter touching (or MFU-linked to) a block
   holding an **ME Interface Terminal** part, on the same computer as
   `network_browser.lua`. With it, the scanner also reads every pattern on the

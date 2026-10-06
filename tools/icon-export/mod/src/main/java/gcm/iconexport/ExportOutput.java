@@ -131,10 +131,13 @@ final class ExportOutput {
      * stacks share a key (they differ only in NBT), the one without NBT wins; otherwise the last one
      * listed wins. Only stacks that actually rendered are included. by_key_label tells those NBT
      * variants apart by label (each crop's seeds, each bee species), keyed "key|label".
+     * by_key_material does the same for GregTech tools, whose labels don't name their material:
+     * "key|PrimaryMaterial", one per material GregTech's own recipes make that tool from.
      */
     static Map<String, Object> buildLookup(List<ExportJob> jobs) {
         Map<String, ExportJob> byKey = new HashMap<>();
         Map<String, ExportJob> byKeyLabel = new HashMap<>();
+        Map<String, ExportJob> byKeyMaterial = new HashMap<>();
         Map<String, ExportJob> fluidsByKey = new HashMap<>();
         Map<String, ExportJob> aspectsByKey = new HashMap<>();
         Map<String, ExportJob> byLabel = new HashMap<>();
@@ -154,6 +157,9 @@ final class ExportOutput {
                 if (kind == ExportJob.Kind.ITEM && job.hasNbt && job.label != null) {
                     byKeyLabel.put(job.lookupKey + "|" + job.label, job);
                 }
+                if (job.gtMaterial != null) {
+                    byKeyMaterial.put(job.lookupKey + "|" + job.gtMaterial, job);
+                }
                 if (job.label != null) {
                     putPreferringNoNbt(byLabel, job.label, job);
                 }
@@ -162,6 +168,7 @@ final class ExportOutput {
         Map<String, Object> lookup = new LinkedHashMap<>();
         lookup.put("by_key", paths(byKey));
         lookup.put("by_key_label", paths(byKeyLabel));
+        lookup.put("by_key_material", paths(byKeyMaterial));
         lookup.put("fluids_by_key", paths(fluidsByKey));
         lookup.put("aspects_by_key", paths(aspectsByKey));
         lookup.put("by_label", paths(byLabel));
@@ -169,7 +176,7 @@ final class ExportOutput {
         // they're that much bigger than the rest, the box in their middle.
         // Only the icons the tables point at: export.py drops the rest from images.zip.
         Map<String, Integer> bleed = new TreeMap<>();
-        for (Map<String, ExportJob> table : Arrays.asList(byKey, byKeyLabel, fluidsByKey, byLabel)) {
+        for (Map<String, ExportJob> table : Arrays.asList(byKey, byKeyLabel, byKeyMaterial, fluidsByKey, byLabel)) {
             for (ExportJob job : table.values()) {
                 if (job.bleeds) {
                     bleed.put(job.imagePath, IconRenderer.BLEED);

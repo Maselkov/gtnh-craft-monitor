@@ -58,7 +58,7 @@ GAME_OUTPUTS = (
 )
 # icons_lookup.json's key -> image path tables. Its "bleed" table maps the
 # paths of icons drawn past the item box to how far, in 1/16ths of it.
-LOOKUP_TABLES = ("by_key", "by_key_label", "fluids_by_key", "aspects_by_key", "by_label")
+LOOKUP_TABLES = ("by_key", "by_key_label", "by_key_material", "fluids_by_key", "aspects_by_key", "by_label")
 
 # Loading errors put FML's error screen up and wait for a click that never
 # comes, so these have to be caught from the log rather than the exit code.
