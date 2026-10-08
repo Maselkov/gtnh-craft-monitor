@@ -29,10 +29,17 @@
       <h1>GTNH Monitor</h1>
     </div>
     <div class="top-bar-right">
-      <input type="password" id="accessTokenInput" class="craft-key-input"
-        placeholder="Access token" autocomplete="off"
-        title="Enter your personal access token to sign in">
-      <button class="notif-btn" id="authBtn" data-action="sign-in">Sign in</button>
+      <!-- A real form with a username/password pair, so password managers
+           offer to save the token and fill it in. method="post" keeps the
+           token out of the URL should the script ever not intercept it. -->
+      <form id="signInForm" class="sign-in-form" method="post">
+        <input type="text" name="username" autocomplete="username"
+          value="GTNH Monitor" hidden>
+        <input type="password" id="accessTokenInput" class="craft-key-input"
+          name="token" placeholder="Access token" autocomplete="current-password"
+          title="Enter your personal access token to sign in">
+        <button type="submit" class="notif-btn" id="authBtn">Sign in</button>
+      </form>
       <div class="settings-wrap" id="settingsWrap" style="display:none;">
         <button class="notif-btn settings-btn" id="settingsBtn" title="Settings"
           aria-label="Settings" aria-haspopup="true" aria-expanded="false"

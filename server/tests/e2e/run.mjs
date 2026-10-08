@@ -455,7 +455,9 @@ async function main() {
     await click(`byText('#settingsMenu button', 'Sign out')`);
     await waitFor('signed out', `visible($('#authBtn')) && !visible($('#settingsWrap'))`);
     await evaluate(`typeInto('#accessTokenInput', ${JSON.stringify(adminToken)})`);
-    await evaluate(`pressEnter('#accessTokenInput')`);
+    // A synthetic Enter keydown doesn't submit a form; requestSubmit() is
+    // what pressing Enter in the field does.
+    await evaluate(`$('#signInForm').requestSubmit(), true`);
     await waitFor('signed in', `visible($('#settingsWrap')) && $('#settingsUser').textContent.includes('Administrator')`);
   });
 
