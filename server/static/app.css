@@ -416,6 +416,11 @@ h1 {
   gap: 10px;
   flex-wrap: wrap;
 }
+/* The form only exists for password managers; its fields lay out as
+   direct children of .top-bar-right. */
+.sign-in-form {
+  display: contents;
+}
 .craft-key-input {
   background: var(--card);
   border: 1px solid rgba(128,128,128,0.25);

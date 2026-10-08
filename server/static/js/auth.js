@@ -117,11 +117,11 @@ export function setupAuthControls() {
     if (!e.target.closest('#settingsWrap')) closeSettingsMenu();
   });
 
-  document.getElementById('accessTokenInput').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') submitAccessToken();
+  document.getElementById('signInForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    submitAccessToken();
   });
   delegateActions(document, {
-    'sign-in': () => submitAccessToken(),
     'toggle-settings': () => toggleSettingsMenu(),
     'open-admin': () => { closeSettingsMenu(); openAdminUsersModal(); },
     'sign-out': () => { closeSettingsMenu(); signOut(); },
