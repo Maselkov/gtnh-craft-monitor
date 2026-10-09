@@ -119,7 +119,9 @@ def power_chart_png():
     png_bytes = charts.cached_png(
         ("power", range_key),
         lambda: charts.render_png(
-            [(r[0], r[1]) for r in rows], stepped=False
+            [(r[0], r[1]) for r in rows],
+            stepped=False,
+            span_seconds=POWER_RANGE_SECONDS[range_key],
         ).getvalue(),
     )
     resp = Response(png_bytes, mimetype="image/png")

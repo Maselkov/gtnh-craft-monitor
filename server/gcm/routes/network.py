@@ -200,7 +200,9 @@ def network_history_chart_png():
     )
     png_bytes = charts.cached_png(
         ("network", mod, internal, damage, kind, variant, range_key),
-        lambda: charts.render_png(rows, stepped=True).getvalue(),
+        lambda: charts.render_png(
+            rows, stepped=True, span_seconds=inventory.HISTORY_RANGE_SECONDS[range_key]
+        ).getvalue(),
     )
     resp = Response(png_bytes, mimetype="image/png")
     resp.headers["Cache-Control"] = "public, max-age=60"
