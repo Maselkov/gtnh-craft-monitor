@@ -104,12 +104,19 @@ def format_qty(n):
 
 
 def render_png(
-    rows, stepped, width_px=WIDTH_PX, height_px=HEIGHT_PX
+    rows, stepped, span_seconds=None, now=None, width_px=WIDTH_PX, height_px=HEIGHT_PX
 ):
     """rows: list of (unix_ts, value). stepped=True draws a step line
     (item quantity - a step function, matching the 'stepped: after'
     Chart.js config already used in the browser); stepped=False draws a
-    smooth line (power draw, a continuously-sampled signal)."""
+    smooth line (power draw, a continuously-sampled signal).
+
+    The x axis runs from now - span_seconds (span_seconds None: the
+    first row) to now, whatever the rows cover. Left to autoscale, one
+    row - an item that hasn't changed all day - is a zero-width range
+    that matplotlib's date locator widens to +-2 years."""
+    if now is None:
+        now = time.time()
     dpi = 100
     fig = Figure(figsize=(width_px / dpi, height_px / dpi), dpi=dpi)
     ax = fig.subplots()
@@ -117,6 +124,11 @@ def render_png(
     ax.set_facecolor(_PANEL)
 
     if rows:
+        left = rows[0][0] if span_seconds is None else now - span_seconds
+        if stepped and rows[-1][0] < now:
+            # Item history only records changes: hold the latest value
+            # out to now instead of ending the line at the last change.
+            rows = list(rows) + [(now, rows[-1][1])]
         times = [datetime.fromtimestamp(r[0]) for r in rows]
         values = [r[1] for r in rows]
         if stepped:
@@ -126,6 +138,7 @@ def render_png(
             ax.plot(times, values, color=_LINE, linewidth=2)
             ax.fill_between(times, values, color=_LINE, alpha=0.15)
         ax.set_ylim(bottom=0)
+        ax.set_xlim(datetime.fromtimestamp(left), datetime.fromtimestamp(now))
     else:
         ax.text(
             0.5,
