@@ -6,7 +6,7 @@
 // its scroll position. This lives outside #root, and a re-render only
 // swaps the grid's contents, so the scroll position survives.
 
-import { hideJobTree, refreshJobTree, setupJobTreeActions, showJobTree } from './job-tree.js';
+import { hideJobTree, refreshJobTree, setJobTreeFilter, setupJobTreeActions, showJobTree } from './job-tree.js';
 import { bindCellTooltip, hideTooltip, showTooltip, tooltipVisible } from './tooltip.js';
 import { itemMatchesSearch, parseSearchQuery } from './search.js';
 import { bindFilterInput, delegateActions, escapeHtml, formatQty, iconClass, iconUrl, onBackdropClick } from './util.js';
@@ -33,7 +33,6 @@ function showView() {
   });
   const tree = view === 'tree';
   document.getElementById('ingredientsGrid').hidden = tree;
-  document.getElementById('ingredientsFilter').hidden = tree;
   document.getElementById('ingredientsTreeWrap').hidden = !tree;
   if (tree && openCpu) showJobTree(openCpu); else hideJobTree();
 }
@@ -170,6 +169,7 @@ export function openIngredientsModal(cpuName, data) {
   shownItems = new Map();
   lastJob = null;
   document.getElementById('ingredientsFilter').value = '';
+  setJobTreeFilter('');
   document.querySelector('#ingredientsModal .modal-box').style.minHeight = '';
   for (const id of ['ingredientsTitle', 'ingredientsProgress', 'ingredientsGrid']) {
     document.getElementById(id).innerHTML = '';
@@ -224,6 +224,7 @@ export function setupIngredientsActions() {
   onBackdropClick('ingredientsModal', closeIngredientsModal);
   const filter = document.getElementById('ingredientsFilter');
   bindFilterInput(filter, () => {
+    setJobTreeFilter(filter.value);
     if (!lastJob) return;
     // Kept at the height it opened at, so the box doesn't shrink and
     // jump under the cursor as a filter takes cells out.

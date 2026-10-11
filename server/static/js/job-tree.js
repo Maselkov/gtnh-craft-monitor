@@ -8,7 +8,8 @@
 // place, so the bars' CSS transitions carry them smoothly from one
 // report to the next instead of jumping.
 
-import { ensureLoaded, flashRow, nodeAt, openAbove } from './tree-nav.js';
+import { itemMatchesSearch, parseSearchQuery } from './search.js';
+import { ensureLoaded, flashRow, matchTree, nodeAt, openAbove } from './tree-nav.js';
 import { delegateActions, escapeHtml, formatDuration, formatQty, iconClass, iconUrl } from './util.js';
 
 let cpu = null;            // the CPU shown, null when the tree isn't
@@ -20,6 +21,9 @@ let branchesLoading = new Set();
 let doneShape = '';        // the finished steps the tree was last drawn with
 let jump = null;           // { key, index } of the stuck chip last clicked
 let fetching = false;
+let filterTerms = [];      // parsed filter box (ingredients.js), [] for none
+let filterOpen = new Map();  // tree path -> open, toggled while filtering
+let hits = new Map();      // tree step -> { self, below }, for this render
 
 // ---------- pure helpers (tested under server/tests/js/) ----------
 
@@ -62,22 +66,35 @@ export function branchDone(node, stepsByKey) {
   return true;
 }
 
+// For the filter box: which steps match it, and which lead to a match.
+// Steps carry no mod, so an @mod term matches nothing.
+export function filterJobTree(root, terms) {
+  return matchTree(root, (node) => itemMatchesSearch({ name: node.name || '', mod: '' }, terms));
+}
+
 // ---------- drawing ----------
 
 function segment(node, positions) {
   return node.status === 'via' ? `${node.key}#${positions.split('.').pop()}` : node.key;
 }
 
-function nodeHtml(node, parentPath, depth, positions) {
+// filtering: as in the craft plan's tree (craft-plan.js), true until a
+// step that matches the filter, under which the tree shows as usual.
+function nodeHtml(node, parentPath, depth, positions, filtering) {
   const seg = segment(node, positions);
   const path = parentPath ? parentPath + ' > ' + seg : seg;
-  const children = node.children || [];
+  const hit = filtering ? hits.get(node) : null;
+  // On the way to a match: only the steps leading to one, opened.
+  const leading = filtering && !(hit && hit.self);
+  let children = (node.children || []).map((c, i) => [c, i]);
+  if (leading) children = children.filter(([c]) => hits.has(c));
   const unfetched = !node.children && node.more > 0;
   // Finished branches fold away on their own, unless opened by hand.
-  const open = openState.has(path) ? openState.get(path) : depth < 2 && !branchDone(node, steps);
+  const open = leading ? filterOpen.get(path) ?? true
+    : openState.has(path) ? openState.get(path) : depth < 2 && !branchDone(node, steps);
   if (open && unfetched) loadBranchSoon(positions);
   const caret = children.length || unfetched
-    ? `<button class="plan-caret" data-action="job-tree-toggle" data-path="${escapeHtml(path)}" aria-expanded="${open}" title="${open ? 'Collapse' : 'Expand'}">${open ? '▾' : '▸'}</button>`
+    ? `<button class="plan-caret" data-action="job-tree-toggle" data-path="${escapeHtml(path)}"${leading ? ' data-filter' : ''} aria-expanded="${open}" title="${open ? 'Collapse' : 'Expand'}">${open ? '▾' : '▸'}</button>`
     : '<span class="plan-caret"></span>';
   const icon = node.icon
     ? `<img class="${iconClass('plan-icon', node.icon)}" src="${iconUrl(node.icon)}" alt="" loading="lazy" data-remove-on-error>`
@@ -86,7 +103,8 @@ function nodeHtml(node, parentPath, depth, positions) {
   const details = [];
   if (node.pattern) details.push(escapeHtml(node.pattern.provider || '?'));
   if (storage) details.push('from storage');
-  return `<li class="plan-node job-node${storage ? ' job-storage' : ''}" data-pos="${escapeHtml(positions)}" data-step="${escapeHtml(node.step || '')}">
+  const matched = hit && hit.self ? ' filter-match' : '';
+  return `<li class="plan-node job-node${storage ? ' job-storage' : ''}${matched}" data-pos="${escapeHtml(positions)}" data-step="${escapeHtml(node.step || '')}">
     <div class="plan-row">
       ${caret}${icon}
       <div class="plan-text">
@@ -96,8 +114,8 @@ function nodeHtml(node, parentPath, depth, positions) {
       </div>
     </div>
     ${open && unfetched ? '<ul><li class="plan-loading">Loading…</li></ul>' : ''}
-    ${open && children.length ? `<ul>${children.map((c, i) =>
-    nodeHtml(c, path, depth + 1, positions === '' ? String(i) : `${positions}.${i}`)).join('')}</ul>` : ''}
+    ${open && children.length ? `<ul>${children.map(([c, i]) =>
+    nodeHtml(c, path, depth + 1, positions === '' ? String(i) : `${positions}.${i}`, leading)).join('')}</ul>` : ''}
   </li>`;
 }
 
@@ -109,7 +127,11 @@ function render() {
   const body = document.getElementById('ingredientsTree');
   if (!treeData || !treeData.tree) return;
   const scrollTop = body.scrollTop;
-  body.innerHTML = `<ul class="plan-tree job-tree">${nodeHtml(treeData.tree.root, '', 0, '')}</ul>`;
+  const filtering = filterTerms.length > 0;
+  hits = filtering ? filterJobTree(treeData.tree.root, filterTerms) : new Map();
+  const noMatch = filtering && !hits.has(treeData.tree.root)
+    ? '<li class="plan-none">No step matches the filter (of those loaded so far).</li>' : '';
+  body.innerHTML = `<ul class="plan-tree job-tree">${nodeHtml(treeData.tree.root, '', 0, '', filtering)}${noMatch}</ul>`;
   body.scrollTop = scrollTop;
   doneShape = doneSignature();
   // A redrawn bar starts from nothing: put it straight where it was,
@@ -258,6 +280,8 @@ async function jumpTo(key) {
   jump = jump && jump.key === key ? { key, index: (jump.index + 1) % places.length } : { key, index: 0 };
   const positions = places[jump.index];
   const forTree = treeData;
+  // The filter could hide the very step; it goes, as in the craft plan.
+  if (filterTerms.length) clearFilter();
   const loaded = await ensureLoaded(forTree.tree.root, positions, (prefix) => {
     branchesLoading.add(prefix);
     return loadBranch(prefix, forTree);
@@ -282,6 +306,21 @@ export function showJobTree(cpuName) {
   refreshJobTree();
 }
 
+// What the Ingredients dialog's filter box holds, for both its views.
+export function setJobTreeFilter(query) {
+  filterTerms = parseSearchQuery(query);
+  filterOpen = new Map();
+  if (!cpu || !treeData || !treeData.tree) return;
+  document.getElementById('ingredientsTree').scrollTop = 0;
+  render();
+}
+
+function clearFilter() {
+  const input = document.getElementById('ingredientsFilter');
+  input.value = '';
+  input.dispatchEvent(new Event('input'));  // the grid goes back too
+}
+
 export function hideJobTree() {
   cpu = null;
   treeData = null;
@@ -291,7 +330,7 @@ export function hideJobTree() {
 export function setupJobTreeActions() {
   delegateActions(document.getElementById('ingredientsTreeWrap'), {
     'job-tree-toggle': (el) => {
-      openState.set(el.dataset.path, el.getAttribute('aria-expanded') !== 'true');
+      (el.hasAttribute('data-filter') ? filterOpen : openState).set(el.dataset.path, el.getAttribute('aria-expanded') !== 'true');
       render();
     },
     'job-tree-jump': (el) => {

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { branchCounts, branchDone, stepPercent, stepText } from '../../static/js/job-tree.js';
+import { parseSearchQuery } from '../../static/js/search.js';
+import { branchCounts, branchDone, filterJobTree, stepPercent, stepText } from '../../static/js/job-tree.js';
 
 test('stepText and stepPercent say how much of a step is made', () => {
   assert.equal(stepText({ total: 4000, left: 2800 }), '1.2k / 4.0k');
@@ -32,4 +33,15 @@ test('branchDone: every crafted step under it done, storage leaves aside', () =>
   assert.equal(branchDone(done, steps), true);
   assert.equal(branchDone({ step: 'ingot', status: 'craft', children: [{ step: 'plate', status: 'craft' }] }, steps), false);
   assert.equal(branchDone({ step: 'unknown', status: 'craft' }, steps), false);
+});
+
+test('filterJobTree marks matching steps and the ones leading to them', () => {
+  const dust = { name: 'Iron Dust', children: [{ name: 'Iron Ore' }] };
+  const root = { name: 'Iron Ingot', children: [dust, { name: 'Coal' }] };
+  const hits = filterJobTree(root, parseSearchQuery('dust'));
+  assert.deepEqual(hits.get(root), { self: false, below: true });
+  assert.deepEqual(hits.get(dust), { self: true, below: false });
+  assert.equal(hits.size, 2);
+  // Steps carry no mod.
+  assert.equal(filterJobTree(root, parseSearchQuery('@gregtech')).size, 0);
 });

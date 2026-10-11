@@ -536,8 +536,21 @@ async function main() {
     await click(`$$('#ingredientsTree [data-action="job-tree-toggle"]')[0]`);
     await waitFor('shut, saying what is under it', `$$('#ingredientsTree li.job-node').length === 1
       && $('#ingredientsTree .job-step-note .job-count-stuck')?.textContent === '1 stuck'`);
+    // The filter box works on the tree too: only the way to a match,
+    // opened even where it was shut, the match marked.
+    await evaluate(`typeInto('#ingredientsFilter', 'neutronium'), true`);
+    await waitFor('filtered tree', `(() => {
+      const rows = $$('#ingredientsTree li.job-node');
+      return rows.length === 3 && rows[2].classList.contains('filter-match')
+        && !rows[0].classList.contains('filter-match');
+    })()`);
+    await evaluate(`typeInto('#ingredientsFilter', 'gold'), true`);
+    await waitFor('nothing matches', `$$('#ingredientsTree li.job-node').length === 1
+      && $('#ingredientsTree').textContent.includes('No step matches')`);
+    // A stuck chip clears the filter to show its step.
     await click(`$('#ingredientsStuck .plan-chip')`);
-    await waitFor('jumped to it', `$('#ingredientsTree li[data-pos="0"] > .plan-row')?.classList.contains('plan-jump')`);
+    await waitFor('jumped to it', `$('#ingredientsTree li[data-pos="0"] > .plan-row')?.classList.contains('plan-jump')
+      && $('#ingredientsFilter').value === ''`);
     await click(`$('#ingredientsModal [data-view="grid"]')`);
     await waitFor('grid again', `visible($('#ingredientsGrid')) && $('#ingredientsTreeWrap').hidden`);
     await evaluate(`pressKey('Escape'), true`);
