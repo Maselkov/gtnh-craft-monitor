@@ -53,3 +53,20 @@ export function flashRow(container, positions) {
   void row.offsetWidth;  // restart the flash on a second jump to the same row
   row.classList.add('plan-jump');
 }
+
+// For a tree's filter box: which steps match themselves (self), and
+// which have a match somewhere under them (below), by matches(node) -
+// only as far as the tree has been fetched; a branch not loaded yet
+// can't be searched.
+export function matchTree(root, matches) {
+  const hits = new Map();
+  const walk = (node) => {
+    let below = false;
+    for (const c of node.children || []) if (walk(c)) below = true;
+    const self = matches(node);
+    if (self || below) hits.set(node, { self, below });
+    return self || below;
+  };
+  walk(root);
+  return hits;
+}

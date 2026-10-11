@@ -10,7 +10,7 @@
 
 import { itemMatchesSearch, parseSearchQuery } from './search.js';
 import { bindCellTooltip } from './tooltip.js';
-import { ensureLoaded, flashRow, nodeAt, openAbove } from './tree-nav.js';
+import { ensureLoaded, flashRow, matchTree, nodeAt, openAbove } from './tree-nav.js';
 import { bindFilterInput, delegateActions, escapeHtml, essentiaBadgeHtml, formatQty, formatRelativeTime, iconClass, iconUrl, kindTooltipHtml } from './util.js';
 
 const VIEW_KEY = 'gtnhCraftMonitor.planView';
@@ -145,20 +145,9 @@ export function nameMatches(it, terms) {
   return itemMatchesSearch({ name: displayName(it), mod: '' }, terms);
 }
 
-// For the tree filter: which steps match themselves (self), and which
-// have a match somewhere under them (below) - only as far as the tree
-// has been fetched; a branch not loaded yet can't be searched.
+// For the tree filter: see matchTree in tree-nav.js.
 export function filterTree(root, terms) {
-  const hits = new Map();
-  const walk = (node) => {
-    let below = false;
-    for (const c of node.children || []) if (walk(c)) below = true;
-    const self = nameMatches(node, terms);
-    if (self || below) hits.set(node, { self, below });
-    return self || below;
-  };
-  walk(root);
-  return hits;
+  return matchTree(root, (node) => nameMatches(node, terms));
 }
 
 // ---------- list view ----------
