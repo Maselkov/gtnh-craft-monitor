@@ -356,6 +356,34 @@ class TestPaging:
             node = node["children"][0]
         assert node["name"] == f"Part {2 + planner.MISSING_PATH_BUDGET}"
 
+    def test_place_index_lists_every_item_and_where(self, monkeypatch):
+        index = plan(CHAIN, {"Ingot": 100}, "Gear", 2)["index"]
+        ingot = index[key("Ingot")]
+        # In stock, so not in `missing`, but still searchable.
+        assert (ingot["name"], ingot["at"], ingot["places"]) == ("Ingot", ["0.0", "1.0"], 2)
+        assert index[key("Gear")]["at"] == [""]
+        assert planner.index_listing(index)[0].keys() == {"key", "name", "places"}
+        monkeypatch.setattr(planner, "MAX_REVEAL", 1)
+        assert plan(CHAIN, {"Ingot": 99}, "Gear", 2)["index"][key("Ingot")]["at"] == ["0.0"]
+
+    def test_reveal_opens_only_the_way_to_the_places(self):
+        result = plan(CHAIN, {"Ingot": 100}, "Gear", 2)
+        root = planner.reveal(result["root"], ["1.0"])
+        plate, bolt = child(root, "Plate"), child(root, "Bolt")
+        assert plate["more"] == 1 and "children" not in plate
+        assert child(bolt, "Ingot")["name"] == "Ingot"
+        assert planner.reveal(result["root"], [])["more"] == 2
+
+    def test_reveal_answer_caps_the_places(self, monkeypatch):
+        result = plan(CHAIN, {"Ingot": 100}, "Gear", 2)
+        answer = planner.reveal_answer(result, [key("Ingot"), "nope"])
+        assert (answer["revealed"], answer["places"]) == (2, 2)
+        assert child(child(answer["node"], "Bolt"), "Ingot")
+        monkeypatch.setattr(planner, "MAX_REVEAL", 1)
+        answer = planner.reveal_answer(result, [key("Ingot")])
+        assert (answer["revealed"], answer["places"]) == (1, 2)
+        assert "children" not in child(answer["node"], "Bolt")
+
     def test_subtree_by_child_positions(self):
         root = plan(CHAIN, {}, "Gear", 2)["root"]
         assert planner.subtree(root, [])["name"] == "Gear"
@@ -469,6 +497,18 @@ class TestRoute:
         bad = client.get(self.URL, query_string=self.params("Gear", 2, path="9.9", version=first["version"]))
         assert bad.get_json() == {"stale": True}
         assert client.get(self.URL, query_string=self.params("Gear", 2, path="x")).status_code == 400
+
+    def test_reveal_finds_what_the_first_levels_left_out(self, client, api_headers):
+        self.scan(client, api_headers, {})
+        login_as(client, "usr_alice")
+        first = client.get(self.URL, query_string=self.params("Gear", 2)).get_json()
+        assert {e["name"] for e in first["plan"]["index"]} == {"Gear", "Plate", "Bolt", "Ingot"}
+        params = self.params("Gear", 2, reveal=key("Ingot"), version=first["version"])
+        data = client.get(self.URL, query_string=params).get_json()
+        assert (data["revealed"], data["places"]) == (2, 2)
+        assert child(child(data["node"], "Bolt"), "Ingot")["status"] == "missing"
+        stale = client.get(self.URL, query_string=self.params("Gear", 2, reveal=key("Ingot"), version="old"))
+        assert stale.get_json() == {"stale": True}
 
     def test_a_branch_asked_for_after_a_new_scan_is_stale(self, client, api_headers):
         self.scan(client, api_headers, {})

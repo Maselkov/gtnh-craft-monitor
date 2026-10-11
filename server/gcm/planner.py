@@ -62,6 +62,9 @@ MAX_JUMPS = 50
 # to what's missing, so the dialog can show it without asking for every
 # branch in between. Past this, branches come as they're opened.
 MISSING_PATH_BUDGET = 600
+# How many places reveal() opens the way to in one answer, for a filter
+# that matches an item used all over a big tree.
+MAX_REVEAL = 200
 
 _index_lock = threading.Lock()
 _index_cache = (None, None)  # (the pattern list it was built from, _Index)
@@ -531,6 +534,7 @@ def plan(patterns, stock, key, amount, choices=None, rules=None, describe=None):
         "missing": [i for i in items if i["missing"] > 0],
         "steps": planner.nodes,
         "truncated": planner.truncated,
+        "index": place_index(root),
     }
 
 
@@ -637,6 +641,87 @@ def subtree(root, path):
             return None
         node = children[position]
     return node
+
+
+def place_index(root):
+    """{key: {key, name, variant_name, places, at}} for each item in the
+    tree, every step counted (stock, missing and crafted alike): what a
+    tree's filter box searches, though only the first levels are sent.
+    `at` lists the first MAX_REVEAL of its places (child positions, in
+    tree order) and `places` says how many there are in all."""
+    index = {}
+    stack = [(root, "")]
+    while stack:
+        node, pos = stack.pop()
+        entry = index.get(node["key"])
+        if entry is None:
+            entry = index[node["key"]] = {"key": node["key"], "name": node.get("name"), "places": 0, "at": []}
+            if node.get("variant_name"):
+                entry["variant_name"] = node["variant_name"]
+        entry["places"] += 1
+        if len(entry["at"]) < MAX_REVEAL:
+            entry["at"].append(pos)
+        children = node.get("children") or []
+        for i in range(len(children) - 1, -1, -1):
+            stack.append((children[i], f"{pos}.{i}" if pos else str(i)))
+    return index
+
+
+def index_listing(index):
+    """place_index() as sent with a tree: the names, without places."""
+    return [{k: v for k, v in e.items() if k != "at"} for e in index.values()]
+
+
+def reveal_places(index, keys):
+    """The places reveal() should open for the items `keys` (from a
+    filter): (positions, how many places those items have in all), at
+    most MAX_REVEAL, in tree order."""
+    entries = [index[k] for k in keys if k in index]
+    places = sorted({pos for e in entries for pos in e["at"]},
+                    key=lambda pos: [int(p) for p in pos.split(".")] if pos else [])
+    return places[:MAX_REVEAL], sum(e["places"] for e in entries)
+
+
+def reveal_answer(result, keys):
+    """What a tree route answers to ?reveal=<item key>...: the tree cut
+    down to the way to those items' places (`node`), how many places
+    that shows (`revealed`) and how many there are (`places`)."""
+    places, total = reveal_places(result["index"], keys)
+    return {"node": reveal(result["root"], places), "revealed": len(places), "places": total}
+
+
+def reveal(root, places):
+    """A copy of root with only the steps on the way to each of places
+    (child positions, "0.3.1"): the steps above each one, with their
+    own steps, and any other step's steps left out (`more`), as trim()
+    does. For a filter to show matches that haven't been sent yet."""
+    want = set()
+    for pos in places:
+        steps = tuple(int(p) for p in pos.split(".")) if pos else ()
+        want.update(steps[:i] for i in range(len(steps)))
+
+    def copy(n):
+        return {k: v for k, v in n.items() if k != "children"}
+
+    out = copy(root)
+    stack = [(root, out, ())]
+    while stack:
+        src, dst, at = stack.pop()
+        children = src.get("children")
+        if children is None:
+            continue
+        if not children:
+            dst["children"] = []
+            continue
+        if at not in want:
+            dst["more"] = len(children)
+            continue
+        dst["children"] = []
+        for i, c in enumerate(children):
+            cc = copy(c)
+            dst["children"].append(cc)
+            stack.append((c, cc, at + (i,)))
+    return out
 
 
 def reset():

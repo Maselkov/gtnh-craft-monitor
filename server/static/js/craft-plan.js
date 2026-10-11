@@ -10,7 +10,7 @@
 
 import { itemMatchesSearch, parseSearchQuery } from './search.js';
 import { bindCellTooltip } from './tooltip.js';
-import { ensureLoaded, flashRow, matchTree, nodeAt, openAbove } from './tree-nav.js';
+import { ensureLoaded, flashRow, graft, matchingEntries, matchTree, nodeAt, openAbove, searchNoteText } from './tree-nav.js';
 import { bindFilterInput, delegateActions, escapeHtml, essentiaBadgeHtml, formatQty, formatRelativeTime, iconClass, iconUrl, kindTooltipHtml } from './util.js';
 
 const VIEW_KEY = 'gtnhCraftMonitor.planView';
@@ -29,6 +29,11 @@ let branchesLoading = new Set();  // child-position paths being fetched
 let filterTerms = [];   // parsed filter box, [] for none
 let filterOpen = new Map();  // tree path -> open, toggled while filtering
 let filterHits = new Map();  // tree step -> { self, below }, for this render
+let search = null;      // { entries, pending, revealed } while filtering the tree
+let revealTimer = null;
+const REVEAL_DELAY_MS = 250;
+// Items asked about at once; the server opens MAX_REVEAL places of them.
+const REVEAL_KEYS = 100;
 
 function readSetting(key, fallback) {
   try { return localStorage.getItem(key) || fallback; } catch (e) { return fallback; }
@@ -214,10 +219,11 @@ function nodeHtml(node, parentPath, depth, positions, filtering) {
   const segment = pathSegment(node, positions);
   const path = parentPath ? parentPath + ' > ' + segment : segment;
   const hit = filtering ? filterHits.get(node) : null;
-  // On the way to a match: only the steps leading to one, opened.
+  // On the way to a match: only the steps leading to one, opened -
+  // available or not, as that's what was searched for.
   const leading = filtering && !(hit && hit.self);
-  let children = shownChildren(node, hideAvailable);
-  if (leading) children = children.filter(([c]) => filterHits.has(c));
+  const children = leading ? shownChildren(node, false).filter(([c]) => filterHits.has(c))
+    : shownChildren(node, hideAvailable);
   // Big plans come a few levels at a time: `more` says this step has
   // steps below it that haven't been fetched yet.
   const unfetched = !node.children && node.more > 0;
@@ -284,10 +290,10 @@ function nodeHtml(node, parentPath, depth, positions, filtering) {
 function renderTree(plan) {
   const filtering = filterTerms.length > 0;
   filterHits = filtering ? filterTree(plan.root, filterTerms) : new Map();
-  const nothingShort = hideAvailable && !plan.root.missing_below
+  const nothingShort = hideAvailable && !filtering && !plan.root.missing_below
     ? '<li class="plan-none">Nothing is short: everything is in stock or craftable.</li>' : '';
-  const noMatch = filtering && !filterHits.has(plan.root)
-    ? '<li class="plan-none">No step matches the filter (of those loaded so far).</li>' : '';
+  const note = filtering ? searchNoteText(search, filterHits.has(plan.root), 'plan') : '';
+  const noMatch = note ? `<li class="plan-none">${escapeHtml(note)}</li>` : '';
   return `<ul class="plan-tree">${nodeHtml(plan.root, '', 0, '', filtering)}${nothingShort}${noMatch}</ul>`;
 }
 
@@ -423,6 +429,43 @@ async function loadBranch(positions, planData) {
   }
 }
 
+// Matches past the levels loaded so far: from the whole plan's index,
+// the items the filter picks, and once typing stops, the way to their
+// places from the server (planner.reveal), grafted into the tree.
+function startSearch() {
+  if (revealTimer) clearTimeout(revealTimer);
+  revealTimer = null;
+  if (!filterTerms.length || !lastPlan || view !== 'tree') {
+    search = null;
+    return;
+  }
+  const entries = matchingEntries(lastPlan.plan.index, (e) => nameMatches(e, filterTerms));
+  search = { entries, pending: entries.length > 0, revealed: 0 };
+  if (entries.length) revealTimer = setTimeout(() => reveal(search, lastPlan), REVEAL_DELAY_MS);
+}
+
+async function reveal(forSearch, planData) {
+  const params = planParams();
+  params.set('version', planData.version);
+  for (const e of forSearch.entries.slice(0, REVEAL_KEYS)) params.append('reveal', e.key);
+  try {
+    const res = await fetch('/api/network/plan?' + params);
+    const data = await res.json().catch(() => ({}));
+    if (forSearch !== search || planData !== lastPlan) return;
+    if (data.stale) {
+      scheduleFetch(0);
+      return;
+    }
+    if (res.ok && data.node) graft(planData.plan.root, data.node);
+    forSearch.revealed = data.revealed || 0;
+  } catch (e) {
+    if (forSearch !== search) return;
+    // Left with what's loaded; typing again asks again.
+  }
+  forSearch.pending = false;
+  render();
+}
+
 // The next place the item is short at: opens the tree down to it,
 // scrolls it into view and flashes it.
 async function jumpTo(key) {
@@ -437,6 +480,7 @@ async function jumpTo(key) {
   if (filterTerms.length) {
     document.getElementById('craftPlanFilter').value = '';
     filterTerms = [];
+    startSearch();
   }
   if (view !== 'tree') {
     view = 'tree';
@@ -474,6 +518,7 @@ async function fetchPlan() {
       itemsByKey = new Map(data.plan.items.map(i => [i.key, i]));
       showNote(null);
     }
+    startSearch();
     render();
   } catch (e) {
     if (e.name !== 'AbortError' && controller === inFlight) showNote('Couldn\'t reach the server for a plan.');
@@ -496,6 +541,7 @@ export function openCraftPlan(it, amountValue) {
   openState = new Map();
   filterTerms = [];
   filterOpen = new Map();
+  startSearch();
   document.getElementById('craftPlanFilter').value = '';
   missingExpanded = false;
   lastPlan = null;
@@ -522,6 +568,7 @@ export function closeCraftPlan() {
   fetchTimer = null;
   if (inFlight) inFlight.abort();
   inFlight = null;
+  startSearch();  // lastPlan is gone: drops any search
   showNote(null);
   render();
 }
@@ -534,6 +581,7 @@ export function setupCraftPlanActions() {
     'plan-view': (el) => {
       view = el.dataset.view === 'tree' ? 'tree' : 'list';
       writeSetting(VIEW_KEY, view);
+      startSearch();
       render();
     },
     'plan-jump': (el) => {
@@ -557,6 +605,7 @@ export function setupCraftPlanActions() {
   bindFilterInput(document.getElementById('craftPlanFilter'), () => {
     filterTerms = parseSearchQuery(document.getElementById('craftPlanFilter').value);
     filterOpen = new Map();
+    startSearch();
     if (lastPlan) {
       document.getElementById('craftPlanBody').scrollTop = 0;
       render();

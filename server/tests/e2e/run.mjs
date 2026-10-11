@@ -546,7 +546,7 @@ async function main() {
     })()`);
     await evaluate(`typeInto('#ingredientsFilter', 'gold'), true`);
     await waitFor('nothing matches', `$$('#ingredientsTree li.job-node').length === 1
-      && $('#ingredientsTree').textContent.includes('No step matches')`);
+      && $('#ingredientsTree').textContent.includes('Nothing in this job matches')`);
     // A stuck chip clears the filter to show its step.
     await click(`$('#ingredientsStuck .plan-chip')`);
     await waitFor('jumped to it', `$('#ingredientsTree li[data-pos="0"] > .plan-row')?.classList.contains('plan-jump')
@@ -800,6 +800,16 @@ async function main() {
       && ${rows}[3].includes('via Fluid Solidifier') && ${rows}[3].includes('makes 3')
       && ${rows}[5].includes('via Furnace') && ${rows}[5].includes('makes 2')
       && !$('#craftPlanBody select.plan-alt')`);
+    // The filter searches the whole plan, not just the levels sent: the
+    // Neutronium Ingot the first furnace part takes from stock is three
+    // levels down, unopened, and still found.
+    await evaluate(`typeInto('#craftPlanFilter', 'neutronium ingot'), true`);
+    await waitFor('found where not loaded', `$$('#craftPlanBody .filter-match').length === 2
+      && ${rows}.some(r => r.includes('Neutronium Ingot') && r.includes('in stock'))`);
+    await evaluate(`typeInto('#craftPlanFilter', 'gold'), true`);
+    await waitFor('nothing in the plan', `$('#craftPlanBody').textContent.includes('Nothing in this plan matches')`);
+    await evaluate(`typeInto('#craftPlanFilter', ''), true`);
+    await waitFor('unfiltered again', `$$('#craftPlanBody .plan-node').length === 7`);
     // Down the last part to what's short.
     await click(toggle('Iron Dust', 1));
     await waitFor('dust open', `${rows}.some(r => r.includes('Neutronium Ingot') && r.includes('craft 2'))`);
