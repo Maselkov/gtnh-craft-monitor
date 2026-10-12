@@ -9,7 +9,7 @@
 // report to the next instead of jumping.
 
 import { itemMatchesSearch, parseSearchQuery } from './search.js';
-import { ensureLoaded, flashRow, matchTree, nodeAt, openAbove } from './tree-nav.js';
+import { ensureLoaded, flashRow, graft, matchingEntries, matchTree, nodeAt, openAbove, searchNoteText } from './tree-nav.js';
 import { delegateActions, escapeHtml, formatDuration, formatQty, iconClass, iconUrl } from './util.js';
 
 let cpu = null;            // the CPU shown, null when the tree isn't
@@ -24,6 +24,11 @@ let fetching = false;
 let filterTerms = [];      // parsed filter box (ingredients.js), [] for none
 let filterOpen = new Map();  // tree path -> open, toggled while filtering
 let hits = new Map();      // tree step -> { self, below }, for this render
+let search = null;         // { entries, pending, revealed } while filtering
+let revealTimer = null;
+const REVEAL_DELAY_MS = 250;
+// Items asked about at once; the server opens MAX_REVEAL places of them.
+const REVEAL_KEYS = 100;
 
 // ---------- pure helpers (tested under server/tests/js/) ----------
 
@@ -68,8 +73,12 @@ export function branchDone(node, stepsByKey) {
 
 // For the filter box: which steps match it, and which lead to a match.
 // Steps carry no mod, so an @mod term matches nothing.
+function nameMatches(it, terms) {
+  return itemMatchesSearch({ name: it.name || '', mod: '' }, terms);
+}
+
 export function filterJobTree(root, terms) {
-  return matchTree(root, (node) => itemMatchesSearch({ name: node.name || '', mod: '' }, terms));
+  return matchTree(root, (node) => nameMatches(node, terms));
 }
 
 // ---------- drawing ----------
@@ -129,8 +138,8 @@ function render() {
   const scrollTop = body.scrollTop;
   const filtering = filterTerms.length > 0;
   hits = filtering ? filterJobTree(treeData.tree.root, filterTerms) : new Map();
-  const noMatch = filtering && !hits.has(treeData.tree.root)
-    ? '<li class="plan-none">No step matches the filter (of those loaded so far).</li>' : '';
+  const note = filtering ? searchNoteText(search, hits.has(treeData.tree.root), 'job') : '';
+  const noMatch = note ? `<li class="plan-none">${escapeHtml(note)}</li>` : '';
   body.innerHTML = `<ul class="plan-tree job-tree">${nodeHtml(treeData.tree.root, '', 0, '', filtering)}${noMatch}</ul>`;
   body.scrollTop = scrollTop;
   doneShape = doneSignature();
@@ -217,6 +226,42 @@ async function fetchTree() {
     showNote(data.reason || 'No tree for this job.');
     return;
   }
+  startSearch();
+  render();
+}
+
+// Matches past the levels loaded so far: from the whole tree's index,
+// the items the filter picks, and once typing stops, the way to their
+// places from the server (planner.reveal), grafted into the tree.
+function startSearch() {
+  if (revealTimer) clearTimeout(revealTimer);
+  revealTimer = null;
+  if (!filterTerms.length || !treeData || !treeData.tree) {
+    search = null;
+    return;
+  }
+  const entries = matchingEntries(treeData.tree.index, (e) => nameMatches(e, filterTerms));
+  search = { entries, pending: entries.length > 0, revealed: 0 };
+  if (entries.length) revealTimer = setTimeout(() => reveal(search, treeData), REVEAL_DELAY_MS);
+}
+
+async function reveal(forSearch, forTree) {
+  const params = [['version', forTree.version], ...forSearch.entries.slice(0, REVEAL_KEYS).map(e => ['reveal', e.key])];
+  try {
+    const res = await fetch(treeUrl(params));
+    const data = await res.json().catch(() => ({}));
+    if (forSearch !== search || forTree !== treeData) return;
+    if (data.stale) {
+      fetchTree();
+      return;
+    }
+    if (res.ok && data.node) graft(forTree.tree.root, data.node);
+    forSearch.revealed = data.revealed || 0;
+  } catch (e) {
+    if (forSearch !== search) return;
+    // Left with what's loaded; typing again asks again.
+  }
+  forSearch.pending = false;
   render();
 }
 
@@ -311,6 +356,7 @@ export function setJobTreeFilter(query) {
   filterTerms = parseSearchQuery(query);
   filterOpen = new Map();
   if (!cpu || !treeData || !treeData.tree) return;
+  startSearch();
   document.getElementById('ingredientsTree').scrollTop = 0;
   render();
 }
@@ -325,6 +371,9 @@ export function hideJobTree() {
   cpu = null;
   treeData = null;
   steps = {};
+  search = null;
+  if (revealTimer) clearTimeout(revealTimer);
+  revealTimer = null;
 }
 
 export function setupJobTreeActions() {

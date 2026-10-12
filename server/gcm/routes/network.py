@@ -355,7 +355,9 @@ def network_plan_get():
     a step with more below says how many (`more`), and asking again with
     path (its child positions from the top, "0.3.1") and the first
     answer's version gets the next level under it, or {stale: true} if
-    the patterns or stock have changed since."""
+    the patterns or stock have changed since. reveal=<item key>... with
+    the version gets the way to each place those items are at
+    (planner.reveal), for the tree's filter box."""
     internal = request.args.get("internal")
     if not internal:
         return jsonify({"error": "missing internal"}), 400
@@ -393,9 +395,10 @@ def network_plan_get():
             path = [int(p) for p in path_raw.split(".")] if path_raw else []
         except ValueError:
             return jsonify({"error": "bad path"}), 400
+    reveal = request.args.getlist("reveal")
     stock_levels, stock_at, stock_version = inventory.stock_levels()
     version = f"{patterns_at}|{stock_version}"
-    if path is not None and request.args.get("version") != version:
+    if (path is not None or reveal) and request.args.get("version") != version:
         return jsonify({"stale": True})
 
     user_id = g.user["id"]
@@ -411,6 +414,8 @@ def network_plan_get():
         if node is None:
             return jsonify({"stale": True})
         return jsonify({"node": planner.trim(node, 1)})
+    if reveal:
+        return jsonify(planner.reveal_answer(result, reveal))
     return jsonify({
         "plan": {
             **result,
@@ -418,6 +423,7 @@ def network_plan_get():
             # A missing item's places (`at`) only once, in `missing`: the
             # same item is in both lists.
             "items": [{k: v for k, v in i.items() if k != "at"} for i in result["items"]],
+            "index": planner.index_listing(result["index"]),
         },
         "version": version,
         "patterns_updated_at": patterns_at,

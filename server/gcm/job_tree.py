@@ -132,7 +132,8 @@ def build(entry, pattern_list):
     if built is None:
         return None
     root, steps, truncated = built
-    return {"root": root, "at": _annotate(root), "steps": steps, "truncated": truncated}
+    return {"root": root, "at": _annotate(root), "steps": steps, "truncated": truncated,
+            "index": planner.place_index(root)}
 
 
 def tree(cpu):

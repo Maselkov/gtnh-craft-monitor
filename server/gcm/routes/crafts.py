@@ -89,8 +89,10 @@ def crafts_get():
 def crafts_tree_get(cpu):
     """A busy CPU's job as a tree (gcm/job_tree.py), the first levels of
     it; ?path=0.3.1&version=... sends one step's steps, as the craft
-    plan's tree does. {tree: null, reason} when there's none to show,
-    {stale: true} when the job or patterns changed since `version`."""
+    plan's tree does, and ?reveal=<item key>...&version=... the way to
+    each place those items are at (planner.reveal), for the filter box.
+    {tree: null, reason} when there's none to show, {stale: true} when
+    the job or patterns changed since `version`."""
     path_raw = request.args.get("path")
     path = None
     if path_raw is not None:
@@ -98,8 +100,9 @@ def crafts_tree_get(cpu):
             path = [int(p) for p in path_raw.split(".")] if path_raw else []
         except ValueError:
             return jsonify({"error": "bad path"}), 400
+    reveal = request.args.getlist("reveal")
     version = job_tree.version(cpu)
-    if path is not None and (version is None or request.args.get("version") != version):
+    if (path is not None or reveal) and (version is None or request.args.get("version") != version):
         return jsonify({"stale": True})
     result, reason = job_tree.tree(cpu)
     if result is None:
@@ -109,8 +112,10 @@ def crafts_tree_get(cpu):
         if node is None:
             return jsonify({"stale": True})
         return jsonify({"node": planner.trim(node, 1)})
+    if reveal:
+        return jsonify(planner.reveal_answer(result, reveal))
     return jsonify({
-        "tree": {**result, "root": planner.trim(result["root"], 2)},
+        "tree": {**result, "root": planner.trim(result["root"], 2), "index": planner.index_listing(result["index"])},
         "version": version,
     })
 

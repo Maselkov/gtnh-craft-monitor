@@ -70,3 +70,38 @@ export function matchTree(root, matches) {
   walk(root);
   return hits;
 }
+
+// The index entries (each item in the whole tree, sent with its first
+// levels) that matches(entry) picks: which items a filter has to ask
+// the server the way to.
+export function matchingEntries(index, matches) {
+  return (index || []).filter(matches);
+}
+
+// Puts what a ?reveal answer sent (`from`: the same tree, cut down to
+// the way to some places) into the tree loaded so far (`into`): every
+// step it has the steps of that `into` hasn't fetched yet.
+export function graft(into, from) {
+  const stack = [[into, from]];
+  while (stack.length) {
+    const [a, b] = stack.pop();
+    if (!b.children) continue;
+    if (!a.children) {
+      a.children = b.children;
+      delete a.more;
+      continue;
+    }
+    b.children.forEach((c, i) => { if (a.children[i]) stack.push([a.children[i], c]); });
+  }
+}
+
+// What a filtered tree says under it while the server is asked, when
+// nothing in the whole tree matches, and when there are more places
+// than one answer opens. search: { entries, pending, revealed } or null.
+export function searchNoteText(search, found, what) {
+  if (!search) return '';
+  if (!search.entries.length) return `Nothing in this ${what} matches the filter.`;
+  if (search.pending) return found ? '' : 'Searching the whole tree…';
+  const places = search.entries.reduce((n, e) => n + (e.places || 0), 0);
+  return search.revealed < places ? `Showing the first ${search.revealed.toLocaleString()} of ${places.toLocaleString()} places.` : '';
+}

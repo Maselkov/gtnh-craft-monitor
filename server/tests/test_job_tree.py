@@ -84,6 +84,18 @@ class TestTree:
         assert client.get("/api/crafts/A1/tree", query_string={"path": "0", "version": "old"}).get_json() == {"stale": True}
         assert client.get("/api/crafts/A1/tree", query_string={"path": "x"}).status_code == 400
 
+    def test_reveal_for_the_filter(self, client, api_headers):
+        start_job(client, api_headers)
+        first = client.get("/api/crafts/A1/tree").get_json()
+        ingot = next(e for e in first["tree"]["index"] if e["name"] == "Ingot")
+        assert ingot["places"] == 2 and "at" not in ingot
+        query = {"reveal": key(INGOT), "version": first["version"]}
+        data = client.get("/api/crafts/A1/tree", query_string=query).get_json()
+        assert (data["revealed"], data["places"]) == (2, 2)
+        assert child(child(data["node"], "Bolt"), "Ingot")["status"] == "stock"
+        query["version"] = "old"
+        assert client.get("/api/crafts/A1/tree", query_string=query).get_json() == {"stale": True}
+
     def test_nothing_to_show(self, client, api_headers):
         assert client.get("/api/crafts/A1/tree").get_json()["tree"] is None
         report(client, api_headers, pending=[stack("Gear", GEAR[1], 2)])
