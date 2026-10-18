@@ -405,12 +405,20 @@ h1 {
 }
 .top-bar {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 24px;
+  /* Title, tabs and settings in one row. Should it wrap (the sign-in
+     field, a narrow window), what wraps goes on a line ABOVE the tabs,
+     which keep sitting on the border below. */
+  flex-wrap: wrap-reverse;
+  border-bottom: 1px solid rgba(128,128,128,0.2);
+  margin-bottom: 20px;
+}
+.top-bar h1 {
+  margin: 0;
 }
 .top-bar-right {
+  margin-left: auto;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -436,8 +444,8 @@ h1 {
 .tab-bar {
   display: flex;
   gap: 6px;
-  margin: 18px 0 20px 0;
-  border-bottom: 1px solid rgba(128,128,128,0.2);
+  align-self: stretch;
+  align-items: flex-end;
 }
 .tab-btn {
   background: none;
@@ -1848,6 +1856,14 @@ details.stock-rules {
 
 /* ---------- Phone width ---------- */
 @media (max-width: 520px) {
+  /* No room for the title beside the tabs and the settings button;
+     the open tab already says where you are. */
+  .top-bar h1 {
+    display: none;
+  }
+  .tab-bar {
+    gap: 4px;
+  }
   /* Each stock rule's label on its own line, its inputs sharing the
      next one - rather than "refill to"'s box wrapping alone. */
   .stock-panel-row .stock-panel-label:first-child {
