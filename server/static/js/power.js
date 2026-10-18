@@ -1,6 +1,6 @@
 // Power tab: readings, trend and chart.
 
-import { CHART_RANGE_SECONDS_JS, CHART_TIME_CONFIG } from './history.js';
+import { CHART_RANGE_SECONDS_JS, CHART_TIME_CONFIG, CHART_X_TICKS } from './history.js';
 import { delegateActions, formatDuration, formatRate } from './util.js';
 
 // ---------- Power chart ----------
@@ -231,7 +231,7 @@ function renderPower(data) {
           min: axisMin,
           max: axisMax,
           time: CHART_TIME_CONFIG,
-          ticks: { color: '#8a8f98', maxRotation: 0, autoSkip: true },
+          ticks: CHART_X_TICKS,
           grid: { color: 'rgba(128,128,128,0.1)' },
         },
         y: { ticks: { color: '#8a8f98', callback: (v) => formatEU(v) }, grid: { color: 'rgba(128,128,128,0.1)' } },
