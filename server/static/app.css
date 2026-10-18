@@ -621,6 +621,31 @@ h1 {
   flex: 1;
   min-width: 200px;
 }
+.network-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+/* Grid / list: icons only, joined into one segmented button. */
+.view-toggle {
+  gap: 0;
+}
+.view-toggle .range-btn {
+  display: flex;
+  align-items: center;
+  font-size: 14px;
+  padding: 6px 9px;
+}
+.view-toggle .range-btn:first-child {
+  border-radius: 8px 0 0 8px;
+}
+.view-toggle .range-btn:last-child {
+  border-radius: 0 8px 8px 0;
+  margin-left: -1px;
+}
+.view-toggle .range-btn.active {
+  position: relative;  /* its border over the neighbour's shared edge */
+}
 .network-search {
   width: 100%;
   background: var(--card);
@@ -1895,6 +1920,14 @@ details.stock-rules {
   }
   .tab-bar {
     gap: 4px;
+  }
+  /* Search on its own line; sort and view share the next, at either end. */
+  .network-search-wrap {
+    flex-basis: 100%;
+  }
+  .network-controls {
+    width: 100%;
+    justify-content: space-between;
   }
   /* Each stock rule's label on its own line, its inputs sharing the
      next one - rather than "refill to"'s box wrapping alone. */
