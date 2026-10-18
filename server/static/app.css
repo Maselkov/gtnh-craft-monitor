@@ -714,6 +714,49 @@ h1 {
   color: var(--accent);
   filter: drop-shadow(0 0 2px rgba(0,0,0,0.9));
 }
+/* List view: each cell becomes a row with the item's name. */
+.network-cell-name {
+  display: none;
+}
+.network-grid.list {
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 4px;
+}
+.network-grid.list .network-cell {
+  aspect-ratio: auto;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 6px 10px 6px 8px;
+  min-width: 0;
+}
+.network-grid.list .network-cell-icon {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+}
+.network-grid.list .network-cell-name {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.network-cell-variant {
+  color: var(--muted);
+}
+.network-grid.list .network-cell-qty {
+  position: static;
+  order: 2;
+  font-size: 12px;
+  text-shadow: none;
+}
+.network-grid.list .network-cell-pattern-badge {
+  position: static;
+  order: 1;
+  filter: none;
+}
 .network-note {
   grid-column: 1 / -1;
   text-align: center;

@@ -12,6 +12,10 @@ import { delegateActions, escapeHtml, essentiaBadgeHtml, formatQty, formatRelati
 // ---------- Network browser ----------
 export let lastNetworkData = null;
 let networkSort = 'size';
+// Grid (icons only, like the game's terminal) or list (with names, for
+// a touch screen where there's no hover tooltip), per viewer.
+const NETWORK_VIEW_KEY = 'gtnhCraftMonitor.networkView';
+let networkView = 'grid';
 let networkShownItems = [];  // the currently-rendered array, indexed by
                               // each cell's data-idx - lets the tooltip
                               // handler look up full item data without
@@ -215,10 +219,26 @@ export async function fetchNetwork() {
 
 function setNetworkSort(sort) {
   networkSort = sort;
-  document.querySelectorAll('#networkTab .range-btn').forEach(btn => {
+  document.querySelectorAll('#networkTab [data-action="network-sort"]').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.sort === sort);
   });
   renderNetworkList();
+}
+
+function showNetworkView() {
+  document.getElementById('networkList').classList.toggle('list', networkView === 'list');
+  document.querySelectorAll('#networkTab [data-action="network-view"]').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.view === networkView);
+  });
+}
+
+function setNetworkView(view) {
+  networkView = view;
+  try { localStorage.setItem(NETWORK_VIEW_KEY, view); } catch (e) { /* per-viewer nicety only */ }
+  showNetworkView();
+  // Rows are taller than cells: a list that filled the window as a grid
+  // may not any more, or the other way round.
+  fillNetworkViewportIfNeeded();
 }
 
 // Infinite scroll: all items are already loaded client-side (the
@@ -244,6 +264,9 @@ function buildNetworkCellHtml(it, idx) {
     ? `<img class="${iconClass('network-cell-icon', it.icon)}" src="${iconUrl(it.icon)}" alt="" loading="lazy" data-remove-on-error>`
     : essentiaBadgeHtml(it, 'network-cell-icon');
   const qty = `<span class="network-cell-qty">${formatQty(it.size)}</span>`;
+  // Hidden in the grid view by CSS - both views share this one cell.
+  const name = `<span class="network-cell-name">${escapeHtml(it.name || '?')}${
+    it.variant_name ? ` <span class="network-cell-variant">${escapeHtml(it.variant_name)}</span>` : ''}</span>`;
   // Blank Pattern icon (appliedenergistics2:item.ItemMultiMaterial
   // damage 52, confirmed against the real NESQL export) - shown for
   // ANY craftable item regardless of current stock, matching how the
@@ -256,7 +279,7 @@ function buildNetworkCellHtml(it, idx) {
   const stock = stockBadgeFor(it);
   const stockBadge = stock ? `<span class="network-cell-stock-badge${stock.low ? ' low' : ''}">${stock.icon}</span>` : '';
   const classes = 'network-cell' + (it.isCraftable ? ' craftable' : '') + (stock && stock.low ? ' stock-low' : '');
-  return `<div class="${classes}" data-idx="${idx}">${icon}${qty}${patternBadge}${pinBadge}${stockBadge}</div>`;
+  return `<div class="${classes}" data-idx="${idx}">${icon}${name}${qty}${patternBadge}${pinBadge}${stockBadge}</div>`;
 }
 
 export function updateNetworkSearchHighlight() {
@@ -412,6 +435,8 @@ function onNetworkScroll() {
 let networkResizeTicking = false;
 
 export function setupNetworkActions() {
+  try { networkView = localStorage.getItem(NETWORK_VIEW_KEY) === 'list' ? 'list' : 'grid'; } catch (e) { /* grid */ }
+  showNetworkView();
   window.addEventListener('scroll', onNetworkScroll);
 
   window.addEventListener('resize', () => {
@@ -426,5 +451,6 @@ export function setupNetworkActions() {
   document.getElementById('networkSearch').addEventListener('input', onNetworkSearchInput);
   delegateActions(document, {
     'network-sort': (el) => setNetworkSort(el.dataset.sort),
+    'network-view': (el) => setNetworkView(el.dataset.view),
   });
 }
