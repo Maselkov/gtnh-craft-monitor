@@ -2,17 +2,27 @@
 // first. It lives outside #root, so the 3s re-render leaves it alone;
 // it only fetches while open, and after the first page only asks for
 // rows newer than the newest it has. Older pages load as the page
-// nears the bottom, like the network grid.
+// nears the bottom, like the network grid. The filter and status
+// buttons are applied by the server, so they cover every page, not
+// just the ones loaded.
 
 import { activeTab } from './tabs.js';
-import { escapeHtml, formatDuration, formatRelativeTime, iconClass, iconUrl } from './util.js';
+import {
+  bindFilterInput, delegateActions, escapeHtml, formatDuration, formatRelativeTime, iconClass, iconUrl,
+} from './util.js';
 
 const PAGE_SIZE = 25;
+const FILTER_DELAY_MS = 250;
 
 let events = [];      // newest first
 let more = false;     // whether older rows exist past the last one shown
 let loaded = false;
 let loading = false;
+let query = '';
+let status = '';
+let generation = 0;   // bumped when the filter changes, so replies to
+                      // the old one are dropped
+let filterTimer = null;
 
 export function setupCraftHistory() {
   const section = document.getElementById('craftHistory');
@@ -21,6 +31,29 @@ export function setupCraftHistory() {
   });
   window.addEventListener('scroll', onScroll);
   window.addEventListener('resize', onScroll);
+  const filter = document.getElementById('craftHistoryFilter');
+  bindFilterInput(filter, () => {
+    clearTimeout(filterTimer);
+    filterTimer = setTimeout(() => setFilter(filter.value.trim(), status), FILTER_DELAY_MS);
+  });
+  delegateActions(section, {
+    'history-status': (el) => setFilter(query, el.dataset.status),
+  });
+}
+
+function setFilter(newQuery, newStatus) {
+  if (newQuery === query && newStatus === status) return;
+  query = newQuery;
+  status = newStatus;
+  document.querySelectorAll('#craftHistoryStatus [data-action="history-status"]').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.status === status);
+  });
+  generation++;
+  events = [];
+  more = false;
+  loaded = false;
+  loading = false;
+  refreshCraftHistory();
 }
 
 let scrollTicking = false;
@@ -35,8 +68,11 @@ function onScroll() {
 }
 
 async function fetchPage(params) {
-  const query = new URLSearchParams({ limit: PAGE_SIZE, ...params });
-  const res = await fetch(`/api/crafts/history?${query}`);
+  const filters = {};
+  if (query) filters.q = query;
+  if (status) filters.status = status;
+  const search = new URLSearchParams({ limit: PAGE_SIZE, ...filters, ...params });
+  const res = await fetch(`/api/crafts/history?${search}`);
   if (!res.ok) throw new Error(`history: ${res.status}`);
   return res.json();
 }
@@ -46,17 +82,21 @@ export async function refreshCraftHistory() {
   const section = document.getElementById('craftHistory');
   if (!section.open || loading) return;
   loading = true;
+  const gen = generation;
   try {
     if (!loaded || events.length === 0) {
       const page = await fetchPage({});
+      if (gen !== generation) return;
       events = page.events;
       more = page.more;
       loaded = true;
     } else {
       const page = await fetchPage({ after: events[0].id });
+      if (gen !== generation) return;
       if (page.more) {
         // Too many new ones to splice in: start over from the top.
         const first = await fetchPage({});
+        if (gen !== generation) return;
         events = first.events;
         more = first.more;
       } else {
@@ -66,25 +106,27 @@ export async function refreshCraftHistory() {
   } catch (e) {
     // Keep what's shown; the next refresh tries again.
   } finally {
-    loading = false;
+    if (gen === generation) loading = false;
   }
-  render();
+  if (gen === generation) render();
 }
 
 async function loadOlder() {
   const section = document.getElementById('craftHistory');
   if (activeTab !== 'crafts' || !section.open || !more || loading || events.length === 0) return;
   loading = true;
+  const gen = generation;
   document.getElementById('craftHistoryLoading').hidden = false;
   try {
     const page = await fetchPage({ before: events[events.length - 1].id });
+    if (gen !== generation) return;
     events = events.concat(page.events);
     more = page.more;
   } catch (e) { /* ignore - the next scroll tries again */ }
   finally {
-    loading = false;
+    if (gen === generation) loading = false;
   }
-  render();
+  if (gen === generation) render();
 }
 
 function renderRow(e) {
@@ -135,7 +177,8 @@ function render() {
     }
     html += renderRow(e);
   }
-  list.innerHTML = html || '<div class="empty">No crafts have ended yet.</div>';
+  const none = query || status ? 'No crafts match.' : 'No crafts have ended yet.';
+  list.innerHTML = html || (loaded ? `<div class="empty">${none}</div>` : '');
   document.getElementById('craftHistoryLoading').hidden = true;
   // A page short enough not to scroll never fires a scroll event, so
   // check now too. A load renders again, which checks again, until the

@@ -563,3 +563,36 @@ class TestCraftHistory:
         data = history(client, limit="lots", before="x")
         assert len(data["events"]) == 1
         assert len(history(client, limit=0)["events"]) == 1
+
+    def test_q_filters_by_name_and_mod_across_pages(self, client, api_headers):
+        post_job(client, api_headers, busy=False)
+        for output in ("Gear", "Rotor", "Steel Gear", "Plate", "Rotor"):
+            post_job(client, api_headers, output)
+            post_job(client, api_headers, busy=False)
+        first = history(client, q="gear", limit=1)
+        assert [e["itemName"] for e in first["events"]] == ["Steel Gear"]
+        assert first["more"] is True
+        older = history(client, q="gear", limit=1, before=first["events"][0]["id"])
+        assert [e["itemName"] for e in older["events"]] == ["Gear"]
+        assert older["more"] is False
+        assert [e["itemName"] for e in history(client, q="rotor|plate -@minecraft")["events"]] == [
+            "Rotor", "Plate", "Rotor",
+        ]
+        assert history(client, q="@minecraft")["events"] == []
+
+    def test_status_filters_incomplete_and_auto(self, client, api_headers):
+        post_job(client, api_headers, busy=False)
+        post_job(client, api_headers, "Rotor")
+        post_job(client, api_headers, busy=False)
+        post_job(client, api_headers, "Gear", pending=plates(3))
+        shift_samples(600)
+        post_job(client, api_headers, "Gear", pending=[item("Gear", 1), item("Plate", 2), item("Rod", 4), item("Bolt", 4)])
+        shift_samples(0, last=5)
+        post_job(client, api_headers, busy=False)
+        assert [e["itemName"] for e in history(client, status="incomplete")["events"]] == ["Gear"]
+        assert history(client, status="auto")["events"] == []
+        rotor = history(client, q="rotor")["events"][0]
+        with db.transaction(db.app_db) as conn:
+            conn.execute("UPDATE craft_events SET auto = 1 WHERE id = ?", (rotor["id"],))
+        assert [e["itemName"] for e in history(client, status="auto")["events"]] == ["Rotor"]
+        assert len(history(client, status="bogus")["events"]) == 2

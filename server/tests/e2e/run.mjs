@@ -645,6 +645,18 @@ async function main() {
     await evaluate(`window.scrollTo(0, document.documentElement.scrollHeight), true`);
     await waitFor('scrolled to the end', `$$('#craftHistoryList .history-row').length === 33
       && $('#craftHistoryLoading').hidden`);
+    // The filter and status buttons are applied by the server.
+    await evaluate(`typeInto('#craftHistoryFilter', 'gold'), true`);
+    await waitFor('nothing matches', `$('#craftHistoryList').textContent.includes('No crafts match.')`);
+    await evaluate(`typeInto('#craftHistoryFilter', '@minecraft iron'), true`);
+    await waitFor('matches a page again', `$$('#craftHistoryList .history-row').length === 25`);
+    await click(`$('#craftHistoryStatus [data-status="auto"]')`);
+    await waitFor('no auto-crafts', `$('#craftHistoryStatus [data-status="auto"]').classList.contains('active')
+      && $('#craftHistoryList').textContent.includes('No crafts match.')`);
+    await click(`$('#craftHistoryStatus [data-status=""]')`);
+    await evaluate(`typeInto('#craftHistoryFilter', ''), true`);
+    await waitFor('unfiltered', `$$('#craftHistoryList .history-row').length === 25
+      && !$('#craftHistoryList').textContent.includes('No crafts match.')`);
     // Item history belongs to the Network tab, wherever it's opened from.
     await click(`$('#craftHistoryList .item-history-link')`);
     await waitFor('item history open', `visible($('#itemHistoryModal')) && $('#itemHistoryName').textContent === 'Iron Ingot'`);
@@ -703,6 +715,14 @@ async function main() {
     await waitFor('sort active', `$('#networkTab [data-sort="name"]').classList.contains('active')`);
     await evaluate(`typeInto('#networkSearch', '')`);
     await waitFor('back to 3', `$$('#networkList .network-cell').length === 3`);
+  });
+
+  step('"/" jumps to the network search from another tab', async () => {
+    await click(`$('#tabBtnCrafts')`);
+    await waitFor('crafts tab', `visible($('#craftsTab'))`);
+    await evaluate(`document.activeElement.blur(), pressKey('/'), true`);
+    await waitFor('search focused on the network tab', `location.pathname === '/network'
+      && document.activeElement === $('#networkSearch')`);
   });
 
   step('network list view shows names and is remembered', async () => {

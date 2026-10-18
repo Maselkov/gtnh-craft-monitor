@@ -76,6 +76,14 @@
     <div id="root"></div>
     <details class="craft-history" id="craftHistory">
       <summary>Recent crafts</summary>
+      <div class="craft-history-tools">
+        <div class="range-buttons" id="craftHistoryStatus">
+          <button class="range-btn active" data-action="history-status" data-status="">All</button>
+          <button class="range-btn" data-action="history-status" data-status="incomplete">Incomplete</button>
+          <button class="range-btn" data-action="history-status" data-status="auto">Auto</button>
+        </div>
+        <input type="search" id="craftHistoryFilter" class="modal-filter" placeholder="Filter&hellip;" title="Filter by name, as in the network search (@mod, -exclude, a|b)" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off">
+      </div>
       <div id="craftHistoryList" class="craft-history-list"></div>
       <div class="history-loading" id="craftHistoryLoading" hidden>Loading older crafts&hellip;</div>
     </details>
