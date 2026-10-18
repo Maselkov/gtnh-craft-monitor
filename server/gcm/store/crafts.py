@@ -4,7 +4,7 @@ notifications fanned out to whoever had a finished job's CPU pinned."""
 
 import time
 
-from gcm import db, icons
+from gcm import db, icons, search
 
 
 def pin_cpu(user_id, cpu_name):
@@ -67,9 +67,11 @@ def record_job_end(cpu_name, label, icon, status, progress, started_at=None, ite
         ).fetchall()
 
 
-def history(before=None, after=None, limit=50):
+def history(before=None, after=None, limit=50, query="", status=None):
     """Job ends on every CPU, newest first: up to `limit` of them, only
     ones older than event id `before` or newer than `after` if given.
+    `query` is an NEI-style search on the item (gcm.search); `status`
+    "auto" keeps auto-crafts, "incomplete" jobs that stopped early.
     Returns (events, more), more saying whether rows past the limit
     were left out."""
     where, params = [], []
@@ -79,14 +81,29 @@ def history(before=None, after=None, limit=50):
     if after is not None:
         where.append("id > ?")
         params.append(after)
+    if status == "auto":
+        where.append("auto = 1")
+    elif status == "incomplete":
+        where.append("status = 'incomplete'")
+    terms = search.parse(query)
+    sql = (
+        "SELECT id, cpu_name, item_label, item_icon, status, progress_at_end, occurred_at, "
+        "started_at, item_mod, item_internal, item_damage, auto FROM craft_events"
+        + (" WHERE " + " AND ".join(where) if where else "")
+        + " ORDER BY id DESC"
+    )
     with db.transaction(db.app_db) as conn:
-        rows = conn.execute(
-            "SELECT id, cpu_name, item_label, item_icon, status, progress_at_end, occurred_at, "
-            "started_at, item_mod, item_internal, item_damage, auto FROM craft_events"
-            + (" WHERE " + " AND ".join(where) if where else "")
-            + " ORDER BY id DESC LIMIT ?",
-            (*params, limit + 1),
-        ).fetchall()
+        if terms:
+            # Names are matched here rather than in SQL, the same way
+            # the page matches them; rows stream until a page is full.
+            rows = []
+            for r in conn.execute(sql, params):
+                if search.matches(r[2], r[8], terms):
+                    rows.append(r)
+                    if len(rows) > limit:
+                        break
+        else:
+            rows = conn.execute(sql + " LIMIT ?", (*params, limit + 1)).fetchall()
     events = [
         {
             "id": r[0],

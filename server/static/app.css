@@ -1629,6 +1629,16 @@ details.idle-group .grid {
 details.craft-history {
   margin-top: 14px;
 }
+.craft-history-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.craft-history-tools .modal-filter {
+  width: 200px;
+}
 .craft-history-list {
   margin-top: 12px;
   display: flex;

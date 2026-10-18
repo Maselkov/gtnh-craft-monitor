@@ -105,12 +105,28 @@ export function setupTabActions() {
     }
   });
 
+  document.addEventListener('keydown', onSlashKey);
   delegateActions(document, {
     'switch-tab': (el) => {
       switchTab(el.dataset.tab);
       if (el.dataset.tab === 'network') focusNetworkSearch();
     },
   });
+}
+
+// "/" jumps to the network search from anywhere, as on many sites -
+// unless the key is going into a text field or a dialog is open.
+function onSlashKey(e) {
+  if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
+  const target = e.target;
+  if (target.closest && target.closest('input, textarea, select, [contenteditable]')) return;
+  const dialogOpen = [...document.querySelectorAll('.modal-overlay')].some(m => m.style.display !== 'none');
+  if (dialogOpen) return;
+  e.preventDefault();
+  if (activeTab !== 'network') switchTab('network');
+  const search = document.getElementById('networkSearch');
+  search.focus();
+  search.select();
 }
 
 // Clicking over to the network tab is almost always to look something

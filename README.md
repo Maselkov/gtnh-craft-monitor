@@ -594,7 +594,9 @@ newest first and grouped by day. Each row shows the CPU, how long the job ran,
 and an Incomplete badge if it stopped early. Click an item's name to open its
 stock history. Jobs that were already running when the server started show no
 duration, since their start wasn't seen. The list is kept permanently in
-`server/data/app.db`.
+`server/data/app.db`. The filter box above it takes the same syntax as the
+Network tab's search, and **Incomplete** and **Auto** show only those jobs;
+both look through the whole list, not just the rows loaded so far.
 
 ### Pins and notifications
 
@@ -656,7 +658,7 @@ minute, but its data changes only when a scan finishes.
   as restored rather than live.
 
 The search box takes NEI's syntax, matched against item names and ignoring
-case:
+case. Press `/` on any tab to jump to it.
 
 | Query | Matches |
 |---|---|
