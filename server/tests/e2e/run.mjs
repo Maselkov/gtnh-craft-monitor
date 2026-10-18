@@ -703,6 +703,26 @@ async function main() {
     await waitFor('back to 3', `$$('#networkList .network-cell').length === 3`);
   });
 
+  step('network list view shows names and is remembered', async () => {
+    await waitFor('names hidden in the grid', `!visible($('#networkList .network-cell-name'))`);
+    await click(`$('#networkTab [data-view="list"]')`);
+    await waitFor('names shown', `$('#networkList').classList.contains('list')
+      && $$('#networkList .network-cell-name').some(n => visible(n) && n.textContent === 'Iron Ingot')
+      && $('#networkTab [data-sort="name"]').classList.contains('active')`);
+    await cdp.send('Page.navigate', { url: base + '/network' });
+    await waitFor('reloaded', `document.readyState === 'complete' && !window.byText`);
+    await evaluate(PAGE_LIB);
+    await waitFor('still a list', `$$('#networkList .network-cell').length === 3
+      && $('#networkList').classList.contains('list')
+      && $('#networkTab [data-view="list"]').classList.contains('active')`);
+    await click(`$$('#networkList .network-cell').find(c => c.textContent.includes('Iron Ingot'))`);
+    await waitFor('row opens history', `visible($('#itemHistoryModal')) && $('#itemHistoryName').textContent === 'Iron Ingot'`);
+    await click(`$('#itemHistoryModal')`);
+    await waitFor('closed', `!visible($('#itemHistoryModal'))`);
+    await click(`$('#networkTab [data-view="grid"]')`);
+    await waitFor('grid again', `!$('#networkList').classList.contains('list')`);
+  });
+
   step('item history: open, range, pin, craft request with math', async () => {
     await evaluate(`openItem('Iron Ingot'), true`);
     await waitFor('history open', `visible($('#itemHistoryModal')) && $('#itemHistoryName').textContent === 'Iron Ingot'`);
