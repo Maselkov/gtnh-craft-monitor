@@ -1802,3 +1802,27 @@ details.stock-rules {
     animation: none;
   }
 }
+
+/* ---------- Phone width ---------- */
+@media (max-width: 520px) {
+  /* Each stock rule's label on its own line, its inputs sharing the
+     next one - rather than "refill to"'s box wrapping alone. */
+  .stock-panel-row .stock-panel-label:first-child {
+    flex-basis: 100%;
+  }
+  .stock-panel-row .stock-input {
+    flex: 1 1 70px;
+    width: auto;
+    min-width: 0;
+  }
+  /* The filter drops under the title instead of squeezing it. */
+  .ingredients-box .modal-header {
+    flex-wrap: wrap;
+  }
+  .ingredients-box .modal-header .modal-filter {
+    order: 3;
+    flex-basis: 100%;
+    width: auto;
+    margin-left: 0;
+  }
+}

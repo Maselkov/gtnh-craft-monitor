@@ -340,6 +340,9 @@ export const CHART_TIME_CONFIG = {
                                   // nothing useful when hovering a
                                   // chart point, only visual noise
 };
+// Both charts' time axis. autoSkipPadding: Chart.js's default leaves
+// labels touching on a phone-width chart ("16:0019:0022:00").
+export const CHART_X_TICKS = { color: '#8a8f98', maxRotation: 0, autoSkip: true, autoSkipPadding: 16 };
 
 // Again from the last data, when only the stock rules' lines changed.
 export function redrawItemHistoryChart() {
@@ -476,7 +479,7 @@ function renderItemHistoryChart(data) {
           min: axisMin,
           max: axisMax,
           time: CHART_TIME_CONFIG,
-          ticks: { color: '#8a8f98', maxRotation: 0, autoSkip: true },
+          ticks: CHART_X_TICKS,
           grid: { color: 'rgba(128,128,128,0.1)' },
         },
         y: { beginAtZero: true, ticks: { color: '#8a8f98', callback: (v) => formatQty(v) }, grid: { color: 'rgba(128,128,128,0.1)' } },
