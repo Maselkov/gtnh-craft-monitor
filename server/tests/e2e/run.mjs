@@ -414,6 +414,7 @@ async function main() {
   step('crafts tab renders the busy CPU', async () => {
     await waitFor('W01 card', `card('W01')?.querySelector('.craft-title').textContent.includes('Iron Ingot')`);
     await waitFor('W02 in idle group', `$('details.idle-group') && card('W02')`);
+    await waitFor('tab badge counts the busy one', `$('#tabBtnCrafts .tab-badge')?.textContent === '1'`);
   });
 
   step('allowed inline styles apply; the progress bar is sized', async () => {
@@ -607,8 +608,9 @@ async function main() {
     await waitFor('pinned', `byText('.group-heading', 'Pinned (1)') && card('W01').querySelector('.pin-btn.pinned')`);
     await postCrafts(base, false);
     await waitFor('completion shown', `$('.completed-card')`);
+    await waitFor('tab badge: a green dot, nothing busy', `$('#tabBtnCrafts .tab-badge.dot.done')`);
     await click(`$('.completed-card .ack-btn')`);
-    await waitFor('completion acknowledged', `!$('.completed-card')`);
+    await waitFor('completion acknowledged', `!$('.completed-card') && !$('#tabBtnCrafts .tab-badge')`);
   });
 
   step('acknowledge all completions', async () => {
@@ -1019,6 +1021,7 @@ async function main() {
     await click(`$('#itemHistoryModal .history-close-btn')`);
     await waitFor('overview lists it as low', `visible($('#stockRules'))
       && $('#stockRulesSummary').textContent === 'Stock rules (1) · 1 low'`);
+    await waitFor('tab badge', `$('#tabBtnNetwork .tab-badge.alert')?.textContent === '1'`);
     await waitFor('cell marked', `$('#networkList .network-cell.stock-low .network-cell-stock-badge')`);
 
     // Two idle CPUs, one kept free: the next scan (Iron Ingot still at
@@ -1044,7 +1047,7 @@ async function main() {
     await click(`$('#stockAlertDelete')`);
     await waitFor('alert removed', `!visible($('#stockAlertDelete'))`);
     await click(`$('#itemHistoryModal .history-close-btn')`);
-    await waitFor('overview hidden', `!visible($('#stockRules'))`);
+    await waitFor('overview hidden', `!visible($('#stockRules')) && !$('#tabBtnNetwork .tab-badge')`);
     await evaluate(`typeInto('#networkSearch', ''), true`);  // openItem() searched for it
   });
 

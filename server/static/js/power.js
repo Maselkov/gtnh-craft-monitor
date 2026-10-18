@@ -1,6 +1,7 @@
 // Power tab: readings, trend and chart.
 
 import { CHART_RANGE_SECONDS_JS, CHART_TIME_CONFIG, CHART_X_TICKS } from './history.js';
+import { powerBadge, setTabBadge } from './tab-badges.js';
 import { delegateActions, formatDuration, formatRate } from './util.js';
 
 // ---------- Power chart ----------
@@ -113,8 +114,19 @@ export function powerEtaText(trend) {
   return parts.join(' \u00b7 ');
 }
 
+// Off the Power tab too, for its tab badge: the last hour is enough
+// for the trend, and far fewer points than the chart's range.
+export async function fetchPowerBadge() {
+  try {
+    const res = await fetch('/api/power?range=hour');
+    const data = await res.json();
+    setTabBadge('power', powerBadge(data.latest, data.trend));
+  } catch (e) { /* keep the last badge */ }
+}
+
 function renderPower(data) {
   const points = data.points || [];
+  setTabBadge('power', powerBadge(data.latest, data.trend));
   const empty = document.getElementById('powerEmpty');
   const canvas = document.getElementById('powerChart');
 

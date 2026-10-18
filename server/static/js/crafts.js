@@ -5,6 +5,7 @@ import { AUTH_USER, isOperator } from './auth.js';
 import { refreshCraftHistory } from './craft-history.js';
 import { openCancelConfirmModal, pendingCancelCpus } from './craft-actions.js';
 import { ingredientCount, openIngredientsModal, refreshIngredientsModal } from './ingredients.js';
+import { craftsBadge, setTabBadge } from './tab-badges.js';
 import { delegateActions, escapeHtml, formatRelativeTime, iconClass, iconUrl, PIN_ICON } from './util.js';
 
 // Toggle-open state of the idle-CPU section, which has to survive the
@@ -495,6 +496,7 @@ export function render(data) {
 
   const root = document.getElementById('root');
   const jobs = data.jobs || [];
+  setTabBadge('crafts', craftsBadge(jobs, completedPins));
 
   // Note: no busy->idle transition detection here anymore - the
   // server does that now (see _process_craft_transitions in app.py),
