@@ -24,8 +24,8 @@ import {
   setupNetworkTooltipEvents,
   updateNetworkSearchHighlight,
 } from './network.js';
-import { setupPowerActions } from './power.js';
-import { setupStockActions } from './stock.js';
+import { fetchPowerBadge, setupPowerActions } from './power.js';
+import { fetchStockRules, setupStockActions } from './stock.js';
 import { focusNetworkSearch, pathToTab, setupTabActions, switchTab } from './tabs.js';
 import { removeLegacyStorageKeys, setupImageErrorRemoval } from './util.js';
 
@@ -78,3 +78,8 @@ updateNetworkSearchHighlight();
 loadAuthentication().catch(() => {}).finally(() => refresh());
 setInterval(refresh, 3000);
 setInterval(tickSourceLine, 1000);
+// For the tab badges (tab-badges.js), whichever tab is open. The
+// Network tab also fetches stock rules as it opens.
+fetchStockRules();
+fetchPowerBadge();
+setInterval(() => { fetchStockRules(); fetchPowerBadge(); }, 60000);

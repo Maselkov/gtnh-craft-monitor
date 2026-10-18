@@ -454,6 +454,38 @@ h1 {
   color: var(--text);
   border-bottom-color: var(--accent);
 }
+/* tab-badges.js: a count pill, or a dot when there's no count. */
+.tab-badge {
+  display: inline-block;
+  min-width: 18px;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+  vertical-align: 1px;
+  font-variant-numeric: tabular-nums;
+  background: color-mix(in srgb, var(--muted) 22%, transparent);
+  color: var(--text);
+}
+.tab-badge.done {
+  background: color-mix(in srgb, var(--idle) 28%, transparent);
+  color: var(--idle);
+}
+.tab-badge.alert {
+  background: color-mix(in srgb, var(--stale) 25%, transparent);
+  color: var(--stale);
+}
+.tab-badge.dot {
+  min-width: 0;
+  width: 7px;
+  height: 7px;
+  padding: 0;
+  vertical-align: 2px;
+}
+.tab-badge.dot.done { background: var(--idle); }
+.tab-badge.dot.alert { background: var(--stale); }
 .power-head {
   display: flex;
   justify-content: space-between;

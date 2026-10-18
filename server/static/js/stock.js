@@ -8,6 +8,7 @@ import { AUTH_USER, isOperator } from './auth.js';
 import { showToast } from './craft-actions.js';
 import { openItemHistory, redrawItemHistoryChart } from './history.js';
 import { lastNetworkData, networkItemKey, rerenderNetworkList } from './network.js';
+import { setTabBadge, stockBadge } from './tab-badges.js';
 import { BELL_ICON, delegateActions, escapeHtml, essentiaBadgeHtml, formatQty, formatRelativeTime, iconClass, iconUrl, RESTOCK_ICON } from './util.js';
 
 let targets = new Map();  // item key -> target, for the whole base
@@ -158,6 +159,7 @@ function renderOverview() {
   const rows = rowsByItem();
   section.hidden = rows.length === 0;
   const lowCount = rows.filter(r => (r.target && targetIsLow(r.target)) || (r.alert && r.alert.low)).length;
+  setTabBadge('network', stockBadge(lowCount));
   document.getElementById('stockRulesSummary').textContent =
     `Stock rules (${rows.length})` + (lowCount ? ` · ${lowCount} low` : '');
   const list = document.getElementById('stockRulesList');
