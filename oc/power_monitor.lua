@@ -414,13 +414,22 @@ end
 -- it hands off to its own thread and returns quickly rather than
 -- looping directly - a bare while-true here would hang `rc power_monitor
 -- start` itself forever.
+local worker = nil
+
+-- Whether the loop's thread is alive: false after stop(), and also after
+-- it died of an error (running stays true then). gcm_agent reports it.
+function is_running()
+  return worker ~= nil and worker:status() ~= "dead"
+end
+
 function start()
-  if running then
+  if is_running() then
     print("[power_monitor] Already running.")
     return
   end
   running = true
-  thread.create(service_loop):detach()
+  worker = thread.create(service_loop)
+  worker:detach()
 end
 
 -- Optional per OC's rc docs, but defined so `rc power_monitor restart`
@@ -431,5 +440,5 @@ function stop()
 end
 
 function status()
-  print("[power_monitor] " .. (running and "running" or "stopped"))
+  print("[power_monitor] " .. (is_running() and "running" or "stopped"))
 end

@@ -216,7 +216,7 @@ def catalog_path():
     return os.path.join(_bundle_dir(version), "item_catalog.txt") if version else None
 
 
-def _github_json(url):
+def github_json(url):
     request = urllib.request.Request(
         url,
         headers={"Accept": "application/vnd.github+json", "User-Agent": "gtnh-craft-monitor"},
@@ -235,7 +235,7 @@ def available(refresh=False):
             return list(_available["releases"]), _available["error"]
     releases, error = [], None
     try:
-        for release in _github_json(
+        for release in github_json(
             f"{config.GAMEDATA_API_URL}/repos/{config.GAMEDATA_REPO}/releases?per_page=100"
         ):
             tag = release.get("tag_name", "")

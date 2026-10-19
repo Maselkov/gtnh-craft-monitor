@@ -1182,13 +1182,22 @@ end
 -- quickly - a bare while-true loop directly in start() would hang
 -- `rc network_browser start` itself forever, since the function call
 -- would never return control back to the caller.
+local worker = nil
+
+-- Whether the loop's thread is alive: false after stop(), and also after
+-- it died of an error (running stays true then). gcm_agent reports it.
+function is_running()
+  return worker ~= nil and worker:status() ~= "dead"
+end
+
 function start()
-  if running then
+  if is_running() then
     print("[network_browser] Already running.")
     return
   end
   running = true
-  thread.create(service_loop):detach()
+  worker = thread.create(service_loop)
+  worker:detach()
 end
 
 -- Optional per OC's rc docs, but defined here so `rc network_browser
@@ -1201,5 +1210,5 @@ function stop()
 end
 
 function status()
-  print("[network_browser] " .. (running and "running" or "stopped"))
+  print("[network_browser] " .. (is_running() and "running" or "stopped"))
 end

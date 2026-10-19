@@ -34,6 +34,7 @@ function updateAuthenticationControl() {
   adminButton.style.display = adminVisible ? '' : 'none';
   document.getElementById('gamedataBtn').style.display = adminVisible ? '' : 'none';
   document.getElementById('webhookTestBtn').style.display = adminVisible ? '' : 'none';
+  document.getElementById('agentsBtn').style.display = adminVisible ? '' : 'none';
   if (AUTH_USER && !AUTH_MUST_ROTATE_BOOTSTRAP) syncPushSubscription();
 }
 

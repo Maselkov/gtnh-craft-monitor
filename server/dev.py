@@ -42,7 +42,8 @@ import zlib
 for _name in ("API_KEY", "DATA_DIR", "GCM_BOOTSTRAP_ADMIN_TOKEN", "GCM_BOOTSTRAP_ADMIN_NAME",
               "GTNH_VERSION", "GTNH_TEXTURES", "GAMEDATA_API_URL", "GAMEDATA_REPO",
               "TRUSTED_PROXIES", "VAPID_SUBJECT", "STALE_AFTER_SECONDS", "SESSION_LIFETIME_SECONDS",
-              "AUTOCRAFT_KEEP_IDLE_CPUS", "AUTOCRAFT_RETRY_SECONDS", "CRAFT_STALL_SECONDS"):
+              "AUTOCRAFT_KEEP_IDLE_CPUS", "AUTOCRAFT_RETRY_SECONDS", "CRAFT_STALL_SECONDS",
+              "WEBHOOK_URLS", "WEBHOOK_EVENTS", "PUBLIC_URL", "SCRIPTS_REPO"):
     os.environ.pop(_name, None)
 # Read by gcm.config at import: session cookies over plain http.
 os.environ["SESSION_COOKIE_SECURE"] = "0"
@@ -521,6 +522,46 @@ SMALL_JOBS = ["Radon Plasma", "Bacterial Sludge", "Glass Dust", "Lapotron Crysta
               "Exquisite Cerium-doped Lutetium Aluminium Garnet (Ce:LuAG)"]
 
 
+class FakeComputer:
+    """A computer running gcm_agent.lua: heartbeats, and carries out the
+    Scripts dialog's commands a couple of ticks later."""
+
+    def __init__(self, address, version, services, total_memory):
+        self.address = address
+        self.version = version
+        self.services = services
+        self.total_memory = total_memory
+        self.booted_at = time.time() - random.randint(600, 90000)
+        self.command = None
+        self.command_ticks = 0
+
+    def tick(self, game):
+        if self.command:
+            self.command_ticks += 1
+            if self.command_ticks < 3:
+                return
+            cmd, self.command = self.command, None
+            if cmd["action"] == "update":
+                before = self.version
+                self.version = "main" if cmd["ref"] == "main" else "v9.9.9"
+                message = f"Updated {before} -> {self.version}, rebooting."
+            else:
+                message = "Rebooting."
+            game.call("POST", f"/api/agent/commands/{cmd['id']}/result",
+                      {"ok": True, "message": message, "version": self.version})
+            self.booted_at = time.time()
+        reply = game.call("POST", "/api/agent/heartbeat", {
+            "address": self.address, "version": self.version,
+            "components": [name.split("_")[0] for name in self.services],
+            "services": [{"name": name, "running": name != "network_browser" or random.random() < 0.9}
+                         for name in self.services],
+            "free_memory": int(self.total_memory * random.uniform(0.2, 0.6)),
+            "total_memory": self.total_memory, "uptime": time.time() - self.booted_at,
+        })
+        if reply.get("command"):
+            self.command, self.command_ticks = reply["command"], 0
+
+
 class FakeGame:
     def __init__(self, app, stock=None):
         self.client = app.test_client()
@@ -534,6 +575,11 @@ class FakeGame:
             cpu.start(out, random_ingredients(random.randint(1, 6), out))
         self.stock = stock or {it["name"]: random.randint(0, 5000) for it in CATALOG}
         self.stock.update(dict.fromkeys(ALWAYS_EMPTY, 0))
+        self.computers = [
+            FakeComputer("1f3a9c20-5b1e-4d2a-9e77-0c4b8f2d6a11", "v1.0.0",
+                         ["craft_monitor", "network_browser"], 4 * 1024 * 1024),
+            FakeComputer("77b0e1d4-2c9a-4f6b-8d03-5e1a7c9b2f40", "v1.0.0", ["power_monitor"], 1024 * 1024),
+        ]
         self.ticks = 0
 
     def call(self, method, path, body=None):
@@ -569,6 +615,8 @@ class FakeGame:
             self.scan()
         elif self.ticks % WATCH_EVERY_TICKS == 0:
             self.check_watched()
+        for computer in self.computers:
+            computer.tick(self)
         self.ticks += 1
 
     def answer_requests(self):

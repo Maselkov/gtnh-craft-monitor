@@ -9,6 +9,7 @@ import {
   setupCraftRequestActions,
 } from './craft-actions.js';
 import { setupCraftHistory } from './craft-history.js';
+import { setupAgentsActions } from './agents.js';
 import { setupCraftStats } from './craft-stats.js';
 import { setupCraftPlanActions } from './craft-plan.js';
 import { refresh, setupCraftsActions, setupNotifications, tickSourceLine } from './crafts.js';
@@ -43,6 +44,7 @@ setupGameDataActions();
 setupCraftsActions();
 setupCraftHistory();
 setupCraftStats();
+setupAgentsActions();
 setupIngredientsActions();
 setupTabActions();
 setupPowerActions();

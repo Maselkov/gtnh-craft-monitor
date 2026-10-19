@@ -6,7 +6,7 @@ can't read. Script logic on its own is tested in oc/tests/*_test.lua."""
 import pytest
 
 from conftest import login_as
-from gcm import nbt
+from gcm import agents, nbt
 from nbt_fixtures import tag_hex
 from oc_game import OcGame, find_lua
 
@@ -275,3 +275,20 @@ def test_several_power_machines_land_separately(game, client, api_key):
     assert [m["name"] for m in data["machines"]] == ["", "Batteries"]
     assert data["latest"]["stored"] == 4e9
     assert client.get("/api/power?machine=Batteries").get_json()["latest"]["stored"] == 7
+
+
+def test_agent_reports_and_reboots_on_command(game, client, monkeypatch):
+    monkeypatch.setattr(agents, "latest_release", lambda: ("v1.0.0", None))  # not GitHub
+    game.write_file("/etc/gcm.cfg", 'return { version = "v1.0.0", components = { "power" }, services = { "power_monitor" } }')
+    game.lua('env:start_service("gcm_agent")')
+    game.run(1)
+    login_as(client, "root", role="admin")
+    [computer] = client.get("/api/admin/agents").get_json()["computers"]
+    assert (computer["address"], computer["version"]) == ("computer-0000", "v1.0.0")
+    assert computer["services"] == [{"name": "power_monitor", "running": False}]
+
+    assert client.post("/api/admin/agents/computer-0000/command", json={"action": "reboot"}).status_code == 200
+    game.run(61)
+    assert game.lua("return env.shutdown and env.shutdown.reboot") is True
+    cmd = client.get("/api/admin/agents").get_json()["computers"][0]["command"]
+    assert (cmd["status"], cmd["ok"], cmd["message"]) == ("done", True, "Rebooting.")

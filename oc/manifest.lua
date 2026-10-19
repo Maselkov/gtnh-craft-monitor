@@ -10,6 +10,7 @@ return {
     { src = "gcm.lua",  dst = "/usr/bin/gcm.lua" },
     { src = "http.lua", dst = "/usr/lib/http.lua" },
     { src = "json.lua", dst = "/usr/lib/json.lua" },
+    { src = "gcm_agent.lua", dst = "/etc/rc.d/gcm_agent.lua" },
   },
 
   components = {

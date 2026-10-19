@@ -77,6 +77,7 @@ never connects into the game.
 | `oc/power_monitor.lua` | Reports a GregTech machine's stored EU |
 | `oc/network_browser.lua` | Scans ME network contents |
 | `oc/gcm.lua`, `oc/manifest.lua` | Installer and updater, and the list of files it installs |
+| `oc/gcm_agent.lua` | Reports the computer to the Scripts dialog; runs its update and reboot buttons |
 | `oc/config.lua` | Server URL, API key and per-script settings for all scripts |
 | `oc/http.lua`, `oc/json.lua` | Libraries used by the scripts |
 | `oc/sensor_info_dump.lua` | One-off diagnostic: prints a GT machine's full sensor info |
@@ -164,6 +165,7 @@ Environment variables (set in `.env` for Docker):
 | `PUBLIC_URL` | empty | The page's address from outside, e.g. `https://gtnh.example.com`, for icons and links in webhook posts. |
 | `GAMEDATA_REPO` | `Maselkov/gtnh-craft-monitor-data` | Repo whose `gtnh-data-*` releases the Game data page offers. |
 | `GAMEDATA_API_URL` | `https://api.github.com` | GitHub API base for that list (for mirrors). |
+| `SCRIPTS_REPO` | `Maselkov/gtnh-craft-monitor` | Repo whose newest `vX.Y.Z` tag the Scripts dialog offers as an update. |
 | `AUTOCRAFT_KEEP_IDLE_CPUS` | `1` | Keep-in-stock crafts only start while more crafting CPUs than this are idle; see [Stock rules](#stock-rules). |
 | `AUTOCRAFT_RETRY_SECONDS` | `1800` | How long a keep-in-stock target waits after a failed craft before trying again. |
 | `CRAFT_STALL_SECONDS` | `600` | How long a step of a running job can be crafting without moving before its live tree calls it stuck. |
@@ -444,6 +446,20 @@ changes. Releases older than `gcm` itself can't be installed with it.
 Use a release that matches your server's version: the image tag and the
 scripts come from the same release.
 
+#### From the web page
+
+`gcm` also installs and enables `gcm_agent`, a small service that reports
+the computer to the web page every minute. Admins see each computer under
+**Settings (&#9881;) → Scripts**: its version and whether a newer release
+is out, which scripts are running, free memory and uptime. Buttons there
+update it (to the latest release, or to `main`) or reboot it. The agent
+runs `gcm update`, says how it went, and reboots.
+
+The server can only ask for those three things. `gcm` downloads from its
+own fixed GitHub repository, so nothing on the server can make a computer
+run other code. A computer installed before the agent existed shows up
+after one `gcm update` in game. `rc gcm_agent disable` turns it off.
+
 ### Manual install
 
 Without `gcm`, copy these files to the computer yourself (with a floppy and
@@ -551,6 +567,12 @@ Each is read and posted every poll. A machine without a name keeps the
 history recorded before `MACHINES` was set, so leave the one you were
 already charting unnamed. The addresses are the ones `component.list("gt_machine")`
 prints, or that the script lists when it finds several.
+
+**gcm_agent.lua** (in a `gcm_agent` table)
+
+| Setting | Default | Description |
+|---|---|---|
+| `POLL_SECONDS` | `60` | How often it reports, and so how soon a button on the page takes effect |
 
 **network_browser.lua**
 
