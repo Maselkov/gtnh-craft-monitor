@@ -25,6 +25,11 @@ POWER_RANGE_SECONDS = {
 POWER_MAX_POINTS = 800
 
 MACHINE_NAME_MAX = 64
+# A posted timestamp (power_monitor.lua sends none; tests and backfills
+# do) must be about now: one from a game clock or a typo would put a
+# point years off and stretch the Lifetime chart to reach it.
+TIMESTAMP_MAX_AGE_SECONDS = 86400
+TIMESTAMP_MAX_AHEAD_SECONDS = 300
 
 # Optional fields power_monitor.lua may send besides stored/capacity:
 # the machine's own averaged EU in/out and time-to-empty estimate.
@@ -51,8 +56,12 @@ def power_post():
     ts = payload.get("timestamp")
     if stored is None or capacity is None:
         return jsonify({"error": "missing stored/capacity"}), 400
+    now = time.time()
     if ts is None:
-        ts = time.time()
+        ts = now
+    elif (not isinstance(ts, (int, float)) or isinstance(ts, bool)
+          or not now - TIMESTAMP_MAX_AGE_SECONDS <= ts <= now + TIMESTAMP_MAX_AHEAD_SECONDS):
+        return jsonify({"error": "timestamp must be a Unix time within the last day"}), 400
     machine = payload.get("machine", "")
     if not isinstance(machine, str) or len(machine.strip()) > MACHINE_NAME_MAX:
         return jsonify({"error": "invalid machine name"}), 400

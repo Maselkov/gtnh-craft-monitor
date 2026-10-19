@@ -423,6 +423,10 @@ wall-clock time will silently corrupt that comparison. Both Lua scripts
 deliberately send no timestamp at all - the server stamps arrival time
 with its own clock instead, which is already correct for this use case
 (POST latency is negligible).
+`/api/power` still accepts a `timestamp` (tests and backfills use it),
+but only a number from the last day: one reading from before that check,
+dated 2017, had stretched the Lifetime chart back nine years, and a power
+migration deletes anything dated before 2026 or more than a day ahead.
 
 **AE2 item `name` fields are inconsistently formatted.** Solid items are
 usually `"modid:internalname"` (e.g. `"gregtech:gt.metaitem.03"`). But GT's
