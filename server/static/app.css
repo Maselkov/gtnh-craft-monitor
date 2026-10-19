@@ -494,6 +494,15 @@ h1 {
 }
 .tab-badge.dot.done { background: var(--idle); }
 .tab-badge.dot.alert { background: var(--stale); }
+/* power.js: how full the batteries are, on the tab and machine buttons. */
+.tab-fill,
+.machine-fill {
+  margin-left: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
 .power-machines {
   flex-wrap: wrap;
   margin: 4px 0 12px;

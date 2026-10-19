@@ -70,12 +70,57 @@ export function machineLabel(name) {
   return name || 'Main';
 }
 
+// A machine that hasn't reported for this long (health.py's
+// POWER_STALE_SECONDS) is left out of the tab's fill, so one taken down
+// doesn't hold the total at its last reading forever.
+const FILL_STALE_SECONDS = 300;
+
+// How full every machine is together, 0..1: total stored over total
+// capacity, so a small buffer counts for its size, not as much as the
+// LSC. null when nothing has a capacity.
+export function powerFill(machines, now = Date.now() / 1000) {
+  const known = (machines || []).filter(m => m.capacity > 0 && m.stored != null);
+  const fresh = known.filter(m => now - m.t <= FILL_STALE_SECONDS);
+  const counted = fresh.length ? fresh : known;
+  const capacity = counted.reduce((sum, m) => sum + m.capacity, 0);
+  if (!capacity) return null;
+  return Math.min(1, Math.max(0, counted.reduce((sum, m) => sum + m.stored, 0) / capacity));
+}
+
+// "61%", or "<1%" rather than a misleading 0% while there's some left.
+export function fillText(fraction) {
+  if (fraction == null) return '';
+  if (fraction > 0 && fraction < 0.005) return '<1%';
+  return `${Math.round(fraction * 100)}%`;
+}
+
+// The fill on the Power tab button, before its alert badge if any.
+function setPowerTabFill(machines) {
+  const button = document.getElementById('tabBtnPower');
+  const text = fillText(powerFill(machines));
+  let el = button.querySelector('.tab-fill');
+  if (!text) {
+    if (el) el.remove();
+    return;
+  }
+  if (!el) {
+    el = document.createElement('span');
+    el.className = 'tab-fill';
+    button.insertBefore(el, button.querySelector('.tab-badge'));
+  }
+  el.textContent = text;
+}
+
 function renderMachines(data) {
   const box = document.getElementById('powerMachines');
   const machines = data.machines || [];
   box.hidden = machines.length < 2;
-  box.innerHTML = machines.map(m => `<button class="range-btn${m.name === data.machine ? ' active' : ''}"
-    data-action="power-machine" data-machine="${escapeHtml(m.name)}">${escapeHtml(machineLabel(m.name))}</button>`).join('');
+  box.innerHTML = machines.map(m => {
+    const fill = m.capacity > 0 && m.stored != null ? fillText(m.stored / m.capacity) : '';
+    return `<button class="range-btn${m.name === data.machine ? ' active' : ''}"
+    data-action="power-machine" data-machine="${escapeHtml(m.name)}">${escapeHtml(machineLabel(m.name))}${
+      fill ? ` <span class="machine-fill">${escapeHtml(fill)}</span>` : ''}</button>`;
+  }).join('');
 }
 
 export async function fetchPower() {
@@ -155,12 +200,14 @@ export async function fetchPowerBadge() {
     const res = await fetch('/api/power?range=hour');
     const data = await res.json();
     setTabBadge('power', powerBadge(data.latest, data.trend));
+    setPowerTabFill(data.machines);
   } catch (e) { /* keep the last badge */ }
 }
 
 function renderPower(data) {
   const points = data.points || [];
   renderMachines(data);
+  setPowerTabFill(data.machines);
   if (powerMachine == null) setTabBadge('power', powerBadge(data.latest, data.trend));
   const empty = document.getElementById('powerEmpty');
   const canvas = document.getElementById('powerChart');
