@@ -41,6 +41,8 @@ Basically, it's web AE2 for your base.
 - **Remote crafting** — request or cancel AE2 crafts from the browser.
 - **Stock rules** — get a notification when an item runs low, or have the
   server queue a craft to keep it stocked.
+- **Webhooks** — finished pinned crafts and failed auto-crafts posted to a
+  Discord channel or any other webhook.
 - **Accounts** — per-user tokens with viewer, operator, and admin roles.
 
 ## Contents
@@ -157,6 +159,9 @@ Environment variables (set in `.env` for Docker):
 | `GTNH_VERSION` | empty | Game data version to install at startup; see [Item icons](#item-icons). |
 | `GTNH_TEXTURES` | empty | Icon textures for `GTNH_VERSION`: `default` or `faithful32`. Empty keeps what was picked on the page. |
 | `VAPID_SUBJECT` | the page's URL | Contact given to push services with each notification: a `mailto:` or `https:` URL. |
+| `WEBHOOK_URLS` | empty | Comma-separated webhook URLs for notifications; see [Webhooks](#webhooks). |
+| `WEBHOOK_EVENTS` | `crafts,autocraft` | Which events go to them: `crafts`, `autocraft`, `stock`. |
+| `PUBLIC_URL` | empty | The page's address from outside, e.g. `https://gtnh.example.com`, for icons and links in webhook posts. |
 | `GAMEDATA_REPO` | `Maselkov/gtnh-craft-monitor-data` | Repo whose `gtnh-data-*` releases the Game data page offers. |
 | `GAMEDATA_API_URL` | `https://api.github.com` | GitHub API base for that list (for mirrors). |
 | `AUTOCRAFT_KEEP_IDLE_CPUS` | `1` | Keep-in-stock crafts only start while more crafting CPUs than this are idle; see [Stock rules](#stock-rules). |
@@ -634,6 +639,28 @@ on the server machine itself.
 On phones: Android Chrome works as-is. On iPhone and iPad (iOS 16.4+),
 notifications only work after **Share → Add to Home Screen**, opening the page
 from that icon, and turning the switch on there.
+
+### Webhooks
+
+To also post notifications to a Discord channel (or Slack, or anything that
+takes a JSON POST), set `WEBHOOK_URLS` to one or more webhook URLs. A Discord
+webhook (**Channel settings → Integrations → Webhooks**) gets an embed with
+the item's icon; any other URL gets a JSON body with `event`, `title`,
+`body`, `icon` and `url`, plus a `text` line that Slack-style incoming webhooks
+show as is.
+
+Unlike push notifications, webhook posts are for the whole base, so
+`WEBHOOK_EVENTS` picks what's sent:
+
+| Event | Sent when |
+|---|---|
+| `crafts` | a pinned job finishes or stops (anyone's pin; one post per job) |
+| `autocraft` | a keep-in-stock target's auto-craft fails |
+| `stock` | a low-stock alert fires. Off by default, since alerts are each user's own; on, it posts once per item, without saying whose alert it was. |
+
+Icons and the link to the item's page need `PUBLIC_URL`, the address the page
+is reached at from outside; without it, posts are text only. Admins can check
+the setup with **Test webhooks** in the settings (&#9881;) menu.
 
 ### Power tab
 

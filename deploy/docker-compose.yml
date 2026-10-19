@@ -19,6 +19,10 @@ services:
       # Set these in .env before first startup to create the initial admin.
       - GCM_BOOTSTRAP_ADMIN_TOKEN=${GCM_BOOTSTRAP_ADMIN_TOKEN:-}
       - GCM_BOOTSTRAP_ADMIN_NAME=${GCM_BOOTSTRAP_ADMIN_NAME:-Administrator}
+      # Optional: post notifications to Discord or another webhook.
+      - WEBHOOK_URLS=${WEBHOOK_URLS:-}
+      - WEBHOOK_EVENTS=${WEBHOOK_EVENTS:-crafts,autocraft}
+      - PUBLIC_URL=${PUBLIC_URL:-}
     volumes:
       # Databases and downloaded game data (item icons, catalog).
       - ./data:/app/data

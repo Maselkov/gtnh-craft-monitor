@@ -25,7 +25,7 @@ The per-CPU memory it compares against lives in gcm/state.py
 
 import time
 
-from gcm import commands, progress, push, state, store
+from gcm import commands, progress, push, state, store, webhooks
 
 
 # How much faster than its observed pace a job may have gone in the gap
@@ -196,6 +196,8 @@ def _record_end_locked(name, entry, label, icon, ended_at):
         auto=entry.get("auto", False),
     )
     push.notify_completions(completions, label, icon, status)
+    if completions:
+        webhooks.craft_ended(label, icon, status, output and {"mod": output[1], "internal": output[2], "damage": output[3]})
 
 
 def _release_ending_locked(name):
