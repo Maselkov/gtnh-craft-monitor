@@ -448,15 +448,23 @@ h1 {
   align-items: flex-end;
 }
 .tab-btn {
+  /* A badge's room is kept whether or not it shows (tab-badges.js), so
+     the tabs never move: the gap before it and a two-digit pill. Power
+     only ever shows a dot. */
+  --badge-slot: 32px;
+  position: relative;
   background: none;
   border: none;
   color: var(--muted);
   font-size: 14px;
   font-weight: 600;
-  padding: 8px 4px 10px 4px;
+  padding: 8px calc(4px + var(--badge-slot)) 10px 4px;
   cursor: pointer;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
+}
+#tabBtnPower {
+  --badge-slot: 13px;
 }
 .tab-btn.active {
   color: var(--text);
@@ -464,15 +472,16 @@ h1 {
 }
 /* tab-badges.js: a count pill, or a dot when there's no count. */
 .tab-badge {
-  display: inline-block;
-  min-width: 18px;
-  margin-left: 6px;
+  position: absolute;
+  left: calc(100% - 4px - var(--badge-slot) + 6px);
+  top: calc(50% - 1px);
+  transform: translateY(-50%);
+  min-width: 26px;
   padding: 1px 6px;
   border-radius: 999px;
   font-size: 11px;
   line-height: 16px;
   text-align: center;
-  vertical-align: 1px;
   font-variant-numeric: tabular-nums;
   background: color-mix(in srgb, var(--muted) 22%, transparent);
   color: var(--text);
@@ -490,14 +499,17 @@ h1 {
   width: 7px;
   height: 7px;
   padding: 0;
-  vertical-align: 2px;
 }
 .tab-badge.dot.done { background: var(--idle); }
 .tab-badge.dot.alert { background: var(--stale); }
 /* power.js: how full the batteries are, on the tab and machine buttons. */
 .tab-fill,
 .machine-fill {
+  /* Room for "100%", so the buttons after it keep their place. */
+  display: inline-block;
+  min-width: 5ch;
   margin-left: 4px;
+  text-align: left;
   font-size: 12px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;

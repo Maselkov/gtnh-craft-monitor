@@ -94,21 +94,10 @@ export function fillText(fraction) {
   return `${Math.round(fraction * 100)}%`;
 }
 
-// The fill on the Power tab button, before its alert badge if any.
+// The fill on the Power tab button. Its span is always there, empty
+// without data, so the tabs after it keep their place.
 function setPowerTabFill(machines) {
-  const button = document.getElementById('tabBtnPower');
-  const text = fillText(powerFill(machines));
-  let el = button.querySelector('.tab-fill');
-  if (!text) {
-    if (el) el.remove();
-    return;
-  }
-  if (!el) {
-    el = document.createElement('span');
-    el.className = 'tab-fill';
-    button.insertBefore(el, button.querySelector('.tab-badge'));
-  }
-  el.textContent = text;
+  document.getElementById('tabFillPower').textContent = fillText(powerFill(machines));
 }
 
 function renderMachines(data) {
