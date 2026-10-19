@@ -7,11 +7,19 @@ import { buildSearchHighlightHtml, itemMatchesSearch, parseSearchQuery } from '.
 import { stockBadgeFor } from './stock.js';
 import { activeTab } from './tabs.js';
 import { bindCellTooltip, hideTooltip } from './tooltip.js';
-import { delegateActions, escapeHtml, essentiaBadgeHtml, formatQty, formatRelativeTime, iconClass, iconUrl, kindTooltipHtml, PIN_ICON } from './util.js';
+import {
+  delegateActions, escapeHtml, essentiaBadgeHtml, formatDuration, formatQty, formatRate, formatRelativeTime,
+  iconClass, iconUrl, kindTooltipHtml, PIN_ICON,
+} from './util.js';
 
 // ---------- Network browser ----------
 export let lastNetworkData = null;
 let networkSort = 'size';
+// The Change sort's range (day or week) and the server's answer for it:
+// {item key: {from, per_second, seconds_to_empty}}, only items that
+// changed.
+let networkChangeRange = 'day';
+let networkChanges = null;
 // Grid (icons only, like the game's terminal) or list (with names, for
 // a touch screen where there's no hover tooltip), per viewer.
 const NETWORK_VIEW_KEY = 'gtnhCraftMonitor.networkView';
@@ -85,10 +93,14 @@ function networkTooltipHtml(cell) {
   // no such unit.
   const statLine = 'Stored: ' + (it.size || 0).toLocaleString() + (it.kind === 'fluid' ? ' mB' : '');
 
+  const change = changeOf(it);
+  const changeLine = change ? changeTooltipHtml(change, it.kind) : '';
+
   return `
     <div class="network-tooltip-name">${escapeHtml(it.name || '?')}</div>
     ${it.variant_name ? `<div class="network-tooltip-variant">${escapeHtml(it.variant_name)}</div>` : ''}
     <div class="network-tooltip-stat">${statLine}</div>
+    ${changeLine}
     ${kindTooltipHtml(it.kind)}
     ${it.isCraftable ? `<div class="network-tooltip-craftable">Craftable</div>` : ''}
     ${it.mod ? `<div class="network-tooltip-mod">${escapeHtml(it.mod)}</div>` : ''}
@@ -209,6 +221,7 @@ export async function fetchNetwork() {
     const res = await fetch('/api/network');
     const data = await res.json();
     lastNetworkData = data;
+    if (networkSort === 'change') await fetchNetworkChanges();
     tickNetworkSourceLine();
     renderNetworkList();
     tryOpenItemFromUrl();
@@ -217,11 +230,78 @@ export async function fetchNetwork() {
   }
 }
 
-function setNetworkSort(sort) {
+async function fetchNetworkChanges() {
+  const range = networkChangeRange;
+  try {
+    const res = await fetch(`/api/network/changes?range=${encodeURIComponent(range)}`);
+    if (!res.ok) throw new Error(`changes: ${res.status}`);
+    const data = await res.json();
+    if (range === networkChangeRange) networkChanges = data.changes || {};
+  } catch (e) {
+    // Keep the last answer; the next network refresh asks again.
+  }
+}
+
+function changeOf(it) {
+  if (!networkChanges) return null;
+  return networkChanges[networkItemKey(it.mod, it.internal, it.damage, it.kind, it.variant)] || null;
+}
+
+// How far an item's quantity moved over the range, as a share of the
+// larger of its quantities then and now - -1 for one used up entirely,
+// so items and fluids (in mB) compare by how much of each went rather
+// than by raw amounts. Null for one that didn't change.
+export function changeFraction(size, change) {
+  if (!change) return null;
+  const now = size || 0;
+  return (now - change.from) / Math.max(change.from, now, 1);
+}
+
+// "−80%", "+12%", "−0.4%" - one decimal under 1%, so a small move
+// doesn't read as none.
+export function formatChangePercent(fraction) {
+  const percent = Math.abs(fraction * 100);
+  const text = percent < 1 ? percent.toFixed(1) : String(Math.round(percent));
+  return `${fraction < 0 ? '−' : '+'}${text}%`;
+}
+
+// The Change sort: most used up first, then most gained last among the
+// ones that changed, then everything unchanged by quantity.
+export function compareByChange(a, b) {
+  if (a.fraction != null && b.fraction != null) return a.fraction - b.fraction;
+  if (a.fraction != null) return -1;
+  if (b.fraction != null) return 1;
+  return (b.size || 0) - (a.size || 0);
+}
+
+function changeTooltipHtml(change, kind) {
+  const unit = kind === 'fluid' ? ' mB' : '';
+  const range = networkChangeRange === 'week' ? 'a week' : 'a day';
+  // No rate until the item's history spans long enough to mean something.
+  const rate = change.per_second != null ? formatRate(change.per_second, unit) : null;
+  const empty = change.seconds_to_empty != null ? ` &middot; empty in ${escapeHtml(formatDuration(change.seconds_to_empty))}` : '';
+  return `<div class="network-tooltip-change">${escapeHtml(formatQty(change.from) + unit)} ${range} ago${
+    rate ? ` &middot; ${escapeHtml(rate)}` : ''}${empty}</div>`;
+}
+
+async function setNetworkSort(sort) {
   networkSort = sort;
   document.querySelectorAll('#networkTab [data-action="network-sort"]').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.sort === sort);
   });
+  document.getElementById('networkChangeRange').hidden = sort !== 'change';
+  if (sort === 'change') await fetchNetworkChanges();
+  renderNetworkList();
+}
+
+async function setNetworkChangeRange(range) {
+  networkChangeRange = range;
+  document.querySelectorAll('#networkTab [data-action="network-change-range"]').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.range === range);
+  });
+  networkChanges = null;
+  await fetchNetworkChanges();
+  lastNetworkSort = null;  // a new order: back to the top
   renderNetworkList();
 }
 
@@ -264,6 +344,12 @@ function buildNetworkCellHtml(it, idx) {
     ? `<img class="${iconClass('network-cell-icon', it.icon)}" src="${iconUrl(it.icon)}" alt="" loading="lazy" data-remove-on-error>`
     : essentiaBadgeHtml(it, 'network-cell-icon');
   const qty = `<span class="network-cell-qty">${formatQty(it.size)}</span>`;
+  // In the Change sort, how much it moved: in place of the quantity in
+  // the grid, beside it in the list. The rate is in the tooltip.
+  const fraction = networkSort === 'change' ? changeFraction(it.size, changeOf(it)) : null;
+  const changeLabel = fraction != null
+    ? `<span class="network-cell-change ${fraction < 0 ? 'falling' : 'rising'}">${escapeHtml(formatChangePercent(fraction))}</span>`
+    : '';
   // Hidden in the grid view by CSS - both views share this one cell.
   const name = `<span class="network-cell-name">${escapeHtml(it.name || '?')}${
     it.variant_name ? ` <span class="network-cell-variant">${escapeHtml(it.variant_name)}</span>` : ''}</span>`;
@@ -278,8 +364,9 @@ function buildNetworkCellHtml(it, idx) {
   const pinBadge = isPinned ? `<span class="network-cell-pin-badge">${PIN_ICON}</span>` : '';
   const stock = stockBadgeFor(it);
   const stockBadge = stock ? `<span class="network-cell-stock-badge${stock.low ? ' low' : ''}">${stock.icon}</span>` : '';
-  const classes = 'network-cell' + (it.isCraftable ? ' craftable' : '') + (stock && stock.low ? ' stock-low' : '');
-  return `<div class="${classes}" data-idx="${idx}">${icon}${name}${qty}${patternBadge}${pinBadge}${stockBadge}</div>`;
+  const classes = 'network-cell' + (it.isCraftable ? ' craftable' : '') + (stock && stock.low ? ' stock-low' : '')
+    + (changeLabel ? ' has-change' : '');
+  return `<div class="${classes}" data-idx="${idx}">${icon}${name}${changeLabel}${qty}${patternBadge}${pinBadge}${stockBadge}</div>`;
 }
 
 export function updateNetworkSearchHighlight() {
@@ -307,6 +394,10 @@ function buildNetworkNoteHtml(query) {
 // For a change that only affects how cells look (stock rules).
 export function rerenderNetworkList() {
   if (lastNetworkData) renderNetworkList();
+}
+
+function changeSortKey(it) {
+  return { size: it.size, fraction: changeFraction(it.size, changeOf(it)) };
 }
 
 function renderNetworkList() {
@@ -349,6 +440,7 @@ function renderNetworkList() {
     const bPinned = pinnedItemKeys.has(networkItemKey(b.mod, b.internal, b.damage, b.kind, b.variant));
     if (aPinned !== bPinned) return aPinned ? -1 : 1;
     if (networkSort === 'size') return (b.size || 0) - (a.size || 0);
+    if (networkSort === 'change') return compareByChange(changeSortKey(a), changeSortKey(b));
     return (a.name || '').localeCompare(b.name || '');
   });
   networkFilteredSorted = filtered;
@@ -451,6 +543,7 @@ export function setupNetworkActions() {
   document.getElementById('networkSearch').addEventListener('input', onNetworkSearchInput);
   delegateActions(document, {
     'network-sort': (el) => setNetworkSort(el.dataset.sort),
+    'network-change-range': (el) => setNetworkChangeRange(el.dataset.range),
     'network-view': (el) => setNetworkView(el.dataset.view),
   });
 }

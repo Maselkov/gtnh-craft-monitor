@@ -242,6 +242,15 @@ def network_history_get():
     )
 
 
+@bp.route("/api/network/changes", methods=["GET"])
+@auth.public
+def network_changes_get():
+    """How each item's quantity changed over ?range=day|week, for the
+    Network tab's Change sort: only items that did."""
+    range_key, changes = inventory.changes(request.args.get("range", "day"))
+    return jsonify({"range": range_key, "changes": changes})
+
+
 # ---------------------------------------------------------------------
 # Item pins (Network tab "favorite this item" feature) - purely a
 # personal browse preference, no in-game consequence, so unlike craft

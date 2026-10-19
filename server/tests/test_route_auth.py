@@ -12,6 +12,7 @@ PUBLIC_ENDPOINTS = {
     "stock.stock_rules_get",
     "power.power_chart_png",
     "network.network_get",
+    "network.network_changes_get",
     "network.network_history_get",
     "network.network_history_chart_png",
     "pages.icon",
