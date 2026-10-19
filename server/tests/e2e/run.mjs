@@ -668,6 +668,24 @@ async function main() {
     await waitFor('section closed', `!$('#craftHistory').open`);
   });
 
+  step('statistics: totals, most crafted, CPU busy time, ranges', async () => {
+    await click(`$('#craftStats summary')`);
+    await waitFor('stats shown', `$('#craftStatsBody .stats-summary')?.textContent.includes('crafts')
+      && byText('#craftStatsBody .item-history-link', 'Iron Ingot')
+      && $('#craftStatsBody').textContent.includes('CPU W01')`);
+    await click(`$('#craftStatsRange [data-range="day"]')`);
+    await waitFor('day range', `$('#craftStatsRange [data-range="day"]').classList.contains('active')
+      && byText('#craftStatsBody .item-history-link', 'Iron Ingot')`);
+    await click(`byText('#craftStatsBody .item-history-link', 'Iron Ingot')`);
+    await waitFor('item history open', `visible($('#itemHistoryModal')) && $('#itemHistoryName').textContent === 'Iron Ingot'`);
+    await click(`$('#itemHistoryModal .history-close-btn')`);
+    await waitFor('item history closed', `!visible($('#itemHistoryModal'))`);
+    await click(`$('#tabBtnCrafts')`);
+    await waitFor('crafts tab', `visible($('#craftsTab'))`);
+    await click(`$('#craftStats summary')`);
+    await waitFor('section closed', `!$('#craftStats').open`);
+  });
+
   step('confirm a cancel; the game reports it done', async () => {
     await waitFor('busy W01', `card('W01')?.querySelector('.cancel-btn:not([disabled])')`);
     await click(`card('W01').querySelector('.cancel-btn')`);

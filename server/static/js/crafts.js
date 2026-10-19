@@ -3,6 +3,7 @@
 
 import { AUTH_USER, isOperator } from './auth.js';
 import { refreshCraftHistory } from './craft-history.js';
+import { refreshCraftStats } from './craft-stats.js';
 import { openCancelConfirmModal, pendingCancelCpus } from './craft-actions.js';
 import { ingredientCount, openIngredientsModal, refreshIngredientsModal } from './ingredients.js';
 import { craftsBadge, setTabBadge } from './tab-badges.js';
@@ -373,6 +374,7 @@ export async function refresh() {
     render(data);
     tickSourceLine();
     refreshCraftHistory();
+    refreshCraftStats();
   } catch (e) {
     document.getElementById('sourceLine').textContent = 'Could not reach server.';
   }

@@ -596,3 +596,72 @@ class TestCraftHistory:
             conn.execute("UPDATE craft_events SET auto = 1 WHERE id = ?", (rotor["id"],))
         assert [e["itemName"] for e in history(client, status="auto")["events"]] == ["Rotor"]
         assert len(history(client, status="bogus")["events"]) == 2
+
+
+def stats(client, **params):
+    return client.get("/api/crafts/stats", query_string=params).get_json()
+
+
+def end_job(client, api_headers, output, ran, cpu_name="W01", incomplete=False):
+    """A job on `cpu_name` that ran for `ran` seconds (seen from its start)."""
+    post_job(client, api_headers, busy=False, cpu_name=cpu_name)
+    if incomplete:
+        post_job(client, api_headers, output, cpu_name=cpu_name, pending=plates(3))
+        shift_samples(ran, cpu_name=cpu_name)
+        post_job(client, api_headers, output, cpu_name=cpu_name,
+                 pending=[item("Gear", 1), item("Plate", 2), item("Rod", 4), item("Bolt", 4)])
+        shift_samples(0, cpu_name=cpu_name, last=5)
+    else:
+        post_job(client, api_headers, output, cpu_name=cpu_name, pending=plates(1))
+        shift_samples(ran, cpu_name=cpu_name)
+    post_job(client, api_headers, busy=False, cpu_name=cpu_name)
+
+
+class TestCraftStats:
+    def test_empty(self, client):
+        data = stats(client)
+        assert (data["range"], data["total"], data["items"], data["cpus"]) == ("week", 0, [], [])
+
+    def test_public(self, client):
+        assert client.get("/api/crafts/stats").status_code == 200
+
+    def test_totals_items_and_cpus(self, client, api_headers):
+        end_job(client, api_headers, "Gear", 100)
+        end_job(client, api_headers, "Gear", 300)
+        end_job(client, api_headers, "Rotor", 600, cpu_name="W02", incomplete=True)
+        end_job(client, api_headers, "Gear", 200, cpu_name="W02")
+        data = stats(client, range="day")
+        assert data["range"] == "day"
+        assert (data["total"], data["incomplete"], data["auto"], data["distinctItems"]) == (4, 1, 0, 2)
+        gear, rotor = data["items"]
+        assert (gear["itemName"], gear["count"], gear["incomplete"]) == ("Gear", 3, 0)
+        assert gear["medianSeconds"] == pytest.approx(200, abs=5)
+        assert (gear["mod"], gear["internal"]) == ("gregtech", "Gear")
+        assert (rotor["count"], rotor["incomplete"]) == (1, 1)
+        w02, w01 = data["cpus"]
+        assert (w02["cpu"], w02["count"]) == ("W02", 2)
+        assert w02["busySeconds"] == pytest.approx(800, abs=10)
+        assert w01["busySeconds"] == pytest.approx(400, abs=10)
+        assert w02["busyFraction"] == pytest.approx(800 / 86400, rel=0.05)
+
+    def test_range_clips_busy_time_and_drops_old_jobs(self, client, api_headers):
+        end_job(client, api_headers, "Gear", 100)
+        with db.transaction(db.app_db) as conn:
+            # One job ended 2 days ago; one started 2 days ago and just ended.
+            ids = [r[0] for r in conn.execute("SELECT id FROM craft_events ORDER BY id")]
+            conn.execute("UPDATE craft_events SET occurred_at = occurred_at - 2 * 86400, "
+                         "started_at = started_at - 2 * 86400 WHERE id = ?", (ids[0],))
+        end_job(client, api_headers, "Rotor", 100)
+        with db.transaction(db.app_db) as conn:
+            conn.execute("UPDATE craft_events SET started_at = started_at - 2 * 86400 "
+                         "WHERE item_label = 'Rotor'")
+        day = stats(client, range="day")
+        assert [i["itemName"] for i in day["items"]] == ["Rotor"]
+        assert day["cpus"][0]["busySeconds"] == pytest.approx(86400, abs=10)
+        assert day["cpus"][0]["busyFraction"] == pytest.approx(1.0, abs=0.01)
+        everything = stats(client, range="all")
+        assert everything["total"] == 2
+        assert everything["windowSeconds"] == pytest.approx(2 * 86400 + 100, abs=10)
+
+    def test_unknown_range_is_a_week(self, client):
+        assert stats(client, range="decade")["range"] == "week"

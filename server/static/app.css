@@ -1683,6 +1683,22 @@ details.craft-history {
   color: var(--muted);
   white-space: nowrap;
 }
+/* Crafts tab: Statistics (craft-stats.js). */
+.stats-summary {
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.stats-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+.stats-bar-fill {
+  height: 100%;
+  background: var(--accent);
+}
 .history-loading {
   margin-top: 10px;
   font-size: 12px;

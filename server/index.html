@@ -87,6 +87,18 @@
       <div id="craftHistoryList" class="craft-history-list"></div>
       <div class="history-loading" id="craftHistoryLoading" hidden>Loading older crafts&hellip;</div>
     </details>
+    <details class="craft-history craft-stats" id="craftStats">
+      <summary>Statistics</summary>
+      <div class="craft-history-tools">
+        <div class="range-buttons" id="craftStatsRange">
+          <button class="range-btn" data-action="stats-range" data-range="day">Day</button>
+          <button class="range-btn active" data-action="stats-range" data-range="week">Week</button>
+          <button class="range-btn" data-action="stats-range" data-range="month">Month</button>
+          <button class="range-btn" data-action="stats-range" data-range="all">All</button>
+        </div>
+      </div>
+      <div id="craftStatsBody"></div>
+    </details>
   </div>
 
   <div id="powerTab" style="display:none;">
