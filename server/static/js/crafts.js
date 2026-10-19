@@ -363,15 +363,34 @@ async function notifyCraftDone(id, itemName, icon, status) {
   }
 }
 
+let craftsEtag = null;
+
+// Fetches /api/crafts unless it's unchanged since the last fetch (the
+// server's ETag, sent back by hand: with cache 'no-store' the browser
+// leaves the 304 to us instead of answering it from its cache). True
+// when lastData is new.
+async function fetchCrafts() {
+  const res = await fetch('/api/crafts', {
+    cache: 'no-store',
+    headers: craftsEtag ? { 'If-None-Match': craftsEtag } : {},
+  });
+  if (res.status === 304) return false;
+  if (!res.ok) throw new Error(`crafts: ${res.status}`);
+  const data = await res.json();
+  craftsEtag = res.headers.get('ETag');
+  lastData = data;
+  lastFetchAt = Date.now();
+  return true;
+}
+
+// Everything on the tab, every 3s: pins, completions (which fire the
+// in-page notifications) and the history below the cards.
 export async function refresh() {
   try {
-    const craftsPromise = fetch('/api/crafts');
+    const craftsPromise = fetchCrafts();
     await refreshPinsAndCompletions();
-    const res = await craftsPromise;
-    const data = await res.json();
-    lastData = data;
-    lastFetchAt = Date.now();
-    render(data);
+    await craftsPromise;
+    if (lastData) render(lastData);
     tickSourceLine();
     refreshCraftHistory();
     refreshCraftStats();
@@ -380,8 +399,39 @@ export async function refresh() {
   }
 }
 
+// Just the cards, every second in between: a game report shows up
+// within a second of arriving, and an unchanged one costs an empty 304.
+let polling = false;
+export async function pollCrafts() {
+  if (polling) return;
+  polling = true;
+  try {
+    if (await fetchCrafts()) {
+      render(lastData);
+      tickSourceLine();
+    }
+  } catch (e) {
+    // refresh() reports an unreachable server
+  } finally {
+    polling = false;
+  }
+}
+
+// The data's age now: the server's, as of the response that carried
+// it, counted on locally - a 304 doesn't send a newer one.
+function dataAge() {
+  if (!lastData || lastData.age_seconds == null) return null;
+  return lastData.age_seconds + (lastFetchAt != null ? (Date.now() - lastFetchAt) / 1000 : 0);
+}
+
+function isStale() {
+  const age = dataAge();
+  if (age == null) return true;
+  return age > (lastData.stale_after_seconds ?? 30);
+}
+
 // Ticks the "updated Xs ago" text every second using elapsed
-// client-side time, independent of the 3s data poll - otherwise the
+// client-side time, independent of the data polls - otherwise the
 // display only advances once every 3s (whenever refresh() happens to
 // run) and visibly jumps instead of counting smoothly.
 export function tickSourceLine() {
@@ -391,10 +441,8 @@ export function tickSourceLine() {
     sourceLine.textContent = 'Waiting for data from the game...';
     return;
   }
-  let age = lastData.age_seconds;
-  if (age != null && lastFetchAt != null) {
-    age += (Date.now() - lastFetchAt) / 1000;
-  }
+  document.getElementById('staleBanner').classList.toggle('show', isStale());
+  const age = dataAge();
   const ageDisplay = age != null ? Math.round(age) : '?';
   sourceLine.textContent = `Source: ${lastData.source} - updated ${ageDisplay}s ago`;
 }
@@ -494,7 +542,7 @@ function renderCompletedCard(entry) {
 
 export function render(data) {
   const banner = document.getElementById('staleBanner');
-  banner.classList.toggle('show', !!data.stale);
+  banner.classList.toggle('show', isStale());
 
   const root = document.getElementById('root');
   const jobs = data.jobs || [];

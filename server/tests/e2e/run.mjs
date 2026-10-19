@@ -439,6 +439,20 @@ async function main() {
     await waitFor('tab badge counts the busy one', `$('#tabBtnCrafts .tab-badge')?.textContent === '1'`);
   });
 
+  step('crafts poll each second, and an unchanged report answers 304', async () => {
+    const polls = `performance.getEntriesByType('resource').filter((e) => new URL(e.name).pathname === '/api/crafts').length`;
+    const before = await evaluate(polls);
+    await sleep(2500);
+    const after = await evaluate(polls);
+    if (after - before < 2) throw new Error(`only ${after - before} crafts polls in 2.5s`);
+    const status = await evaluate(`(async () => {
+      const first = await fetch('/api/crafts', { cache: 'no-store' });
+      const again = await fetch('/api/crafts', { cache: 'no-store', headers: { 'If-None-Match': first.headers.get('ETag') } });
+      return again.status;
+    })()`);
+    if (status !== 304) throw new Error(`conditional crafts fetch: ${status}`);
+  });
+
   step('allowed inline styles apply; the progress bar is sized', async () => {
     // Every dialog starts hidden via style="display:none;" - which only
     // works if the CSP's style hashes match index.html.

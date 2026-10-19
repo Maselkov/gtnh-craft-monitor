@@ -612,7 +612,8 @@ otherwise reports that no version is picked.
 
 ### Crafts tab
 
-One card per crafting CPU, updated every 3 seconds. A busy card shows:
+One card per crafting CPU, updated within a second of each report from the
+game. A busy card shows:
 
 - **Output item** — needs an AE2 **Crafting Monitor** block in that CPU's
   multiblock. Without one, the card shows "Crafting job (no monitor tile)".
@@ -878,7 +879,7 @@ draws each threshold as a dashed line.
 ## Limitations
 
 - Crafting status is only as fresh as `POLL_SECONDS` (5 s by default) plus the
-  page's 3 s refresh. Requests and cancellations wait for the next poll from
+  page's 1 s refresh. Requests and cancellations wait for the next poll from
   the game.
 - Progress counts steps, not crafting time, since recipe durations aren't
   available. A job with one slow step and 63 quick ones shows as nearly done

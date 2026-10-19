@@ -45,7 +45,8 @@ matching edits in `server/tests/e2e/run.mjs`.
   (`el.style.width = ...`), and wire clicks with `data-action` attributes
   and `delegateActions()` (`static/js/util.js`). Action names are unique
   page-wide.
-- The crafts tab re-renders `#root` from scratch every 3s; UI state that
-  must survive (open sections, scroll) lives outside it or is restored.
+- The crafts tab re-renders `#root` from scratch every 3s, and on each
+  new game report; UI state that must survive (open sections, scroll)
+  lives outside it or is restored.
 - New `static/js` modules are only imported, never run on import;
   `main.js` calls their setup functions.
