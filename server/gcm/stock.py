@@ -25,7 +25,7 @@ before asking again."""
 import logging
 import time
 
-from gcm import charts, commands, config, icons, push, state, store, tracking
+from gcm import charts, commands, config, icons, push, state, store, tracking, webhooks
 
 log = logging.getLogger(__name__)
 
@@ -88,18 +88,22 @@ def _amount_text(n, kind):
 
 def _check_alerts(sizes, names):
     changes = []
+    posted = set()
     for alert in store.stock.all_alerts():
         current = sizes.get(alert["key"], 0)  # gone from the network: none left
         low = current < alert["below"]
         if low and alert["armed"]:
             changes.append((alert["user_id"], alert["key"], False))
-            push.notify_users([alert["user_id"]], push.stock_message(
-                alert["key"],
-                alert["label"],
-                rule_icon(alert, names),
+            text = (
                 f"{alert['label']} is at {_amount_text(current, alert['kind'])} "
-                f"(below {_amount_text(alert['below'], alert['kind'])}).",
-            ))
+                f"(below {_amount_text(alert['below'], alert['kind'])})."
+            )
+            icon = rule_icon(alert, names)
+            push.notify_users([alert["user_id"]], push.stock_message(alert["key"], alert["label"], icon, text))
+            # Several users' alerts on one item fire together: one post.
+            if alert["key"] not in posted:
+                posted.add(alert["key"])
+                webhooks.stock_low(text, icon, alert)
         elif not low and not alert["armed"]:
             changes.append((alert["user_id"], alert["key"], True))
     if changes:
@@ -199,3 +203,4 @@ def auto_request_result(req, status, reason):
         "title": "Auto-craft failed",
         "body": f"Couldn't restock {req.get('label')}: {reason}",
     })
+    webhooks.autocraft_failed(req.get("label"), req.get("icon"), reason, req)

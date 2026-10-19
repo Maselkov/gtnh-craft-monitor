@@ -80,6 +80,16 @@ class TestAlerts:
         scan(client, api_headers, scanned(GOLD, 5))
         assert "is at 0" in pushes[0][1]["body"]
 
+    def test_webhook_once_per_item_when_several_alerts_fire(self, client, api_headers, pushes, webhook_events):
+        for user in ("alice", "bob"):
+            login_as(client, user)
+            client.post("/api/stock/alert", json={**IRON, "below": 100})
+        scan(client, api_headers, scanned(IRON, 50))
+        assert len(pushes) == 2
+        [event] = webhook_events
+        assert (event["event"], event["title"], event["body"]) == ("stock", "Low stock", "Iron Ingot is at 50 (below 100).")
+        assert event["url"] == "https://gtnh.example.test/network/item/minecraft:iron_ingot"
+
     def test_alerts_are_per_user(self, client, api_headers, pushes):
         login_as(client, "alice")
         client.post("/api/stock/alert", json={**IRON, "below": 100})
@@ -331,3 +341,13 @@ class TestToolIcons:
         assert NEUTRONIUM_TURBINE.replace("/", "%2F") in pushes[0][1]["icon"]
         [req] = auto_requests()
         assert req["icon"] == NEUTRONIUM_TURBINE
+
+
+def test_auto_craft_failure_goes_to_the_webhook(operator, api_headers, webhook_events):
+    set_target(operator)
+    cpus(operator, api_headers)
+    scan(operator, api_headers, scanned(IRON, 40))
+    req_id = auto_requests()[0]["id"]
+    game_result(operator, api_headers, req_id, status="failed", reason="missing resources")
+    [event] = [e for e in webhook_events if e["event"] == "autocraft"]
+    assert (event["title"], event["body"]) == ("Auto-craft failed", "Couldn't restock Iron Ingot: missing resources")

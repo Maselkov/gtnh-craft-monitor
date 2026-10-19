@@ -111,3 +111,17 @@ def reset_state():
             conn.close()
 
     yield
+
+
+@pytest.fixture()
+def webhook_events(monkeypatch):
+    """One webhook with every event on; records the events it would be
+    sent instead of posting them."""
+    from gcm import webhooks
+
+    events = []
+    monkeypatch.setattr(config, "WEBHOOK_URLS", ["https://hooks.example.test/x"])
+    monkeypatch.setattr(config, "WEBHOOK_EVENTS", set(webhooks.EVENTS))
+    monkeypatch.setattr(config, "PUBLIC_URL", "https://gtnh.example.test")
+    monkeypatch.setattr(webhooks, "_put", events.append)
+    return events

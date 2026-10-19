@@ -130,6 +130,10 @@ open(out + "/data.json", "w").write(json.dumps({"format": 1, "files": files, "ge
 `;
 const BUNDLE_FILES = ['data.json', 'images.zip', 'images-faithful32.zip', 'icons_lookup.json', 'item_catalog.txt', 'ore_dict.json'];
 
+// What the server posted to its webhook (WEBHOOK_URLS points at the
+// fake GitHub server's /webhook).
+const webhookPosts = [];
+
 async function startFakeGitHub() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcm-e2e-gamedata-'));
   tempDirs.push(dir);
@@ -138,6 +142,16 @@ async function startFakeGitHub() {
   const port = await freePort();
   const base = `http://127.0.0.1:${port}`;
   const server = http.createServer((req, res) => {
+    if (req.url === '/webhook' && req.method === 'POST') {
+      let body = '';
+      req.on('data', (chunk) => { body += chunk; });
+      req.on('end', () => {
+        webhookPosts.push(JSON.parse(body));
+        res.statusCode = 204;
+        res.end();
+      });
+      return;
+    }
     if (req.url.startsWith('/repos/')) {
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify([{
@@ -395,7 +409,9 @@ const PAGE_LIB = `
 
 async function main() {
   const github = await startFakeGitHub();
-  const base = await startServer({ GAMEDATA_API_URL: github, GAMEDATA_REPO: 'e2e/repo' });
+  const base = await startServer({
+    GAMEDATA_API_URL: github, GAMEDATA_REPO: 'e2e/repo', WEBHOOK_URLS: `${github}/webhook`,
+  });
   await seed(base);
   let adminToken;  // the bootstrap replacement, created through the UI below
   const cdp = await startBrowser();
@@ -1125,6 +1141,17 @@ async function main() {
     await waitFor('admin dialog again', `visible($('#adminUsersModal'))`);
     await click(`$('#adminUsersModal')`);
     await waitFor('closed by backdrop', `!visible($('#adminUsersModal'))`);
+  });
+
+  step('admin: test webhooks; a pinned craft ending was posted too', async () => {
+    if (!webhookPosts.some((p) => p.event === 'crafts' && p.title === 'Craft finished' && p.body === 'Iron Ingot is done crafting.')) {
+      throw new Error('no crafts webhook post: ' + JSON.stringify(webhookPosts));
+    }
+    await click(`$('#settingsBtn')`);
+    await waitFor('menu open', `visible($('#settingsMenu'))`);
+    await click(`$('#webhookTestBtn')`);
+    await waitFor('reported', `$('#toastContainer').textContent.includes('Test sent to 1 webhook.')`);
+    if (!webhookPosts.some((p) => p.event === 'test')) throw new Error('no test post');
   });
 
   step('admin: switch game data version and textures; the new icons show', async () => {

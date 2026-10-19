@@ -33,6 +33,7 @@ function updateAuthenticationControl() {
   const adminVisible = AUTH_USER && AUTH_USER.role === 'admin' && !AUTH_MUST_ROTATE_BOOTSTRAP;
   adminButton.style.display = adminVisible ? '' : 'none';
   document.getElementById('gamedataBtn').style.display = adminVisible ? '' : 'none';
+  document.getElementById('webhookTestBtn').style.display = adminVisible ? '' : 'none';
   if (AUTH_USER && !AUTH_MUST_ROTATE_BOOTSTRAP) syncPushSubscription();
 }
 
@@ -43,6 +44,27 @@ export async function loadAuthentication() {
   AUTH_MUST_ROTATE_BOOTSTRAP = Boolean(data.must_rotate_bootstrap);
   updateAuthenticationControl();
   if (AUTH_MUST_ROTATE_BOOTSTRAP) showBootstrapRotationModal();
+}
+
+// Posts a test message to every webhook the server has (WEBHOOK_URLS)
+// and says how each went.
+async function testWebhooks() {
+  try {
+    const response = await fetch('/api/admin/webhooks/test', { method: 'POST' });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      showToast(data.error || 'Could not test webhooks.', true);
+      return;
+    }
+    const failed = data.results.filter(r => r.error);
+    if (failed.length) {
+      showToast(failed.map(r => `${r.host}: ${r.error}`).join('; '), true);
+    } else {
+      showToast(`Test sent to ${data.results.length} ${data.results.length === 1 ? 'webhook' : 'webhooks'}.`);
+    }
+  } catch (e) {
+    showToast('Could not reach the server.', true);
+  }
 }
 
 async function submitAccessToken() {
@@ -124,6 +146,7 @@ export function setupAuthControls() {
   delegateActions(document, {
     'toggle-settings': () => toggleSettingsMenu(),
     'open-admin': () => { closeSettingsMenu(); openAdminUsersModal(); },
+    'test-webhooks': () => { closeSettingsMenu(); testWebhooks(); },
     'sign-out': () => { closeSettingsMenu(); signOut(); },
     'rotate-bootstrap': () => rotateBootstrapToken(),
     'close-admin': () => closeAdminUsersModal(),

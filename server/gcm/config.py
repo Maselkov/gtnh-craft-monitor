@@ -47,6 +47,14 @@ GTNH_TEXTURES = os.environ.get("GTNH_TEXTURES", "").strip()
 # a mailto: or https: URL. Empty means the page's own URL.
 VAPID_SUBJECT = os.environ.get("VAPID_SUBJECT", "").strip()
 
+# Webhooks (gcm/webhooks.py): where base-wide notifications are posted
+# (comma-separated; Discord webhooks get embeds), and which events.
+# PUBLIC_URL is the page's address as seen from outside, for icon and
+# item links in them; without it they're left out.
+WEBHOOK_URLS = [u.strip() for u in os.environ.get("WEBHOOK_URLS", "").split(",") if u.strip()]
+WEBHOOK_EVENTS = {e.strip() for e in os.environ.get("WEBHOOK_EVENTS", "crafts,autocraft").split(",") if e.strip()}
+PUBLIC_URL = os.environ.get("PUBLIC_URL", "").strip().rstrip("/")
+
 # Keep-in-stock targets (gcm/stock.py): auto-crafts only start while more
 # than this many crafting CPUs are idle, leaving those for requests made
 # by hand; and a target whose auto-craft failed waits this long before
