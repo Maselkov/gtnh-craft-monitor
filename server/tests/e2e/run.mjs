@@ -742,23 +742,26 @@ async function main() {
     // +200k EU over 30 minutes leaves 700k to go: 1h 45m.
     await waitFor('eta shown', `$('#powerEta')?.textContent === 'Full in 1h 45m \u00b7 +400.0k EU/h over the past hour'`);
     await waitFor('one machine: no machine buttons', `$('#powerMachines').hidden`);
+    await waitFor('fill on the tab button', `$('#tabBtnPower .tab-fill')?.textContent === '30%'`);
     await game(base, '/api/power', { stored: 250, capacity: 1000, machine: 'Batteries' });
     await click(`$('#powerTab [data-range="week"]')`);
     await waitFor('week active', `$('#powerTab [data-range="week"]').classList.contains('active')`);
     // The Crafts tab's statistics range buttons are left alone.
     await waitFor('stats range untouched', `$('#craftStatsRange [data-range="day"]').classList.contains('active')
       && !$('#craftStatsRange [data-range="week"]').classList.contains('active')`);
-    await waitFor('machine buttons', `!$('#powerMachines').hidden
-      && $$('#powerMachines .range-btn').map((b) => b.textContent).join() === 'Main,Batteries'`);
-    await click(`byText('#powerMachines .range-btn', 'Batteries')`);
+    await waitFor('machine buttons, each with its fill', `!$('#powerMachines').hidden
+      && $$('#powerMachines .range-btn').map((b) => b.textContent).join() === 'Main 30%,Batteries 25%'`);
+    // Both together, by size: the 1M EU one outweighs the 1k EU one.
+    await waitFor('tab fill counts both', `$('#tabBtnPower .tab-fill')?.textContent === '30%'`);
+    await click(`$('#powerMachines [data-machine="Batteries"]')`);
     await waitFor('batteries shown', `location.search === '?machine=Batteries'
       && $('#powerCurrent').textContent.includes('250 EU / 1.00k EU (25.0%)')
-      && byText('#powerMachines .range-btn', 'Batteries').classList.contains('active')`);
+      && $('#powerMachines [data-machine="Batteries"]').classList.contains('active')`);
     await click(`$('#tabBtnCrafts')`);
     await click(`$('#tabBtnPower')`);
     await waitFor('kept when coming back', `location.search === '?machine=Batteries'
       && $('#powerCurrent').textContent.includes('250 EU')`);
-    await click(`byText('#powerMachines .range-btn', 'Main')`);
+    await click(`$('#powerMachines [data-machine=""]')`);
     await waitFor('main again', `location.pathname === '/power' && location.search === ''
       && $('#powerEta')`);
   });

@@ -201,6 +201,8 @@ class TestMachines:
         data = client.get("/api/power").get_json()
         assert data["machine"] == ""
         assert [m["name"] for m in data["machines"]] == ["", "Turbines"]
+        # Each with its own latest reading, for the picker and the tab's fill.
+        assert [(m["stored"], m["capacity"]) for m in data["machines"]] == [(100, 1000), (300, 1000)]
         assert [p["stored"] for p in data["points"]] == [100]
         turbines = client.get("/api/power?machine=Turbines").get_json()
         assert turbines["machine"] == "Turbines"

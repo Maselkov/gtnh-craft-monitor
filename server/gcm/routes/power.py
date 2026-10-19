@@ -94,6 +94,13 @@ def range_rows(range_key, machine):
     return range_key, store.power.readings(since, POWER_MAX_POINTS, machine)
 
 
+def _machine_entry(name, t, latest=None):
+    """A machine for the picker and the tab's fill: its name, last
+    reading time and that reading's stored/capacity."""
+    row = latest or store.power.latest(name)
+    return {"name": name, "t": t, "stored": row[1] if row else None, "capacity": row[2] if row else None}
+
+
 @bp.route("/api/power", methods=["GET"])
 @auth.public
 def power_get():
@@ -110,7 +117,7 @@ def power_get():
     return jsonify(
         {
             "machine": machine,
-            "machines": [{"name": name, "t": t} for name, t in machines],
+            "machines": [_machine_entry(name, t, latest if name == machine else None) for name, t in machines],
             "range": range_key,
             "points": [{"t": r[0], "stored": r[1], "capacity": r[2]} for r in rows],
             "latest": (
