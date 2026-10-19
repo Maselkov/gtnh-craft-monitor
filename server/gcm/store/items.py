@@ -1,5 +1,5 @@
 """ME network items: the network_snapshot mirror and change-only
-item_history (item_history.db), and per-user item pins
+item_history and history_items (item_history.db), and per-user item pins
 (app.db)."""
 
 import time
@@ -115,6 +115,42 @@ def load_snapshot():
     return items, max((r[7] for r in rows), default=None)
 
 
+def _item_ids(conn, keys_labels):
+    """{item_key: id} for each (item_key, label), adding history_items
+    rows as needed and keeping each one's latest non-empty label."""
+    conn.executemany(
+        "INSERT INTO history_items (item_key, label) VALUES (?, ?) "
+        "ON CONFLICT (item_key) DO UPDATE SET label = COALESCE(excluded.label, label)",
+        keys_labels,
+    )
+    keys = list({key for key, _ in keys_labels})
+    ids = {}
+    for start in range(0, len(keys), 500):
+        chunk = keys[start:start + 500]
+        ids.update(conn.execute(
+            f"SELECT item_key, id FROM history_items WHERE item_key IN ({','.join('?' * len(chunk))})",
+            chunk,
+        ).fetchall())
+    return ids
+
+
+def add_rows(rows):
+    """Writes (item_key, label, size, recorded_at) rows. label may be
+    None (an item gone from the network), which keeps the last one."""
+    if not rows:
+        return
+    with db.transaction(db.item_history_db) as conn:
+        _add_rows(conn, rows)
+
+
+def _add_rows(conn, rows):
+    ids = _item_ids(conn, [(key, label) for key, label, _, _ in rows])
+    conn.executemany(
+        "INSERT OR REPLACE INTO item_history (item_id, recorded_at, size) VALUES (?, ?, ?)",
+        [(ids[key], recorded_at, size) for key, _, size, recorded_at in rows],
+    )
+
+
 def record_changes(old_items, new_items):
     """old_items/new_items: lists of item dicts (mod, internal, damage,
     kind, name, size). Writes one row per item whose size differs from
@@ -139,13 +175,7 @@ def record_changes(old_items, new_items):
         if key not in seen_keys and old_size != 0:
             changes.append((key, None, 0, now))
 
-    if not changes:
-        return
-    with db.transaction(db.item_history_db) as conn:
-        conn.executemany(
-            "INSERT INTO item_history (item_key, label, size, recorded_at) VALUES (?, ?, ?, ?)",
-            changes,
-        )
+    add_rows(changes)
 
 
 def clear_legacy_variant_history(base_keys, current_sizes):
@@ -160,31 +190,37 @@ def clear_legacy_variant_history(base_keys, current_sizes):
         if not conn.execute("SELECT 1 FROM pending_nbt_cleanup").fetchone():
             return False
         conn.executemany(
-            "DELETE FROM item_history WHERE item_key = ?", [(k,) for k in base_keys]
+            "DELETE FROM item_history WHERE item_id = (SELECT id FROM history_items WHERE item_key = ?)",
+            [(k,) for k in base_keys],
         )
-        conn.executemany(
-            "INSERT INTO item_history (item_key, label, size, recorded_at) VALUES (?, ?, ?, ?)",
-            [(k, label, size, now) for k, (label, size) in current_sizes.items() if k in base_keys],
-        )
+        _add_rows(conn, [(k, label, size, now) for k, (label, size) in current_sizes.items() if k in base_keys])
         conn.execute("DELETE FROM pending_nbt_cleanup")
     return True
+
+
+def _item_id(conn, key):
+    row = conn.execute("SELECT id FROM history_items WHERE item_key = ?", (key,)).fetchone()
+    return row[0] if row else None
 
 
 def history(key, since):
     """(recorded_at, size) rows for one item from `since` on (None: all),
     ascending."""
     with db.transaction(db.item_history_db) as conn:
+        item_id = _item_id(conn, key)
+        if item_id is None:
+            return []
         if since is None:
             return conn.execute(
-                "SELECT recorded_at, size FROM item_history WHERE item_key = ? "
+                "SELECT recorded_at, size FROM item_history WHERE item_id = ? "
                 "ORDER BY recorded_at ASC",
-                (key,),
+                (item_id,),
             ).fetchall()
 
         rows = conn.execute(
-            "SELECT recorded_at, size FROM item_history WHERE item_key = ? AND recorded_at >= ? "
+            "SELECT recorded_at, size FROM item_history WHERE item_id = ? AND recorded_at >= ? "
             "ORDER BY recorded_at ASC",
-            (key, since),
+            (item_id, since),
         ).fetchall()
         # A step chart starting mid-air (no point until the first
         # change INSIDE the range) looks wrong/misleading - prepend
@@ -192,9 +228,9 @@ def history(key, since):
         # so the line correctly holds its prior value from the very
         # left edge of the chart.
         lead = conn.execute(
-            "SELECT recorded_at, size FROM item_history WHERE item_key = ? AND recorded_at < ? "
+            "SELECT recorded_at, size FROM item_history WHERE item_id = ? AND recorded_at < ? "
             "ORDER BY recorded_at DESC LIMIT 1",
-            (key, since),
+            (item_id, since),
         ).fetchone()
     if lead:
         rows = [(since, lead[1])] + rows
@@ -202,12 +238,13 @@ def history(key, since):
 
 
 def last_recorded(key):
-    """(label, size) from the newest history row that has a label, or
-    (None, None)."""
+    """(label, size): the item's last known name and its newest recorded
+    size, or (None, None) when it was never recorded with a name."""
     with db.transaction(db.item_history_db) as conn:
         row = conn.execute(
-            "SELECT label, size FROM item_history WHERE item_key = ? AND label IS NOT NULL "
-            "ORDER BY recorded_at DESC LIMIT 1",
+            "SELECT i.label, (SELECT size FROM item_history h WHERE h.item_id = i.id "
+            "ORDER BY h.recorded_at DESC LIMIT 1) "
+            "FROM history_items i WHERE i.item_key = ? AND i.label IS NOT NULL",
             (key,),
         ).fetchone()
     return (row[0], row[1]) if row else (None, None)
@@ -250,3 +287,42 @@ def unpin(user_id, mod, internal, damage, kind, variant=None):
             "DELETE FROM user_item_pins WHERE user_id = ? AND item_key = ?",
             (user_id, item_key(mod, internal, damage, kind, variant)),
         )
+
+
+def thin(tier, bucket_seconds, before):
+    """Keeps only the last row per item per bucket_seconds (UTC-aligned)
+    for rows recorded before `before`, starting where this tier last
+    stopped. The last row of a bucket is the value the step chart holds
+    through it, so charts and rates read the same, just coarser. Works
+    item by item along the primary key; returns the rows deleted."""
+    with db.transaction(db.item_history_db) as conn:
+        row = conn.execute("SELECT until FROM history_thinned WHERE tier = ?", (tier,)).fetchone()
+        item_ids = [r[0] for r in conn.execute("SELECT id FROM history_items")]
+    since = row[0] if row else 0
+    # Whole buckets only: a bucket straddling `before` waits for the next run.
+    before = before // bucket_seconds * bucket_seconds
+    if before <= since:
+        return 0
+    deleted = 0
+    for start in range(0, len(item_ids), 500):
+        with db.transaction(db.item_history_db) as conn:
+            for item_id in item_ids[start:start + 500]:
+                deleted += conn.execute(
+                    "DELETE FROM item_history WHERE item_id = ? AND recorded_at >= ? AND recorded_at < ? "
+                    "AND recorded_at NOT IN ("
+                    " SELECT MAX(recorded_at) FROM item_history"
+                    " WHERE item_id = ? AND recorded_at >= ? AND recorded_at < ?"
+                    " GROUP BY CAST(recorded_at / ? AS INTEGER))",
+                    (item_id, since, before, item_id, since, before, bucket_seconds),
+                ).rowcount
+    with db.transaction(db.item_history_db) as conn:
+        conn.execute(
+            "INSERT INTO history_thinned (tier, until) VALUES (?, ?) "
+            "ON CONFLICT (tier) DO UPDATE SET until = excluded.until",
+            (tier, before),
+        )
+    return deleted
+
+
+def vacuum_if_mostly_free():
+    return db.vacuum_if_mostly_free(db.item_history_db)

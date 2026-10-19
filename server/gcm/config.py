@@ -69,6 +69,11 @@ AUTOCRAFT_RETRY_SECONDS = int(os.environ.get("AUTOCRAFT_RETRY_SECONDS", "1800"))
 # hasn't moved for this long is shown as stuck.
 CRAFT_STALL_SECONDS = int(os.environ.get("CRAFT_STALL_SECONDS", "600"))
 
+# Item history thinning (gcm/retention.py): older than this many days,
+# one row per item per hour, then per day. 0 turns a tier off.
+HISTORY_HOURLY_AFTER_DAYS = int(os.environ.get("HISTORY_HOURLY_AFTER_DAYS", "30"))
+HISTORY_DAILY_AFTER_DAYS = int(os.environ.get("HISTORY_DAILY_AFTER_DAYS", "365"))
+
 DATA_DIR = None
 GAMEDATA_DIR = None
 POWER_DB_PATH = None
