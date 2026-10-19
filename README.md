@@ -598,6 +598,12 @@ duration, since their start wasn't seen. The list is kept permanently in
 Network tab's search, and **Incomplete** and **Auto** show only those jobs;
 both look through the whole list, not just the rows loaded so far.
 
+**Statistics**, below it, adds up the jobs that ended in the last day, week,
+month or ever: how many, how many stopped early or were auto-crafts, the most
+crafted items with how long one usually takes, and how much of the range each
+CPU spent busy. A job counts once it ends, and its time only from when the
+server saw it start, so jobs already running at a restart add no busy time.
+
 ### Pins and notifications
 
 Click the pin icon on a card to pin its job to the top of the page. When a

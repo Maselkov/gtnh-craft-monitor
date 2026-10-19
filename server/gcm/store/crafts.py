@@ -124,6 +124,20 @@ def history(before=None, after=None, limit=50, query="", status=None):
     return events, len(rows) > limit
 
 
+def ended_since(since):
+    """(cpu, item_label, item_icon, status, ended_at, started_at,
+    item_mod, item_internal, item_damage, auto) for every job that
+    ended at or after `since` (None: all of them), oldest first."""
+    with db.transaction(db.app_db) as conn:
+        return conn.execute(
+            "SELECT cpu_name, item_label, item_icon, status, occurred_at, started_at, "
+            "item_mod, item_internal, item_damage, auto FROM craft_events"
+            + ("" if since is None else " WHERE occurred_at >= ?")
+            + " ORDER BY id ASC",
+            () if since is None else (since,),
+        ).fetchall()
+
+
 def completions(user_id, max_age_seconds):
     """The user's unacknowledged completions, newest first. Ones older
     than max_age_seconds (anyone's) are deleted first."""

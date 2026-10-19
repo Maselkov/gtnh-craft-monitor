@@ -149,7 +149,7 @@ export function setupCraftHistoryLinks() {
   // the crafts container, the ingredients grid and the craft history
   // are rebuilt wholesale via innerHTML on every poll, so per-element
   // listeners would just be discarded each time.
-  for (const id of ['root', 'ingredientsModal', 'craftHistory']) {
+  for (const id of ['root', 'ingredientsModal', 'craftHistory', 'craftStats']) {
     document.getElementById(id).addEventListener('click', (e) => {
       const link = e.target.closest('.item-history-link');
       if (!link) return;

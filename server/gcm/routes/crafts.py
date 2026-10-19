@@ -5,7 +5,7 @@ import time
 
 from flask import Blueprint, g, jsonify, request, Response
 
-from gcm import auth, config, icons, job_tree, planner, state, store, tracking
+from gcm import auth, config, craft_stats, icons, job_tree, planner, state, store, tracking
 
 
 bp = Blueprint("crafts", __name__)
@@ -164,6 +164,28 @@ def crafts_history_get():
         status=request.args.get("status"),
     )
     return jsonify({"events": events, "more": more})
+
+
+STATS_RANGE_SECONDS = {
+    "day": 86400,
+    "week": 7 * 86400,
+    "month": 30 * 86400,
+    "all": None,
+}
+
+
+@bp.route("/api/crafts/stats", methods=["GET"])
+@auth.public
+def crafts_stats_get():
+    """Totals, most crafted items and CPU busy time over ?range=
+    day|week|month|all (unknown: week), from the jobs that ended."""
+    range_key = request.args.get("range", "week")
+    if range_key not in STATS_RANGE_SECONDS:
+        range_key = "week"
+    now = time.time()
+    seconds = STATS_RANGE_SECONDS[range_key]
+    stats = craft_stats.summarize(None if seconds is None else now - seconds, now)
+    return jsonify({"range": range_key, **stats})
 
 
 @bp.route("/api/pins", methods=["GET"])
