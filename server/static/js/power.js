@@ -2,10 +2,13 @@
 
 import { CHART_RANGE_SECONDS_JS, CHART_TIME_CONFIG, CHART_X_TICKS } from './history.js';
 import { powerBadge, setTabBadge } from './tab-badges.js';
-import { delegateActions, formatDuration, formatRate } from './util.js';
+import { delegateActions, escapeHtml, formatDuration, formatRate } from './util.js';
 
 // ---------- Power chart ----------
 let powerRange = 'day';
+// The machine picked with the buttons above the chart (or ?machine= in
+// the URL); null shows the server's default, the first one.
+let powerMachine = null;
 let powerChart = null;
 let lastPowerData = null;  // separate from crafts' lastData on purpose -
                             // power comes from a different Lua script
@@ -16,7 +19,7 @@ let lastPowerData = null;  // separate from crafts' lastData on purpose -
 
 function setPowerRange(range) {
   powerRange = range;
-  document.querySelectorAll('.range-btn').forEach(btn => {
+  document.querySelectorAll('#powerRanges .range-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.range === range);
   });
   fetchPower();
@@ -46,9 +49,40 @@ function formatEU(n) {
   return String(Math.round(n));
 }
 
+// The Power tab's URL: /power, or /power?machine=... once one is picked.
+export function powerPath() {
+  return powerMachine == null ? '/power' : `/power?machine=${encodeURIComponent(powerMachine)}`;
+}
+
+// After loading on, or navigating back to, a /power URL.
+export function powerMachineFromUrl() {
+  powerMachine = new URLSearchParams(location.search).get('machine');
+}
+
+function setPowerMachine(name) {
+  powerMachine = name || null;  // the unnamed one is the default whenever it exists
+  history.replaceState({ view: 'power' }, '', powerPath());
+  fetchPower();
+}
+
+// The unnamed machine is the one reported before machines had names.
+export function machineLabel(name) {
+  return name || 'Main';
+}
+
+function renderMachines(data) {
+  const box = document.getElementById('powerMachines');
+  const machines = data.machines || [];
+  box.hidden = machines.length < 2;
+  box.innerHTML = machines.map(m => `<button class="range-btn${m.name === data.machine ? ' active' : ''}"
+    data-action="power-machine" data-machine="${escapeHtml(m.name)}">${escapeHtml(machineLabel(m.name))}</button>`).join('');
+}
+
 export async function fetchPower() {
   try {
-    const res = await fetch('/api/power?range=' + powerRange);
+    const query = new URLSearchParams({ range: powerRange });
+    if (powerMachine != null) query.set('machine', powerMachine);
+    const res = await fetch('/api/power?' + query);
     const data = await res.json();
     lastPowerData = data;
     renderPower(data);
@@ -126,7 +160,8 @@ export async function fetchPowerBadge() {
 
 function renderPower(data) {
   const points = data.points || [];
-  setTabBadge('power', powerBadge(data.latest, data.trend));
+  renderMachines(data);
+  if (powerMachine == null) setTabBadge('power', powerBadge(data.latest, data.trend));
   const empty = document.getElementById('powerEmpty');
   const canvas = document.getElementById('powerChart');
 
@@ -255,5 +290,6 @@ function renderPower(data) {
 export function setupPowerActions() {
   delegateActions(document, {
     'power-range': (el) => setPowerRange(el.dataset.range),
+    'power-machine': (el) => setPowerMachine(el.dataset.machine),
   });
 }

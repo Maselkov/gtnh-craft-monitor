@@ -5,7 +5,8 @@
 Starts the real app on a throwaway data directory with:
 - a small generated game data bundle, so every fake item has an icon;
 - an admin user, whose access token is printed at startup;
-- a week of backfilled power and item history, so the charts have lines;
+- a week of backfilled power (two machines) and item history, so the
+  charts have lines;
 - a fake game in a background thread that talks to the real API endpoints
   the way the oc/ scripts do: crafting CPUs whose jobs progress, finish
   and restart, network scans, power readings, and craft/cancel requests
@@ -308,13 +309,16 @@ def install_icons(data_dir):
 # ---------------------------------------------------------------- power and history
 
 CAPACITY = 1e10
+# A second machine (power_monitor.lua's MACHINES): name, capacity, and
+# how far its daily cycle runs behind the main one's.
+BATTERIES = ("Batteries", 2e8, 6 * 3600)
 
 
-def power_reading(ts):
+def power_reading(ts, capacity=CAPACITY):
     """Stored EU drifting on a daily cycle, with noise - the same curve
     for the backfill and the live readings, so they join up."""
     phase = (ts % 86400) / 86400 * 2 * math.pi
-    stored = CAPACITY * (0.45 + 0.3 * math.sin(phase) + 0.03 * random.uniform(-1, 1))
+    stored = capacity * (0.45 + 0.3 * math.sin(phase) + 0.03 * random.uniform(-1, 1))
     # The trend arrow follows the slope of the cycle.
     slope = math.cos(phase) * 80000
     return stored, {"avg_eu_in_5s": 200000 + max(0, slope) + random.uniform(0, 5000),
@@ -332,6 +336,9 @@ def backfill_history(days=7):
         ts = now - (days * 24 * 6 - i) * 600
         stored, trend = power_reading(ts)
         store.power.add_reading(ts, stored, CAPACITY, trend)
+        name, capacity, lag = BATTERIES
+        stored, trend = power_reading(ts - lag, capacity)
+        store.power.add_reading(ts, stored, capacity, trend, name)
 
     rows, stock = [], {}
     for it in CATALOG:
@@ -553,6 +560,9 @@ class FakeGame:
                                           "jobs": [cpu.report() for cpu in self.cpus]})
         stored, trend = power_reading(time.time())
         self.call("POST", "/api/power", {"stored": stored, "capacity": CAPACITY, **trend})
+        name, capacity, lag = BATTERIES
+        stored, trend = power_reading(time.time() - lag, capacity)
+        self.call("POST", "/api/power", {"stored": stored, "capacity": capacity, "machine": name, **trend})
         if self.ticks % PATTERN_SCAN_EVERY_TICKS == 0:
             self.scan_patterns()
         if self.ticks % SCAN_EVERY_TICKS == 0:

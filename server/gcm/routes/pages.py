@@ -5,7 +5,7 @@ import hashlib
 import os
 import re
 from html import escape as html_escape
-from urllib.parse import unquote
+from urllib.parse import quote, unquote
 
 from flask import abort, Blueprint, request, Response, send_from_directory
 
@@ -104,13 +104,14 @@ def _build_og_tags(path, args):
     elif path == "/power":
         # The latest raw reading, like the page's own readout - not the
         # last bucket of a downsampled range.
-        latest = store.power.latest()
-        title = "Power"
+        machine, _ = store.power.pick(args.get("machine"))
+        latest = store.power.latest(machine)
+        title = f"Power · {machine}" if machine else "Power"
         if latest:
             stored, capacity = latest[1], latest[2]
             pct = round(stored / capacity * 100, 1) if capacity else 0
             desc = f"{charts.format_qty(stored)} EU stored of {charts.format_qty(capacity)} EU ({pct}%)"
-            image = f"{base}/api/power/chart.png?range=day"
+            image = f"{base}/api/power/chart.png?range=day&machine={quote(machine, safe='')}"
         else:
             desc = "No power data yet"
 

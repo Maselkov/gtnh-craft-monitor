@@ -165,6 +165,8 @@ class TestPowerDbMigration:
         assert "avg_eu_in_5s" in cols
         assert "time_to_empty_minutes" in cols
         assert rows == [(1000.0, 500000.0, 5000000.0)]  # old data untouched
+        machines = conn_rows("SELECT machine FROM power_readings")
+        assert machines == [("",)]  # the unnamed machine's, so it keeps its chart
 
     def test_migration_is_idempotent(self):
         # Running it multiple times (as every server startup does)
@@ -172,6 +174,61 @@ class TestPowerDbMigration:
         db.init_power_db()
         db.init_power_db()
         db.init_power_db()
+
+
+def conn_rows(sql):
+    conn = sqlite3.connect(config.POWER_DB_PATH)
+    try:
+        return conn.execute(sql).fetchall()
+    finally:
+        conn.close()
+
+
+class TestMachines:
+    def post(self, client, api_headers, stored, machine=None):
+        body = {"stored": stored, "capacity": 1000}
+        if machine is not None:
+            body["machine"] = machine
+        return client.post("/api/power", json=body, headers=api_headers)
+
+    def test_each_machine_has_its_own_readings(self, client, api_headers):
+        self.post(client, api_headers, 100)
+        self.post(client, api_headers, 200, "Turbines")
+        self.post(client, api_headers, 300, " Turbines ")  # trimmed
+        data = client.get("/api/power").get_json()
+        assert data["machine"] == ""
+        assert [m["name"] for m in data["machines"]] == ["", "Turbines"]
+        assert [p["stored"] for p in data["points"]] == [100]
+        turbines = client.get("/api/power?machine=Turbines").get_json()
+        assert turbines["machine"] == "Turbines"
+        assert [p["stored"] for p in turbines["points"]] == [200, 300]
+        assert turbines["latest"]["stored"] == 300
+
+    def test_only_named_machines_shows_the_first(self, client, api_headers):
+        self.post(client, api_headers, 1, "LSC")
+        self.post(client, api_headers, 2, "Batteries")
+        data = client.get("/api/power").get_json()
+        assert (data["machine"], data["latest"]["stored"]) == ("Batteries", 2)
+
+    def test_unknown_machine_falls_back(self, client, api_headers):
+        self.post(client, api_headers, 1, "LSC")
+        assert client.get("/api/power?machine=nope").get_json()["machine"] == "LSC"
+
+    def test_bad_names_rejected(self, client, api_headers):
+        assert self.post(client, api_headers, 1, 5).status_code == 400
+        assert self.post(client, api_headers, 1, "x" * 65).status_code == 400
+        assert client.get("/api/power").get_json()["machines"] == []
+
+    def test_chart_png_per_machine(self, client, api_headers):
+        self.post(client, api_headers, 1, "LSC")
+        res = client.get("/api/power/chart.png?machine=LSC")
+        assert res.status_code == 200 and res.mimetype == "image/png"
+
+    def test_link_preview_names_the_machine(self, client, api_headers):
+        self.post(client, api_headers, 500, "Big Batteries")
+        html = client.get("/power?machine=Big%20Batteries").get_data(as_text=True)
+        assert 'content="Power · Big Batteries"' in html
+        assert "chart.png?range=day&amp;machine=Big%20Batteries" in html
 
 
 class TestPowerDownsampling:

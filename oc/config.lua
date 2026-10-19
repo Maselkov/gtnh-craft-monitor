@@ -45,6 +45,8 @@ return {
   -- power_monitor = {
   --   POLL_SECONDS      = 60,
   --   COMPONENT_ADDRESS = "put-a-gt_machine-address-here",
+  --   -- or several machines, each with its own chart:
+  --   -- MACHINES = { { address = "..." }, { address = "...", name = "Batteries" } },
   -- },
   -- network_browser = {
   --   SCAN_INTERVAL_SECONDS         = 600,

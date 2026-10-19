@@ -82,4 +82,46 @@ test("COMPONENT_ADDRESS picks one of several", function()
   t.eq(readings(env)[1].stored, 2)
 end)
 
+test("MACHINES reports each one under its name", function()
+  local env = t.env({ config = { power_monitor = { MACHINES = {
+    { address = "lsc-1" },
+    { address = "lsc-2", name = 'Turbines "B"\\2' },
+  } } } })
+  gt.new(env, { stored = 1, capacity = 10, address = "lsc-1" })
+  gt.new(env, { stored = 2, capacity = 20, address = "lsc-2" })
+  env:start_service("power_monitor")
+  env:run({ seconds = 1 })
+  local r = readings(env)
+  t.eq(#r, 2)
+  t.eq(r[1].stored, 1)
+  t.eq(r[1].machine, nil)
+  t.eq(r[2].stored, 2)
+  t.eq(r[2].machine, 'Turbines "B"\\2')
+end)
+
+test("MACHINES with an unknown address stops with a message", function()
+  local env = t.env({ config = { power_monitor = { MACHINES = { { address = "nope", name = "LSC" } } } } })
+  gt.new(env, { address = "lsc-1" })
+  env:start_service("power_monitor")
+  env:run({ seconds = 1 })
+  t.truthy(env:printed("couldn't proxy address nope"))
+  t.eq(#readings(env), 0)
+  t.eq(env:alive(), 0)
+end)
+
+test("one machine failing to read doesn't stop the others", function()
+  local env = t.env({ config = { power_monitor = { MACHINES = {
+    { address = "lsc-1", name = "A" }, { address = "lsc-2", name = "B" },
+  } } } })
+  local a = gt.new(env, { address = "lsc-1" })
+  a:fail("getEUStored")
+  a:fail("getSensorInformation")
+  gt.new(env, { stored = 2, capacity = 20, address = "lsc-2" })
+  env:start_service("power_monitor")
+  env:run({ seconds = 1 })
+  local r = readings(env)
+  t.eq(#r, 1)
+  t.eq(r[1].machine, "B")
+end)
+
 return suite

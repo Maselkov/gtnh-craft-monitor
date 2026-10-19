@@ -257,3 +257,21 @@ def test_pattern_scan_lands_with_crafting_counts(game, client):
         "Molecular Assembler": ([("Oak Wood", 1)], [("Oak Wood Planks", 4, "item")]),
         "Fluid Extractor p1": ([("Neodymium Ingot", 16)], [("Molten Neodymium", 2304, "fluid")]),
     }
+
+
+def test_several_power_machines_land_separately(game, client, api_key):
+    game.lua(
+        """
+        env:write_config({ SERVER_URL = 'http://gcm.test', API_KEY = '%s', power_monitor = { MACHINES = {
+          { address = 'lsc' }, { address = 'bat', name = 'Batteries' },
+        } } })
+        gt.new(env, { stored = 4e9, capacity = 1e10, address = 'lsc' })
+        gt.new(env, { stored = 7, capacity = 10, address = 'bat' })
+        env:start_service("power_monitor")
+        """ % api_key
+    )
+    game.run(1)
+    data = client.get("/api/power").get_json()
+    assert [m["name"] for m in data["machines"]] == ["", "Batteries"]
+    assert data["latest"]["stored"] == 4e9
+    assert client.get("/api/power?machine=Batteries").get_json()["latest"]["stored"] == 7

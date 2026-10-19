@@ -3,16 +3,18 @@
 from gcm import db
 
 
-def add_reading(ts, stored, capacity, trends):
+def add_reading(ts, stored, capacity, trends, machine=""):
     """trends: the optional trend fields power_monitor.lua may send
-    (avg_eu_in_5s ... time_to_empty_minutes), each a float or None."""
+    (avg_eu_in_5s ... time_to_empty_minutes), each a float or None.
+    machine: its name, '' for one reported without."""
     with db.transaction(db.power_db) as conn:
         conn.execute(
             "INSERT INTO power_readings "
-            "(ts, stored, capacity, avg_eu_in_5s, avg_eu_out_5s, avg_eu_in_5m, avg_eu_out_5m, "
+            "(machine, ts, stored, capacity, avg_eu_in_5s, avg_eu_out_5s, avg_eu_in_5m, avg_eu_out_5m, "
             "avg_eu_in_1h, avg_eu_out_1h, time_to_empty_minutes) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
+                machine,
                 ts,
                 stored,
                 capacity,
@@ -27,15 +29,16 @@ def add_reading(ts, stored, capacity, trends):
         )
 
 
-def readings(since, max_points):
-    """(ts, stored, capacity) rows from `since` on (None: all), ascending.
+def readings(since, max_points, machine=""):
+    """(ts, stored, capacity) rows of one machine from `since` on (None:
+    all), ascending.
     Over max_points readings, they're averaged into max_points equal
     time buckets inside SQLite, so a long range never pulls every raw
     reading into Python."""
     if since is None:
-        where, params = "", ()
+        where, params = "WHERE machine = ?", (machine,)
     else:
-        where, params = "WHERE ts >= ?", (since,)
+        where, params = "WHERE machine = ? AND ts >= ?", (machine, since)
 
     with db.transaction(db.power_db) as conn:
         count, first, last = conn.execute(
@@ -56,7 +59,7 @@ def readings(since, max_points):
         ).fetchall()
 
 
-def latest():
+def latest(machine=""):
     """The single most recent RAW reading, in full - deliberately a
     separate, unfiltered query rather than reusing whatever readings()
     returned for the chart.
@@ -79,5 +82,37 @@ def latest():
     with db.transaction(db.power_db) as conn:
         return conn.execute(
             "SELECT ts, stored, capacity, avg_eu_in_5s, avg_eu_out_5s "
-            "FROM power_readings ORDER BY ts DESC LIMIT 1"
+            "FROM power_readings WHERE machine = ? ORDER BY ts DESC LIMIT 1",
+            (machine,),
         ).fetchone()
+
+
+def machines():
+    """Every machine that has readings, as (name, last reading time),
+    by name ('' first)."""
+    with db.transaction(db.power_db) as conn:
+        # Walks the (machine, ts) index one name at a time, rather than
+        # a GROUP BY reading every row of a long history.
+        names = [row[0] for row in conn.execute(
+            "WITH RECURSIVE m(name) AS ("
+            " SELECT MIN(machine) FROM power_readings"
+            " UNION ALL"
+            " SELECT (SELECT MIN(machine) FROM power_readings WHERE machine > m.name) FROM m"
+            " WHERE m.name IS NOT NULL"
+            ") SELECT name FROM m WHERE name IS NOT NULL"
+        )]
+        return [
+            (name, conn.execute("SELECT MAX(ts) FROM power_readings WHERE machine = ?", (name,)).fetchone()[0])
+            for name in names
+        ]
+
+
+def pick(wanted):
+    """(machine, machines): `wanted` when it has readings, else the
+    first one ('' when there is one, as before machines had names),
+    plus machines() for the caller to reuse."""
+    found = machines()
+    names = [name for name, _ in found]
+    if wanted in names:
+        return wanted, found
+    return (names[0] if names else ""), found

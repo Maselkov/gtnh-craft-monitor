@@ -274,6 +274,14 @@ def _power_baseline(conn):
             )
 
 
+def _power_machines(conn):
+    # Several machines (power_monitor.lua's MACHINES), each reading
+    # tagged with its name. '' is the one reported without a name, which
+    # every reading from before this was.
+    conn.execute("ALTER TABLE power_readings ADD COLUMN machine TEXT NOT NULL DEFAULT ''")
+    conn.execute("CREATE INDEX idx_power_readings_machine_ts ON power_readings (machine, ts)")
+
+
 # ---------------------------------------------------------------------
 # Item/fluid quantity history (SQLite-backed, own db file - separate
 # from power.db and app.db, matching the established "one db
@@ -537,7 +545,7 @@ APP_MIGRATIONS = [
     _app_stock_rules,
     _app_craft_event_auto,
 ]
-POWER_MIGRATIONS = [_power_baseline]
+POWER_MIGRATIONS = [_power_baseline, _power_machines]
 ITEM_HISTORY_MIGRATIONS = [_item_history_baseline, _item_history_variants, _item_history_pattern_snapshot]
 
 
