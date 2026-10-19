@@ -1100,7 +1100,8 @@ container) render a subset in about a minute.
   test suites cover the server and frontend only) - anything Lua-side is
   still verified via manual `luac -p` syntax checks and live-server/
   in-game smoke tests during development.
-- Single power-source assumption: `power_monitor.lua` targets one
-  `gt_machine` (errors out if it finds more than one and
-  `CONFIG.COMPONENT_ADDRESS` isn't set) - fine for one LSC, would need
-  extending for multiple tracked machines.
+- Power sources: `power_monitor.lua` targets one `gt_machine` (errors
+  out if it finds more than one and `CONFIG.COMPONENT_ADDRESS` isn't
+  set), or every machine listed in `MACHINES`, each posted with its
+  name and charted separately (`power_readings.machine`, '' for the
+  unnamed one).

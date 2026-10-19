@@ -494,6 +494,10 @@ h1 {
 }
 .tab-badge.dot.done { background: var(--idle); }
 .tab-badge.dot.alert { background: var(--stale); }
+.power-machines {
+  flex-wrap: wrap;
+  margin: 4px 0 12px;
+}
 .power-head {
   display: flex;
   justify-content: space-between;

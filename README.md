@@ -531,8 +531,26 @@ the output, then remove it again.
 |---|---|---|
 | `POLL_SECONDS` | `60` | How often stored EU is read and posted |
 | `COMPONENT_ADDRESS` | `nil` | Pick a specific `gt_machine` if several are connected |
+| `MACHINES` | `nil` | Report several machines instead, each with its own chart: see below |
 | `HTTP_TIMEOUT_SECONDS` | `20` | Give up on a request to the server that stalls this long |
 | `SHOW_STATUS` | `false` | Draw a status screen |
+
+To chart several machines (say an LSC and a bank of battery buffers), list
+them with a name each:
+
+```lua
+power_monitor = {
+  MACHINES = {
+    { address = "1f3a..." },                      -- no name: keeps the existing chart
+    { address = "9c02...", name = "Batteries" },
+  },
+},
+```
+
+Each is read and posted every poll. A machine without a name keeps the
+history recorded before `MACHINES` was set, so leave the one you were
+already charting unnamed. The addresses are the ones `component.list("gt_machine")`
+prints, or that the script lists when it finds several.
 
 **network_browser.lua**
 
@@ -672,6 +690,12 @@ Above the chart, an arrow shows the machine's net EU/s over the last 5
 seconds (hover it for input and output separately), and a line gives the
 rate over the past hour with the time until the machine is full or empty
 at that rate. The estimate needs at least 10 minutes of readings.
+
+With several machines (`MACHINES` in [power_monitor.lua's
+settings](#script-settings)), buttons above the readout switch between
+them, and the page's URL (`/power?machine=Batteries`) keeps the choice for
+links and link previews. The unnamed machine shows as **Main**, and the tab
+badge follows it.
 
 ### Network tab
 

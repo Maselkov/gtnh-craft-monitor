@@ -24,6 +24,8 @@ POWER_RANGE_SECONDS = {
 # and the payload stays small even after months of 1-minute-ish polling.
 POWER_MAX_POINTS = 800
 
+MACHINE_NAME_MAX = 64
+
 # Optional fields power_monitor.lua may send besides stored/capacity:
 # the machine's own averaged EU in/out and time-to-empty estimate.
 TREND_FIELDS = (
@@ -51,6 +53,9 @@ def power_post():
         return jsonify({"error": "missing stored/capacity"}), 400
     if ts is None:
         ts = time.time()
+    machine = payload.get("machine", "")
+    if not isinstance(machine, str) or len(machine.strip()) > MACHINE_NAME_MAX:
+        return jsonify({"error": "invalid machine name"}), 400
 
     def _f(key):
         # All optional - older power_monitor.lua deployments (or a
@@ -64,33 +69,39 @@ def power_post():
         float(stored),
         float(capacity),
         {key: _f(key) for key in TREND_FIELDS},
+        machine.strip(),
     )
 
     return jsonify({"ok": True})
 
 
-def range_rows(range_key):
+def range_rows(range_key, machine):
     """(range_key, rows) for a chart range name; unknown names mean
     "day"."""
     if range_key not in POWER_RANGE_SECONDS:
         range_key = "day"
     seconds = POWER_RANGE_SECONDS[range_key]
     since = None if seconds is None else time.time() - seconds
-    return range_key, store.power.readings(since, POWER_MAX_POINTS)
+    return range_key, store.power.readings(since, POWER_MAX_POINTS, machine)
 
 
 @bp.route("/api/power", methods=["GET"])
 @auth.public
 def power_get():
-    range_key, rows = range_rows(request.args.get("range", "day"))
-    latest = store.power.latest()
+    """One machine's readings (?machine=, see store.power.pick) over
+    ?range=, and the list of machines."""
+    machine, machines = store.power.pick(request.args.get("machine"))
+    range_key, rows = range_rows(request.args.get("range", "day"), machine)
+    latest = store.power.latest(machine)
     now = time.time()
     trend = rates.power_trend(
-        store.power.readings(now - rates.POWER_WINDOW_SECONDS, POWER_MAX_POINTS), now
+        store.power.readings(now - rates.POWER_WINDOW_SECONDS, POWER_MAX_POINTS, machine), now
     )
 
     return jsonify(
         {
+            "machine": machine,
+            "machines": [{"name": name, "t": t} for name, t in machines],
             "range": range_key,
             "points": [{"t": r[0], "stored": r[1], "capacity": r[2]} for r in rows],
             "latest": (
@@ -115,9 +126,10 @@ def power_chart_png():
     rate_limited = charts.rate_limit_response()
     if rate_limited:
         return rate_limited
-    range_key, rows = range_rows(request.args.get("range", "day"))
+    machine, _ = store.power.pick(request.args.get("machine"))
+    range_key, rows = range_rows(request.args.get("range", "day"), machine)
     png_bytes = charts.cached_png(
-        ("power", range_key),
+        ("power", machine, range_key),
         lambda: charts.render_png(
             [(r[0], r[1]) for r in rows],
             stepped=False,

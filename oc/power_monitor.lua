@@ -39,6 +39,11 @@
     - Internet Card in the computer.
     - Same allowInternet / host-allowlist requirements as craft_monitor.lua.
 
+  SEVERAL MACHINES:
+    Set MACHINES in config.lua's power_monitor table to a list of
+    { address = ..., name = ... }; each is read and POSTed every poll
+    with its name, and gets its own chart on the Power tab.
+
   SETUP:
     1. Edit the CONFIG block below.
     2. Copy this file to /etc/rc.d/power_monitor.lua.
@@ -102,6 +107,11 @@ local CONFIG = {
   COMPONENT_ADDRESS = nil,          -- set this (a component address string) if you
                                      -- have more than one gt_machine on the network
                                      -- and need to pick a specific one
+  MACHINES = nil,                   -- or report several, each its own chart on the
+                                     -- Power tab: { { address = "...", name = "LSC" },
+                                     -- { address = "...", name = "Turbines" } }. A
+                                     -- machine without a name keeps the history
+                                     -- reported before MACHINES was set.
   HTTP_TIMEOUT_SECONDS = 20,        -- see http.lua's
                                      -- read_response_with_timeout - bails
                                      -- out of a POST if a real, confirmed-
@@ -132,11 +142,31 @@ local function find_gt_machine()
     return nil, "No gt_machine component found. Check the Adapter is touching the multiblock."
   elseif #addresses > 1 then
     return nil, string.format(
-      "Found %d gt_machine components - set CONFIG.COMPONENT_ADDRESS to pick one. Addresses: %s",
+      "Found %d gt_machine components - set CONFIG.COMPONENT_ADDRESS to pick one, or MACHINES to report several. Addresses: %s",
       #addresses, table.concat(addresses, ", "))
   end
 
   return component.proxy(addresses[1]), nil
+end
+
+-- Returns a list of { proxy = ..., name = ... or nil }, or nil, err.
+local function find_machines()
+  if not CONFIG.MACHINES then
+    local proxy, err = find_gt_machine()
+    if not proxy then return nil, err end
+    return { { proxy = proxy } }, nil
+  end
+  local machines = {}
+  for i, entry in ipairs(CONFIG.MACHINES) do
+    local ok, proxy = pcall(component.proxy, entry.address or "")
+    if not ok or not proxy then
+      return nil, string.format("MACHINES[%d] (%s): couldn't proxy address %s",
+        i, tostring(entry.name), tostring(entry.address))
+    end
+    machines[#machines + 1] = { proxy = proxy, name = entry.name }
+  end
+  if #machines == 0 then return nil, "MACHINES is set but empty." end
+  return machines, nil
 end
 
 local function parse_number_from_text(s)
@@ -251,7 +281,15 @@ local function json_encode_number(n)
   return string.format("%.0f", n)  -- EU values are always whole numbers, can be huge
 end
 
-local function post_reading(stored, capacity, trend)
+-- A JSON string literal: names come from config.lua, so quotes,
+-- backslashes and control characters are escaped.
+local function json_string(s)
+  return '"' .. tostring(s):gsub('[%c"\\]', function(c)
+    return string.format("\\u%04x", c:byte())
+  end) .. '"'
+end
+
+local function post_reading(stored, capacity, trend, name)
   -- Deliberately NOT sending a timestamp here. OpenComputers' os.time()
   -- is not a Unix timestamp - it's reimplemented to return in-game
   -- seconds since the world was created, on the game's own clock (which
@@ -267,6 +305,9 @@ local function post_reading(stored, capacity, trend)
     string.format('"stored":%s', json_encode_number(stored)),
     string.format('"capacity":%s', json_encode_number(capacity)),
   }
+  if name then
+    parts[#parts + 1] = '"machine":' .. json_string(name)
+  end
   -- Only included when actually present - trend fields are entirely
   -- optional server-side, so a storage structure that doesn't report
   -- them (or an older getSensorInformation() shape) just omits them
@@ -290,11 +331,7 @@ local function post_reading(stored, capacity, trend)
   return ok, result
 end
 
-local function draw_status(stored, capacity, post_ok, post_err, read_err)
-  term.clear()
-  term.setCursor(1, 1)
-  print("=== GTNH Power Monitor ===")
-  print("Last poll:    " .. os.date("%H:%M:%S"))
+local function draw_machine_status(stored, capacity, post_ok, post_err, read_err)
   if read_err then
     print("Read error:   " .. read_err)
   else
@@ -304,6 +341,17 @@ local function draw_status(stored, capacity, post_ok, post_err, read_err)
     print(string.format("Level:        %.1f%%", pct))
   end
   print("Last POST:    " .. (post_ok and "OK" or ("FAILED - " .. tostring(post_err))))
+end
+
+local function draw_status(results)
+  term.clear()
+  term.setCursor(1, 1)
+  print("=== GTNH Power Monitor ===")
+  print("Last poll:    " .. os.date("%H:%M:%S"))
+  for _, r in ipairs(results) do
+    if r.name then print("--- " .. r.name .. " ---") end
+    draw_machine_status(r.stored, r.capacity, r.post_ok, r.post_err, r.read_err)
+  end
   print("")
   print("Polling every " .. CONFIG.POLL_SECONDS .. "s. 'rc power_monitor stop' to stop.")
 end
@@ -311,8 +359,8 @@ end
 local running = false
 
 local function service_loop()
-  local gt, findErr = find_gt_machine()
-  if not gt then
+  local machines, findErr = find_machines()
+  if not machines then
     print("[power_monitor] " .. findErr)
     running = false
     return
@@ -324,20 +372,28 @@ local function service_loop()
     return
   end
 
-  print("[power_monitor] Found gt_machine. Polling every " .. CONFIG.POLL_SECONDS .. "s.")
+  print(string.format("[power_monitor] Found %d gt_machine%s. Polling every %ds.",
+    #machines, #machines == 1 and "" or "s", CONFIG.POLL_SECONDS))
   if not CONFIG.SHOW_STATUS then
     print("[power_monitor] SHOW_STATUS = false - running quietly, no further screen output.")
   end
   while running do
-    local stored, capacity, read_err = read_energy(gt)
-    local post_ok, post_err = false, "read failed"
+    local results = {}
+    for _, machine in ipairs(machines) do
+      local stored, capacity, read_err = read_energy(machine.proxy)
+      local post_ok, post_err = false, "read failed"
 
-    if not read_err then
-      post_ok, post_err = post_reading(stored, capacity, read_power_trend(gt))
+      if not read_err then
+        post_ok, post_err = post_reading(stored, capacity, read_power_trend(machine.proxy), machine.name)
+      end
+      results[#results + 1] = {
+        name = machine.name, stored = stored, capacity = capacity,
+        post_ok = post_ok, post_err = post_err, read_err = read_err,
+      }
     end
 
     if CONFIG.SHOW_STATUS then
-      draw_status(stored, capacity, post_ok, post_err, read_err)
+      draw_status(results)
     end
 
     if not running then break end

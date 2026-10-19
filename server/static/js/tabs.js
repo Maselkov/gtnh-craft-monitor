@@ -9,7 +9,7 @@ import {
   tryOpenItemFromUrl,
 } from './history.js';
 import { fetchNetwork, fetchNetworkPins, tickNetworkSourceLine } from './network.js';
-import { fetchPower, tickPowerSourceLine } from './power.js';
+import { fetchPower, powerMachineFromUrl, powerPath, tickPowerSourceLine } from './power.js';
 import { fetchStockRules } from './stock.js';
 import { delegateActions } from './util.js';
 
@@ -28,7 +28,7 @@ export function pathToTab(path) {
 }
 
 function tabToPath(tab) {
-  if (tab === 'power') return '/power';
+  if (tab === 'power') return powerPath();
   if (tab === 'network') return '/network';
   return '/crafts';
 }
@@ -88,6 +88,7 @@ export function switchTab(tab, pushUrl) {
 export function setupTabActions() {
   window.addEventListener('popstate', () => {
     const tab = pathToTab(location.pathname);
+    if (tab === 'power') powerMachineFromUrl();
     switchTab(tab, false);  // reacting to a nav that already happened - don't push another
     // Explicit close/open here, not left to switchTab()'s own side
     // effect - that only closes the popup when LEAVING the network

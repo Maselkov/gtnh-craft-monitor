@@ -25,7 +25,7 @@ import {
   setupNetworkTooltipEvents,
   updateNetworkSearchHighlight,
 } from './network.js';
-import { fetchPowerBadge, setupPowerActions } from './power.js';
+import { fetchPowerBadge, powerMachineFromUrl, setupPowerActions } from './power.js';
 import { fetchStockRules, setupStockActions } from './stock.js';
 import { focusNetworkSearch, pathToTab, setupTabActions, switchTab } from './tabs.js';
 import { removeLegacyStorageKeys, setupImageErrorRemoval } from './util.js';
@@ -58,6 +58,7 @@ setupCraftRequestActions();
 // starting on the Crafts tab regardless of how it was linked to.
 (function initFromUrl() {
   const initialTab = pathToTab(location.pathname);
+  if (initialTab === 'power') powerMachineFromUrl();
   if (initialTab === 'network') {
     const parsed = parseItemUrlPath(location.pathname);
     if (parsed) setPendingItemFromUrl(parsed);
