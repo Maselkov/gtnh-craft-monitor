@@ -755,6 +755,13 @@ minute, but its data changes only when a scan finishes.
 The search box takes NEI's syntax, matched against item names and ignoring
 case. Press `/` on any tab to jump to it.
 
+The grid works from the keyboard too: **↓** from the search box (or **Tab**)
+goes into it, the arrow keys, **Home**/**End** and **Page Up**/**Page Down**
+move, and the focused item shows its tooltip. **Enter** opens the item, **C**
+opens the craft dialog (as middle-click does), **P** pins it, and **Escape**
+(or **↑** from the top row) goes back to the search box. Closing a dialog
+with Escape returns to the item it was opened from.
+
 | Query | Matches |
 |---|---|
 | `molten neutronium` | names containing both words, in any order |

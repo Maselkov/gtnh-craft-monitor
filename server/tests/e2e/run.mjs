@@ -818,6 +818,41 @@ async function main() {
     await waitFor('range hidden', `!visible($('#networkChangeRange')) && !$('#networkList .network-cell-change')`);
   });
 
+  step('network grid by keyboard: arrows, Enter, Escape back, P pins, C crafts', async () => {
+    // Real key presses, so focus moves and :focus-visible are the browser's own.
+    const CODES = { ArrowDown: 40, ArrowUp: 38, ArrowLeft: 37, ArrowRight: 39, Enter: 13, Escape: 27, p: 80, c: 67 };
+    const key = async (k) => {
+      const ev = { key: k, code: k.length === 1 ? 'Key' + k.toUpperCase() : k, windowsVirtualKeyCode: CODES[k] };
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', ...ev, ...(k.length === 1 ? { text: k } : {}) });
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', ...ev });
+    };
+    const focused = `document.activeElement.getAttribute('aria-label') || ''`;
+    await evaluate(`$('#networkSearch').focus(), true`);
+    await key('ArrowDown');
+    await waitFor('first cell', `${focused}.startsWith('Iron Ingot')`);
+    await key('ArrowRight');
+    await waitFor('second cell, with its tooltip', `${focused}.startsWith('Neutronium Ingot')
+      && visible($('.network-tooltip')) && $('.network-tooltip').textContent.includes('Neutronium Ingot')`);
+    await key('Enter');
+    await waitFor('history open', `visible($('#itemHistoryModal')) && $('#itemHistoryName').textContent === 'Neutronium Ingot'`);
+    await key('Escape');
+    await waitFor('closed, focus back on the cell', `!visible($('#itemHistoryModal')) && ${focused}.startsWith('Neutronium Ingot')`);
+    await key('p');
+    await waitFor('pinned, floated to the top, still focused', `${focused}.startsWith('Neutronium Ingot')
+      && document.activeElement.dataset.idx === '0' && document.activeElement.querySelector('.network-cell-pin-badge')`);
+    await key('p');
+    await waitFor('unpinned', `!$('#networkList .network-cell-pin-badge')`);
+    await key('ArrowLeft');
+    await waitFor('iron', `${focused}.startsWith('Iron Ingot')`);
+    await key('c');
+    await waitFor('craft dialog, no stray c typed', `visible($('#craftRequestModal')) && $('#craftRequestName').textContent === 'Iron Ingot'
+      && !$('#craftRequestAmount').value.includes('c')`);
+    await key('Escape');
+    await waitFor('closed, back on iron', `!visible($('#craftRequestModal')) && ${focused}.startsWith('Iron Ingot')`);
+    await key('ArrowUp');
+    await waitFor('top row: up to the search', `document.activeElement === $('#networkSearch')`);
+  });
+
   step('"/" jumps to the network search from another tab', async () => {
     await click(`$('#tabBtnCrafts')`);
     await waitFor('crafts tab', `visible($('#craftsTab'))`);
