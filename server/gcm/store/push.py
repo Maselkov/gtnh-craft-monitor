@@ -47,3 +47,8 @@ def subscriptions_for(user_ids):
         {"endpoint": r[0], "user_id": r[1], "p256dh": r[2], "auth": r[3], "origin": r[4]}
         for r in rows
     ]
+
+
+def count():
+    with db.transaction(db.app_db) as conn:
+        return conn.execute("SELECT COUNT(*) FROM push_subscriptions").fetchone()[0]

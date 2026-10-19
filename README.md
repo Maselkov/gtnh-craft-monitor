@@ -77,7 +77,7 @@ never connects into the game.
 | `oc/power_monitor.lua` | Reports a GregTech machine's stored EU |
 | `oc/network_browser.lua` | Scans ME network contents |
 | `oc/gcm.lua`, `oc/manifest.lua` | Installer and updater, and the list of files it installs |
-| `oc/gcm_agent.lua` | Reports the computer to the Scripts dialog; runs its update and reboot buttons |
+| `oc/gcm_agent.lua` | Reports the computer to the Status dialog; runs its update and reboot buttons |
 | `oc/config.lua` | Server URL, API key and per-script settings for all scripts |
 | `oc/http.lua`, `oc/json.lua` | Libraries used by the scripts |
 | `oc/sensor_info_dump.lua` | One-off diagnostic: prints a GT machine's full sensor info |
@@ -165,7 +165,7 @@ Environment variables (set in `.env` for Docker):
 | `PUBLIC_URL` | empty | The page's address from outside, e.g. `https://gtnh.example.com`, for icons and links in webhook posts. |
 | `GAMEDATA_REPO` | `Maselkov/gtnh-craft-monitor-data` | Repo whose `gtnh-data-*` releases the Game data page offers. |
 | `GAMEDATA_API_URL` | `https://api.github.com` | GitHub API base for that list (for mirrors). |
-| `SCRIPTS_REPO` | `Maselkov/gtnh-craft-monitor` | Repo whose newest `vX.Y.Z` tag the Scripts dialog offers as an update. |
+| `SCRIPTS_REPO` | `Maselkov/gtnh-craft-monitor` | Repo whose newest `vX.Y.Z` tag the Status dialog offers as an update. |
 | `AUTOCRAFT_KEEP_IDLE_CPUS` | `1` | Keep-in-stock crafts only start while more crafting CPUs than this are idle; see [Stock rules](#stock-rules). |
 | `AUTOCRAFT_RETRY_SECONDS` | `1800` | How long a keep-in-stock target waits after a failed craft before trying again. |
 | `CRAFT_STALL_SECONDS` | `600` | How long a step of a running job can be crafting without moving before its live tree calls it stuck. |
@@ -460,7 +460,7 @@ scripts come from the same release.
 
 `gcm` also installs and enables `gcm_agent`, a small service that reports
 the computer to the web page every minute. Admins see each computer under
-**Settings (&#9881;) → Scripts**: its version and whether a newer release
+**Settings (&#9881;) → Status**: its version and whether a newer release
 is out, which scripts are running, free memory and uptime. Buttons there
 update it (to the latest release, or to `main`) or reboot it. The agent
 runs `gcm update`, says how it went, and reboots.
@@ -716,6 +716,23 @@ Unlike push notifications, webhook posts are for the whole base, so
 Icons and the link to the item's page need `PUBLIC_URL`, the address the page
 is reached at from outside; without it, posts are text only. Admins can check
 the setup with **Test webhooks** in the settings (&#9881;) menu.
+
+### Server status
+
+Admins get a **Status** dialog (**Settings (&#9881;) → Status**). The
+in-game computers are listed under it (see [From the web
+page](#from-the-web-page)), and above them a **Server** section shows:
+
+- each feed from the game (crafting CPUs, the ME network scan, patterns,
+  each power machine), with how long ago it last reported. A green dot
+  means it's current; amber means it's late (crafts after
+  `STALE_AFTER_SECONDS`, power after 5 minutes, the network after an hour
+  or a scan running over 10 minutes), crashed, or had its last scan turned
+  away as incomplete.
+- the size of each database and the free space where they're kept.
+- when stock history was last thinned, and how many rows that removed.
+- how many browsers get push notifications, and how the last webhook post
+  went.
 
 ### Power tab
 

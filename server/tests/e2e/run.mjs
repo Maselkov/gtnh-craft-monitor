@@ -1247,7 +1247,7 @@ async function main() {
     await waitFor('closed by backdrop', `!visible($('#adminUsersModal'))`);
   });
 
-  step('admin: Scripts lists computers; update one and see the result', async () => {
+  step('admin: Status shows the server; lists computers; update one and see the result', async () => {
     const heartbeat = {
       address: 'abcdef12-0000-4000-8000-000000000001', version: 'v1.1.0', components: ['craft'],
       services: [{ name: 'craft_monitor', running: true }], free_memory: 1048576, total_memory: 4194304, uptime: 3600,
@@ -1256,6 +1256,10 @@ async function main() {
     await click(`$('#settingsBtn')`);
     await waitFor('menu open', `visible($('#settingsMenu'))`);
     await click(`$('#agentsBtn')`);
+    await waitFor('server section', `visible($('#agentsModal'))
+      && $$('#serverHealth .health-feed').some(f => f.textContent.includes('Crafting CPUs') && f.querySelector('.agent-dot.running'))
+      && $$('#serverHealth .health-feed').some(f => f.textContent.includes('ME network') && f.textContent.includes('scan took'))
+      && $('#serverHealth').textContent.includes('item_history.db')`);
     await waitFor('computer listed', `visible($('#agentsModal'))
       && $('#agentsList').textContent.includes('Computer abcdef12')
       && $('#agentsList').textContent.includes('update available: v1.2.0')

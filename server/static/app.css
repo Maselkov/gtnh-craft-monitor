@@ -965,12 +965,46 @@ h1 {
 }
 
 /* Scripts dialog (agents.js). */
+.status-body {
+  max-height: 70vh;
+  overflow-y: auto;
+}
+.status-heading {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 4px 0 6px;
+}
+.server-health {
+  padding: 10px 12px;
+  border: 1px solid rgba(128,128,128,0.2);
+  border-radius: 10px;
+  margin-bottom: 14px;
+}
+.health-feed + .health-feed {
+  margin-top: 6px;
+}
+.health-feed + .agent-line {
+  margin-top: 10px;
+}
+.health-label {
+  font-weight: 600;
+  font-size: 13px;
+  margin-right: 6px;
+}
+.health-feed > .agent-line {
+  display: inline;
+}
+.health-feed > .agent-line.failed {
+  display: block;
+  margin-left: 13px;
+}
 .agents-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-height: 60vh;
-  overflow-y: auto;
 }
 .agent-card {
   padding: 10px 12px;
@@ -1005,6 +1039,9 @@ h1 {
 }
 .agent-dot.running {
   background: var(--idle);
+}
+.agent-dot.warn {
+  background: var(--busy);
 }
 .agent-command.failed {
   color: var(--stale);

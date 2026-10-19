@@ -3,7 +3,7 @@ Scripts dialog that reads them and queues commands (gcm/agents.py)."""
 
 from flask import Blueprint, g, jsonify, request
 
-from gcm import agents, auth
+from gcm import agents, auth, health
 
 bp = Blueprint("agent", __name__)
 
@@ -37,6 +37,13 @@ def admin_agents_get():
     for computer in computers:
         computer["behind"] = agents.is_behind(computer["version"], latest)
     return jsonify({"computers": computers, "latest_release": latest, "latest_error": error})
+
+
+@bp.route("/api/admin/health", methods=["GET"])
+@auth.admin_required
+def admin_health_get():
+    """The Status dialog's Server section (gcm/health.py)."""
+    return jsonify(health.snapshot())
 
 
 @bp.route("/api/admin/agents/<address>/command", methods=["POST"])

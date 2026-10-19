@@ -81,6 +81,10 @@ network = {
     # network_browser.lua's last crash report ({error, phase, free_memory,
     # at}), until its next scan finishes - see inventory.record_crash().
     "crash": None,
+    # How long the last accepted scan took, and the last scan turned
+    # away ({at, reason}) - for the Status dialog (gcm/health.py).
+    "last_scan_seconds": None,
+    "last_rejected": None,
 }
 
 
@@ -146,6 +150,8 @@ def reset():
             chunks_received=0,
             levels_at=None,
             crash=None,
+            last_scan_seconds=None,
+            last_rejected=None,
         )
     with patterns_lock:
         pattern_buffer.clear()

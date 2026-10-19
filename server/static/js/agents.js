@@ -1,6 +1,7 @@
-// Scripts admin dialog: every in-game computer running gcm_agent.lua,
-// what it runs and how it's doing, with buttons to update or reboot it
-// (server/gcm/agents.py). Refreshes while open.
+// Status admin dialog: how fresh each in-game feed is and how the server
+// is doing (server/gcm/health.py), then every in-game computer running
+// gcm_agent.lua, what it runs and how it's doing, with buttons to update
+// or reboot it (server/gcm/agents.py). Refreshes while open.
 
 import { AUTH_USER, closeSettingsMenu } from './auth.js';
 import { showToast } from './craft-actions.js';
@@ -68,6 +69,87 @@ export function renderComputer(c, latest) {
   `;
 }
 
+function ago(seconds) {
+  return seconds == null ? 'never' : `${formatDuration(seconds)} ago`;
+}
+
+function bytes(n) {
+  return n == null ? '?' : `${formatQty(n)}B`;
+}
+
+// The one-line detail after each feed's age.
+const FEED_DETAILS = {
+  crafts: (f) => [`${f.cpus} CPU${f.cpus === 1 ? '' : 's'}`],
+  network: (f) => [
+    f.items ? `${f.items.toLocaleString()} entries` : null,
+    f.scan_seconds != null ? `scan took ${formatDuration(f.scan_seconds)}` : null,
+    f.scanning_for != null ? `scanning for ${formatDuration(f.scanning_for)}` : null,
+    f.levels_age_seconds != null ? `stock rules checked ${ago(f.levels_age_seconds)}` : null,
+    f.reconstructed ? 'restored from before the restart' : null,
+  ],
+  patterns: (f) => [`${f.patterns.toLocaleString()} patterns`],
+};
+
+function feedProblem(f) {
+  if (f.crash) return `crashed during ${f.crash.phase}: ${f.crash.error}`;
+  if (f.rejected) return `last scan turned away: ${f.rejected.reason}`;
+  return null;
+}
+
+export function renderHealth(h) {
+  const feeds = h.feeds.map((f) => {
+    const details = (FEED_DETAILS[f.key] || (() => []))(f).filter(Boolean);
+    const problem = feedProblem(f);
+    return `<div class="health-feed">
+      <span class="agent-dot ${f.ok ? 'running' : 'warn'}"></span><span class="health-label">${escapeHtml(f.label)}</span>
+      <span class="agent-line">${escapeHtml(f.age_seconds == null ? `nothing from ${f.script} yet` : `updated ${ago(f.age_seconds)}`)}${
+        details.length ? ' &middot; ' + details.map(escapeHtml).join(' &middot; ') : ''}</span>
+      ${problem ? `<div class="agent-line agent-command failed">${escapeHtml(problem)}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  const files = h.storage.files.map(f => `${escapeHtml(f.name)} ${bytes(f.bytes)}`).join(' &middot; ');
+  const free = h.storage.free_bytes != null ? ` &middot; ${bytes(h.storage.free_bytes)} free` : '';
+
+  const r = h.retention;
+  const thinning = !r.enabled ? 'History thinning is off.'
+    : r.last_run
+      ? `History thinned ${ago(r.last_run.age_seconds)}: ${
+        Object.values(r.last_run.deleted).reduce((a, b) => a + b, 0).toLocaleString()} rows removed.`
+      : 'History thinning hasn\'t run since the server started (it runs 5 minutes in, then daily).';
+
+  const w = h.webhooks;
+  let hooks = 'no webhooks';
+  if (w.configured) {
+    hooks = `${w.configured} webhook${w.configured === 1 ? '' : 's'}`;
+    if (w.last) {
+      hooks += `, last post ${ago(w.last.age_seconds)}`;
+      if (w.last.failed.length) hooks += ` - failed: ${w.last.failed.map(x => `${x.host} (${x.error})`).join(', ')}`;
+    } else {
+      hooks += ', nothing posted since the server started';
+    }
+  }
+  const webhookFailed = w.last && w.last.failed.length;
+
+  return `${feeds}
+    <div class="agent-line">Databases: ${files}${free}</div>
+    <div class="agent-line">${escapeHtml(thinning)}</div>
+    <div class="agent-line${webhookFailed ? ' agent-command failed' : ''}">Notifications: ${
+      h.push_subscriptions} browser${h.push_subscriptions === 1 ? '' : 's'} with push &middot; ${escapeHtml(hooks)}</div>
+    <div class="agent-line">Up ${formatDuration(h.uptime_seconds)} &middot; game data ${escapeHtml(h.gamedata || 'none')}</div>`;
+}
+
+async function loadHealth() {
+  const el = document.getElementById('serverHealth');
+  try {
+    const res = await fetch('/api/admin/health');
+    if (!res.ok) throw new Error(`health: ${res.status}`);
+    el.innerHTML = renderHealth(await res.json());
+  } catch (e) {
+    el.textContent = 'Could not reach the server.';
+  }
+}
+
 async function loadAgents() {
   try {
     const res = await fetch('/api/admin/agents');
@@ -110,9 +192,10 @@ async function sendCommand(el) {
 function openAgentsModal() {
   if (!AUTH_USER || AUTH_USER.role !== 'admin') return;
   document.getElementById('agentsModal').style.display = 'flex';
+  loadHealth();
   loadAgents();
   clearInterval(refreshTimer);
-  refreshTimer = setInterval(loadAgents, REFRESH_MS);
+  refreshTimer = setInterval(() => { loadHealth(); loadAgents(); }, REFRESH_MS);
 }
 
 export function closeAgentsModal() {
