@@ -237,6 +237,37 @@ def history(key, since):
     return rows
 
 
+def changed_since(since):
+    """{item_key: (when, size)} for every item whose history changed
+    after `since`: its size at `since`, or for one first recorded after
+    it, its first recorded size and when that was. Lookups on the primary
+    key per item rather than a scan of the whole table."""
+    with db.transaction(db.item_history_db) as conn:
+        rows = conn.execute(
+            "SELECT id, item_key, "
+            "(SELECT size FROM item_history WHERE item_id = h.id AND recorded_at < ? "
+            " ORDER BY recorded_at DESC LIMIT 1), "
+            "(SELECT min(recorded_at) FROM item_history WHERE item_id = h.id), "
+            "(SELECT max(recorded_at) FROM item_history WHERE item_id = h.id) "
+            "FROM history_items h",
+            (since,),
+        ).fetchall()
+        out = {}
+        for item_id, key, before, first_at, latest_at in rows:
+            if latest_at is None or latest_at < since:
+                continue
+            if before is not None:
+                out[key] = (since, before)
+            else:
+                # Nothing before the range: the item's history starts in it.
+                size = conn.execute(
+                    "SELECT size FROM item_history WHERE item_id = ? AND recorded_at = ?",
+                    (item_id, first_at),
+                ).fetchone()[0]
+                out[key] = (first_at, size)
+    return out
+
+
 def last_recorded(key):
     """(label, size): the item's last known name and its newest recorded
     size, or (None, None) when it was never recorded with a name."""

@@ -591,6 +591,9 @@ h1 {
   display: flex;
   gap: 6px;
 }
+.range-buttons[hidden] {
+  display: none;
+}
 .range-btn {
   font-size: 12px;
   padding: 6px 12px;
@@ -749,6 +752,30 @@ h1 {
   font-variant-numeric: tabular-nums;
   z-index: 3;
 }
+/* The Change sort's rate: in place of the quantity in the grid. */
+.network-cell-change {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  padding: 0 2px;
+  border-radius: 3px;
+  /* A plate rather than the quantity's shadow, which muddies colour. */
+  background: color-mix(in srgb, var(--card) 85%, transparent);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+  z-index: 3;
+}
+.network-cell-change.falling {
+  color: var(--stale);
+}
+.network-cell-change.rising {
+  color: var(--idle);
+}
+.network-cell.has-change .network-cell-qty {
+  display: none;
+}
 .network-cell-pattern-badge {
   position: absolute;
   top: 2px;
@@ -821,6 +848,15 @@ h1 {
   font-size: 12px;
   text-shadow: none;
 }
+.network-grid.list .network-cell.has-change .network-cell-qty {
+  display: inline;
+}
+.network-grid.list .network-cell-change {
+  position: static;
+  order: 2;
+  background: none;
+  font-size: 12px;
+}
 .network-grid.list .network-cell-pattern-badge {
   position: static;
   order: 1;
@@ -858,6 +894,11 @@ h1 {
 .network-tooltip-stat {
   font-size: 12px;
   color: #a8a8b8;
+}
+.network-tooltip-change {
+  font-size: 12px;
+  color: #a8a8b8;
+  margin-top: 2px;
 }
 .network-tooltip-fluid {
   font-size: 11px;

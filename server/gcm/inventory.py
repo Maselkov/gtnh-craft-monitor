@@ -6,6 +6,7 @@ itself is in gcm/state.py; the HTTP side is routes/network.py."""
 import hashlib
 import logging
 import secrets
+import threading
 import time
 
 from gcm import icons, nbt, rates, state, store
@@ -482,3 +483,48 @@ def history(mod, internal, damage, kind, range_key, variant=None):
     since = None if seconds is None else now - seconds
     rows = store.items.history(store.items.item_key(mod, internal, damage, kind, variant), since)
     return range_key, downsample_steps(rows), rates.stock_trend(rows, now)
+
+
+CHANGE_RANGE_SECONDS = {"day": 86400, "week": 7 * 86400}
+
+# Every open Network tab sorted by change asks again each minute, and the
+# answer only moves with a scan - or, slowly, as the range slides on.
+CHANGES_CACHE_SECONDS = 60
+_changes_cache = {}
+_changes_lock = threading.Lock()
+
+
+def reset():
+    """Forgets cached changes (tests)."""
+    with _changes_lock:
+        _changes_cache.clear()
+
+
+def changes(range_key):
+    """(range_key, {item key: {from, per_second, seconds_to_empty}}) for
+    every item in the snapshot whose quantity differs from what it was
+    at the start of the range (day or week; unknown names mean day) - or,
+    for one first recorded since, from its first recorded quantity."""
+    if range_key not in CHANGE_RANGE_SECONDS:
+        range_key = "day"
+    sizes, _, version = stock_levels()
+    now = time.time()
+    with _changes_lock:
+        cached = _changes_cache.get(range_key)
+    if cached and cached[0] == version and now - cached[1] < CHANGES_CACHE_SECONDS:
+        return range_key, cached[2]
+    since = now - CHANGE_RANGE_SECONDS[range_key]
+    out = {}
+    for key, (when, before) in store.items.changed_since(since).items():
+        current = sizes.get(key)
+        if current is None or current == before:
+            continue
+        trend = rates.stock_trend([(when, before), (now, current)], now)
+        out[key] = {
+            "from": before,
+            "per_second": trend and trend["per_second"],
+            "seconds_to_empty": trend and trend["seconds_to_empty"],
+        }
+    with _changes_lock:
+        _changes_cache[range_key] = (version, now, out)
+    return range_key, out

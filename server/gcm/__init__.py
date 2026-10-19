@@ -63,3 +63,4 @@ def reset_runtime_state():
     gamedata.reset()
     planner.reset()
     job_tree.reset()
+    inventory.reset()

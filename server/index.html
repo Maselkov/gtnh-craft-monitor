@@ -140,6 +140,11 @@
         <div class="range-buttons">
           <button class="range-btn" data-sort="name" data-action="network-sort">Name</button>
           <button class="range-btn active" data-sort="size" data-action="network-sort">Quantity</button>
+          <button class="range-btn" data-sort="change" data-action="network-sort" title="Most used up first, over the range beside it">Change</button>
+        </div>
+        <div class="range-buttons" id="networkChangeRange" hidden>
+          <button class="range-btn active" data-range="day" data-action="network-change-range">Day</button>
+          <button class="range-btn" data-range="week" data-action="network-change-range">Week</button>
         </div>
         <div class="range-buttons view-toggle">
           <button class="range-btn active" data-view="grid" data-action="network-view" title="Grid" aria-label="Grid"><svg class="ui-icon" viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true"><g fill="currentColor"><rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1"/><rect x="9" y="1.5" width="5.5" height="5.5" rx="1"/><rect x="1.5" y="9" width="5.5" height="5.5" rx="1"/><rect x="9" y="9" width="5.5" height="5.5" rx="1"/></g></svg></button>

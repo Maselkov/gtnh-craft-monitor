@@ -734,6 +734,13 @@ minute, but its data changes only when a scan finishes.
   how fast it changed over the chosen range and, if it's falling, when it
   runs out at that rate.
 - Pin items to keep them at the top of the list.
+- Sort by **Change** to see what's being used up: items are ordered by how
+  much of their stock went over the last **Day** or **Week**, emptied ones
+  first and the ones that grew last, each labelled with the change
+  ("−80%"). Comparing shares rather than amounts lets items and fluids
+  sit side by side. The tooltip gives the amount at the start, the rate,
+  and when it runs out at that rate. An item whose history starts inside
+  the range is measured from its first recorded amount.
 - The last scan is saved to `server/data/item_history.db` and restored when
   the server restarts. Until the next scan completes, the page marks the data
   as restored rather than live.

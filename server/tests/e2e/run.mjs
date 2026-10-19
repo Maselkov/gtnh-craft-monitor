@@ -775,6 +775,35 @@ async function main() {
     await waitFor('back to 3', `$$('#networkList .network-cell').length === 3`);
   });
 
+  step('network Change sort: most used up first, by how much', async () => {
+    const rescan = async (sizes) => {
+      const { data: scan } = await game(base, '/api/network/scan/start', {});
+      await game(base, '/api/network/scan/batch', { scan_token: scan.scan_token,
+        items: SEEDED_ITEMS.map(it => ({ ...it, size: sizes[it.name] ?? it.size })) });
+      await game(base, '/api/network/scan/finish', { scan_token: scan.scan_token, chunks_sent: 1, total_errors: 0 });
+    };
+    await rescan({ 'Neutronium Ingot': 1, Water: 70000 });
+    await click(`$('#networkTab [data-sort="change"]')`);
+    await waitFor('range shown', `visible($('#networkChangeRange'))`);
+    // The tab only refetches the items each minute; reopening it fetches the new scan.
+    await click(`$('#tabBtnCrafts')`);
+    await click(`$('#tabBtnNetwork')`);
+    await waitFor('neutronium first, falling; water rising; iron unchanged last', `(() => {
+      const cells = $$('#networkList .network-cell');
+      return cells.length === 3
+        && cells[0].querySelector('.network-cell-change.falling')?.textContent === '−80%'
+        && cells[1].querySelector('.network-cell-change.rising')?.textContent === '+9%'
+        && !cells[2].querySelector('.network-cell-change')
+        && visible(cells[2].querySelector('.network-cell-qty'));
+    })()`);
+    await click(`$('#networkTab [data-range="week"]')`);
+    await waitFor('week active', `$('#networkTab [data-range="week"]').classList.contains('active')
+      && $('#networkList .network-cell-change.falling')`);
+    await rescan({});
+    await click(`$('#networkTab [data-sort="name"]')`);
+    await waitFor('range hidden', `!visible($('#networkChangeRange')) && !$('#networkList .network-cell-change')`);
+  });
+
   step('"/" jumps to the network search from another tab', async () => {
     await click(`$('#tabBtnCrafts')`);
     await waitFor('crafts tab', `visible($('#craftsTab'))`);
