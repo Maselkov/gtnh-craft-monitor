@@ -282,6 +282,22 @@ def _power_machines(conn):
     conn.execute("CREATE INDEX idx_power_readings_machine_ts ON power_readings (machine, ts)")
 
 
+# 2026-01-01: before this project's earliest data (its history predates
+# the repository by a few days), so no real reading is older.
+POWER_EARLIEST_REAL_TS = 1767225600
+
+
+def _power_drop_impossible_times(conn):
+    # Readings posted with a bogus "timestamp" before the server checked
+    # it (a game clock, a test value): years before this project existed
+    # or more than a day ahead. One stretched the Lifetime chart back
+    # nine years.
+    conn.execute(
+        "DELETE FROM power_readings WHERE ts < ? OR ts > strftime('%s', 'now') + 86400",
+        (POWER_EARLIEST_REAL_TS,),
+    )
+
+
 # ---------------------------------------------------------------------
 # Item/fluid quantity history (SQLite-backed, own db file - separate
 # from power.db and app.db, matching the established "one db
@@ -545,7 +561,7 @@ APP_MIGRATIONS = [
     _app_stock_rules,
     _app_craft_event_auto,
 ]
-POWER_MIGRATIONS = [_power_baseline, _power_machines]
+POWER_MIGRATIONS = [_power_baseline, _power_machines, _power_drop_impossible_times]
 ITEM_HISTORY_MIGRATIONS = [_item_history_baseline, _item_history_variants, _item_history_pattern_snapshot]
 
 

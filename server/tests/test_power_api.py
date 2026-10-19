@@ -1,8 +1,11 @@
+import pytest
 import sqlite3
 import time
 
 from gcm import config, db, store
 from gcm.routes import power
+
+REAL_TS = 1790121600.0  # 2026-09-23, after the impossible-times cutoff
 
 
 class TestPowerEndpoint:
@@ -146,7 +149,7 @@ class TestPowerDbMigration:
             """)
             conn.execute(
                 "INSERT INTO power_readings (ts, stored, capacity) VALUES (?, ?, ?)",
-                (1000.0, 500000, 5000000))
+                (REAL_TS, 500000, 5000000))
             # Files from before schema versioning all report version 0.
             conn.execute("PRAGMA user_version = 0")
             conn.commit()
@@ -164,7 +167,7 @@ class TestPowerDbMigration:
 
         assert "avg_eu_in_5s" in cols
         assert "time_to_empty_minutes" in cols
-        assert rows == [(1000.0, 500000.0, 5000000.0)]  # old data untouched
+        assert rows == [(REAL_TS, 500000.0, 5000000.0)]  # old data untouched
         machines = conn_rows("SELECT machine FROM power_readings")
         assert machines == [("",)]  # the unnamed machine's, so it keeps its chart
 
@@ -267,3 +270,37 @@ class TestPowerDownsampling:
         result = store.power.readings(now - 3600, max_points=10)
         assert len(result) == 1
         assert result[0][1] == sum(range(20)) / 20
+
+
+class TestTimestamps:
+    def post(self, client, api_headers, ts):
+        return client.post("/api/power", json={"stored": 1, "capacity": 2, "timestamp": ts}, headers=api_headers)
+
+    @pytest.mark.parametrize("offset", [0, -3600, -86000, 200])
+    def test_recent_ones_kept(self, client, api_headers, offset):
+        now = time.time()
+        assert self.post(client, api_headers, now + offset).status_code == 200
+        assert client.get("/api/power").get_json()["latest"]["t"] == pytest.approx(now + offset)
+
+    @pytest.mark.parametrize("ts", [1500000000, 12345, "now", True, "an hour ahead"])
+    def test_far_off_or_not_a_number_rejected(self, client, api_headers, ts):
+        if ts == "an hour ahead":
+            ts = time.time() + 3600
+        res = self.post(client, api_headers, ts)
+        assert res.status_code == 400
+        assert client.get("/api/power").get_json()["latest"] is None
+
+    def test_migration_drops_impossible_readings(self):
+        now = time.time()
+        conn = sqlite3.connect(config.POWER_DB_PATH)
+        try:
+            conn.executemany(
+                "INSERT INTO power_readings (ts, stored, capacity) VALUES (?, ?, ?)",
+                [(1500000000, 1, 2), (now - 40 * 86400, 3, 4), (now, 5, 6), (now + 3 * 86400, 7, 8)],
+            )
+            conn.execute(f"PRAGMA user_version = {len(db.POWER_MIGRATIONS) - 1}")
+            conn.commit()
+        finally:
+            conn.close()
+        db.init_power_db()
+        assert [r[0] for r in conn_rows("SELECT stored FROM power_readings ORDER BY ts")] == [3, 5]
