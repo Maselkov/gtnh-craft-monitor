@@ -6,7 +6,7 @@ import { openItemHistory, tryOpenItemFromUrl, updateItemHistoryPinButton } from 
 import { buildSearchHighlightHtml, itemMatchesSearch, parseSearchQuery } from './search.js';
 import { stockBadgeFor } from './stock.js';
 import { activeTab } from './tabs.js';
-import { bindCellTooltip, hideTooltip } from './tooltip.js';
+import { bindCellTooltip, hideTooltip, showTooltip } from './tooltip.js';
 import {
   delegateActions, escapeHtml, essentiaBadgeHtml, formatDuration, formatQty, formatRate, formatRelativeTime,
   iconClass, iconUrl, kindTooltipHtml, PIN_ICON,
@@ -107,9 +107,138 @@ function networkTooltipHtml(cell) {
   `;
 }
 
+// ---------- Keyboard ----------
+// One cell at a time is in the tab order (a roving tabindex): Tab lands
+// on the grid, the arrow keys move within it.
+
+function itemKeyOf(it) {
+  return networkItemKey(it.mod, it.internal, it.damage, it.kind, it.variant);
+}
+
+function cellItemKey(cell) {
+  const it = cell && cell.classList && cell.classList.contains('network-cell')
+    ? networkShownItems[parseInt(cell.dataset.idx, 10)] : null;
+  return it ? itemKeyOf(it) : null;
+}
+
+function cellAt(idx) {
+  return document.querySelector(`#networkList .network-cell[data-idx="${idx}"]`);
+}
+
+// Makes cell idx the grid's one tab stop, and focuses it if asked.
+function setRovingCell(idx, focus) {
+  const listEl = document.getElementById('networkList');
+  for (const cell of listEl.querySelectorAll('.network-cell[tabindex="0"]')) cell.tabIndex = -1;
+  const cell = cellAt(idx);
+  if (!cell) return;
+  cell.tabIndex = 0;
+  if (focus) cell.focus();
+}
+
+// Cells per row, from where they wrap - right at any window width.
+function gridColumns() {
+  const cells = document.querySelectorAll('#networkList .network-cell');
+  if (cells.length === 0) return 1;
+  const top = cells[0].offsetTop;
+  let n = 0;
+  while (n < cells.length && cells[n].offsetTop === top) n++;
+  return Math.max(1, n);
+}
+
+function moveFocus(idx) {
+  const last = networkFilteredSorted.length - 1;
+  idx = Math.max(0, Math.min(idx, last));
+  while (idx >= networkRenderedCount && networkRenderedCount < networkFilteredSorted.length) growNetworkList();
+  setRovingCell(idx, true);
+  cellAt(idx)?.scrollIntoView({ block: 'nearest' });
+}
+
+// Whether the last item opened came from the keyboard, so closing its
+// dialog with Escape can hand focus back to the grid.
+let openedFromKeyboard = false;
+
+function onNetworkGridKey(e) {
+  const cell = e.target.closest('.network-cell');
+  if (!cell || e.ctrlKey || e.metaKey || e.altKey) return;
+  const idx = parseInt(cell.dataset.idx, 10);
+  const it = networkShownItems[idx];
+  const columns = gridColumns();
+  const moves = {
+    ArrowLeft: idx - 1,
+    ArrowRight: idx + 1,
+    ArrowUp: idx - columns,
+    ArrowDown: idx + columns,
+    Home: 0,
+    End: networkFilteredSorted.length - 1,
+    PageUp: idx - columns * 5,
+    PageDown: idx + columns * 5,
+  };
+  if (e.key in moves) {
+    if (e.key === 'ArrowUp' && idx < columns) {
+      document.getElementById('networkSearch').focus();
+    } else {
+      moveFocus(moves[e.key]);
+    }
+  } else if (e.key === 'Enter' || e.key === ' ') {
+    openedFromKeyboard = true;
+    handleNetworkCellClick(cell, 'left');
+  } else if (e.key === 'c' || e.key === 'C') {
+    if (!it || !it.isCraftable || !isOperator()) return;
+    openedFromKeyboard = true;
+    hideTooltip();
+    openCraftRequestModal(it);
+  } else if (e.key === 'p' || e.key === 'P') {
+    if (it) toggleNetworkItemPin(it);
+  } else if (e.key === 'Escape') {
+    document.getElementById('networkSearch').focus();
+  } else {
+    return;
+  }
+  e.preventDefault();
+}
+
+function showCellTooltip(cell) {
+  const html = networkTooltipHtml(cell);
+  if (!html) return;
+  const r = cell.getBoundingClientRect();
+  showTooltip(html, r.right - 8, r.bottom - 8);
+}
+
 export function setupNetworkTooltipEvents() {
   const listEl = document.getElementById('networkList');
   bindCellTooltip(listEl, '.network-cell', networkTooltipHtml);
+
+  listEl.addEventListener('keydown', onNetworkGridKey);
+  // The hover tooltip, for the cell the keyboard is on - only when the
+  // keyboard put it there, not on a click.
+  listEl.addEventListener('focusin', (e) => {
+    const cell = e.target.closest('.network-cell');
+    if (!cell) return;
+    setRovingCell(parseInt(cell.dataset.idx, 10), false);
+    if (cell.matches(':focus-visible')) showCellTooltip(cell);
+  });
+  listEl.addEventListener('focusout', (e) => {
+    if (!listEl.contains(e.relatedTarget)) hideTooltip();
+  });
+  document.getElementById('networkSearch').addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowDown' || !networkShownItems.length) return;
+    e.preventDefault();
+    const tabStop = listEl.querySelector('.network-cell[tabindex="0"]');
+    moveFocus(tabStop ? parseInt(tabStop.dataset.idx, 10) : 0);
+  });
+  // Escape closing a dialog opened from the grid puts focus back on the
+  // item. The dialogs close in craft-actions.js's own Escape handler;
+  // capturing sees one still open before it runs.
+  const dialogOpen = () => [...document.querySelectorAll('.modal-overlay')].some(m => m.style.display !== 'none');
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !openedFromKeyboard || !dialogOpen()) return;
+    setTimeout(() => {
+      if (dialogOpen()) return;  // only the top one closed
+      openedFromKeyboard = false;
+      const tabStop = listEl.querySelector('.network-cell[tabindex="0"]');
+      if (tabStop && activeTab === 'network') tabStop.focus();
+    }, 0);
+  }, true);
 
   // Suppress the native middle-click autoscroll indicator - without
   // this, the browser shows its own scrolling cursor/UI on middle
@@ -121,6 +250,7 @@ export function setupNetworkTooltipEvents() {
   listEl.addEventListener('click', (e) => {
     const cell = e.target.closest('.network-cell');
     if (!cell) return;
+    openedFromKeyboard = false;
     handleNetworkCellClick(cell, 'left');
   });
 
@@ -366,7 +496,8 @@ function buildNetworkCellHtml(it, idx) {
   const stockBadge = stock ? `<span class="network-cell-stock-badge${stock.low ? ' low' : ''}">${stock.icon}</span>` : '';
   const classes = 'network-cell' + (it.isCraftable ? ' craftable' : '') + (stock && stock.low ? ' stock-low' : '')
     + (changeLabel ? ' has-change' : '');
-  return `<div class="${classes}" data-idx="${idx}">${icon}${name}${changeLabel}${qty}${patternBadge}${pinBadge}${stockBadge}</div>`;
+  const label = `${it.name || '?'}${it.variant_name ? ' ' + it.variant_name : ''}, ${formatQty(it.size)}`;
+  return `<div class="${classes}" data-idx="${idx}" tabindex="-1" aria-label="${escapeHtml(label)}">${icon}${name}${changeLabel}${qty}${patternBadge}${pinBadge}${stockBadge}</div>`;
 }
 
 export function updateNetworkSearchHighlight() {
@@ -410,6 +541,9 @@ function renderNetworkList() {
   const listEl = document.getElementById('networkList');
   const emptyEl = document.getElementById('networkEmpty');
   const items = (lastNetworkData && lastNetworkData.items) || [];
+  // A refresh rebuilds every cell: keep keyboard focus on the same item
+  // (looked up before networkShownItems changes under the cell's index).
+  const focusedKey = listEl.contains(document.activeElement) ? cellItemKey(document.activeElement) : null;
 
   if (items.length === 0) {
     listEl.innerHTML = '';
@@ -462,6 +596,8 @@ function renderNetworkList() {
   const cells = shown.map((it, i) => buildNetworkCellHtml(it, i)).join('');
   listEl.innerHTML = cells + buildNetworkNoteHtml(query);
   fillNetworkViewportIfNeeded();
+  const keep = focusedKey != null ? networkShownItems.findIndex(it => itemKeyOf(it) === focusedKey) : -1;
+  setRovingCell(keep >= 0 ? keep : 0, keep >= 0);
 }
 
 function growNetworkList() {

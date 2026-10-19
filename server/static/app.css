@@ -729,6 +729,13 @@ h1 {
   align-items: center;
   justify-content: center;
 }
+.network-cell:focus {
+  outline: none;
+}
+.network-cell:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
 .network-cell.craftable {
   border-color: color-mix(in srgb, var(--accent) 40%, transparent);
   background: color-mix(in srgb, var(--accent) 6%, var(--card));
