@@ -4,6 +4,7 @@ import { evaluateAmountExpression } from './amount.js';
 import { AUTH_USER, closeAdminUsersModal, closeSettingsMenu } from './auth.js';
 import { closeCraftPlan, openCraftPlan, updateCraftPlanAmount } from './craft-plan.js';
 import { lastData, render } from './crafts.js';
+import { closeAgentsModal } from './agents.js';
 import { closeGameDataModal } from './gamedata.js';
 import { closeItemHistory } from './history.js';
 import { closeIngredientsModal } from './ingredients.js';
@@ -344,6 +345,8 @@ export function setupCraftDialogActions() {
         closeAdminUsersModal();
       } else if (document.getElementById('gamedataModal').style.display !== 'none') {
         closeGameDataModal();
+      } else if (document.getElementById('agentsModal').style.display !== 'none') {
+        closeAgentsModal();
       }
     } else if (e.key === 'Enter') {
       // Only the craft-request modal - cancelConfirm's primary action

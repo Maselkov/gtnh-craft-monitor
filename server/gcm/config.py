@@ -40,6 +40,9 @@ CHART_MAX_TRACKED_CLIENTS = int(os.environ.get("CHART_MAX_TRACKED_CLIENTS", "409
 # using the page.
 GAMEDATA_REPO = os.environ.get("GAMEDATA_REPO", "Maselkov/gtnh-craft-monitor-data")
 GAMEDATA_API_URL = os.environ.get("GAMEDATA_API_URL", "https://api.github.com").rstrip("/")
+# The in-game scripts' repository, for the Scripts dialog's "update
+# available" (gcm/agents.py). gcm.lua itself always uses its own.
+SCRIPTS_REPO = os.environ.get("SCRIPTS_REPO", "Maselkov/gtnh-craft-monitor")
 GTNH_VERSION = os.environ.get("GTNH_VERSION", "").strip()
 GTNH_TEXTURES = os.environ.get("GTNH_TEXTURES", "").strip()
 

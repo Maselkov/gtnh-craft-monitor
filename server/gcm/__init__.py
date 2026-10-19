@@ -3,8 +3,8 @@ startup work happens - importing any gcm module has no side effects."""
 
 from flask import Flask
 
-from gcm import auth, charts, commands, config, db, gamedata, inventory, job_tree, patterns, planner, push, security, state, store
-from gcm.routes import craft_requests, crafts, network, pages, power, users
+from gcm import agents, auth, charts, commands, config, db, gamedata, inventory, job_tree, patterns, planner, push, security, state, store
+from gcm.routes import agent, craft_requests, crafts, network, pages, power, users
 from gcm.routes import gamedata as gamedata_routes
 from gcm.routes import push as push_routes
 from gcm.routes import stock as stock_routes
@@ -45,6 +45,7 @@ def create_app(data_dir=None, api_key=None):
         users.bp,
         gamedata_routes.bp,
         push_routes.bp,
+        agent.bp,
         pages.bp,
     ):
         app.register_blueprint(blueprint)
@@ -57,6 +58,7 @@ def reset_runtime_state():
     Used by the test suite between tests."""
     state.reset()
     commands.reset()
+    agents.reset()
     charts.reset()
     gamedata.reset()
     planner.reset()

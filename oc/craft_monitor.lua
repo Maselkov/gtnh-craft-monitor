@@ -906,13 +906,22 @@ end
 -- start` itself forever. This starts BOTH loops (main status + the
 -- separate craft-request loop, spawned from inside service_loop as
 -- before) under the SAME running flag.
+local worker = nil
+
+-- Whether the loop's thread is alive: false after stop(), and also after
+-- it died of an error (running stays true then). gcm_agent reports it.
+function is_running()
+  return worker ~= nil and worker:status() ~= "dead"
+end
+
 function start()
-  if running then
+  if is_running() then
     print("[craft_monitor] Already running.")
     return
   end
   running = true
-  thread.create(service_loop):detach()
+  worker = thread.create(service_loop)
+  worker:detach()
 end
 
 -- Optional per OC's rc docs, but defined so `rc craft_monitor restart`
@@ -926,5 +935,5 @@ function stop()
 end
 
 function status()
-  print("[craft_monitor] " .. (running and "running" or "stopped"))
+  print("[craft_monitor] " .. (is_running() and "running" or "stopped"))
 end

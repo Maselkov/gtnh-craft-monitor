@@ -7,6 +7,8 @@
 --
 -- Add --ref=<tag or branch> to install or update from something other
 -- than the latest release, e.g. --ref=main to test unreleased changes.
+-- update --no-reboot skips the reboot question: gcm_agent.lua runs it
+-- that way for the web page's update button, and reboots itself.
 --
 -- First install (this is the only download that comes from main). A fresh
 -- OpenOS has no /usr/bin yet, so the first copy goes to /tmp; install then
@@ -261,18 +263,43 @@ local function read_state()
   return nil
 end
 
-local function write_state(state)
+local function quoted_list(list)
   local quoted = {}
-  for i, name in ipairs(state.components) do
+  for i, name in ipairs(list) do
     quoted[i] = string.format("%q", name)
   end
+  return "{ " .. table.concat(quoted, ", ") .. " }"
+end
+
+-- services: each component's rc service, for gcm_agent to report on.
+-- agent_set_up: gcm_agent has been enabled (or the user declined
+-- starting anything on boot), so updates don't enable it again.
+local function write_state(state)
   local file = assert(io.open(STATE_PATH, "w"))
   file:write("-- Written by gcm. Lists what `gcm update` updates.\n")
   file:write("return {\n")
   file:write("  version = ", string.format("%q", state.version), ",\n")
-  file:write("  components = { ", table.concat(quoted, ", "), " },\n")
+  file:write("  components = ", quoted_list(state.components), ",\n")
+  file:write("  services = ", quoted_list(state.services or {}), ",\n")
+  file:write("  agent_set_up = ", tostring(state.agent_set_up == true), ",\n")
   file:write("}\n")
   file:close()
+end
+
+local function services_for(manifest, names)
+  local services = {}
+  for _, name in ipairs(names) do
+    services[#services + 1] = find_component(manifest, name).service
+  end
+  return services
+end
+
+-- gcm_agent (in the shared files) reports this computer to the web page
+-- and runs its update button. Started on boot like the scripts.
+local function enable_agent()
+  shell.execute("rc gcm_agent enable")
+  print("Enabled gcm_agent: the web page's Scripts dialog shows this computer")
+  print("and can update it. `rc gcm_agent disable` turns that off.")
 end
 
 local function ask(question, default)
@@ -396,7 +423,9 @@ local function cmd_install(args, opts)
 
   print("Installing " .. ref .. ":")
   install_files(ref, files_for(manifest, all))
-  write_state({ version = ref, components = all })
+  local state = { version = ref, components = all, services = services_for(manifest, all),
+                  agent_set_up = previous and previous.agent_set_up }
+  write_state(state)
   write_config(ref, manifest.config)
 
   print()
@@ -404,11 +433,14 @@ local function cmd_install(args, opts)
     for _, name in ipairs(chosen) do
       shell.execute("rc " .. find_component(manifest, name).service .. " enable")
     end
+    if not state.agent_set_up then enable_agent() end
   end
+  state.agent_set_up = true
+  write_state(state)
   offer_reboot()
 end
 
-local function cmd_update(opts)
+local function cmd_update(opts, no_reboot)
   require_internet()
   local state = read_state()
   if not state then
@@ -432,8 +464,13 @@ local function cmd_update(opts)
 
   print("Updating " .. state.version .. " -> " .. ref .. ":")
   install_files(ref, files_for(manifest, names))
-  write_state({ version = ref, components = names })
-  offer_reboot()
+  if not state.agent_set_up then enable_agent() end
+  write_state({ version = ref, components = names, services = services_for(manifest, names), agent_set_up = true })
+  if no_reboot then
+    print("The new version runs after the next reboot.")
+  else
+    offer_reboot()
+  end
 end
 
 local function cmd_status()
@@ -459,6 +496,7 @@ local function usage()
   print("  gcm status")
   print("Options:")
   print("  --ref=<tag or branch>   use this instead of the latest release")
+  print("  --no-reboot             (update) don't ask to reboot afterwards")
 end
 
 local function main(...)
@@ -470,7 +508,7 @@ local function main(...)
   if command == "install" then
     cmd_install(args, opts)
   elseif command == "update" then
-    cmd_update(opts)
+    cmd_update(opts, opts["no-reboot"])
   elseif command == "status" then
     cmd_status()
   else
@@ -481,5 +519,6 @@ end
 local ok, err = pcall(main, ...)
 if not ok then
   io.stderr:write("gcm: " .. tostring(err) .. "\n")
-  return 1
+  -- The message too, for gcm_agent, which runs this with loadfile().
+  return 1, tostring(err)
 end

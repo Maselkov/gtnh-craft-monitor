@@ -152,6 +152,11 @@ async function startFakeGitHub() {
       });
       return;
     }
+    if (req.url.startsWith('/repos/e2e/scripts/tags')) {
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify([{ name: 'v1.1.0' }, { name: 'v1.2.0' }]));
+      return;
+    }
     if (req.url.startsWith('/repos/')) {
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify([{
@@ -411,6 +416,7 @@ async function main() {
   const github = await startFakeGitHub();
   const base = await startServer({
     GAMEDATA_API_URL: github, GAMEDATA_REPO: 'e2e/repo', WEBHOOK_URLS: `${github}/webhook`,
+    SCRIPTS_REPO: 'e2e/scripts',
   });
   await seed(base);
   let adminToken;  // the bootstrap replacement, created through the UI below
@@ -1159,6 +1165,32 @@ async function main() {
     await waitFor('admin dialog again', `visible($('#adminUsersModal'))`);
     await click(`$('#adminUsersModal')`);
     await waitFor('closed by backdrop', `!visible($('#adminUsersModal'))`);
+  });
+
+  step('admin: Scripts lists computers; update one and see the result', async () => {
+    const heartbeat = {
+      address: 'abcdef12-0000-4000-8000-000000000001', version: 'v1.1.0', components: ['craft'],
+      services: [{ name: 'craft_monitor', running: true }], free_memory: 1048576, total_memory: 4194304, uptime: 3600,
+    };
+    await game(base, '/api/agent/heartbeat', heartbeat);
+    await click(`$('#settingsBtn')`);
+    await waitFor('menu open', `visible($('#settingsMenu'))`);
+    await click(`$('#agentsBtn')`);
+    await waitFor('computer listed', `visible($('#agentsModal'))
+      && $('#agentsList').textContent.includes('Computer abcdef12')
+      && $('#agentsList').textContent.includes('update available: v1.2.0')
+      && $('#agentsList').textContent.includes('craft_monitor')`);
+    await click(`byText('#agentsList [data-action="agent-command"]', 'Update to v1.2.0')`);
+    await waitFor('queued', `$('#agentsList').textContent.includes('waiting for the computer to pick it up')
+      && $('#agentsList [data-action="agent-command"]').disabled`);
+    const { data } = await game(base, '/api/agent/heartbeat', heartbeat);
+    if (data.command?.action !== 'update' || data.command?.ref !== 'release') throw new Error(JSON.stringify(data));
+    await game(base, `/api/agent/commands/${data.command.id}/result`,
+      { ok: true, message: 'Updated v1.1.0 -> v1.2.0, rebooting.', version: 'v1.2.0' });
+    await waitFor('result shown', `$('#agentsList').textContent.includes('Updated v1.1.0 -> v1.2.0, rebooting.')
+      && !$('#agentsList').textContent.includes('update available')`);
+    await evaluate(`pressKey('Escape'), true`);
+    await waitFor('closed', `!visible($('#agentsModal'))`);
   });
 
   step('admin: test webhooks; a pinned craft ending was posted too', async () => {

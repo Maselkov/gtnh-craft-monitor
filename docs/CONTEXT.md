@@ -1105,3 +1105,28 @@ container) render a subset in about a minute.
   set), or every machine listed in `MACHINES`, each posted with its
   name and charted separately (`power_readings.machine`, '' for the
   unnamed one).
+
+
+## gcm_agent: health and remote updates
+
+`oc/gcm_agent.lua` is an rc service in gcm's shared files; `gcm install`
+and the first `gcm update` that brings it enable it (once:
+`agent_set_up` in /etc/gcm.cfg). Every minute it POSTs a heartbeat to
+`/api/agent/heartbeat` (version, components and services from
+/etc/gcm.cfg, each service's `is_running()` via `rc.loaded`, memory,
+uptime); the reply may carry one admin-queued command (gcm/agents.py,
+in memory, handed over once, dropped if not picked up within 3 polls).
+
+Commands are deliberately only `update` with ref `release` or `main`,
+and `reboot`. The agent runs `/usr/bin/gcm.lua update --no-reboot
+[--ref=main]` through loadfile() (so gcm's error message comes back as
+its second return value), reports the result, and reboots if the
+version changed. gcm downloads from its own hard-coded repository, so a
+compromised server can trigger a real release, main, or a reboot, and
+nothing else. Separate from craft_monitor on purpose: an update must
+still work when the script it would fix has crashed.
+
+`is_running()` (each service, from its worker thread's status) exists
+because `running` stays true when a loop dies of an error; `start()`
+uses it too, so `rc <name> start` works again after such a crash.
+`rc.loaded` is from OpenOS's lib/rc.lua source, not yet confirmed in game.

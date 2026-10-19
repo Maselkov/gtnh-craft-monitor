@@ -63,6 +63,8 @@ function M.new(opts)
     requests = {},
     output = {},
     shell_log = {},
+    shell_handler = nil,  -- function(cmd) -> shell.execute's results; nil: true
+    rc_loaded = {},       -- rc.loaded: started services' global tables
     thread_errors = {},
     echo = opts.echo or os.getenv("OC_HARNESS_ECHO") ~= nil,
     free_memory = opts.free_memory or 2 * 1024 * 1024,
@@ -609,6 +611,7 @@ function Env:_libs()
     getWorkingDirectory = function() return "/" end,
     execute = function(cmd)
       env.shell_log[#env.shell_log + 1] = cmd
+      if env.shell_handler then return env.shell_handler(cmd) end
       return true
     end,
     parse = function(...)
@@ -627,7 +630,12 @@ function Env:_libs()
     end,
   }
 
+  -- OpenOS's rc library: rc.loaded holds each service's global table
+  -- once rc has loaded it (lib/rc.lua), which is all the scripts use.
+  local rc = { loaded = env.rc_loaded }
+
   return {
+    rc = rc,
     component = component,
     computer = computer,
     internet = internet,
@@ -657,6 +665,7 @@ end
 function Env:start_service(name)
   local svc = self:load_service(name)
   assert(svc.start, name .. ".lua did not define start() - it probably returned early, see env.output")
+  self.rc_loaded[name] = svc
   svc.start()
   return svc
 end
