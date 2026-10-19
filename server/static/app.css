@@ -442,29 +442,29 @@ h1 {
   color: var(--muted);
 }
 .tab-bar {
-  display: flex;
+  /* Equal-width tabs, each wide enough for its widest state (Network
+     with a two-digit badge), so a badge coming, going or growing never
+     moves the other tabs; a tab's own content stays centered in it. */
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
   gap: 6px;
   align-self: stretch;
-  align-items: flex-end;
+  align-items: end;
 }
 .tab-btn {
-  /* A badge's room is kept whether or not it shows (tab-badges.js), so
-     the tabs never move: the gap before it and a two-digit pill. Power
-     only ever shows a dot. */
-  --badge-slot: 32px;
-  position: relative;
+  min-width: 7.5em;
   background: none;
   border: none;
   color: var(--muted);
   font-size: 14px;
   font-weight: 600;
-  padding: 8px calc(4px + var(--badge-slot)) 10px 4px;
+  line-height: 20px;
+  padding: 8px 4px 10px 4px;
   cursor: pointer;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
-}
-#tabBtnPower {
-  --badge-slot: 13px;
+  white-space: nowrap;
 }
 .tab-btn.active {
   color: var(--text);
@@ -472,16 +472,15 @@ h1 {
 }
 /* tab-badges.js: a count pill, or a dot when there's no count. */
 .tab-badge {
-  position: absolute;
-  left: calc(100% - 4px - var(--badge-slot) + 6px);
-  top: calc(50% - 1px);
-  transform: translateY(-50%);
-  min-width: 26px;
+  display: inline-block;
+  min-width: 18px;
+  margin-left: 6px;
   padding: 1px 6px;
   border-radius: 999px;
   font-size: 11px;
   line-height: 16px;
   text-align: center;
+  vertical-align: 1px;
   font-variant-numeric: tabular-nums;
   background: color-mix(in srgb, var(--muted) 22%, transparent);
   color: var(--text);
@@ -499,21 +498,24 @@ h1 {
   width: 7px;
   height: 7px;
   padding: 0;
+  vertical-align: 2px;
 }
 .tab-badge.dot.done { background: var(--idle); }
 .tab-badge.dot.alert { background: var(--stale); }
 /* power.js: how full the batteries are, on the tab and machine buttons. */
 .tab-fill,
 .machine-fill {
-  /* Room for "100%", so the buttons after it keep their place. */
-  display: inline-block;
-  min-width: 5ch;
   margin-left: 4px;
-  text-align: left;
   font-size: 12px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   opacity: 0.75;
+}
+.tab-fill {
+  line-height: 1;
+}
+.tab-fill:empty {
+  display: none;
 }
 .power-machines {
   flex-wrap: wrap;
@@ -2106,8 +2108,16 @@ details.stock-rules {
   .top-bar h1 {
     display: none;
   }
+  /* The tabs share what's left of the row equally instead, so they fit
+     a 360px phone. A tab only outgrows its share when the row is too
+     tight for what it shows (two-digit badges at 320px). */
   .tab-bar {
+    flex: 1 1 0;
+    grid-auto-columns: minmax(max-content, 1fr);
     gap: 4px;
+  }
+  .tab-btn {
+    min-width: 0;
   }
   /* Search on its own line; sort and view share the next, at either end. */
   .network-search-wrap {
