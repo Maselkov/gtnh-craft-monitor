@@ -195,12 +195,9 @@ class TestNbtVariants:
 
     def test_first_scan_clears_mixed_pre_variant_history_once(self, client, api_headers):
         base_key = store.items.item_key("cropsnh", "genericSeed", 0, "item")
+        store.items.add_rows([(base_key, "Wheat Seeds", 3100, 1.0), (base_key, "Sugar Beet Seeds", 27, 2.0)])
         conn = sqlite3.connect(config.ITEM_HISTORY_DB_PATH)
         try:
-            conn.executemany(
-                "INSERT INTO item_history (item_key, label, size, recorded_at) VALUES (?, ?, ?, ?)",
-                [(base_key, "Wheat Seeds", 3100, 1.0), (base_key, "Sugar Beet Seeds", 27, 2.0)],
-            )
             # Left by the migration; reset_state empties every table.
             conn.execute("INSERT INTO pending_nbt_cleanup (id) VALUES (1)")
             conn.commit()

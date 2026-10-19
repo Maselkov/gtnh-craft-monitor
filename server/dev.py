@@ -43,7 +43,8 @@ for _name in ("API_KEY", "DATA_DIR", "GCM_BOOTSTRAP_ADMIN_TOKEN", "GCM_BOOTSTRAP
               "GTNH_VERSION", "GTNH_TEXTURES", "GAMEDATA_API_URL", "GAMEDATA_REPO",
               "TRUSTED_PROXIES", "VAPID_SUBJECT", "STALE_AFTER_SECONDS", "SESSION_LIFETIME_SECONDS",
               "AUTOCRAFT_KEEP_IDLE_CPUS", "AUTOCRAFT_RETRY_SECONDS", "CRAFT_STALL_SECONDS",
-              "WEBHOOK_URLS", "WEBHOOK_EVENTS", "PUBLIC_URL", "SCRIPTS_REPO"):
+              "WEBHOOK_URLS", "WEBHOOK_EVENTS", "PUBLIC_URL", "SCRIPTS_REPO",
+              "HISTORY_HOURLY_AFTER_DAYS", "HISTORY_DAILY_AFTER_DAYS"):
     os.environ.pop(_name, None)
 # Read by gcm.config at import: session cookies over plain http.
 os.environ["SESSION_COOKIE_SECURE"] = "0"
@@ -349,10 +350,7 @@ def backfill_history(days=7):
             size = max(0, size + random.randint(-400, 450))
             rows.append((key, it["name"], size, now - (days * 12 - step) * 7200))
         stock[it["name"]] = size
-    with db.transaction(db.item_history_db) as conn:
-        conn.executemany(
-            "INSERT INTO item_history (item_key, label, size, recorded_at) VALUES (?, ?, ?, ?)", rows
-        )
+    store.items.add_rows(rows)
 
     # Past job ends for the Crafts tab's history, oldest first like the
     # real log. A few were already running when the server first saw

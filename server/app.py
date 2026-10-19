@@ -22,7 +22,7 @@ Or via Docker (see Dockerfile / docker-compose.yml in this project).
 import os
 import sys
 
-from gcm import auth, config, create_app, db, store
+from gcm import auth, config, create_app, db, retention, store
 
 
 def _cli_new_token(display_name):
@@ -50,6 +50,7 @@ if __name__ == "__main__":
     from waitress import serve
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    retention.start()
     port = int(os.environ.get("PORT", "8420"))
     # Single process on purpose: crafts, network scans, and craft/cancel
     # requests are held in module-level memory (gcm/state.py), so multiple

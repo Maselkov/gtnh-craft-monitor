@@ -169,6 +169,8 @@ Environment variables (set in `.env` for Docker):
 | `AUTOCRAFT_KEEP_IDLE_CPUS` | `1` | Keep-in-stock crafts only start while more crafting CPUs than this are idle; see [Stock rules](#stock-rules). |
 | `AUTOCRAFT_RETRY_SECONDS` | `1800` | How long a keep-in-stock target waits after a failed craft before trying again. |
 | `CRAFT_STALL_SECONDS` | `600` | How long a step of a running job can be crafting without moving before its live tree calls it stuck. |
+| `HISTORY_HOURLY_AFTER_DAYS` | `30` | Stock history older than this keeps one value per item per hour. `0`: off. |
+| `HISTORY_DAILY_AFTER_DAYS` | `365` | ...and older than this, one per day. `0`: off. |
 
 ### Exposing it beyond your LAN
 
@@ -735,6 +737,12 @@ minute, but its data changes only when a scan finishes.
 - The last scan is saved to `server/data/item_history.db` and restored when
   the server restarts. Until the next scan completes, the page marks the data
   as restored rather than live.
+- Stock history keeps every change for 30 days. Older history keeps the last
+  value of each hour, and after a year of each day, so charts over long
+  ranges look the same while the file stops growing quickly (a base with
+  ~8,000 items records about 20,000 changes a day). A background job does
+  this daily; `HISTORY_HOURLY_AFTER_DAYS` and `HISTORY_DAILY_AFTER_DAYS` set
+  the ages, and `0` keeps everything.
 
 The search box takes NEI's syntax, matched against item names and ignoring
 case. Press `/` on any tab to jump to it.

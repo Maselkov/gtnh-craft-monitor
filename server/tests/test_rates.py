@@ -79,15 +79,10 @@ class TestEndpoints:
         assert client.get("/api/power").get_json()["trend"] is None
 
     def test_item_history_trend_follows_the_range(self, client):
-        from gcm import db
         key = store.items.item_key("minecraft", "iron_ingot", 0, "item")
         now = time.time()
-        with db.transaction(db.item_history_db) as conn:
-            conn.executemany(
-                "INSERT INTO item_history (item_key, label, size, recorded_at) VALUES (?, ?, ?, ?)",
-                [(key, "Iron Ingot", 10000, now - 20 * 86400),
-                 (key, "Iron Ingot", 8640, now - 43200)],
-            )
+        store.items.add_rows([(key, "Iron Ingot", 10000, now - 20 * 86400),
+                              (key, "Iron Ingot", 8640, now - 43200)])
         base = "/api/network/history?mod=minecraft&internal=iron_ingot&damage=0&kind=item"
         day = client.get(base + "&range=day").get_json()["trend"]
         # The day starts holding 10000, so it lost 1360 over it.

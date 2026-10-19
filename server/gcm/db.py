@@ -472,6 +472,49 @@ def _item_history_pattern_snapshot(conn):
     """)
 
 
+def _item_history_compact(conn):
+    # Each row repeated the item's full key and its name, and the index
+    # repeated the key again: ~145 bytes a row, ~1 GB a year on a big
+    # base. Now the key and the latest name are stored once in
+    # history_items, and a row is (item_id, recorded_at, size) in a
+    # WITHOUT ROWID table whose primary key is the index the queries
+    # use. Rows at the same time for one item keep the later one.
+    conn.execute("""
+        CREATE TABLE history_items (
+            id INTEGER PRIMARY KEY,
+            item_key TEXT NOT NULL UNIQUE,
+            label TEXT
+        )
+    """)
+    conn.execute("INSERT INTO history_items (item_key) SELECT DISTINCT item_key FROM item_history")
+    conn.execute("""
+        UPDATE history_items SET label = (
+            SELECT label FROM item_history h
+            WHERE h.item_key = history_items.item_key AND h.label IS NOT NULL
+            ORDER BY h.recorded_at DESC LIMIT 1
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE item_history_compact (
+            item_id INTEGER NOT NULL,
+            recorded_at REAL NOT NULL,
+            size REAL NOT NULL,
+            PRIMARY KEY (item_id, recorded_at)
+        ) WITHOUT ROWID
+    """)
+    conn.execute("""
+        INSERT OR REPLACE INTO item_history_compact (item_id, recorded_at, size)
+        SELECT i.id, h.recorded_at, h.size FROM item_history h
+        JOIN history_items i ON i.item_key = h.item_key
+        ORDER BY h.id
+    """)
+    conn.execute("DROP TABLE item_history")
+    conn.execute("ALTER TABLE item_history_compact RENAME TO item_history")
+    # How far gcm/retention.py has thinned each tier, so a run only
+    # looks at days it hasn't done yet.
+    conn.execute("CREATE TABLE history_thinned (tier TEXT PRIMARY KEY, until REAL NOT NULL)")
+
+
 def _app_push_subscriptions(conn):
     # One row per browser that turned notifications on (gcm/push.py).
     # A browser has one endpoint whoever is signed in, so it's the key.
@@ -562,7 +605,12 @@ APP_MIGRATIONS = [
     _app_craft_event_auto,
 ]
 POWER_MIGRATIONS = [_power_baseline, _power_machines, _power_drop_impossible_times]
-ITEM_HISTORY_MIGRATIONS = [_item_history_baseline, _item_history_variants, _item_history_pattern_snapshot]
+ITEM_HISTORY_MIGRATIONS = [
+    _item_history_baseline,
+    _item_history_variants,
+    _item_history_pattern_snapshot,
+    _item_history_compact,
+]
 
 
 def migrate(open_db, steps):
@@ -618,6 +666,24 @@ def init_power_db():
 def init_item_history_db():
     _use_wal(item_history_db)
     migrate(item_history_db, ITEM_HISTORY_MIGRATIONS)
+    vacuum_if_mostly_free(item_history_db)
+
+
+def vacuum_if_mostly_free(open_db, fraction=0.25):
+    """Shrinks the file when over `fraction` of it is free pages: after
+    the compact migration, or thinning a long backlog. Day to day, freed
+    pages are reused by new rows and this does nothing. Returns whether
+    it ran."""
+    conn = open_db()
+    try:
+        free = conn.execute("PRAGMA freelist_count").fetchone()[0]
+        total = conn.execute("PRAGMA page_count").fetchone()[0]
+        if not total or free / total <= fraction:
+            return False
+        conn.execute("VACUUM")
+        return True
+    finally:
+        conn.close()
 
 
 def backup_all(target_dir):
