@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { renderComputer } from '../../static/js/agents.js';
+import { renderComputer, renderHealth } from '../../static/js/agents.js';
 
 const COMPUTER = {
   address: '1f3a9c20-5b1e-4d2a', version: 'v1.0.0', behind: true, offline: false,
@@ -26,4 +26,33 @@ test('buttons wait while a command is under way, and offline', () => {
   const failed = renderComputer({ ...COMPUTER, command: { action: 'update', ref: 'main', status: 'done', ok: false, message: 'HTTP 404' } });
   assert.match(failed, /agent-command failed">Update to main: HTTP 404/);
   assert.equal(renderComputer({ ...COMPUTER, offline: true }).match(/ disabled/g).length, 3);
+});
+
+const HEALTH = {
+  uptime_seconds: 90061, gamedata: '2.7.2',
+  feeds: [
+    { key: 'crafts', label: 'Crafting CPUs', script: 'craft_monitor.lua', age_seconds: 3, ok: true, cpus: 4 },
+    { key: 'network', label: 'ME network', script: 'network_browser.lua', age_seconds: 4000, ok: false, items: 8123,
+      scan_seconds: 95, scanning_for: null, levels_age_seconds: 30, crash: null, reconstructed: false,
+      rejected: { at: 1, reason: 'incomplete (2/3 chunks, 0 errors)' } },
+    { key: 'power:', label: 'Power: Main', script: 'power_monitor.lua', age_seconds: null, ok: false },
+  ],
+  storage: { files: [{ name: 'app.db', bytes: 2500000 }], free_bytes: 1.2e11, total_bytes: 5e11 },
+  retention: { enabled: true, last_run: null },
+  push_subscriptions: 1,
+  webhooks: { configured: 2, last: { age_seconds: 120, sent: 1, failed: [{ host: 'bad.test', error: 'refused' }] } },
+};
+
+test('server health: each feed, storage, background jobs', () => {
+  const html = renderHealth(HEALTH);
+  assert.match(html, /agent-dot running"><\/span><span class="health-label">Crafting CPUs/);
+  assert.match(html, /updated 3s ago &middot; 4 CPUs/);
+  assert.match(html, /agent-dot warn"><\/span><span class="health-label">ME network/);
+  assert.match(html, /8,123 entries &middot; scan took 1m 35s/);
+  assert.match(html, /last scan turned away: incomplete \(2\/3 chunks, 0 errors\)/);
+  assert.match(html, /nothing from power_monitor\.lua yet/);
+  assert.match(html, /app\.db 2\.50MB/);
+  assert.match(html, /hasn&#39;t run since the server started/);
+  assert.match(html, /1 browser with push &middot; 2 webhooks, last post 2m 0s ago - failed: bad\.test \(refused\)/);
+  assert.match(html, /Up 1d 1h &middot; game data 2\.7\.2/);
 });

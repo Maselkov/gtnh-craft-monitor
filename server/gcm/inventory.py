@@ -139,6 +139,7 @@ def finish_scan(token, chunks_sent, total_errors):
         if not _is_current_scan_locked(token):
             state.network["in_progress"] = False
             state.network["scan_started_at"] = None
+            state.network["last_rejected"] = {"at": time.time(), "reason": "stale scan token"}
             log.warning(
                 "Rejected scan/finish: stale or missing scan_token - the server "
                 "likely restarted mid-scan, or a newer scan already started. "
@@ -190,6 +191,10 @@ def finish_scan(token, chunks_sent, total_errors):
         ):
             state.network["in_progress"] = False
             state.network["scan_started_at"] = None
+            state.network["last_rejected"] = {
+                "at": time.time(),
+                "reason": f"incomplete ({chunks_received}/{chunks_sent} chunks, {total_errors} errors)",
+            }
             log.warning(
                 "Rejected a network scan as incomplete: chunks_received=%s chunks_sent=%s "
                 "total_errors=%s - keeping the previous snapshot rather than recording "
@@ -212,6 +217,8 @@ def finish_scan(token, chunks_sent, total_errors):
         state.network["tags"] = dict(state.network_tag_buffer)
         state.network["item_count"] = len(new_items)
         state.network["updated_at"] = time.time()
+        if state.network["scan_started_at"]:
+            state.network["last_scan_seconds"] = state.network["updated_at"] - state.network["scan_started_at"]
         state.network["in_progress"] = False
         state.network["is_reconstructed"] = False  # this is a real, live scan now
         state.network["crash"] = None  # scanning works again

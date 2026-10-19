@@ -17,6 +17,9 @@ FIRST_RUN_DELAY_SECONDS = 300
 INTERVAL_SECONDS = 86400
 
 _thread = None
+# {at, deleted} of the last pass since the server started, for the
+# Status dialog.
+last_run = None
 
 
 def tiers():
@@ -31,6 +34,7 @@ def tiers():
 
 def run_once(now=None):
     """One pass over every tier; returns {tier: rows deleted}."""
+    global last_run
     now = time.time() if now is None else now
     deleted = {}
     for tier, bucket, days in tiers():
@@ -39,6 +43,7 @@ def run_once(now=None):
         log.info("Thinned item history: %s rows deleted", deleted)
         if store.items.vacuum_if_mostly_free():
             log.info("Compacted item_history.db")
+    last_run = {"at": time.time(), "deleted": deleted}
     return deleted
 
 

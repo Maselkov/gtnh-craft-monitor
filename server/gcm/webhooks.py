@@ -16,6 +16,7 @@ import json
 import logging
 import queue
 import threading
+import time
 import urllib.error
 import urllib.request
 from urllib.parse import quote, urlsplit
@@ -31,6 +32,9 @@ COLORS = {"good": 0x3FB950, "bad": 0xF85149, "warn": 0xD29922}
 _queue = queue.Queue()
 _worker_lock = threading.Lock()
 _worker = None
+# {at, results: [(host, error or None)]} of the last post, for the
+# Status dialog.
+last_delivery = None
 
 
 def enabled(event):
@@ -144,6 +148,7 @@ def _run():
 
 def send(ev):
     """Posts ev to every webhook now. Returns [(host, error or None)]."""
+    global last_delivery
     results = []
     for url in config.WEBHOOK_URLS:
         payload = discord_payload(ev) if is_discord(url) else generic_payload(ev)
@@ -154,6 +159,8 @@ def send(ev):
         except Exception as error:
             log.warning("webhook to %s failed: %s", host, error)
             results.append((host, str(error)))
+    if results:
+        last_delivery = {"at": time.time(), "results": results}
     return results
 
 
