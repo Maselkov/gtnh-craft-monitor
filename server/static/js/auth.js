@@ -10,7 +10,7 @@ import {
   syncPushSubscription,
   updateNotifToggle,
 } from './crafts.js';
-import { delegateActions, escapeHtml, onBackdropClick } from './util.js';
+import { delegateActions, escapeHtml, formatQty, onBackdropClick } from './util.js';
 
 export let AUTH_USER = null;
 let AUTH_MUST_ROTATE_BOOTSTRAP = false;
@@ -34,6 +34,7 @@ function updateAuthenticationControl() {
   adminButton.style.display = adminVisible ? '' : 'none';
   document.getElementById('gamedataBtn').style.display = adminVisible ? '' : 'none';
   document.getElementById('webhookTestBtn').style.display = adminVisible ? '' : 'none';
+  document.getElementById('backupBtn').style.display = adminVisible ? '' : 'none';
   document.getElementById('agentsBtn').style.display = adminVisible ? '' : 'none';
   if (AUTH_USER && !AUTH_MUST_ROTATE_BOOTSTRAP) syncPushSubscription();
 }
@@ -65,6 +66,34 @@ async function testWebhooks() {
     }
   } catch (e) {
     showToast('Could not reach the server.', true);
+  }
+}
+
+// The server makes the zip first (a few seconds with a lot of history),
+// so a failure can be shown here; then the browser downloads it.
+let backingUp = false;
+async function downloadBackup() {
+  if (backingUp) return;
+  backingUp = true;
+  showToast('Making a backup…');
+  try {
+    const response = await fetch('/api/admin/backup', { method: 'POST' });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      showToast(data.error || 'Could not make a backup.', true);
+      return;
+    }
+    const link = document.createElement('a');
+    link.href = `/api/admin/backup/${encodeURIComponent(data.id)}`;
+    link.download = data.name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    showToast(`Downloading ${data.name} (${formatQty(data.bytes)}B).`);
+  } catch (e) {
+    showToast('Could not reach the server.', true);
+  } finally {
+    backingUp = false;
   }
 }
 
@@ -148,6 +177,7 @@ export function setupAuthControls() {
     'toggle-settings': () => toggleSettingsMenu(),
     'open-admin': () => { closeSettingsMenu(); openAdminUsersModal(); },
     'test-webhooks': () => { closeSettingsMenu(); testWebhooks(); },
+    'download-backup': () => { closeSettingsMenu(); downloadBackup(); },
     'sign-out': () => { closeSettingsMenu(); signOut(); },
     'rotate-bootstrap': () => rotateBootstrapToken(),
     'close-admin': () => closeAdminUsersModal(),

@@ -1284,6 +1284,25 @@ async function main() {
     if (!webhookPosts.some((p) => p.event === 'test')) throw new Error('no test post');
   });
 
+  step('admin: download a backup', async () => {
+    const downloads = fs.mkdtempSync(path.join(os.tmpdir(), 'gcm-e2e-downloads-'));
+    tempDirs.push(downloads);
+    await cdp.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: downloads });
+    await click(`$('#settingsBtn')`);
+    await waitFor('menu open', `visible($('#settingsMenu'))`);
+    await click(`$('#backupBtn')`);
+    await waitFor('started', `$('#toastContainer').textContent.includes('Downloading gcm-backup-')`);
+    const deadline = Date.now() + 10000;
+    let zip;
+    while (!zip && Date.now() < deadline) {
+      zip = fs.readdirSync(downloads).find((n) => /^gcm-backup-.*\.zip$/.test(n));
+      if (!zip) await sleep(200);
+    }
+    if (!zip) throw new Error('no backup downloaded: ' + fs.readdirSync(downloads).join(', '));
+    // A zip's local file header starts "PK\x03\x04".
+    if (fs.readFileSync(path.join(downloads, zip)).subarray(0, 4).toString('hex') !== '504b0304') throw new Error('not a zip');
+  });
+
   step('admin: switch game data version and textures; the new icons show', async () => {
     await click(`$('#settingsBtn')`);
     await waitFor('menu open', `visible($('#settingsMenu'))`);

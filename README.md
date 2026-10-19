@@ -239,19 +239,27 @@ docker compose exec gtnh-craft-monitor python app.py new-token "Administrator"
 The databases are in `server/data/` (`app.db` for accounts, pins and craft
 history; `power.db`; `item_history.db`). They run in SQLite's WAL mode, so
 recent changes can sit in the `*.db-wal` files for a while: copying the `.db`
-files from a running server can miss data. Back up with the built-in command
-instead, which takes a consistent copy while the server keeps running:
+files from a running server can miss data. Instead, take a consistent copy
+while the server keeps running, in either of two ways:
 
-```bash
-docker compose exec gtnh-craft-monitor python app.py backup "/app/data/backup-$(date +%F)"
-```
+- **Settings (&#9881;) → Download backup** (admins) makes a zip of every
+  database and `vapid_private.pem`, the key that signs notifications, and
+  downloads it. It's made beside the databases first, so it needs about
+  their size in free space there; it's deleted once downloaded, or after 10
+  minutes.
+- The built-in command writes the databases to a directory:
 
-The backup doesn't include `server/data/vapid_private.pem`, the key that signs
-notifications. It never changes, so copy it once alongside.
+  ```bash
+  docker compose exec gtnh-craft-monitor python app.py backup "/app/data/backup-$(date +%F)"
+  ```
 
-To restore, stop the container, replace the `.db` file in `server/data/`,
-delete that file's `-wal` and `-shm` files if present, and start it again.
-WAL mode needs `server/data/` on a local disk, not a network share.
+  It doesn't include `server/data/vapid_private.pem`. That key never
+  changes, so copy it once alongside.
+
+To restore, stop the container, replace the `.db` file in `server/data/`
+(unzipped, if from a download), delete that file's `-wal` and `-shm` files if
+present, and start it again. WAL mode needs `server/data/` on a local disk,
+not a network share.
 
 ### Item icons
 
