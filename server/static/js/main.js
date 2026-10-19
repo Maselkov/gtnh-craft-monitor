@@ -12,7 +12,7 @@ import { setupCraftHistory } from './craft-history.js';
 import { setupAgentsActions } from './agents.js';
 import { setupCraftStats } from './craft-stats.js';
 import { setupCraftPlanActions } from './craft-plan.js';
-import { refresh, setupCraftsActions, setupNotifications, tickSourceLine } from './crafts.js';
+import { pollCrafts, refresh, setupCraftsActions, setupNotifications, tickSourceLine } from './crafts.js';
 import { setupGameDataActions } from './gamedata.js';
 import { setupIngredientsActions } from './ingredients.js';
 import {
@@ -28,7 +28,7 @@ import {
 } from './network.js';
 import { fetchPowerBadge, powerMachineFromUrl, setupPowerActions } from './power.js';
 import { fetchStockRules, setupStockActions } from './stock.js';
-import { focusNetworkSearch, pathToTab, setupTabActions, switchTab } from './tabs.js';
+import { focusNetworkSearch, pathToTab, refreshActiveTab, setupTabActions, switchTab } from './tabs.js';
 import { removeLegacyStorageKeys, setupImageErrorRemoval } from './util.js';
 
 // Tells static/boot.js the modules loaded and linked.
@@ -82,9 +82,19 @@ document.getElementById('networkSearch').addEventListener('scroll', updateNetwor
 updateNetworkSearchHighlight();
 loadAuthentication().catch(() => {}).finally(() => refresh());
 setInterval(refresh, 3000);
+setInterval(pollCrafts, 1000);
 setInterval(tickSourceLine, 1000);
 // For the tab badges (tab-badges.js), whichever tab is open. The
 // Network tab also fetches stock rules as it opens.
 fetchStockRules();
 fetchPowerBadge();
 setInterval(() => { fetchStockRules(); fetchPowerBadge(); }, 60000);
+// Hidden tabs keep polling (slowly, as the browser allows): the
+// completions poll is what shows a notification without Web Push.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  refresh();
+  refreshActiveTab();
+  fetchStockRules();
+  fetchPowerBadge();
+});

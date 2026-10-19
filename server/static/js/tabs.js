@@ -85,6 +85,17 @@ export function switchTab(tab, pushUrl) {
   }
 }
 
+// A tab the browser kept in the background has had its timers slowed to
+// about once a minute - fetch the open tab's data straight away when it
+// comes back rather than wait for them.
+export function refreshActiveTab() {
+  if (activeTab === 'power') fetchPower();
+  if (activeTab === 'network') {
+    fetchNetwork();
+    fetchCraftRequests();
+  }
+}
+
 export function setupTabActions() {
   window.addEventListener('popstate', () => {
     const tab = pathToTab(location.pathname);

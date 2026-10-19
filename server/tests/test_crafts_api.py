@@ -31,6 +31,30 @@ class TestCraftsEndpoint:
         assert data["stale"] is True
         assert data["age_seconds"] is None
 
+    def test_unchanged_since_last_get_is_304(self, client, api_headers):
+        client.post("/api/crafts", json={"source": "me_controller", "jobs": []}, headers=api_headers)
+        first = client.get("/api/crafts")
+        etag = first.headers["ETag"]
+        assert first.headers["Cache-Control"] == "no-cache"
+        assert first.get_json()["stale_after_seconds"] > 0
+
+        again = client.get("/api/crafts", headers={"If-None-Match": etag})
+        assert again.status_code == 304
+        assert again.headers["ETag"] == etag
+
+    def test_new_report_changes_etag(self, client, api_headers):
+        client.post("/api/crafts", json={"source": "me_controller", "jobs": []}, headers=api_headers)
+        etag = client.get("/api/crafts").headers["ETag"]
+        client.post(
+            "/api/crafts",
+            json={"source": "me_controller", "jobs": [{"name": "W01", "busy": False}]},
+            headers=api_headers,
+        )
+        res = client.get("/api/crafts", headers={"If-None-Match": etag})
+        assert res.status_code == 200
+        assert res.headers["ETag"] != etag
+        assert res.get_json()["jobs"][0]["name"] == "W01"
+
     def test_invalid_payload_rejected(self, client, api_headers):
         res = client.post(
             "/api/crafts",

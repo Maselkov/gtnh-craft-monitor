@@ -1,6 +1,7 @@
 """Crafting-CPU status from craft_monitor.lua, per-user CPU pins and
 completion notifications, and the Lua debug-dump channel."""
 
+import secrets
 import time
 
 from flask import Blueprint, g, jsonify, request, Response
@@ -68,20 +69,39 @@ def crafts_post():
     return jsonify({"ok": True})
 
 
+# A new process starts with no report, which a received_at of None
+# can't tell apart from the last process's.
+_PROCESS_TAG = secrets.token_hex(4)
+
+
 @bp.route("/api/crafts", methods=["GET"])
 @auth.public
 def crafts_get():
+    # Every open tab polls this each second, but the jobs only change
+    # when craft_monitor.lua posts - so an ETag turns most polls into an
+    # empty 304. age_seconds and stale are as of the response that
+    # carried the body: the page counts the age on from there, and
+    # judges staleness itself against stale_after_seconds, since a 304
+    # can't tell it the game has gone quiet.
     with state.crafts_lock:
         received_at = state.crafts["received_at"]
-        age = (time.time() - received_at) if received_at else None
-        return jsonify(
-            {
-                "jobs": state.crafts["jobs"],
-                "source": state.crafts["source"],
-                "age_seconds": age,
-                "stale": age is None or age > config.STALE_AFTER_SECONDS,
-            }
-        )
+        etag = f"{_PROCESS_TAG}-{received_at}"
+        if request.if_none_match.contains(etag):
+            response = Response(status=304)
+        else:
+            age = (time.time() - received_at) if received_at else None
+            response = jsonify(
+                {
+                    "jobs": state.crafts["jobs"],
+                    "source": state.crafts["source"],
+                    "age_seconds": age,
+                    "stale": age is None or age > config.STALE_AFTER_SECONDS,
+                    "stale_after_seconds": config.STALE_AFTER_SECONDS,
+                }
+            )
+    response.set_etag(etag)
+    response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 @bp.route("/api/crafts/<cpu>/tree", methods=["GET"])
