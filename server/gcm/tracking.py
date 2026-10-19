@@ -111,6 +111,8 @@ def _new_job_entry(started_at, seen_from_start=True):
         # baseline) and the latest one were taken - the job's pace.
         "first_sample_at": None,
         "last_sample_at": None,
+        # Progress at first_sample_at, for the job's pace (job_eta()).
+        "first_progress": None,
         # Set for a browser request's job craft_monitor.lua is watching,
         # and its outcome once reported (see report_outcome()).
         "request_id": None,
@@ -294,6 +296,7 @@ def process_jobs(jobs):
                 _update_progress(entry, job, now)
             else:
                 job["progress_percent"] = None
+                job["running_seconds"] = job["eta_seconds"] = None
 
             state.cpu_last_busy[name] = busy
 
@@ -333,12 +336,38 @@ def _update_progress(entry, job, sampled_at):
         entry["steps_total"] = steps_total
         if entry["first_sample_at"] is None:
             entry["first_sample_at"] = sampled_at
+            entry["first_progress"] = percent
         entry["last_sample_at"] = sampled_at
     job["progress_percent"] = entry["progress"]
     job["steps_done"] = steps_done
     job["steps_total"] = steps_total
+    # As of this report - the page adds how old the report is, so its own
+    # clock never has to agree with the server's.
+    job["running_seconds"] = max(0.0, sampled_at - entry["started_at"])
+    job["started_known"] = entry["seen_from_start"]
+    job["eta_seconds"] = job_eta(entry)
     if entry.get("auto"):
         job["auto"] = True
+
+
+# The pace has to have been watched this long, over this much progress,
+# before it says anything about the rest of the job.
+ETA_MIN_SECONDS = 120
+ETA_MIN_PROGRESS = 10
+
+
+def job_eta(entry):
+    """Seconds until the job is done if it keeps the pace it's had since
+    its first sampled report, or None until that's been seen long enough.
+    Rough: progress counts steps, which can take very different times."""
+    first, last = entry["first_sample_at"], entry["last_sample_at"]
+    start, now = entry["first_progress"], entry["progress"]
+    if first is None or start is None or now is None:
+        return None
+    span, gained = last - first, now - start
+    if span < ETA_MIN_SECONDS or gained < ETA_MIN_PROGRESS:
+        return None
+    return span * (100 - now) / gained
 
 
 def start_requested_job(user_id, cpu_name, label, icon, requested_at, request_id=None, auto=False):

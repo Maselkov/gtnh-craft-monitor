@@ -7,7 +7,9 @@ import { refreshCraftStats } from './craft-stats.js';
 import { openCancelConfirmModal, pendingCancelCpus } from './craft-actions.js';
 import { ingredientCount, openIngredientsModal, refreshIngredientsModal } from './ingredients.js';
 import { craftsBadge, setTabBadge } from './tab-badges.js';
-import { delegateActions, escapeHtml, formatRelativeTime, iconClass, iconUrl, PIN_ICON } from './util.js';
+import {
+  delegateActions, escapeHtml, formatDuration, formatRelativeTime, iconClass, iconUrl, PIN_ICON,
+} from './util.js';
 
 // Toggle-open state of the idle-CPU section, which has to survive the
 // 3s auto-refresh (it rebuilds the DOM from scratch).
@@ -447,6 +449,20 @@ export function tickSourceLine() {
   sourceLine.textContent = `Source: ${lastData.source} - updated ${ageDisplay}s ago`;
 }
 
+// " · running 12m 5s · ~25m left" - how long the job has run (at least,
+// for one already running when the server started) and, once its pace
+// is known, the server's guess at the rest.
+function jobTiming(job) {
+  if (job.running_seconds == null) return '';
+  const age = dataAge() ?? 0;
+  const elapsed = formatDuration(job.running_seconds + age);
+  let text = ` &middot; running ${job.started_known ? '' : '&ge;'}${escapeHtml(elapsed)}`;
+  if (job.eta_seconds != null) {
+    text += ` &middot; <span class="job-eta" title="If the rest of the job goes at the pace it has so far. Steps can take very different times, so this is rough.">~${escapeHtml(formatDuration(Math.max(0, job.eta_seconds - age)))} left</span>`;
+  }
+  return text;
+}
+
 function renderCard(job) {
   // Progress/ingredients/title all gated on job.busy, not just on
   // whether the underlying fields happen to be present - AE2 can
@@ -462,7 +478,7 @@ function renderCard(job) {
   const hasProgress = job.busy && job.progress_percent != null;
   const progressBar = hasProgress ? `
     <div class="progress-track"><div class="progress-fill" data-progress="${escapeHtml(job.progress_percent)}"></div></div>
-    <div class="progress-label">${escapeHtml(job.progress_percent)}% &middot; ${escapeHtml(job.steps_done ?? '?')}/${escapeHtml(job.steps_total ?? '?')} steps done</div>
+    <div class="progress-label">${escapeHtml(job.progress_percent)}% &middot; ${escapeHtml(job.steps_done ?? '?')}/${escapeHtml(job.steps_total ?? '?')} steps done${jobTiming(job)}</div>
   ` : '';
 
   const itemCount = job.busy ? ingredientCount(job) : 0;

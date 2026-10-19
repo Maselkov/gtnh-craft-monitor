@@ -458,6 +458,8 @@ async function main() {
     // works if the CSP's style hashes match index.html.
     await waitFor('all dialogs hidden', `$$('.modal-overlay').length >= 5 && $$('.modal-overlay').every((m) => !visible(m))`);
     await waitFor('progress 40%', `card('W01').querySelector('.progress-fill').style.width === '40%'`);
+    // Busy in the server's first report, so only a lower bound on its run time.
+    await waitFor('run time', `/running ≥\\d/.test(card('W01').querySelector('.progress-label').textContent)`);
   });
 
   step('Content-Security-Policy blocks injected script and style', async () => {

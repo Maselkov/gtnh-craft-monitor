@@ -620,6 +620,10 @@ game. A busy card shows:
 - **Progress** — each item or fluid type the job still has to make counts
   as one step, and the bar is the average of how far along each step is.
   It never moves backwards. It counts steps done, not time left.
+- **Run time** — how long the job has been running ("≥" for one that was
+  already running when the server started). After two minutes and 10% of
+  progress, a rough time left follows: what's left at the pace so far.
+  Since steps can take very different times, take it as a guess.
 - **Ingredients (N)** — opens a grid of everything the job holds, is crafting
   and is waiting on, laid out like AE2's crafting status screen. It stays
   live while open. Switch it to **Tree** to see the job step by step:
@@ -890,7 +894,7 @@ draws each threshold as a dashed line.
   the game.
 - Progress counts steps, not crafting time, since recipe durations aren't
   available. A job with one slow step and 63 quick ones shows as nearly done
-  once the 63 are made.
+  once the 63 are made, and its time left is as far off.
 - Stock rules react within `WATCH_INTERVAL_SECONDS` (1 minute by default).
   AE2 picks the CPU for each craft itself, so the idle-CPU limit is checked
   when a craft is requested, not enforced while it runs.
