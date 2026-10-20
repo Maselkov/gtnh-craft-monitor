@@ -5,7 +5,7 @@ import java.util.Map;
 import cpw.mods.fml.relauncher.IFMLLoadingPlugin;
 
 /**
- * Registers {@link ClockTransformer}, only when the game is started for an export
+ * Registers {@link ClockTransformer} and {@link KeyTransformer}, only when the game is started for an export
  * ({@code -Dgcm.iconexport=true}), so the jar changes nothing in a normal instance. Sorted after
  * FML's deobfuscation, so the transformer sees MCP class names and SRG member names.
  */
@@ -16,7 +16,8 @@ public final class ExportCorePlugin implements IFMLLoadingPlugin {
 
     @Override
     public String[] getASMTransformerClass() {
-        return Boolean.getBoolean("gcm.iconexport") ? new String[] { ClockTransformer.class.getName() }
+        return Boolean.getBoolean("gcm.iconexport")
+                ? new String[] { ClockTransformer.class.getName(), KeyTransformer.class.getName() }
                 : new String[0];
     }
 

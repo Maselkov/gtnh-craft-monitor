@@ -7,7 +7,7 @@ import zipfile
 import dev
 import pytest
 from conftest import TEST_API_KEY, login_as
-from gcm import oredict
+from gcm import item_info, oredict
 
 
 @pytest.fixture()
@@ -69,6 +69,22 @@ def test_icon_bundle_covers_every_item_but_essentia(tmp_path):
     assert len(paths) == sum(1 for it in dev.CATALOG if it["kind"] != "essentia")
     assert set(paths) <= names
     assert json.loads((tmp_path / "gamedata" / "selected.json").read_text())["version"] == "dev"
+
+
+def test_the_bundles_descriptions_reach_the_page(tmp_path, game, client):
+    dev.install_icons(str(tmp_path))
+    item_info.load(str(tmp_path / "gamedata" / "dev" / "item_info.json"))
+    try:
+        game.tick()
+        info = client.get("/api/network/info").get_json()
+    finally:
+        item_info.load(None)
+    dtpf = dev.BY_NAME["Dimensionally Transcendent Plasma Forge"]
+    dtpf_info = info["items"][f"gregtech|gt.metaitem.01|{dtpf['damage']}|item"]
+    assert "DTPF" in dtpf_info["description"] and "Structure" in dtpf_info["shift_description"]
+    assert info["mods"]["gregtech"] == "GregTech"
+    lapotron = dev.BY_NAME["Lapotron Crystal"]
+    assert dev.item_info()["rarity"]["by_key"][f"gregtech:gt.metaitem.01:{lapotron['damage']}"] == "b"
 
 
 def test_ended_job_sends_its_last_look_once(game):

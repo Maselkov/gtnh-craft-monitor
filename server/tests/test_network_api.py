@@ -1,6 +1,9 @@
+import json
 import sqlite3
 
-from gcm import config, icons, state, store
+import pytest
+
+from gcm import config, icons, item_info, oredict, state, store
 from gcm import inventory
 from conftest import login_as
 from nbt_fixtures import seed_tag
@@ -742,3 +745,108 @@ class TestCrashReports:
         assert (len(crash["error"]), crash["phase"], crash["free_memory"]) == (500, None, None)
         assert client.post("/api/network/crashed", headers=api_headers, data="nope",
                            content_type="application/json").status_code == 400
+
+
+@pytest.fixture()
+def game_info(tmp_path):
+    """Makes the given item_info.json (and ore_dict.json) the live ones."""
+    def load(info, ore=None):
+        path = tmp_path / "item_info.json"
+        path.write_text(json.dumps(info))
+        item_info.load(str(path))
+        if ore is not None:
+            ore_path = tmp_path / "ore_dict.json"
+            ore_path.write_text(json.dumps(ore))
+            oredict.load(str(ore_path))
+    yield load
+    item_info.load(None)
+    oredict.load(None)
+
+
+class TestItemInfo:
+    INFO = {
+        "tooltips": {
+            "by_key": {"minecraft:iron_ingot:0": "§7Fe", "cropsnh:genericSeed:0": "Some seeds"},
+            "by_key_label": {"cropsnh:genericSeed:0|Wheat Seeds": "§eWheat"},
+        },
+        "shift_tooltips": {"by_key": {"minecraft:iron_ingot:0": "§7Fe, in detail"}},
+        "rarity": {"by_key": {"minecraft:iron_ingot:0": "e"}},
+        "fluids": {"molten.silicone": {"temperature": 1500, "gaseous": False}},
+        "mods": {"minecraft": "Minecraft", "IC2": "IndustrialCraft 2"},
+    }
+    ORE = {"ingotIron": ["minecraft:iron_ingot:0"], "ingotAnyIron": ["minecraft:iron_ingot:*"]}
+
+    def test_only_items_in_the_network_with_any(self, client, api_headers, game_info):
+        game_info(self.INFO, self.ORE)
+        run_scan(client, api_headers, [[ITEM, FLUID, dict(ITEM, internal="gold_ingot", name="Gold Ingot")]])
+        res = client.get("/api/network/info")
+        assert res.get_json() == {
+            "items": {
+                "minecraft|iron_ingot|0|item": {
+                    "description": "§7Fe", "shift_description": "§7Fe, in detail", "rarity": "e",
+                    "ore": ["ingotIron", "ingotAnyIron"],
+                },
+                "|molten.silicone||fluid": {"description": "§7Temperature: §e1,500 K\n§7State: §eLiquid"},
+            },
+            "mods": {"minecraft": "Minecraft", "IC2": "IndustrialCraft 2"},
+        }
+        assert client.get("/api/network/info", headers={"If-None-Match": res.headers["ETag"]}).status_code == 304
+
+    def test_an_nbt_variant_has_its_own_by_label_or_else_its_items(self, client, api_headers, game_info):
+        game_info(self.INFO)
+        beet = dict(SEED, tag=seed_tag("sugarbeet", 1, 1, 1))
+        wheat = dict(SEED, name="Wheat Seeds", size=3100, tag=seed_tag("wheat", 1, 1, 1))
+        run_scan(client, api_headers, [[beet, wheat]])
+        variants = {it["name"]: it["variant"] for it in client.get("/api/network").get_json()["items"]}
+        got = client.get("/api/network/info").get_json()["items"]
+        assert got[f"cropsnh|genericSeed|0|item|{variants['Wheat Seeds']}"] == {"description": "§eWheat"}
+        assert got[f"cropsnh|genericSeed|0|item|{variants['Sugar Beet Seeds']}"] == {"description": "Some seeds"}
+
+    def test_a_gregtech_tools_material(self, game_info):
+        game_info({"tooltips": {"by_key_material": {"gregtech:gt.metatool.01:170|Neutronium": "Neutronium turbine"},
+                                "by_key": {"gregtech:gt.metatool.01:170": "A turbine"}}})
+        tool = {"mod": "gregtech", "internal": "gt.metatool.01", "damage": 170, "kind": "item",
+                "name": "Huge Turbine", "variant": "x", "variant_name": "Neutronium #1a2b"}
+        assert item_info.describe(tool) == {"description": "Neutronium turbine"}
+        assert item_info.describe(dict(tool, variant_name="Iron")) == {"description": "A turbine"}
+
+    def test_plasma_and_gas(self, game_info):
+        game_info({"fluids": {"plasma.helium": {"temperature": 10000, "gaseous": True},
+                              "steam": {"temperature": 500, "gaseous": True}}})
+        fluid = {"internal": "plasma.helium", "kind": "fluid"}
+        assert item_info.describe(fluid)["description"].endswith("Plasma")
+        assert item_info.describe(dict(fluid, internal="steam"))["description"].endswith("Gas")
+
+    def test_formulas_lead_the_description_unless_the_tooltip_has_them(self, game_info):
+        game_info({
+            "tooltips": {"by_key": {"gregtech:gt.metaitem.01:11028": "§eTi", "gregtech:gt.metaitem.01:1": "A cell"}},
+            "formulas": {"by_key": {"gregtech:gt.metaitem.01:11028": "Ti", "gregtech:gt.metaitem.01:1": "H₂O",
+                                    "gregtech:gt.metaitem.01:2": "§kXy"}},
+            "fluids": {"molten.titanium": {"temperature": 1941, "gaseous": False, "formula": "Ti"}},
+        })
+        item = {"mod": "gregtech", "internal": "gt.metaitem.01", "kind": "item"}
+        assert item_info.describe(dict(item, damage=11028)) == {"description": "§eTi", "formula": "Ti"}
+        assert item_info.describe(dict(item, damage=1)) == {"description": "§eH₂O\nA cell", "formula": "H₂O"}
+        assert item_info.describe(dict(item, damage=2)) == {"description": "§e§kXy", "formula": "§kXy"}
+        assert item_info.describe({"internal": "molten.titanium", "kind": "fluid"}) == {
+            "description": "§eTi\n§7Temperature: §e1,941 K\n§7State: §eLiquid", "formula": "Ti"}
+
+    def test_mod_names_in_any_case(self, game_info):
+        game_info(self.INFO)
+        assert item_info.mod_name("ic2") == "IndustrialCraft 2"
+        assert item_info.mod_name("nope") is None
+
+    def test_the_item_dialog_gets_it_with_the_history(self, client, api_headers, game_info):
+        game_info(self.INFO, self.ORE)
+        run_scan(client, api_headers, [[ITEM]])
+        query = {"mod": "minecraft", "internal": "iron_ingot", "damage": 0, "kind": "item"}
+        info = client.get("/api/network/history", query_string=query).get_json()["info"]
+        assert info == {"description": "§7Fe", "shift_description": "§7Fe, in detail", "rarity": "e",
+                        "ore": ["ingotIron", "ingotAnyIron"], "mod_name": "Minecraft"}
+        query["internal"] = "gold_ingot"
+        info = client.get("/api/network/history", query_string=query).get_json()["info"]
+        assert info == {"mod_name": "Minecraft"}
+
+    def test_none_without_game_data(self, client, api_headers):
+        run_scan(client, api_headers, [[ITEM]])
+        assert client.get("/api/network/info").get_json() == {"items": {}, "mods": {}}

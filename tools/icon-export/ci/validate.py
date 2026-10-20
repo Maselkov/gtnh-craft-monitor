@@ -10,6 +10,12 @@ silhouettes. The latter is how broken GL state shows up: the export still
 "succeeds", but every icon after some point is one colour (see CONTEXT.md,
 "Rendering icons at the main menu"). A good export has ~1% flat icons.
 
+item_info.json's tooltips have to have a known GregTech multiblock's
+abbreviation in them (DTPF, from its machine type line), or they came
+out without the lines that make searching them worthwhile; and enough
+of them have to change with Shift held, or the export's Shift (see
+ExportKeys.java) didn't reach GregTech.
+
 Animated icons (APNGs) are checked too: there have to be plenty of them
 (fewer means the animation capture broke), and none may be huge.
 
@@ -36,7 +42,19 @@ MINIMUMS = {
     # GTNH 2.9 has about 1,200 names that can stand in for something.
     "oreNames": 500,
     "catalogIds": 8000,
+    # Every GregTech material item has its chemical formula.
+    "tooltipsByKey": 10000,
+    # Every GregTech multiblock shows its structure with Shift.
+    "shiftTooltipsByKey": 200,
+    "fluidInfo": 1000,
+    # GTNH 2.9 has about 26,000 items and 860 fluids with a GregTech
+    # formula; far fewer means the reflection into GregTech broke.
+    "formulasByKey": 15000,
+    "fluidFormulas": 400,
+    "modNames": 100,
 }
+# A tooltip line every GTNH version since the DTPF's has.
+KNOWN_TOOLTIP = "dtpf"
 MAX_FAILED_SHARE = 0.05
 FLAT_SAMPLE = 500
 MAX_FLAT_SHARE = 0.05
@@ -78,6 +96,10 @@ def check(out_dir):
         biggest = max(zf.infolist(), key=lambda info: info.file_size)
     if biggest.file_size > MAX_ICON_BYTES:
         problems.append(f"{biggest.filename} is {biggest.file_size} bytes")
+
+    tooltips = json.loads((out_dir / "item_info.json").read_text())["tooltips"]
+    if not any(KNOWN_TOOLTIP in text.lower() for text in tooltips["by_key"].values()):
+        problems.append(f"no tooltip mentions {KNOWN_TOOLTIP.upper()}")
 
     lookup = json.loads((out_dir / "icons_lookup.json").read_text())
     with zipfile.ZipFile(out_dir / "images.zip") as zf:

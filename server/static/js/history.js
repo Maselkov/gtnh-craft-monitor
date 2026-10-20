@@ -2,6 +2,7 @@
 
 import { AUTH_USER, isOperator } from './auth.js';
 import { openCraftRequestModal } from './craft-actions.js';
+import { descriptionHtml, descriptionPlainText } from './description.js';
 import {
   lastNetworkData,
   networkItemKey,
@@ -10,7 +11,9 @@ import {
 } from './network.js';
 import { hideStockPanel, showStockPanel, stockThresholdsFor } from './stock.js';
 import { activeTab, switchTab } from './tabs.js';
-import { delegateActions, formatDuration, formatQty, formatRate, iconClass, iconUrl, onBackdropClick } from './util.js';
+import {
+  delegateActions, escapeHtml, formatDuration, formatQty, formatRate, iconClass, iconUrl, onBackdropClick,
+} from './util.js';
 
 // ---------- Item history popup ----------
 let itemHistoryTarget = null;
@@ -213,6 +216,7 @@ export function openItemHistory(it, pushUrl) {
   // own more authoritative "latest" value comes back.
   updateItemHistoryCurrent(it.size, it.kind);
   updateItemHistoryTrend(null);
+  updateItemHistoryInfo(null);
   updateItemHistoryPinButton(it);
 
   document.getElementById('itemHistoryCraftBtn').style.display = (it.isCraftable && isOperator()) ? '' : 'none';
@@ -256,6 +260,7 @@ async function fetchItemHistory() {
     params.set('range', itemHistoryRange);
     const res = await fetch('/api/network/history?' + params.toString());
     const data = await res.json();
+    updateItemHistoryInfo(data.info);
     renderItemHistoryChart(data);
   } catch (e) {
     const emptyEl = document.getElementById('itemHistoryEmpty');
@@ -263,6 +268,70 @@ async function fetchItemHistory() {
     emptyEl.textContent = 'Could not reach server.';
     document.getElementById('itemHistoryChart').style.display = 'none';
   }
+}
+
+// What the game data says about the item (/api/network/history's
+// info), below the header, kept small so the chart stays in view. A
+// description of a line or two is shown as it is, in plain text. A
+// longer one (a multiblock's) is collapsed to its first line; opened,
+// it's the game-style tooltip box ending with the mod's name, as NEI
+// shows it, with a Shift button where Shift shows more. Whether it's
+// open is remembered per viewer. Then the ore-dictionary names, each a
+// search.
+const DESCRIPTION_OPEN_KEY = 'gtnhCraftMonitor.itemDescriptionOpen';
+const SHORT_DESCRIPTION_LINES = 2;
+let itemHistoryInfo = null;
+let itemHistoryShift = false;
+
+function updateItemHistoryInfo(info) {
+  itemHistoryInfo = info || null;
+  itemHistoryShift = false;
+  renderItemHistoryInfo();
+}
+
+function renderItemHistoryInfo() {
+  const info = itemHistoryInfo || {};
+  const lines = info.description ? descriptionPlainText(info.description).split('\n').filter(l => l.trim()) : [];
+  const long = lines.length > SHORT_DESCRIPTION_LINES || !!info.shift_description;
+
+  const shortEl = document.getElementById('itemHistoryShort');
+  shortEl.textContent = long ? '' : lines.join(' \u00b7 ');
+  shortEl.hidden = long || !lines.length;
+
+  const details = document.getElementById('itemHistoryDetails');
+  details.hidden = !long;
+  if (long) {
+    let open = false;
+    try { open = localStorage.getItem(DESCRIPTION_OPEN_KEY) === '1'; } catch (e) { /* closed */ }
+    details.open = open;
+    document.getElementById('itemHistorySummary').textContent = lines[0] || '';
+    document.getElementById('itemHistoryMore').textContent = lines.length > 1 ? `(+${lines.length - 1} line${lines.length > 2 ? 's' : ''})` : '';
+    const text = (itemHistoryShift && info.shift_description) || info.description || '';
+    const modLine = info.mod_name ? `<span class="game-text-mod">${escapeHtml(info.mod_name)}</span>` : '';
+    document.getElementById('itemHistoryDescription').innerHTML =
+      descriptionHtml(text) + (text && modLine ? '\n' : '') + modLine;
+    const shiftBtn = document.getElementById('itemHistoryShiftBtn');
+    shiftBtn.hidden = !info.shift_description;
+    shiftBtn.classList.toggle('active', itemHistoryShift);
+    shiftBtn.setAttribute('aria-pressed', String(itemHistoryShift));
+  }
+
+  const ore = info.ore || [];
+  document.getElementById('itemHistoryOre').innerHTML = ore.length
+    ? 'Ore dictionary: ' + ore.map(name =>
+      `<button class="history-ore-name" data-action="history-ore-search" data-ore="${escapeHtml(name)}" title="Search the network for $${escapeHtml(name)}">${escapeHtml(name)}</button>`,
+    ).join(' ')
+    : '';
+  document.getElementById('itemHistoryInfo').hidden = shortEl.hidden && details.hidden && !ore.length;
+}
+
+// Closes the dialog and searches the network for an ore name.
+function searchOreName(name) {
+  closeItemHistory();
+  const input = document.getElementById('networkSearch');
+  input.value = '$' + name;
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  input.focus();
 }
 
 function updateItemHistoryCurrent(size, kind) {
@@ -501,6 +570,14 @@ export function setupHistoryActions() {
     'history-pin': () => toggleNetworkItemPin(itemHistoryTarget),
     'close-history': () => closeItemHistory(),
     'craft-from-history': () => requestCraftFromHistory(),
+    'history-shift': () => {
+      itemHistoryShift = !itemHistoryShift;
+      renderItemHistoryInfo();
+    },
+    'history-ore-search': (el) => searchOreName(el.dataset.ore),
   });
   onBackdropClick('itemHistoryModal', () => closeItemHistory());
+  document.getElementById('itemHistoryDetails').addEventListener('toggle', (e) => {
+    try { localStorage.setItem(DESCRIPTION_OPEN_KEY, e.target.open ? '1' : '0'); } catch (err) { /* per-viewer nicety only */ }
+  });
 }

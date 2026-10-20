@@ -117,6 +117,7 @@ ITEMS = [
     ("Flawless Diamond", "gem", (150, 250, 250)),
     ("Diamond Dust", "dust", (110, 230, 230)),
     ("Block of Diamond", "block", (110, 230, 230)),
+    ("Dimensionally Transcendent Plasma Forge", "block", (90, 40, 140)),
     ("Ordo", "essentia", None),
     ("Metallum", "essentia", None),
     ("Praecantatio", "essentia", None),
@@ -176,11 +177,74 @@ PATTERNS = [
     ("Electric Implosion Compressor", False, [("Industrial Diamond", 3)], [("Diamond Dust", 4)],
      {"beSubstitute": True}),
 ]
+# Some items' tooltips below their name, as the bundle's item_info.json
+# has them (gcm/item_info.py): formatting codes and all, so the page's
+# colours, multi-line tooltips and #search show. Made up, if GTNH-like,
+# except the DTPF's: GTNH 2.9.0-RC-1's own, a long multiblock tooltip.
+DESCRIPTIONS = {
+    "Iron Ingot": "\u00a7eFe",
+    # GregTech's font glyph for subscript 0 (\ue01a), as the real one has.
+    "Tungstensteel Ingot": "\u00a7e(Fe\u2085\ue01aC)W",
+    "Kanthal Dust": "\u00a7eFeAlCr",
+    "Nichrome Ingot": "\u00a7eNi\u2084Cr",
+    "Lapotron Crystal": "\u00a77Stores \u00a7e10,000,000 EU\n\u00a77Tier: \u00a7bIV",
+    "Dimensionally Transcendent Plasma Forge": (
+        "Machine Type: \u00a7ePlasma Forge, DTPF\u00a7r\n"
+        "Transcending Dimensional Boundaries.\n"
+        "Takes \u00a7c8\u00a77 hours of continuous run time to fully breach dimensional\n"
+        "boundaries and achieve maximum efficiency, reducing fuel consumption by up to \u00a7c50%\n"
+        "When no recipe is running, fuel discount decays x\u00a7c100\u00a77 as fast as it builds up, draining\n"
+        "the total amount of stored runtime\n"
+        "\u00a77\u00a7m-----------------------------------------\n"
+        "Multidimensional spaces can be perfectly aligned and synchronized in this state, \n"
+        "allowing \u00a76Dimensional Convergence \u00a77to occur. To reach the required stability threshold,\n"
+        "a \u00a7bTransdimensional Alignment Matrix \u00a77must be placed in the controller\n"
+        "When \u00a76Convergence \u00a77is active, it allows the forge to perform \u00a7cPerfect Overclocks\u00a77,\n"
+        "but the extra power cost is instead added in form of increased catalyst amounts\n"
+        "This machine can run recipes regardless of tier, if given enough energy\n"
+        "\u00a7aSupports Multi-Amp and Laser Hatches!\n"
+        "\u00a77\u00a7m-----------------------------------------\n"
+        "Added by: \u00a7a\u00a74\u00a7l\u00a7o\u00a7nC\u00a76\u00a7l\u00a7o\u00a7no\u00a7a\u00a7l\u00a7o\u00a7nl\u00a73\u00a7l\u00a7o\u00a7ne\u00a75\u00a7l\u00a7o\u00a7nn\u00a7r\u00a77"
+    ),
+}
+# The same with Shift held, where that's different.
+SHIFT_DESCRIPTIONS = {
+    "Dimensionally Transcendent Plasma Forge": (
+        "\u00a7fDimensions: \u00a7633\u00a77x\u00a7633\u00a77x\u00a7624\u00a77 (\u00a76L\u00a77x\u00a76W\u00a77x\u00a76H\u00a77) \n"
+        "\u00a7fStructure: \n"
+        "   \u00a7fController: \u00a77Middle of the structure, 3rd layer\n"
+        "   \u00a762121 \u00a7fDimensionally Transcendent Casing\n"
+        "   \u00a762112 \u00a7fHeating Coil \u00a7b(Tiered)\n"
+        "   \u00a761250-1270 \u00a7fDimensional Injection Casing\n"
+        "   \u00a76120 \u00a7fDimensional Bridge\n"
+        "   \u00a7e1-2 \u00a7fEnergy Hatch: \u00a77Any injection casing\n"
+        "   \u00a7e1+ \u00a7fInput Bus/Hatch: \u00a77Any injection casing\n"
+        "   \u00a7e1+ \u00a7fOutput Bus/Hatch: \u00a77Any injection casing\n"
+        "\n"
+        "Subchannel \u00a7bcoil\u00a77 determines \u00a7bHeating Coil Tier\n"
+        "\u00a77\u00a7m------------------------------\n"
+        "\u00a7fUse the Multiblock Structure \u00a79Hologram \u00a71Projector\u00a7f to visualize/build the structure!"
+    ),
+}
+# Chemical formulas, as GregTech's materials have them.
+FORMULAS = {
+    "Iron Ingot": "Fe", "Tungstensteel Ingot": "(Fe\u2085\ue01aC)W", "Kanthal Dust": "FeAlCr",
+    "Nichrome Ingot": "Ni\u2084Cr", "Glass Dust": "SiO\u2082", "Osmium Rod": "Os",
+}
+# Rarity colours (formatting codes) of the uncommon items.
+RARITY = {"Lapotron Crystal": "b", "Ultimate Circuit": "d"}
+# The fluids' temperature in kelvin, whether each is a gas, and its
+# formula if it has one.
+FLUID_INFO = {"Radon Plasma": (10000, True, "Rn"), "Molten Inconel-625": (1700, False, "Ni\u2083CrMoNb"),
+              "Bacterial Sludge": (300, False, None), "Water": (295, False, "H\u2082O")}
 # What the ore dictionary says about CATALOG (gcm/oredict.py).
-ORE_DICT = {"gemDiamond": ["Diamond", "Industrial Diamond"]}
+ORE_DICT = {"gemDiamond": ["Diamond", "Industrial Diamond"], "ingotIron": ["Iron Ingot"],
+            "dustKanthal": ["Kanthal Dust"], "ingotTungstenSteel": ["Tungstensteel Ingot"]}
 PATTERN_OUTPUTS = {name for _, _, outputs, *_ in PATTERNS for name, _ in outputs}
 # Kept at none, so a plan for the Ultimate Circuit comes up short.
 ALWAYS_EMPTY = {"Draconium Ingot"}
+# Kept at this many, so the network always has one to look at.
+ALWAYS_STOCKED = {"Dimensionally Transcendent Plasma Forge": 1}
 
 
 def pattern_entry(name, size):
@@ -194,6 +258,22 @@ def ore_dict():
     """ORE_DICT as the bundle's ore_dict.json has it."""
     return {name: [f"{BY_NAME[n]['mod']}:{BY_NAME[n]['internal']}:{BY_NAME[n]['damage']}" for n in members]
             for name, members in ORE_DICT.items()}
+
+
+def item_info():
+    """DESCRIPTIONS and the rest as the bundle's item_info.json has them."""
+    def by_key(values):
+        return {"by_key": {f"{BY_NAME[n]['mod']}:{BY_NAME[n]['internal']}:{BY_NAME[n]['damage']}": v
+                           for n, v in values.items()}}
+    return {
+        "tooltips": by_key(DESCRIPTIONS),
+        "shift_tooltips": by_key(SHIFT_DESCRIPTIONS),
+        "rarity": by_key(RARITY),
+        "formulas": by_key(FORMULAS),
+        "fluids": {BY_NAME[n]["internal"]: {"temperature": t, "gaseous": gas, **({"formula": f} if f else {})}
+                   for n, (t, gas, f) in FLUID_INFO.items()},
+        "mods": {"gregtech": "GregTech", "minecraft": "Minecraft"},
+    }
 
 
 def flags_tag(flags):
@@ -297,6 +377,8 @@ def install_icons(data_dir):
         json.dump({"by_key": by_key, "fluids_by_key": fluids_by_key, "by_label": {}}, f)
     with open(os.path.join(bundle, "ore_dict.json"), "w", encoding="utf-8") as f:
         json.dump(ore_dict(), f)
+    with open(os.path.join(bundle, "item_info.json"), "w", encoding="utf-8") as f:
+        json.dump(item_info(), f)
     with open(os.path.join(bundle, "item_catalog.txt"), "w", encoding="utf-8") as f:
         f.write("".join(f"{it['mod']}:{it['internal']}\n" for it in CATALOG if it["mod"]))
     # Its hash is the bundle's build id, which busts icon caches: new
@@ -345,9 +427,11 @@ def backfill_history(days=7):
     rows, stock = [], {}
     for it in CATALOG:
         key = store.items.item_key(it["mod"], it["internal"], it["damage"], it["kind"])
-        size = random.randint(0, 5000)
+        fixed = ALWAYS_STOCKED.get(it["name"])
+        size = random.randint(0, 5000) if fixed is None else fixed
         for step in range(days * 12):  # every 2 hours
-            size = max(0, size + random.randint(-400, 450))
+            if fixed is None:
+                size = max(0, size + random.randint(-400, 450))
             rows.append((key, it["name"], size, now - (days * 12 - step) * 7200))
         stock[it["name"]] = size
     store.items.add_rows(rows)
@@ -573,6 +657,7 @@ class FakeGame:
             cpu.start(out, random_ingredients(random.randint(1, 6), out))
         self.stock = stock or {it["name"]: random.randint(0, 5000) for it in CATALOG}
         self.stock.update(dict.fromkeys(ALWAYS_EMPTY, 0))
+        self.stock.update(ALWAYS_STOCKED)
         self.computers = [
             FakeComputer("1f3a9c20-5b1e-4d2a-9e77-0c4b8f2d6a11", "v1.0.0",
                          ["craft_monitor", "network_browser"], 4 * 1024 * 1024),
@@ -662,7 +747,7 @@ class FakeGame:
     def scan(self):
         items = []
         for it in CATALOG:
-            if it["name"] not in ALWAYS_EMPTY:
+            if it["name"] not in ALWAYS_EMPTY and it["name"] not in ALWAYS_STOCKED:
                 self.stock[it["name"]] = max(0, self.stock[it["name"]] + random.randint(-50, 60))
             entry = self._scanned(it)
             if entry:

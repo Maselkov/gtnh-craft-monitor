@@ -10,7 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from gcm import config, gamedata, icons, oredict, state
+from gcm import config, gamedata, icons, item_info, oredict, state
 from conftest import login_as
 
 PNG = b"\x89PNG\r\n\x1a\nnot really, but the server doesn't care"
@@ -26,7 +26,8 @@ def images_zip(png):
 
 
 def make_bundle(
-    version, catalog="test:thing\n", faithful=True, generated_at="2026-09-25T00:00:00Z", bleed=None, ore_dict=None
+    version, catalog="test:thing\n", faithful=True, generated_at="2026-09-25T00:00:00Z", bleed=None, ore_dict=None,
+    descriptions=None,
 ):
     """The files CI publishes for one GTNH version, as {name: bytes}."""
     lookup = {
@@ -45,6 +46,8 @@ def make_bundle(
         files["images-faithful32.zip"] = images_zip(FAITHFUL_PNG)
     if ore_dict is not None:
         files["ore_dict.json"] = json.dumps(ore_dict).encode()
+    if descriptions is not None:
+        files["item_info.json"] = json.dumps({"tooltips": {"by_key": descriptions}}).encode()
     files["data.json"] = json.dumps(
         {
             "format": 1,
@@ -507,3 +510,16 @@ def test_locally_built_bundles_are_never_flagged_as_outdated(admin, github):
     response = admin.post("/api/admin/gamedata/install", json={"version": "2.9.0-beta-3"})
     assert response.get_json()["selected"] == "2.9.0-beta-3"
     assert github.downloads == []
+
+
+def test_a_bundle_with_descriptions_loads_them_and_one_without_has_none(admin, github):
+    github.bundles["2.9.0"] = make_bundle("2.9.0", descriptions={"test:thing:0": "A thing"})
+    github.bundles["2.8.4"] = make_bundle("2.8.4")
+    thing = {"mod": "test", "internal": "thing", "damage": 0, "kind": "item"}
+    admin.post("/api/admin/gamedata/install", json={"version": "2.9.0"})
+    assert wait_for_install()["state"] == "done"
+    assert "item_info.json" in github.downloads and item_info.describe(thing) == {"description": "A thing"}
+
+    admin.post("/api/admin/gamedata/install", json={"version": "2.8.4"})
+    assert wait_for_install()["state"] == "done"
+    assert not item_info.loaded() and item_info.describe(thing) == {}

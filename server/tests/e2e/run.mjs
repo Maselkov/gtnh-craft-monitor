@@ -100,7 +100,9 @@ async function startServer(extraEnv = {}) {
 // downloads their assets. This serves one small but real bundle (a 16px
 // icon for Iron Ingot, and a 32px one standing in for its Faithful
 // render, and marked as drawn past the item box like a halo; Neutronium
-// Ingot's is in the lookup but not the zips), made with Python so its zips and checksums are exactly what the
+// Ingot's is in the lookup but not the zips, and it has a description
+// and the rest of item_info.json),
+// made with Python so its zips and checksums are exactly what the
 // server expects.
 const E2E_DATA_VERSION = '2.9.0-e2e';
 const MAKE_BUNDLE = `
@@ -121,14 +123,26 @@ open(out + "/icons_lookup.json", "w").write(json.dumps(
      "fluids_by_key": {}, "by_label": {}, "bleed": {"item/minecraft/iron_ingot~0.png": 12}}))
 open(out + "/item_catalog.txt", "w").write("minecraft:iron_ingot\\n")
 open(out + "/ore_dict.json", "w").write(json.dumps(
-    {"gemDiamond": ["minecraft:diamond:0", "IC2:itemPartIndustrialDiamond:0"]}))
+    {"gemDiamond": ["minecraft:diamond:0", "IC2:itemPartIndustrialDiamond:0"],
+     "ingotNeutronium": ["gregtech:gt.metaitem.01:11028"]}))
+nt = "gregtech:gt.metaitem.01:11028"
+open(out + "/item_info.json", "w").write(json.dumps({
+    "tooltips": {"by_key": {nt: "\\u00a7eNt\\n\\u00a77Machine Type: Plasma Forge, \\u00a7bDTPF"}},
+    "shift_tooltips": {"by_key": {nt: "\\u00a77Structure: \\u00a7e33x24x33"}},
+    "rarity": {"by_key": {nt: "d"}},
+    "fluids": {"water": {"temperature": 295, "gaseous": False, "formula": "H\\u2082O"}},
+    "mods": {"gregtech": "GregTech", "minecraft": "Minecraft"}}))
 files = {}
-for name in ("images.zip", "images-faithful32.zip", "icons_lookup.json", "item_catalog.txt", "ore_dict.json"):
+for name in ("images.zip", "images-faithful32.zip", "icons_lookup.json", "item_catalog.txt", "ore_dict.json",
+             "item_info.json"):
     data = open(out + "/" + name, "rb").read()
     files[name] = {"size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
 open(out + "/data.json", "w").write(json.dumps({"format": 1, "files": files, "generated_at": "2026-09-25T00:00:00Z"}))
 `;
-const BUNDLE_FILES = ['data.json', 'images.zip', 'images-faithful32.zip', 'icons_lookup.json', 'item_catalog.txt', 'ore_dict.json'];
+const BUNDLE_FILES = [
+  'data.json', 'images.zip', 'images-faithful32.zip', 'icons_lookup.json', 'item_catalog.txt', 'ore_dict.json',
+  'item_info.json',
+];
 
 // What the server posted to its webhook (WEBHOOK_URLS points at the
 // fake GitHub server's /webhook).
@@ -1338,6 +1352,59 @@ async function main() {
     // failed <img> removes itself rather than showing a broken glyph.
     await waitFor('neutronium icon resolved', `fetch('/api/network').then((r) => r.json()).then((d) => JSON.stringify(d).includes('gt.metaitem.01~11028.png'))`);
     await waitFor('broken icon removed', `$$('#networkList .network-cell').some((c) => c.querySelector('.network-cell-qty').textContent === '5' && !c.querySelector('img'))`);
+
+    // The bundle's item info: # searches descriptions, and the tooltip
+    // shows the description (its Shift text while Shift is held), the
+    // name in its rarity's colour and the mod's name.
+    await evaluate(`typeInto('#networkSearch', '#dtpf'), true`);
+    await waitFor('found by its description', `$$('#networkList .network-cell').length === 1
+      && $('#networkList .network-cell .network-cell-qty').textContent === '5'`);
+    await evaluate(`$('#networkList .network-cell').dispatchEvent(new MouseEvent('mouseover', { bubbles: true, clientX: 50, clientY: 50 })), true`);
+    await waitFor('description in the tooltip', `visible($('.network-tooltip'))
+      && $('.network-tooltip .network-tooltip-description .mc-b')?.textContent === 'DTPF'
+      && $('.network-tooltip .network-tooltip-name').classList.contains('mc-d')
+      && $('.network-tooltip .network-tooltip-hint')?.textContent === '[shift]'
+      && $('.network-tooltip .network-tooltip-mod').textContent === 'GregTech'`);
+    await evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift' })), true`);
+    await waitFor('Shift text', `$('.network-tooltip .network-tooltip-description').textContent === 'Structure: 33x24x33'`);
+    await evaluate(`window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Shift' })), true`);
+    await waitFor('back without Shift', `$('.network-tooltip .network-tooltip-description').textContent.includes('DTPF')`);
+    await evaluate(`$('#networkList .network-cell').dispatchEvent(new MouseEvent('mouseout', { bubbles: true })), true`);
+    // The dialog: the description collapsed to its first line; opened,
+    // it ends in the mod's name and has a Shift button. Then the ore
+    // names, each a $ search.
+    await click(`$('#networkList .network-cell')`);
+    // checkVisibility(), not visible(): a closed <details> hides its
+    // content without taking its boxes away.
+    await waitFor('description collapsed', `visible($('#itemHistoryDetails')) && !$('#itemHistoryDetails').open
+      && $('#itemHistorySummary').textContent === 'Nt' && $('#itemHistoryMore').textContent === '(+1 line)'
+      && !$('#itemHistoryDescription').checkVisibility()`);
+    await click(`$('#itemHistoryDetails summary')`);
+    await waitFor('description in the dialog', `visible($('#itemHistoryDescription'))
+      && $('#itemHistoryDescription').textContent === 'Nt\\nMachine Type: Plasma Forge, DTPF\\nGregTech'`);
+    await click(`$('#itemHistoryShiftBtn')`);
+    await waitFor('dialog Shift text', `$('#itemHistoryDescription').textContent === 'Structure: 33x24x33\\nGregTech'
+      && $('#itemHistoryShiftBtn').getAttribute('aria-pressed') === 'true'`);
+    await click(`byText('.history-ore-name', 'ingotNeutronium')`);
+    await waitFor('searched by ore name', `!visible($('#itemHistoryModal')) && $('#networkSearch').value === '$ingotNeutronium'
+      && $$('#networkList .network-cell').length === 1 && $('#networkSearchHighlight .search-hl-ore')`);
+    // Opened stays opened, for the next item too.
+    await click(`$('#networkList .network-cell')`);
+    await waitFor('still open', `visible($('#itemHistoryDescription')) && $('#itemHistoryDetails').open`);
+    await click(`$('#itemHistoryDetails summary')`);
+    await waitFor('closed again', `!$('#itemHistoryDetails').open`);
+    await evaluate(`pressKey('Escape'), true`);
+    await waitFor('dialog closed again', `!visible($('#itemHistoryModal'))`);
+    // Plain words match descriptions too, as the game's terminal does.
+    await evaluate(`typeInto('#networkSearch', 'plasma forge'), true`);
+    await waitFor('found by plain words in its description', `$$('#networkList .network-cell').length === 1
+      && $('#networkList .network-cell .network-cell-qty').textContent === '5'`);
+    // = searches formulas with plain digits, as GregTech's NEI search does.
+    await evaluate(`typeInto('#networkSearch', '=h2o'), true`);
+    await waitFor('found by its formula', `$$('#networkList .network-cell').length === 1
+      && $('#networkList .network-cell').getAttribute('aria-label').startsWith('Water')
+      && $('#networkSearchHighlight .search-hl-formula')`);
+    await evaluate(`typeInto('#networkSearch', ''), true`);
 
     // Same version, Faithful textures: only their zip is fetched, and the
     // dialog credits the pack.

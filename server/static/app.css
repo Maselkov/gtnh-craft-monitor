@@ -9,6 +9,11 @@
   --idle: #4caf7d;
   --stale: #ff6b6b;
   --essentia: #b48cff;
+  /* NEI's yellow and aqua for its # and $ search prefixes, GregTech's
+     green for its =. */
+  --search-tooltip: #f2d43d;
+  --search-ore: #4fd8d8;
+  --search-formula: #5be05b;
 }
 @media (prefers-color-scheme: light) {
   :root {
@@ -16,6 +21,9 @@
     --card: #ffffff;
     --text: #1a1d24;
     --muted: #6b7280;
+    --search-tooltip: #9a7b00;
+    --search-ore: #0b8585;
+    --search-formula: #1e8a1e;
   }
 }
 * { box-sizing: border-box; }
@@ -726,6 +734,16 @@ h1 {
 .search-hl-exclude {
   color: var(--accent);
 }
+/* Same weight as the input's text, as .search-hl-mod explains. */
+.search-hl-tooltip {
+  color: var(--search-tooltip);
+}
+.search-hl-ore {
+  color: var(--search-ore);
+}
+.search-hl-formula {
+  color: var(--search-formula);
+}
 .search-hl-quote {
   /* Only the quote MARKS themselves get this color - confirmed from a
      real screenshot ("air shard" with just the " " characters in
@@ -941,6 +959,129 @@ h1 {
   font-weight: 700;
   color: var(--accent);
   margin-top: 3px;
+}
+/* Item descriptions (description.js): the game's tooltip text, its
+   colours meant for the game's dark tooltip, so always on one. */
+.game-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #aaaaaa;
+}
+.mc-0 { color: #000000; }
+.mc-1 { color: #0000aa; }
+.mc-2 { color: #00aa00; }
+.mc-3 { color: #00aaaa; }
+.mc-4 { color: #aa0000; }
+.mc-5 { color: #aa00aa; }
+.mc-6 { color: #ffaa00; }
+.mc-7 { color: #aaaaaa; }
+.mc-8 { color: #555555; }
+.mc-9 { color: #5555ff; }
+.mc-a { color: #55ff55; }
+.mc-b { color: #55ffff; }
+.mc-c { color: #ff5555; }
+.mc-d { color: #ff55ff; }
+.mc-e { color: #ffff55; }
+.mc-f { color: #ffffff; }
+.mc-bold { font-weight: 700; }
+.mc-italic { font-style: italic; }
+.mc-underline { text-decoration: underline; }
+.mc-strike { text-decoration: line-through; }
+.mc-underline.mc-strike { text-decoration: underline line-through; }
+.network-tooltip:has(.network-tooltip-description) {
+  max-width: 420px;
+}
+.network-tooltip-description {
+  margin-top: 6px;
+}
+/* "[shift]" under the name, where the game puts it: Shift shows more. */
+.network-tooltip-hint {
+  font-size: 12px;
+  color: #808080;
+  margin: -2px 0 5px;
+}
+/* The mod's name closing a tooltip, in NEI's blue italic (a lighter
+   blue than its §9, which is hard to read on the dark box). */
+.game-text-mod {
+  color: #7f8cff;
+  font-style: italic;
+}
+.history-info {
+  margin: 0 0 12px;
+  font-size: 13px;
+}
+.history-info[hidden],
+.history-short[hidden],
+.history-details[hidden],
+.history-shift-btn[hidden] {
+  display: none;
+}
+.history-short {
+  color: var(--muted);
+}
+/* Collapsed: the description's first line, plain, in the page's own
+   colours. Open: "Description", then the game-style box. */
+.history-summary {
+  cursor: pointer;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.history-summary-text {
+  color: var(--text);
+}
+.history-summary-more {
+  font-size: 12px;
+}
+.history-summary-open,
+.history-details[open] .history-summary-text,
+.history-details[open] .history-summary-more {
+  display: none;
+}
+.history-details[open] .history-summary-open {
+  display: inline;
+}
+.history-description {
+  background: rgba(24, 14, 38, 0.97);
+  border: 1px solid rgba(160, 110, 255, 0.5);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-top: 6px;
+  max-height: 30vh;
+  overflow-y: auto;
+}
+.history-shift-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+.history-shift-row:not(:has(.history-shift-btn:not([hidden]))) {
+  display: none;
+}
+.history-ore {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.8;
+  margin-top: 4px;
+}
+.history-ore:empty {
+  display: none;
+}
+.history-ore-name {
+  font: inherit;
+  color: var(--search-ore);
+  background: none;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 0 5px;
+  margin: 0 2px;
+  cursor: pointer;
+}
+.history-ore-name:hover {
+  background: color-mix(in srgb, currentColor 15%, transparent);
 }
 .network-tooltip-mod {
   font-size: 12px;

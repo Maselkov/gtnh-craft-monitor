@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.function.Function;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -26,14 +27,19 @@ import javax.imageio.ImageIO;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 
+import cpw.mods.fml.common.Loader;
+import cpw.mods.fml.common.ModContainer;
+
 /**
- * Writes the three files the project consumes, each to a temp name first and renamed into place
+ * Writes the files the project consumes, each to a temp name first and renamed into place
  * only once complete, so a crashed run never leaves a half-written file under the real name:
  * <ul>
  * <li>{@code images.zip} - the icons (server/data/images.zip)</li>
  * <li>{@code icons_lookup.json} - key -> path tables</li>
  * <li>{@code item_catalog.txt} - {@code mod:internal} IDs for the OC scanner</li>
  * <li>{@code ore_dict.json} - the ore dictionary, for the crafting plan's substitutions</li>
+ * <li>{@code item_info.json} - items' tooltips and rarity, fluids' temperature and state, and mod
+ * names, for the page's descriptions and search</li>
  * </ul>
  * plus {@code export-report.json} with counts and failures, and for animated icons
  * {@code animations.zip} (each icon's distinct frames) with {@code animations.json} (which frame
@@ -119,6 +125,22 @@ final class ExportOutput {
         writeJson("ore_dict.json", oreDict, false);
         report.put("oreNames", oreDict.size());
 
+        Map<String, Object> info = buildItemInfo(jobs);
+        writeJson("item_info.json", info, false);
+        report.put("tooltipsByKey", tableSize(info, "tooltips"));
+        report.put("shiftTooltipsByKey", tableSize(info, "shift_tooltips"));
+        report.put("rarityByKey", tableSize(info, "rarity"));
+        report.put("formulasByKey", tableSize(info, "formulas"));
+        int fluidFormulaCount = 0;
+        for (Object fluid : ((Map<?, ?>) info.get("fluids")).values()) {
+            if (((Map<?, ?>) fluid).containsKey("formula")) {
+                fluidFormulaCount++;
+            }
+        }
+        report.put("fluidFormulas", fluidFormulaCount);
+        report.put("fluidInfo", ((Map<?, ?>) info.get("fluids")).size());
+        report.put("modNames", ((Map<?, ?>) info.get("mods")).size());
+
         report.put("catalogIds", catalog.size());
         for (Map.Entry<String, Object> table : lookup.entrySet()) {
             report.put(table.getKey() + "Entries", ((Map<?, ?>) table.getValue()).size());
@@ -185,6 +207,83 @@ final class ExportOutput {
         }
         lookup.put("bleed", bleed);
         return lookup;
+    }
+
+    /**
+     * item_info.json. "tooltips", "shift_tooltips" and "rarity" have the lookup's item tables
+     * (by_key, by_key_label, by_key_material) with each item's tooltip text (see Tooltips), its
+     * tooltip with Shift held where that differs, and its rarity colour code where it isn't
+     * common, and "formulas" its chemical formula (see Formulas). Rendered or not: an item without an icon still has a description. by_key takes the
+     * stack without NBT, like the lookup, even where only an NBT variant has a tooltip: that's
+     * another item's description (a filled cell's, say). "fluids" is each fluid's temperature
+     * (kelvin), whether it's a gas, and its formula if it has one, by its lookup key; "mods" each
+     * mod's name by its id.
+     */
+    static Map<String, Object> buildItemInfo(List<ExportJob> jobs) {
+        Map<String, ExportJob> byKey = new HashMap<>();
+        Map<String, ExportJob> byKeyLabel = new HashMap<>();
+        Map<String, ExportJob> byKeyMaterial = new HashMap<>();
+        Map<String, Object> fluids = new TreeMap<>();
+        Map<String, String> fluidFormulas = Formulas.ofFluids();
+        for (ExportJob job : jobs) {
+            if (job.kind == ExportJob.Kind.FLUID) {
+                try {
+                    Map<String, Object> fluid = new LinkedHashMap<>();
+                    fluid.put("temperature", job.fluid.getFluid().getTemperature(job.fluid));
+                    fluid.put("gaseous", job.fluid.getFluid().isGaseous(job.fluid));
+                    String formula = fluidFormulas.get(job.fluid.getFluid().getName());
+                    if (formula != null) {
+                        fluid.put("formula", formula);
+                    }
+                    fluids.put(job.lookupKey, fluid);
+                } catch (Throwable ignored) {}
+                continue;
+            }
+            if (job.kind != ExportJob.Kind.ITEM) {
+                continue;
+            }
+            putPreferringNoNbt(byKey, job.lookupKey, job);
+            if (job.hasNbt && job.label != null) {
+                byKeyLabel.put(job.lookupKey + "|" + job.label, job);
+            }
+            if (job.gtMaterial != null) {
+                byKeyMaterial.put(job.lookupKey + "|" + job.gtMaterial, job);
+            }
+        }
+        List<Map<String, ExportJob>> tables = Arrays.asList(byKey, byKeyLabel, byKeyMaterial);
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("tooltips", tables(tables, job -> job.tooltip));
+        info.put("shift_tooltips", tables(tables, job -> job.shiftTooltip));
+        info.put("rarity", tables(tables, job -> job.rarity == 0 ? null : String.valueOf(job.rarity)));
+        info.put("formulas", tables(tables, job -> job.formula));
+        info.put("fluids", fluids);
+        Map<String, String> mods = new TreeMap<>();
+        mods.put("minecraft", "Minecraft");
+        for (Map.Entry<String, ModContainer> mod : Loader.instance().getIndexedModList().entrySet()) {
+            mods.put(mod.getKey(), mod.getValue().getName());
+        }
+        info.put("mods", mods);
+        return info;
+    }
+
+    private static Map<String, Object> tables(List<Map<String, ExportJob>> tables, Function<ExportJob, String> value) {
+        String[] names = { "by_key", "by_key_label", "by_key_material" };
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (int i = 0; i < names.length; i++) {
+            Map<String, String> sorted = new TreeMap<>();
+            for (Map.Entry<String, ExportJob> e : tables.get(i).entrySet()) {
+                String v = value.apply(e.getValue());
+                if (v != null) {
+                    sorted.put(e.getKey(), v);
+                }
+            }
+            out.put(names[i], sorted);
+        }
+        return out;
+    }
+
+    private static int tableSize(Map<String, Object> info, String section) {
+        return ((Map<?, ?>) ((Map<?, ?>) info.get(section)).get("by_key")).size();
     }
 
     private static void putPreferringNoNbt(Map<String, ExportJob> table, String key, ExportJob job) {
