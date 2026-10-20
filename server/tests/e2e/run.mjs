@@ -840,6 +840,10 @@ async function main() {
       && visible($('.network-tooltip')) && $('.network-tooltip').textContent.includes('Neutronium Ingot')`);
     await key('Enter');
     await waitFor('history open', `visible($('#itemHistoryModal')) && $('#itemHistoryName').textContent === 'Neutronium Ingot'`);
+    // Between 1 and 5 of them: whole-number ticks, not 0.5, 1, 1.5...
+    // rounded to repeated labels.
+    await waitFor('whole-number y ticks', `(Chart.getChart($('#itemHistoryChart'))?.scales.y.ticks || [])
+      .map((t) => t.value).every(Number.isInteger) && Chart.getChart($('#itemHistoryChart')).scales.y.ticks.length > 1`);
     await key('Escape');
     await waitFor('closed, focus back on the cell', `!visible($('#itemHistoryModal')) && ${focused}.startsWith('Neutronium Ingot')`);
     await key('p');

@@ -482,7 +482,13 @@ function renderItemHistoryChart(data) {
           ticks: CHART_X_TICKS,
           grid: { color: 'rgba(128,128,128,0.1)' },
         },
-        y: { beginAtZero: true, ticks: { color: '#8a8f98', callback: (v) => formatQty(v) }, grid: { color: 'rgba(128,128,128,0.1)' } },
+        // Whole-number ticks: a few items would otherwise get ticks at
+        // 0.2, 0.4... that formatQty() rounds to repeated labels.
+        y: {
+          beginAtZero: true,
+          ticks: { color: '#8a8f98', precision: 0, callback: (v) => formatQty(v) },
+          grid: { color: 'rgba(128,128,128,0.1)' },
+        },
       },
     },
   });
