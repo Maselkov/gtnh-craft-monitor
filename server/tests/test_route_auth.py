@@ -13,6 +13,7 @@ PUBLIC_ENDPOINTS = {
     "power.power_chart_png",
     "network.network_get",
     "network.network_changes_get",
+    "network.network_info_get",  # game data about the public item list's items
     "network.network_history_get",
     "network.network_history_chart_png",
     "pages.icon",

@@ -368,6 +368,26 @@ Beside the lookup, `ore_dict.json` holds the game's ore dictionary
 crafting plan's ore-dictionary substitutes. Bundles made before it existed
 work without it; plans then take no substitutes.
 
+`item_info.json` holds what the page shows about items beyond their name and
+icon:
+
+- `tooltips`, `shift_tooltips`, `rarity`, `formulas`: for the same keys as
+  `by_key`, `by_key_label` and a GregTech tool's `by_key_material`, the
+  item's tooltip below its name (lines joined with newlines, formatting
+  codes like `§e` kept), the same with Shift held where that's different,
+  its name's rarity colour code where it isn't common, and its chemical
+  formula, read the way GregTech's own NEI formula search reads it (its
+  material, or its GT++ material). Formulas and tooltips keep GregTech's
+  font glyphs (`\uE012` for ², ...), which the page maps to Unicode. The export holds Shift by
+  patching mods' keyboard checks; Ctrl sections, and lines a mod adds only
+  with a player in the world, aren't in it.
+- `fluids`: each fluid's temperature in kelvin, whether it's a gas, and its
+  formula: that of a container (a cell) filled with it.
+- `mods`: each mod's name by its id.
+
+Bundles made before it existed have none of it. Before it, `ore_dict.json`
+also left out names only one item has.
+
 ## In-game setup
 
 ### Requirements
@@ -793,11 +813,29 @@ with Escape returns to the item it was opened from.
 
 | Query | Matches |
 |---|---|
-| `molten neutronium` | names containing both words, in any order |
-| `copper\|tin` | names containing either |
-| `"air shard"` | names containing that exact phrase |
-| `@gregtech` | items from mods whose id contains `gregtech` (the mod id, not its display name) |
-| `-dust` | names without `dust`; `-` also works before `@mod`, `a\|b` and `"phrase"` |
+| `molten neutronium` | items with both words, in any order, each in the name, description or an ore-dictionary name |
+| `copper\|tin` | items with either |
+| `"air shard"` | items with that exact phrase |
+| `@gregtech` | items from mods whose id or name contains `gregtech` (`@industrialcraft` and `@ic2` both work) |
+| `#dtpf` | only the description, not the name, as NEI's `#` does |
+| `$ingotiron` | only the ore-dictionary names |
+| `=sio2` | items whose chemical formula contains `sio2`, sub- and superscripts read as digits (GregTech's `=`) |
+| `-dust` | items without `dust`; `-` also works before `@mod`, `#`, `$`, `=`, `a\|b` and `"phrase"` |
+
+Plain words match descriptions and ore-dictionary names as well as names, as
+NEI's default search modes and AE2's terminal do: `boundaries` finds the
+Dimensionally Transcendent Plasma Forge by its tooltip. `#`, `$` and `=` take
+`a|b` and `"a phrase"` too. Descriptions are the
+items' in-game tooltips below their name (a GregTech machine's type and info
+lines, a material's formula, a fluid's temperature), from the game data,
+starting with the item's or fluid's GregTech formula where the tooltip
+doesn't have it. Hovering an
+item shows its description, with the name in its rarity's colour and its
+mod's name below; hold **Shift** to see what the game shows with Shift held,
+such as a multiblock's structure. The item's dialog shows the same, with a
+**Shift** button, and its ore-dictionary names: click one to search for it.
+Game data built before these existed has none of it, so `#` and `$` match
+nothing, `=` too, and `@` matches mod ids only.
 
 ### Requesting and cancelling crafts
 

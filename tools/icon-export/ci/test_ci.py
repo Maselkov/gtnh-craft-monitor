@@ -149,7 +149,11 @@ def faithful_export(tmp_path, textured_png):
         {"by_key": {f"a:i{n}:0": p for n, p in enumerate(paths)}}))
     (tmp_path / "export-report.json").write_text(json.dumps(
         {"by_keyEntries": 50000, "fluids_by_keyEntries": 2000, "aspects_by_keyEntries": 60, "oreNames": 5000,
-         "catalogIds": 9000, "itemsRendered": 100, "itemsFailed": 0}))
+         "catalogIds": 9000, "tooltipsByKey": 20000, "shiftTooltipsByKey": 500, "fluidInfo": 2000, "modNames": 300,
+         "formulasByKey": 26000, "fluidFormulas": 800,
+         "itemsRendered": 100, "itemsFailed": 0}))
+    (tmp_path / "item_info.json").write_text(json.dumps(
+        {"tooltips": {"by_key": {"gregtech:gt.blockmachines:1": "Machine Type: Plasma Forge | DTPF"}}}))
     (tmp_path / "data.json").write_text(json.dumps(
         {"textures": {"faithful32": {"default_fallbacks": 0}}}))
     return tmp_path
@@ -331,3 +335,10 @@ def test_lookup_paths_include_aspects(tmp_path):
     (tmp_path / "lookup.json").write_text(json.dumps(
         {"by_key": {"a:b:0": "item/a/b~0.png"}, "aspects_by_key": {"ordo": "aspect/ordo.png"}}))
     assert export.lookup_paths(tmp_path / "lookup.json") == {"item/a/b~0.png", "aspect/ordo.png"}
+
+
+def test_tooltips_without_the_dtpf_fail(tmp_path):
+    export_dir = faithful_export(tmp_path, BLUE)
+    (export_dir / "item_info.json").write_text(json.dumps({"tooltips": {"by_key": {"a:i0:0": "Hold Shift"}}}))
+    problems, _, _ = validate.check(export_dir)
+    assert any("DTPF" in p for p in problems)

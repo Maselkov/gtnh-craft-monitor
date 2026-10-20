@@ -2,11 +2,12 @@
 
 import { isOperator } from './auth.js';
 import { openCraftRequestModal } from './craft-actions.js';
+import { descriptionHtml, descriptionPlainText, formulaSearchText } from './description.js';
 import { openItemHistory, tryOpenItemFromUrl, updateItemHistoryPinButton } from './history.js';
-import { buildSearchHighlightHtml, itemMatchesSearch, parseSearchQuery } from './search.js';
+import { buildSearchHighlightHtml, itemMatchesSearch, parseSearchQuery, searchNeedsItemInfo } from './search.js';
 import { stockBadgeFor } from './stock.js';
 import { activeTab } from './tabs.js';
-import { bindCellTooltip, hideTooltip, showTooltip } from './tooltip.js';
+import { bindCellTooltip, hideTooltip, showTooltip, tooltipVisible } from './tooltip.js';
 import {
   delegateActions, escapeHtml, essentiaBadgeHtml, formatDuration, formatQty, formatRate, formatRelativeTime,
   iconClass, iconUrl, kindTooltipHtml, PIN_ICON,
@@ -39,6 +40,76 @@ let networkShownItems = [];  // the currently-rendered array, indexed by
 // drifted out of sync the worst case is a cosmetic "badge didn't
 // show", not a real data problem.
 export let pinnedItemKeys = new Set();
+
+// What the game data says about the network's items (gcm/item_info.py):
+// {items: {item key: {description, shift_description, rarity, formula,
+// ore}},
+// mods: {mod id: name}}. Fetched apart from the item list (megabytes on
+// a big network), once a tooltip shows or a search needs it (#, $, =, @),
+// and again with every new item list after that. Null until then.
+let networkItemInfo = null;
+let itemInfoWanted = false;
+const searchInfo = new Map();  // item key -> itemMatchesSearch()'s info
+// The cell the tooltip was last built for, to rebuild it when the info
+// arrives or Shift is pressed.
+let tooltipCell = null;
+// Shift held: tooltips show their Shift text, as in the game.
+let shiftHeld = false;
+
+function wantItemInfo() {
+  if (itemInfoWanted) return;
+  itemInfoWanted = true;
+  fetchNetworkItemInfo();
+}
+
+async function fetchNetworkItemInfo() {
+  try {
+    const res = await fetch('/api/network/info');
+    if (!res.ok) throw new Error(`info: ${res.status}`);
+    const data = await res.json();
+    networkItemInfo = { items: data.items || {}, mods: data.mods || {} };
+    searchInfo.clear();
+  } catch (e) {
+    return;  // keep what we had; the next item list asks again
+  }
+  const query = document.getElementById('networkSearch').value;
+  if (searchNeedsItemInfo(parseSearchQuery(query))) renderNetworkList();
+  refreshTooltip();
+}
+
+function refreshTooltip() {
+  if (tooltipVisible() && tooltipCell && tooltipCell.isConnected) {
+    const html = networkTooltipHtml(tooltipCell);
+    if (html) showTooltip(html);
+  }
+}
+
+function infoOf(it) {
+  return (networkItemInfo && networkItemInfo.items[itemKeyOf(it)]) || {};
+}
+
+function modNameOf(it) {
+  if (!it.mod || !networkItemInfo) return null;
+  const mods = networkItemInfo.mods;
+  if (mods[it.mod]) return mods[it.mod];
+  const lower = it.mod.toLowerCase();
+  const id = Object.keys(mods).find(m => m.toLowerCase() === lower);
+  return id ? mods[id] : null;
+}
+
+function searchInfoOf(it) {
+  const key = itemKeyOf(it);
+  if (!searchInfo.has(key)) {
+    const info = infoOf(it);
+    searchInfo.set(key, {
+      description: info.description ? descriptionPlainText(info.description) : '',
+      ore: info.ore || [],
+      modName: modNameOf(it) || '',
+      formula: info.formula ? formulaSearchText(info.formula) : '',
+    });
+  }
+  return searchInfo.get(key);
+}
 
 export function networkItemKey(mod, internal, damage, kind, variant) {
   const key = (mod || '') + '|' + (internal || '') + '|' + (damage != null ? damage : '') + '|' + (kind || 'item');
@@ -85,6 +156,8 @@ function networkTooltipHtml(cell) {
   const idx = parseInt(cell.dataset.idx, 10);
   const it = networkShownItems[idx];
   if (!it) return null;
+  tooltipCell = cell;
+  wantItemInfo();
 
   // Always the real number now (including 0) - craftability is its
   // own separate line, not a replacement for the actual count.
@@ -95,15 +168,22 @@ function networkTooltipHtml(cell) {
 
   const change = changeOf(it);
   const changeLine = change ? changeTooltipHtml(change, it.kind) : '';
+  const info = infoOf(it);
+  const description = (shiftHeld && info.shift_description) || info.description;
+  const modName = modNameOf(it) || it.mod;
+  // The name in its rarity's colour, as the game shows it.
+  const nameClass = 'network-tooltip-name' + (info.rarity ? ' mc-' + info.rarity : '');
 
   return `
-    <div class="network-tooltip-name">${escapeHtml(it.name || '?')}</div>
+    <div class="${nameClass}">${escapeHtml(it.name || '?')}</div>
     ${it.variant_name ? `<div class="network-tooltip-variant">${escapeHtml(it.variant_name)}</div>` : ''}
+    ${info.shift_description && !shiftHeld ? '<div class="network-tooltip-hint">[shift]</div>' : ''}
     <div class="network-tooltip-stat">${statLine}</div>
     ${changeLine}
     ${kindTooltipHtml(it.kind)}
     ${it.isCraftable ? `<div class="network-tooltip-craftable">Craftable</div>` : ''}
-    ${it.mod ? `<div class="network-tooltip-mod">${escapeHtml(it.mod)}</div>` : ''}
+    ${description ? `<div class="game-text network-tooltip-description">${descriptionHtml(description)}</div>` : ''}
+    ${modName ? `<div class="network-tooltip-mod">${escapeHtml(modName)}</div>` : ''}
   `;
 }
 
@@ -207,6 +287,15 @@ function showCellTooltip(cell) {
 export function setupNetworkTooltipEvents() {
   const listEl = document.getElementById('networkList');
   bindCellTooltip(listEl, '.network-cell', networkTooltipHtml);
+  // Holding Shift shows a tooltip's Shift text (a multiblock's structure).
+  const setShift = (held) => {
+    if (held === shiftHeld) return;
+    shiftHeld = held;
+    refreshTooltip();
+  };
+  window.addEventListener('keydown', (e) => { if (e.key === 'Shift') setShift(true); });
+  window.addEventListener('keyup', (e) => { if (e.key === 'Shift') setShift(false); });
+  window.addEventListener('blur', () => setShift(false));
 
   listEl.addEventListener('keydown', onNetworkGridKey);
   // The hover tooltip, for the cell the keyboard is on - only when the
@@ -351,6 +440,8 @@ export async function fetchNetwork() {
     const res = await fetch('/api/network');
     const data = await res.json();
     lastNetworkData = data;
+    // Its ETag makes this an empty 304 unless the items or game data changed.
+    if (itemInfoWanted) fetchNetworkItemInfo();
     if (networkSort === 'change') await fetchNetworkChanges();
     tickNetworkSourceLine();
     renderNetworkList();
@@ -562,7 +653,9 @@ function renderNetworkList() {
   let filtered = items;
   if (query) {
     const parsedQuery = parseSearchQuery(query);
-    filtered = items.filter(it => itemMatchesSearch(it, parsedQuery));
+    const needsInfo = searchNeedsItemInfo(parsedQuery);
+    if (needsInfo) wantItemInfo();
+    filtered = items.filter(it => itemMatchesSearch(it, parsedQuery, needsInfo ? searchInfoOf(it) : {}));
   }
 
   filtered = filtered.slice().sort((a, b) => {

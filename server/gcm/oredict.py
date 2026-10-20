@@ -1,12 +1,13 @@
 """The ore dictionary, from the game data bundle's ore_dict.json (written
-by tools/icon-export/), for the crafting plan's substitutions: a
+by tools/icon-export/), for the crafting plan's substitutions (a
 crafting pattern with Substitute ticked takes, for an input, anything
-sharing an ore-dictionary name with it, as AE2 does (OreReference).
+sharing an ore-dictionary name with it, as AE2 does: OreReference), and
+for listing an item's names (the page's $ search and item dialog).
 
 ore_dict.json is {ore name: ["mod:internal:damage", ...]}, damage "*"
-for every damage of the item; only names with more than one item, as a
-name with one can't stand in for anything. Bundles from before it
-existed have none, and nothing substitutes."""
+for every damage of the item. Bundles from before it existed have none,
+and nothing substitutes; older ones only have names with more than one
+item, which is all substituting needs."""
 
 import json
 import logging
@@ -72,6 +73,19 @@ def _split(key):
     except ValueError:
         return None
     return parts[0], parts[1], damage
+
+
+def names(mod, internal, damage):
+    """An item's ore-dictionary names, in ore dictionary order."""
+    if not (mod and internal):
+        return []
+    try:
+        damage = int(damage) if damage is not None else 0
+    except (TypeError, ValueError):
+        return []
+    with _lock:
+        found = _by_item.get((mod, internal, damage), []) + _by_item.get((mod, internal, None), [])
+    return list(dict.fromkeys(found))
 
 
 class Known:

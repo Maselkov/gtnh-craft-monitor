@@ -9,7 +9,7 @@ import time
 
 from flask import abort, Blueprint, g, jsonify, request, Response, send_file
 
-from gcm import auth, charts, gamedata, icons, inventory, patterns, planner, state, stock, store
+from gcm import auth, charts, gamedata, icons, inventory, item_info, patterns, planner, state, stock, store
 
 log = logging.getLogger(__name__)
 
@@ -136,6 +136,23 @@ def network_levels_post():
 _PROCESS_TAG = secrets.token_hex(4)
 
 
+def _network_etag():
+    """Call with state.network_lock held."""
+    return "-".join(
+        str(v)
+        for v in (
+            _PROCESS_TAG,
+            icons.data_version(),
+            state.network["updated_at"],
+            state.network["in_progress"],
+            state.network["scan_started_at"],
+            state.network["is_reconstructed"],
+            state.network["levels_at"],
+            (state.network["crash"] or {}).get("at"),
+        )
+    )
+
+
 @bp.route("/api/network", methods=["GET"])
 @auth.public
 def network_get():
@@ -143,19 +160,7 @@ def network_get():
     # but it only changes once per scan - so answer with an ETag and let
     # the browser cache turn most polls into an empty 304.
     with state.network_lock:
-        etag = "-".join(
-            str(v)
-            for v in (
-                _PROCESS_TAG,
-                icons.data_version(),
-                state.network["updated_at"],
-                state.network["in_progress"],
-                state.network["scan_started_at"],
-                state.network["is_reconstructed"],
-                state.network["levels_at"],
-                (state.network["crash"] or {}).get("at"),
-            )
-        )
+        etag = _network_etag()
         if request.if_none_match.contains(etag):
             response = Response(status=304)
         else:
@@ -170,6 +175,31 @@ def network_get():
                     "crash": state.network["crash"],
                 }
             )
+    response.set_etag(etag)
+    response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
+@bp.route("/api/network/info", methods=["GET"])
+@auth.public
+def network_info_get():
+    """What the game data says about the items in the network snapshot
+    (gcm/item_info.py): {items: {item key: {description,
+    shift_description, rarity, ore}}, only items with any of it, and
+    mods: {mod id: name}}. Apart from /api/network: on a big network
+    the descriptions are megabytes, and the page only fetches these
+    once it shows a tooltip or searches with #, $ or @."""
+    with state.network_lock:
+        etag = _network_etag()
+        if request.if_none_match.contains(etag):
+            response = Response(status=304)
+        else:
+            items = {}
+            for item in state.network["items"]:
+                info = item_info.describe(item)
+                if info:
+                    items[store.items.key_of(item)] = info
+            response = jsonify({"items": items, "mods": item_info.mod_names()})
     response.set_etag(etag)
     response.headers["Cache-Control"] = "no-cache"
     return response
@@ -231,6 +261,11 @@ def network_history_get():
         mod, internal, damage, kind, request.args.get("range", "day"), variant
     )
     latest = rows[-1] if rows else None
+    # An NBT variant's own description is found by its name, which only
+    # the snapshot has; one that's left the network gets its item id's.
+    item = inventory.describe(store.items.item_key(mod, internal, damage, kind, variant)) or {
+        "mod": mod, "internal": internal, "damage": damage, "kind": kind,
+    }
 
     return jsonify(
         {
@@ -238,6 +273,7 @@ def network_history_get():
             "points": [{"t": r[0], "size": r[1]} for r in rows],
             "latest": {"t": latest[0], "size": latest[1]} if latest else None,
             "trend": trend,
+            "info": {**item_info.describe(item), "mod_name": item_info.mod_name(mod)},
         }
     )
 

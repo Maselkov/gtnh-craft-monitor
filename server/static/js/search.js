@@ -35,6 +35,24 @@ import { escapeHtml } from './util.js';
 //                      runs to the end of the input rather than
 //                      erroring - the same forgiving spirit as
 //                      every other malformed-input case here.
+//   (no prefix)        plain terms, OR groups and phrases match the
+//                      name, the description or the ore-dictionary
+//                      names, as NEI's default search modes do (and
+//                      AE2's terminal: "boundaries" finds the DTPF)
+//   #term              only the item's description (its tooltip below
+//                      the name, from the game data), NEI's tooltip
+//                      prefix - like NEI, not the name
+//   $term              only the item's ore-dictionary names, NEI's
+//                      prefix for them
+//   =term              search the item's chemical formula with plain
+//                      digits ("=sio2" finds SiO₂), GregTech's NEI
+//                      prefix for them
+//                      #a|b and #"a phrase" (and $ and = the same) work as
+//                      they do without the prefix, and -# excludes.
+//                      Only the network grid has descriptions and ore
+//                      names (itemMatchesSearch's info); elsewhere
+//                      plain terms match names, and # and $ nothing. @mod there matches the
+//                      mod's name too, as NEI's does ("@IndustrialCraft").
 
 // Shared by both the matcher and the highlighter below, so they can
 // never tokenize the same input two different ways - splits on
@@ -54,6 +72,7 @@ export function tokenizeSearchText(text) {
     }
     const start = i;
     if (text[i] === '-' && i + 1 < text.length) i++;
+    if (PREFIXES[text[i]] && text[i + 1] === '"') i++;
     if (text[i] === '"') {
       i++;
       while (i < text.length && text[i] !== '"') i++;
@@ -76,8 +95,22 @@ export function stripNegatePrefix(term) {
   return { negate: false, rest: term };
 }
 
+// NEI's prefixes for searching something other than the name, and
+// GregTech's for formulas.
+const PREFIXES = { '#': 'tooltip', '$': 'ore', '=': 'formula' };
+
 function classifySearchTerm(rawTerm) {
   const { negate, rest } = stripNegatePrefix(rawTerm);
+  if (PREFIXES[rest[0]] && rest.length > 1) {
+    const type = PREFIXES[rest[0]];
+    let content = rest.slice(1);
+    if (content.startsWith('"')) {
+      content = content.slice(1);
+      if (content.endsWith('"')) content = content.slice(0, -1);
+      return { type, negate, values: [content.toLowerCase()] };
+    }
+    return { type, negate, values: content.split('|').map(s => s.toLowerCase()).filter(Boolean) };
+  }
   if (rest.startsWith('"')) {
     let content = rest.slice(1);
     if (content.endsWith('"')) content = content.slice(0, -1);
@@ -99,29 +132,47 @@ export function parseSearchQuery(query) {
     .map(t => classifySearchTerm(t.raw));
 }
 
-function searchTermMatches(name, mod, term) {
+function searchTermMatches(name, mod, info, term) {
   let matched;
   if (term.type === 'mod') {
-    matched = mod.toLowerCase().includes(term.value);
-  } else if (term.type === 'or') {
-    matched = term.values.some(v => name.includes(v));
+    matched = mod.includes(term.value) || info.modName.includes(term.value);
+  } else if (term.type === 'tooltip') {
+    matched = term.values.some(v => info.description.includes(v));
+  } else if (term.type === 'formula') {
+    matched = term.values.some(v => info.formula.includes(v));
+  } else if (term.type === 'ore') {
+    matched = term.values.some(v => info.ore.some(o => o.includes(v)));
   } else {
-    // Covers both a plain word AND a quoted phrase - a quoted
-    // phrase is just a 'text' term whose value happens to contain
-    // spaces, so it reuses this exact same substring check rather
-    // than needing its own separate match branch.
-    matched = name.includes(term.value);
+    // A plain word, an OR group or a quoted phrase - a quoted phrase is
+    // just a 'text' term whose value happens to contain spaces, so it
+    // reuses this exact same substring check.
+    const values = term.type === 'or' ? term.values : [term.value];
+    matched = values.some(v => name.includes(v) || info.description.includes(v) || info.ore.some(o => o.includes(v)));
   }
   return term.negate ? !matched : matched;
 }
 
 // Every term must match (AND by default) - an empty term list (no
 // query typed) vacuously matches everything, which is exactly the
-// "no filter" behavior wanted.
-export function itemMatchesSearch(it, parsedTerms) {
+// "no filter" behavior wanted. info, from the game data: the item's
+// description as plain text (descriptionPlainText()), its ore names,
+// its mod's name and its formula with plain digits (formulaSearchText()).
+export function itemMatchesSearch(it, parsedTerms, info = {}) {
   const name = (it.name || '').toLowerCase();
-  const mod = it.mod || '';
-  return parsedTerms.every(term => searchTermMatches(name, mod, term));
+  const mod = (it.mod || '').toLowerCase();
+  const lowered = {
+    description: (info.description || '').toLowerCase(),
+    ore: (info.ore || []).map(o => o.toLowerCase()),
+    modName: (info.modName || '').toLowerCase(),
+    formula: (info.formula || '').toLowerCase(),
+  };
+  return parsedTerms.every(term => searchTermMatches(name, mod, lowered, term));
+}
+
+// Whether matching the terms needs the game data's item info: any
+// search does, as plain terms match descriptions and ore names too.
+export function searchNeedsItemInfo(parsedTerms) {
+  return parsedTerms.length > 0;
 }
 
 // Syntax highlighting for the search box - matching NEI's own colors
@@ -146,9 +197,17 @@ export function itemMatchesSearch(it, parsedTerms) {
 // they were maintained as two different parsers, so they aren't.
 // OR groups (|) aren't specially colored at all - no confirmed color
 // exists for that case in any screenshot, so this doesn't invent one.
+// NEI's colours for its # and $ prefixes (its options screen shows them
+// yellow and aqua) and GregTech's for = (green), the whole term like
+// @mod's.
+const PREFIX_CLASSES = { '#': 'search-hl-tooltip', '$': 'search-hl-ore', '=': 'search-hl-formula' };
+
 function buildTermHighlightHtml(rawTerm) {
   const { negate, rest } = stripNegatePrefix(rawTerm);
   const prefixHtml = negate ? '<span class="search-hl-exclude">-</span>' : '';
+  if (PREFIX_CLASSES[rest[0]] && rest.length > 1) {
+    return prefixHtml + `<span class="${PREFIX_CLASSES[rest[0]]}">${escapeHtml(rest)}</span>`;
+  }
   if (rest.startsWith('"')) {
     const hasCloseQuote = rest.length > 1 && rest.endsWith('"');
     const inner = hasCloseQuote ? rest.slice(1, -1) : rest.slice(1);

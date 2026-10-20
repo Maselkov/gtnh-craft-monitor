@@ -223,6 +223,32 @@ public final class ExportDriver {
             }
         }
         jobs = applyDebugFilters(jobs);
+        long tooltipsStartedAt = System.currentTimeMillis();
+        int tooltips = 0, shiftTooltips = 0, formulas = 0;
+        Formulas.init();
+        for (ExportJob job : jobs) {
+            if (job.kind == ExportJob.Kind.ITEM) {
+                job.formula = Formulas.of(job.item);
+                if (job.formula != null) {
+                    formulas++;
+                }
+                job.tooltip = Tooltips.of(job.item);
+                job.shiftTooltip = Tooltips.withShift(job.item, job.tooltip);
+                job.rarity = Tooltips.rarity(job.item);
+                if (job.tooltip != null) {
+                    tooltips++;
+                }
+                if (job.shiftTooltip != null) {
+                    shiftTooltips++;
+                }
+            }
+        }
+        IconExportMod.LOG.info(
+                "Read {} item tooltips ({} different with Shift held) and {} formulas in {}s.",
+                tooltips,
+                shiftTooltips,
+                formulas,
+                (System.currentTimeMillis() - tooltipsStartedAt) / 1000);
         int itemJobs = 0, aspectJobs = 0;
         for (ExportJob job : jobs) {
             if (job.kind == ExportJob.Kind.ITEM) {

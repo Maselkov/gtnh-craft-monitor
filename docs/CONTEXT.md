@@ -6,7 +6,8 @@ A homelab dashboard for GTNH (GregTech New Horizons) that shows:
   crafts, and craft request/cancellation submission from the browser
 - An ME network item/fluid browser, with historical quantity charts per
   item, advanced NEI-style search (`@mod`, `term1|term2`, `-exclude`,
-  `"exact phrase"`), and pinning
+  `"exact phrase"`, `#tooltip`, `$oredict`, `=formula`), item
+  descriptions, and pinning
 - A GregTech machine's stored energy over time (built for a Lapotronic
   Super Capacitor, works for any GT multiblock), including a live net
   in/out trend indicator read straight from the battery's own tracking
@@ -108,6 +109,8 @@ gcm/commands.py     craft/cancel request queues + their history rows
 gcm/tracking.py     CPU job ends -> craft events + completions
 gcm/inventory.py    network scan protocol, snapshot reload, item history
 gcm/icons.py        icon lookup + images.zip access (versioned paths)
+gcm/item_info.py    item descriptions, rarity, fluid details, mod names
+                    (item_info.json) by the lookup's keys
 gcm/gamedata.py     per-GTNH-version game data bundles: list, download,
                     select, and which one icons.py uses
 gcm/charts.py       matplotlib PNGs for OpenGraph, with cache + rate limit
@@ -745,6 +748,47 @@ matching NEI for mods where the id diverges more from the marketed
 name. The syntax highlighting overlay and the actual matcher share one
 tokenizer (`tokenizeSearchText`) rather than two separate parsers, so
 they can't disagree about what a `-` or a `"` means.
+
+`#term` and `$term` are NEI's tooltip and ore-dictionary searches,
+checked against GTNH NEI's source (SearchTokenParser and its filters,
+NEIClientConfig): `#` matches the tooltip lines below the name, not the
+name; `$` any of the item's ore names. Their search modes default to
+ALWAYS, so a plain term matches the name, the tooltip or an ore name
+(any of the ALWAYS providers), and so do ours; AE2's terminal searches
+tooltips by default too. Mod names default to PREFIX, needing `@`,
+and NEI's `@` matches the mod's name, so ours matches the id or the
+name. `=` is GregTech's own NEI
+prefix (`NEIGTConfig`, `ChemicalFormulaFilter`): the formula with
+formatting codes dropped, GregTech's glyphs replaced and sub- and
+superscript digits as plain ones, so `=sio2` finds SiO₂. The colours
+are NEI's and GregTech's own for those prefixes (yellow, aqua, green),
+darkened in the light theme to be readable on white.
+
+**GregTech's formulas use its own font glyphs.** Superscript isotope
+numbers, a subscript 0, the classical elements and more are private-use
+characters (`\uE000`-`\uE020`, GregTech's `CustomGlyphs`) drawn from
+GTNH's font, which a browser lacks. The data keeps them, and
+`description.js` maps them: to the Unicode stand-in GregTech registers
+for each where it has one, else (elements, magnet, brimstone...) to the
+nearest Unicode symbol. A glyph GregTech adds later shows as a box
+until the table is updated.
+
+**Item info is served apart from the item list, and fetched lazily.**
+Every GregTech material has a formula line and multiblocks have twenty,
+so on a big network descriptions are megabytes, which `/api/network`
+would carry on every poll. `/api/network/info` shares its ETag, and the
+page only asks once a tooltip shows or a search has a `#`, `$` or `@`
+term, then again with each item list after that. The item dialog gets
+its item's info with its history instead, as it can be opened for an
+item that isn't in the network.
+
+**The exporter reads tooltips with no player and fakes Shift.** There's
+no world at the menu, so lines that need the player are missing.
+Shift: `KeyTransformer` points every `Keyboard.isKeyDown()` call at
+`ExportKeys`, which reports Shift held during a second read of each
+tooltip; LWJGL itself can't be transformed (the launcher excludes it),
+so the call sites are what change. Only the Shift text that differs is
+kept.
 
 **Craft quantity accepts metric shorthand and basic math (`10k`,
 `4+3*2`), desktop-only.** A hand-written recursive-descent evaluator,

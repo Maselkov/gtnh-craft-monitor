@@ -1,6 +1,6 @@
-"""Game data for a GTNH version: item icons (images.zip), the icon lookup
-and the OC scanner's item catalog. Which bundle is live, what's installed,
-what can be downloaded, and installing one.
+"""Game data for a GTNH version: item icons (images.zip), the icon lookup,
+item descriptions and the OC scanner's item catalog. Which bundle is
+live, what's installed, what can be downloaded, and installing one.
 
 The data depends on the modpack version the server's players run, not on
 this app's version. .github/workflows/gtnh-data.yml publishes a bundle
@@ -28,14 +28,15 @@ import threading
 import time
 import urllib.request
 
-from gcm import config, icons, inventory, oredict, patterns
+from gcm import config, icons, inventory, item_info, oredict, patterns
 
 TAG_PREFIX = "gtnh-data-"
 # data.json first: it holds the others' sizes and checksums.
 BASE_FILES = ("data.json", "icons_lookup.json", "item_catalog.txt")
 # Fetched with the base files when a release has them; older releases
-# don't, and work without (no ore-dictionary substitutions in plans).
-OPTIONAL_FILES = ("ore_dict.json",)
+# don't, and work without (no ore-dictionary substitutions in plans, no
+# item descriptions or mod names).
+OPTIONAL_FILES = ("ore_dict.json", "item_info.json")
 TEXTURES = {
     "default": {"file": "images.zip", "name": "Default"},
     "faithful32": {
@@ -199,9 +200,11 @@ def activate():
             prefix,
         )
         oredict.load(os.path.join(_bundle_dir(version), "ore_dict.json"))
+        item_info.load(os.path.join(_bundle_dir(version), "item_info.json"))
     else:
         icons.load(None, None)
         oredict.load(None)
+        item_info.load(None)
 
 
 def catalog_version():

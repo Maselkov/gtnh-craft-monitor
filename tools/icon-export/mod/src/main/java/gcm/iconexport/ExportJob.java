@@ -50,6 +50,14 @@ final class ExportJob {
      * tool shares one id, damage and label ("Huge Turbine"), so this is what tells their icons apart.
      */
     String gtMaterial;
+    /** Its tooltip below the name (Tooltips.of), for items; null if it has none. */
+    String tooltip;
+    /** The tooltip with Shift held, where that's different; else null. */
+    String shiftTooltip;
+    /** Its name's colour by rarity, as a formatting code ('e', 'b', 'd'); 0 for common (white). */
+    char rarity;
+    /** Its chemical formula (Formulas.of), or null. */
+    String formula;
 
     boolean rendered;
     /** Its icon covers more than the item box (IconRenderer.BLEED): a halo, for one. */
