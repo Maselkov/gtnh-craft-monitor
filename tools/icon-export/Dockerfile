@@ -7,14 +7,14 @@
 
 # --- Build the mod. The GTNH buildscript needs JDK 25 to run Gradle. ---
 # Layer caching skips this unless something under mod/ changed.
-FROM eclipse-temurin:25-jdk AS mod
+FROM eclipse-temurin:25-jdk@sha256:2d5d5e9b533342a565907c84f47a2ec298c40cde7b13a3ca85d4950fa456a641 AS mod
 WORKDIR /mod
 COPY mod/ ./
 RUN ./gradlew --no-daemon build \
     && cp "$(ls build/libs/*.jar | grep -v -- '-dev.jar$' | head -n 1)" /gcmiconexport.jar
 
 # --- Run the client. GTNH 2.8+ supports Java 17-25; 21 is the middle. ---
-FROM eclipse-temurin:21-jre-jammy
+FROM eclipse-temurin:21-jre-jammy@sha256:affcab5356e1270ac35d2361ee83135af2f03e8d580eca78a6d5d6fdbf048db0
 
 ENV DEBIAN_FRONTEND=noninteractive
 # SDL3 (lwjgl3ify's window backend) and Mesa's GLX/llvmpipe, under Xvfb.

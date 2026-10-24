@@ -8,6 +8,15 @@ updates:
     directory: /server
     schedule:
       interval: weekly
+  # Digest bumps only: the JDK and JRE versions are picked for the GTNH
+  # buildscript and client (see the Dockerfile).
+  - package-ecosystem: docker
+    directory: /tools/icon-export
+    schedule:
+      interval: monthly
+    ignore:
+      - dependency-name: eclipse-temurin
+        update-types: [version-update:semver-major]
   - package-ecosystem: pip
     directory: /server
     schedule:
