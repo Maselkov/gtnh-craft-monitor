@@ -85,7 +85,9 @@ async function startServer(extraEnv = {}) {
   const base = `http://127.0.0.1:${port}`;
   for (let i = 0; i < 100; i++) {
     try {
-      if ((await fetch(base + '/')).ok) {
+      // "Serving on" follows the setup link on the same stream, so once
+      // it has been read, so has the link.
+      if ((await fetch(base + '/')).ok && log.includes('Serving on')) {
         return { base, setupCode: (/\/#setup=(\S+)/.exec(log) || [])[1] };
       }
     } catch (e) { /* not up yet */ }
@@ -849,7 +851,9 @@ async function main() {
       await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', ...ev, ...(k.length === 1 ? { text: k } : {}) });
       await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', ...ev });
     };
-    const focused = `document.activeElement.getAttribute('aria-label') || ''`;
+    // In parentheses: `${focused}.startsWith(...)` otherwise binds to the ''
+    // alone, and any labelled element passes.
+    const focused = `(document.activeElement.getAttribute('aria-label') || '')`;
     await evaluate(`$('#networkSearch').focus(), true`);
     await key('ArrowDown');
     await waitFor('first cell', `${focused}.startsWith('Iron Ingot')`);
@@ -869,6 +873,12 @@ async function main() {
       && document.activeElement.dataset.idx === '0' && document.activeElement.querySelector('.network-cell-pin-badge')`);
     await key('p');
     await waitFor('unpinned', `!$('#networkList .network-cell-pin-badge')`);
+    // Twice in a row, without waiting: the second press undoes the first.
+    await key('p');
+    await key('p');
+    await sleep(300);
+    await waitFor('still unpinned, here and on the server', `(async () => !$('#networkList .network-cell-pin-badge')
+      && (await (await fetch('/api/network/pins')).json()).pins.length === 0)()`);
     await key('ArrowLeft');
     await waitFor('iron', `${focused}.startsWith('Iron Ingot')`);
     await key('c');

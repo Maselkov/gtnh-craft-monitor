@@ -131,24 +131,39 @@ export async function fetchNetworkPins() {
   }
 }
 
-export async function toggleNetworkItemPin(it) {
-  const key = networkItemKey(it.mod, it.internal, it.damage, it.kind, it.variant);
-  const isPinned = pinnedItemKeys.has(key);
-  const path = isPinned ? '/api/network/pins/unpin' : '/api/network/pins';
-  try {
-    await fetch(path, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        mod: it.mod, internal: it.internal, damage: it.damage, kind: it.kind || 'item', variant: it.variant || null,
-      }),
-    });
-  } catch (e) {
-    return;  // don't update local state if the request itself failed
-  }
-  if (isPinned) pinnedItemKeys.delete(key); else pinnedItemKeys.add(key);
+// Pin requests go out one at a time, so the server sees them in the
+// order they were made.
+let pinRequests = Promise.resolve();
+
+function setItemPinned(it, key, pinned) {
+  if (pinned) pinnedItemKeys.add(key); else pinnedItemKeys.delete(key);
   updateItemHistoryPinButton(it);
   renderNetworkList();  // reflect the new pin badge/sort order immediately
+}
+
+export function toggleNetworkItemPin(it) {
+  const key = networkItemKey(it.mod, it.internal, it.damage, it.kind, it.variant);
+  const pinning = !pinnedItemKeys.has(key);
+  // Flipped before the request, so pressing P again straight away
+  // undoes this one rather than pinning a second time.
+  setItemPinned(it, key, pinning);
+  const body = JSON.stringify({
+    mod: it.mod, internal: it.internal, damage: it.damage, kind: it.kind || 'item', variant: it.variant || null,
+  });
+  pinRequests = pinRequests.then(async () => {
+    try {
+      const res = await fetch(pinning ? '/api/network/pins' : '/api/network/pins/unpin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+      });
+      if (!res.ok) throw new Error(`pin: ${res.status}`);
+    } catch (e) {
+      // Put it back, unless a later toggle already has.
+      if (pinnedItemKeys.has(key) === pinning) setItemPinned(it, key, !pinning);
+    }
+  });
+  return pinRequests;
 }
 
 // ---------- Network browser: tooltip and clicks ----------
