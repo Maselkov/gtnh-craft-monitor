@@ -6,7 +6,7 @@ by the in-game OpenComputers scripts and serves a small webpage that
 displays them. The server itself lives in the gcm package; this file is
 just the entrypoint.
 
-Run directly (see README for the optional environment variables):
+Run directly (see docs/server.md for the optional environment variables):
     pip install -r requirements.txt
     python app.py
 

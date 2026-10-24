@@ -1,5 +1,5 @@
-# Compose file for running a published image (see README, "Prebuilt
-# image"). On the deployment host it sits in DEPLOY_DIR beside .env and
+# Compose file for running a published image (see docs/server.md,
+# "Docker"). On the deployment host it sits in DEPLOY_DIR beside .env and
 # data/; gcm-deploy.sh sets GCM_TAG to the release it deploys.
 services:
   gtnh-craft-monitor:
