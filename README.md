@@ -7,55 +7,66 @@ Basically, it's web AE2 for your base.
 
 [demo.webm](https://github.com/user-attachments/assets/8aff745b-3819-45f4-a624-8a0846b361a2)
 
+## Features
+
+- **[Crafts](docs/using.md#crafts-tab)** — every AE2 crafting CPU with its
+  current job, output item, progress, and a live grid of its ingredients or
+  a live tree of its steps that points out the ones that are stuck. Pin a
+  job to get a notification when it finishes. Recent crafts lists every job
+  that ended.
+- **[Power](docs/using.md#power-tab)** — stored EU of a GregTech multiblock
+  (e.g. a Lapotronic Super Capacitor) charted over time, with its EU/s and
+  the time until it's full or empty.
+- **[Network](docs/using.md#network-tab)** — sortable list of every item,
+  fluid and essentia in the ME network, with NEI-style search and per-item
+  stock history charts that show how fast an item is running out.
+- **[Remote crafting](docs/using.md#requesting-and-cancelling-crafts)** —
+  request or cancel AE2 crafts from the browser, with a preview of the
+  crafting plan.
+- **[Stock rules](docs/using.md#stock-rules)** — get a notification when an
+  item runs low, or have the server queue a craft to keep it stocked.
+- **[Webhooks](docs/using.md#webhooks)** — finished pinned crafts and failed
+  auto-crafts posted to a Discord channel or any other webhook.
+- **[Accounts](docs/server.md#user-accounts)** — per-user tokens with
+  viewer, operator, and admin roles.
+
+## What you need
+
+- A machine with Docker (amd64 or arm64) that the Minecraft server can
+  reach over HTTP.
+- In game, an OpenComputers computer with an **Internet Card**, and an
+  **Adapter** touching the ME Controller or linked to it with an MFU. For
+  the Power tab, another Adapter on the GregTech multiblock.
+- GTNH 2.9.0-beta-2 or later for crafting from the page.
+
+The full list, including the OpenComputers config settings, is under
+[Requirements](docs/in-game.md#requirements).
+
 ## Quick start
 
 1. On the server, in an empty directory, download the Compose file and start
-   it (see [Server setup](#server-setup)):
+   it:
    ```bash
    curl -O https://raw.githubusercontent.com/Maselkov/gtnh-craft-monitor/main/deploy/docker-compose.yml
    docker compose up -d
    ```
 2. Run `docker compose logs gtnh-craft-monitor` and open the setup link it
    printed, `http://<your-host>:8420/#setup=...`. Pick a name, and save the
-   access token it shows: that's how you sign in from now on. Then pick your
-   GTNH version under **Settings (⚙) → Game data**.
+   access token it shows (a password manager will offer to): that's how you
+   sign in from now on. You're the first admin. The link
+   works once, and a restart prints a new one. Then pick your GTNH version
+   under **Settings (⚙) → Game data**; until then there are no icons and
+   the Network tab stays empty.
 3. Open **Settings (⚙) → Status → Connect a computer**. Check the address
    there is one the Minecraft server can reach, then paste its command into
-   a computer with an Internet Card and an Adapter touching the ME
-   Controller, or linked to it with an MFU (see
-   [Connecting the Adapter](#connecting-the-adapter)). It asks which
-   scripts to install, checks that the computer can reach the server, and
-   can start the scripts on every boot. If it can't, see
+   the computer. It asks which scripts to install, checks that the computer
+   can reach the server, and can start the scripts on every boot. If it
+   can't reach it, see
    [Scripts can't reach the server](#scripts-cant-reach-the-server).
 
-## Features
-
-- **Crafts** — every AE2 crafting CPU with its current job, output item,
-  progress, and a live grid of its ingredients or a live tree of its steps
-  that points out the ones that are stuck. Pin a job to get a
-  notification when it finishes. Recent crafts lists every job that ended.
-- **Power** — stored EU of a GregTech multiblock (e.g. a Lapotronic Super
-  Capacitor) charted over time, with its EU/s and the time until it's full
-  or empty.
-- **Network** — sortable list of every item, fluid and essentia in the ME network,
-  with NEI-style search and per-item stock history charts that show how fast
-  an item is running out.
-- **Remote crafting** — request or cancel AE2 crafts from the browser.
-- **Stock rules** — get a notification when an item runs low, or have the
-  server queue a craft to keep it stocked.
-- **Webhooks** — finished pinned crafts and failed auto-crafts posted to a
-  Discord channel or any other webhook.
-- **Accounts** — per-user tokens with viewer, operator, and admin roles.
-
-## Contents
-
-- [How it fits together](#how-it-fits-together)
-- [Server setup](#server-setup)
-- [In-game setup](#in-game-setup)
-- [Using the web page](#using-the-web-page)
-- [Limitations](#limitations)
-- [Technical notes](#technical-notes)
-- [Development](#development)
+The page shows "waiting for data" until the scripts report. For settings,
+HTTPS, backups and running without Docker, see the
+[server guide](docs/server.md).
 
 ## How it fits together
 
@@ -63,7 +74,7 @@ Basically, it's web AE2 for your base.
  Minecraft (OpenComputers)                       Server (Docker)
 ┌───────────────────────────┐    HTTP POST    ┌──────────────────────┐
 │ craft_monitor.lua         │ ──────────────▶ │ server/ (Flask)      │ ◀── browser
-│ power_monitor.lua         │ ◀────────────── │ SQLite in server/data│
+│ power_monitor.lua         │ ◀────────────── │ SQLite in data/      │
 │ network_browser.lua       │  polled requests└──────────────────────┘
 └───────────────────────────┘
 ```
@@ -72,67 +83,7 @@ The game always initiates the connection: scripts POST their readings and
 poll the server for pending craft requests and cancellations. The server
 never connects into the game.
 
-| Path | Purpose |
-|---|---|
-| `server/` | Flask server (`app.py` entrypoint, `gcm/` package) and the web page (`index.html`, `static/`) |
-| `oc/craft_monitor.lua` | Reports crafting CPUs; executes craft requests and cancellations |
-| `oc/power_monitor.lua` | Reports a GregTech machine's stored EU |
-| `oc/network_browser.lua` | Scans ME network contents |
-| `oc/gcm.lua`, `oc/manifest.lua` | Installer and updater, and the list of files it installs |
-| `oc/gcm_agent.lua` | Reports the computer to the Status dialog; runs its update and reboot buttons |
-| `oc/config.lua` | Server URL, API key and per-script settings for all scripts |
-| `oc/http.lua`, `oc/json.lua` | Libraries used by the scripts |
-| `oc/sensor_info_dump.lua` | One-off diagnostic: prints a GT machine's full sensor info |
-| `oc/pattern_dump.lua` | One-off diagnostic: sends what the ME Interface Terminal reports about the network's patterns to `/api/debug` |
-| `tools/icon-export/` | Builds game data (item icons, icon lookup, item catalog) from a GTNH pack; CI runs it for each GTNH release |
-
-## Server setup
-
-### Quick start (Docker)
-
-Releases are published as an image, `ghcr.io/maselkov/gtnh-craft-monitor`,
-for amd64 and arm64. In an empty directory:
-
-```bash
-curl -O https://raw.githubusercontent.com/Maselkov/gtnh-craft-monitor/main/deploy/docker-compose.yml
-docker compose up -d
-docker compose logs gtnh-craft-monitor
-```
-
-The page is served at `http://<your-host>:8420/`. It shows "waiting for data"
-until the in-game scripts are running. Until there's a user, the log shows a
-setup link:
-
-```
-No users yet. To create the first admin, open
-
-    http://<this-host>:8420/#setup=...
-```
-
-Open it with `<this-host>` replaced by the server's address, pick a name and
-save the access token the page shows (see [User accounts](#user-accounts)).
-The link works once, and a restart prints a new one.
-
-The in-game scripts sign their reports with an API key. The first start
-generates one into `data/api_key`. **Settings (⚙) → Status →
-Connect a computer** puts it in the install command for you; to see it
-otherwise, show it through the container, as the file belongs to the
-container's root user:
-
-```bash
-docker compose exec gtnh-craft-monitor cat data/api_key
-```
-
-No `.env` is needed. To change settings, create one beside
-`docker-compose.yml` ([`.env.example`](.env.example) lists the common
-settings; see [Configuration](#configuration)), then `docker compose up -d`
-again.
-
-All persistent data (databases, game data, keys) lives in `data/`, beside
-`docker-compose.yml`, which mounts it into the container. Replacing the
-container keeps it. The rest of this README calls it `data/`.
-
-### Updating
+## Updating
 
 ```bash
 docker compose pull
@@ -140,335 +91,12 @@ docker compose up -d
 ```
 
 Then update the in-game scripts to the same release: each computer's
-**Update** button under **Settings (&#9881;) → Status**, or `gcm update` in
-game. The Compose file runs the newest release (`latest`); to stay on one,
-set `GCM_TAG` in `.env` to its version, e.g. `GCM_TAG=5.0.0`.
-`deploy/gcm-deploy.sh` sets it on each release deploy.
+**Update** button under **Settings (⚙) → Status**, or `gcm update` in
+game. The server image and the scripts come from the same release, so keep
+them matched. To stay on one release, set `GCM_TAG` in `.env` to its
+version, e.g. `GCM_TAG=5.0.0`.
 
-### Building from a clone
-
-To run your own changes, or unreleased ones, build the image from a clone
-instead. Its [`docker-compose.yml`](docker-compose.yml) keeps the data in
-`server/data/`.
-
-```bash
-git clone https://github.com/Maselkov/gtnh-craft-monitor.git
-cd gtnh-craft-monitor
-docker compose up -d --build
-```
-
-`main` can be ahead of the latest release, which is what `gcm` installs in
-game; check out a release tag (`git checkout v5.0.0`) to keep the two
-matched, or install the scripts with `gcm install --ref=main`.
-
-### Without Docker
-
-```bash
-cd server
-pip install -r requirements.txt
-SESSION_COOKIE_SECURE=0 python app.py
-```
-
-With a `.env`, load it first: `set -a; . ../.env; set +a`.
-
-`SESSION_COOKIE_SECURE=0` is needed to sign in over plain HTTP; see
-[Exposing it beyond your LAN](#exposing-it-beyond-your-lan).
-
-### Configuration
-
-Environment variables (set in `.env` for Docker; all optional):
-
-| Variable | Default | Description |
-|---|---|---|
-| `API_KEY` | generated | Shared secret for the in-game scripts, 32+ characters. Unset, one is generated into `DATA_DIR/api_key` on first start. |
-| `SESSION_COOKIE_SECURE` | `1` (`0` in Compose) | Mark the session cookie HTTPS-only. |
-| `TRUSTED_PROXIES` | empty | Comma-separated IPs/CIDRs allowed to send `X-Forwarded-*` headers. |
-| `SESSION_LIFETIME_SECONDS` | `604800` (7 days) | Browser session length. |
-| `STALE_AFTER_SECONDS` | `30` | How old crafting data can get before the page marks it stale. |
-| `CHART_CACHE_TTL_SECONDS` | `60` | Cache time for chart PNGs. |
-| `CHART_CACHE_MAX_ENTRIES` | `64` | Chart PNGs kept in the cache. |
-| `CHART_RATE_LIMIT_PER_MINUTE` | `30` | Chart PNG requests allowed per client per minute. |
-| `CHART_MAX_TRACKED_CLIENTS` | `4096` | Clients the chart rate limit keeps track of at once. |
-| `PORT` | `8420` | Listening port. |
-| `DATA_DIR` | `server/data` | Where the databases and game data are kept. |
-| `GTNH_VERSION` | empty | Game data version to install at startup; see [Item icons](#item-icons). |
-| `GTNH_TEXTURES` | empty | Icon textures for `GTNH_VERSION`: `default` or `faithful32`. Empty keeps what was picked on the page. |
-| `VAPID_SUBJECT` | the page's URL | Contact given to push services with each notification: a `mailto:` or `https:` URL. |
-| `WEBHOOK_URLS` | empty | Comma-separated webhook URLs for notifications; see [Webhooks](#webhooks). |
-| `WEBHOOK_EVENTS` | `crafts,autocraft` | Which events go to them: `crafts`, `autocraft`, `stock`. |
-| `PUBLIC_URL` | empty | The page's address from outside, e.g. `https://gtnh.example.com`, for icons and links in webhook posts. |
-| `GAMEDATA_REPO` | `Maselkov/gtnh-craft-monitor-data` | Repo whose `gtnh-data-*` releases the Game data page offers. |
-| `GAMEDATA_API_URL` | `https://api.github.com` | GitHub API base for that list (for mirrors). |
-| `SCRIPTS_REPO` | `Maselkov/gtnh-craft-monitor` | Repo whose newest `vX.Y.Z` tag the Status dialog offers as an update. |
-| `AUTOCRAFT_KEEP_IDLE_CPUS` | `1` | Keep-in-stock crafts only start while more crafting CPUs than this are idle; see [Stock rules](#stock-rules). |
-| `AUTOCRAFT_RETRY_SECONDS` | `1800` | How long a keep-in-stock target waits after a failed craft before trying again. |
-| `CRAFT_STALL_SECONDS` | `600` | How long a step of a running job can be crafting without moving before its live tree calls it stuck. |
-| `HISTORY_HOURLY_AFTER_DAYS` | `30` | Stock history older than this keeps one value per item per hour. `0`: off. |
-| `HISTORY_DAILY_AFTER_DAYS` | `365` | ...and older than this, one per day. `0`: off. |
-
-### Exposing it beyond your LAN
-
-The supplied Compose file serves plain HTTP with `SESSION_COOKIE_SECURE=0`,
-which is only appropriate on a trusted LAN. To expose it to the internet:
-
-1. Put it behind a TLS reverse proxy (Caddy, Traefik, nginx).
-2. Stop publishing port 8420 publicly, or firewall it so only the proxy can
-   reach it.
-3. Set `SESSION_COOKIE_SECURE=1`.
-4. Set `TRUSTED_PROXIES` to the proxy's address (e.g.
-   `TRUSTED_PROXIES=10.0.1.20/32`) so the client IP, host, and HTTPS headers
-   it forwards are honored. Forwarded headers from any other source are
-   ignored.
-5. Use an `https://` `SERVER_URL` in `/home/config.lua` so the API key isn't sent
-   in cleartext.
-
-HTTPS is also required for desktop notifications when the page is opened from
-another device (see [Pins and notifications](#pins-and-notifications)).
-
-### User accounts
-
-Browser users sign in with a personal access token, which is exchanged for an
-`HttpOnly` session cookie. The server stores only a SHA-256 hash of each
-token. Pins, completions, and craft history belong to the user, not the token,
-so a token can be replaced without losing data.
-
-| Role | Can |
-|---|---|
-| Viewer | View everything; keep personal pins and completion history |
-| Operator | Also request and cancel crafts |
-| Admin | Also manage users and tokens |
-
-First sign-in:
-
-1. Open the setup link from the server's log (see
-   [Quick start](#quick-start-docker)). Opening the page without it shows the
-   same dialog; paste the code from the link there.
-2. Pick your display name. The page makes you an admin, signs you in and
-   shows your access token once. Save it (a password manager will offer to)
-   and use it to sign in from now on.
-3. **Manage users** is now available for creating accounts. Consider
-   creating a second admin as a backup.
-
-On a server you can't open a browser to, create the first admin from the
-command line instead. It prints the token:
-
-```bash
-docker compose exec gtnh-craft-monitor python app.py create-admin "Your name"
-```
-
-Managing users:
-
-- Each generated token is shown once. Send it to its owner over a secure
-  channel.
-- **Revoke** invalidates a token and ends its sessions immediately.
-- **New token** replaces a user's current token in one step.
-- **Delete** permanently removes a user with their tokens, sessions,
-  pins and pending notifications. Their craft request history is kept.
-
-If you lose a token and no admin can sign in, issue a new one from the
-server. This revokes the user's existing tokens and sessions and prints the
-new token:
-
-```bash
-docker compose exec gtnh-craft-monitor python app.py new-token "Administrator"
-```
-
-### Backups
-
-The databases are in `data/` (`app.db` for accounts, pins and craft
-history; `power.db`; `item_history.db`). They run in SQLite's WAL mode, so
-recent changes can sit in the `*.db-wal` files for a while: copying the `.db`
-files from a running server can miss data. Instead, take a consistent copy
-while the server keeps running, in either of two ways:
-
-- **Settings (&#9881;) → Download backup** (admins) makes a zip of every
-  database, `vapid_private.pem`, the key that signs notifications, and
-  `api_key`, the generated API key, and downloads it. It's made beside the
-  databases first, so it needs about their size in free space there; it's
-  deleted once downloaded, or after 10 minutes.
-- The built-in command writes the databases to a directory:
-
-  ```bash
-  docker compose exec gtnh-craft-monitor python app.py backup "/app/data/backup-$(date +%F)"
-  ```
-
-  It doesn't include `data/vapid_private.pem` or `data/api_key`. They
-  never change, so copy them once alongside.
-
-To restore, stop the container, replace the `.db` file in `data/`
-(unzipped, if from a download), delete that file's `-wal` and `-shm` files if
-present, and start it again. WAL mode needs `data/` on a local disk,
-not a network share.
-
-### Item icons
-
-Item icons and the network scanner's item list depend on the GTNH version
-your players run. An admin picks it once: **Settings (⚙) → Game data**, choose
-the version and the icon textures, **Use these icons**. The server downloads
-that version's game data (about 300 MB: the icons, the icon lookup and the
-item catalog), switches to it without a restart, and the in-game scanner
-fetches the new item catalog on its next scan. Versions and textures
-downloaded before can be switched back to instantly. When a version is
-rebuilt (say, with better icons), the page marks it **update available**;
-picking it again downloads the new build.
-
-Icons come in two texture sets: the pack's own (**Default**), and
-**Faithful 32x**, rendered with the
-[GTNH Faithful x32 resource pack](https://github.com/Ethryan/GTNH-Faithful-Textures)
-by Ethryan and contributors. Faithful icons are rendered with the newest
-release of that pack when the data is built, which may be newer than the
-one made for your GTNH version.
-
-Icons that animate in game (GT materials and fluids, lava, many magic
-items) are animated on the page too. Browsers set to reduce motion get
-still icons. Halos (GT's cosmic items, Avaritia's singularities and
-infinity items) spill past their slot the way they do in game.
-
-The list comes from the releases of a separate repo,
-[gtnh-craft-monitor-data](https://github.com/Maselkov/gtnh-craft-monitor-data):
-a workflow here ([`gtnh-data.yml`](.github/workflows/gtnh-data.yml)) checks
-GTNH's releases daily and publishes game data there for every new stable,
-beta and RC release, tagged `gtnh-data-<version>`. The icons are renders of
-Minecraft's and the mods' textures, which aren't this project's, so they're
-kept apart from the code; requests to remove something go to that repo's
-issues. The server needs to reach `api.github.com` and `github.com` to list
-and download them. If you'd rather not use prebuilt data, build it yourself
-(below).
-
-A fork that runs the workflow publishes to the repo named by `DATA_REPO` in
-the workflow. That needs a fine-grained token with Contents: read and write
-on that repo, stored as the `GAMEDATA_TOKEN` Actions secret. Point your
-servers at it with `GAMEDATA_REPO`.
-
-Until a version is picked, the server has no item icons and the network
-scanner has no item list, so the Network tab stays empty.
-
-To pin the version without the page, set `GTNH_VERSION` (e.g.
-`2.9.0-beta-3`), and optionally `GTNH_TEXTURES=faithful32`; the server
-installs it at startup if it isn't already.
-
-#### Game data for other packs
-
-For a pack CI doesn't cover (a nightly, a modified pack), build the game data
-yourself. `tools/icon-export/` starts the GTNH client headlessly in Docker
-(Xvfb, software rendering, no Minecraft account), renders every item and
-fluid, and writes the same bundle CI publishes. It takes about 7 minutes
-(most of it capturing animated icons; `GCM_ANIMATION_TICKS=0` skips that),
-plus a one-time ~250 MB download of Minecraft's libraries and assets.
-
-1. Download the **MultiMC/Prism** client zip from
-   <https://downloads.gtnewhorizons.com/Multi_mc_downloads/> (not the server
-   pack), or use your own pack's MultiMC export.
-2. Run:
-   ```bash
-   tools/icon-export/run.sh ~/Downloads/GT_New_Horizons_2.9.0_Java_17-25.zip --install
-   ```
-   Output goes to `tools/icon-export/out/`. `--install` also puts it in
-   `server/data/gamedata/<version>/` and selects it; add `--data-dir DIR`
-   when the server's data directory is elsewhere (the prebuilt image's
-   `data/`). The version name comes from the file name; set
-   `GCM_VERSION_LABEL` to override it.
-
-   For Faithful icons too, add `--faithful` with a release zip from
-   [GTNH-Faithful-Textures](https://github.com/Ethryan/GTNH-Faithful-Textures/releases)
-   (`--faithful ~/Downloads/GTNH-Faithful-x32.v2.2.0.zip`). The game is
-   launched a second time with the pack on, which doubles the time.
-   `--install` selects the default textures; switch on the Game data page.
-3. Restart the server, or pick the version on the Game data page.
-
-`out/export-report.json` lists the counts and any items that failed to
-render. A few hundred always do: items whose renderer needs a player or a
-world (the bow, Thaumcraft devices, some Botania and Chisel blocks), since the
-export never loads one. They fall back to `by_label` or show no icon.
-
-Settings: `GCM_MAX_MEMORY` (default `6G`), `GCM_ICON_SIZE` (default 64 px),
-`GCM_ANIMATION_TICKS` (default 400, i.e. up to 20 s of animation; 0 for still icons only),
-`GCM_TIMEOUT` (seconds, default 3600) and `GCM_CACHE_DIR` (default
-`~/.cache/gcm-icon-export`).
-
-The lookup contains four tables:
-
-- `by_key` — `modid:internalname:damage` → icon, for ordinary items. When
-  several stacks share a key (NBT variants of one item), the one without NBT.
-- `by_key_label` — `modid:internalname:damage|label` → icon, from NBT stacks
-  only: tells those variants apart (each crop's seeds, each bee species).
-  Tried first for items the scan reports with NBT.
-- `fluids_by_key` — Forge fluid registry name → icon, for fluid pseudo-items
-  (see [Fluid items](#fluid-items)).
-- `aspects_by_key` — Thaumcraft aspect tag (`ordo`) → icon, for essentia.
-  Essentia never falls back to `by_label`, where an aspect's name finds
-  blocks and items named after it. Game data without this table shows a
-  round badge with the aspect's initial instead.
-- `by_label` — display name → icon. Least reliable fallback, because about 8%
-  of labels collide across mods.
-
-Beside the lookup, `ore_dict.json` holds the game's ore dictionary
-(`{name: ["modid:internalname:damage", ...]}`, damage `*` for any), for the
-crafting plan's ore-dictionary substitutes. Bundles made before it existed
-work without it; plans then take no substitutes.
-
-`item_info.json` holds what the page shows about items beyond their name and
-icon:
-
-- `tooltips`, `shift_tooltips`, `rarity`, `formulas`: for the same keys as
-  `by_key`, `by_key_label` and a GregTech tool's `by_key_material`, the
-  item's tooltip below its name (lines joined with newlines, formatting
-  codes like `§e` kept), the same with Shift held where that's different,
-  its name's rarity colour code where it isn't common, and its chemical
-  formula, read the way GregTech's own NEI formula search reads it (its
-  material, or its GT++ material). Formulas and tooltips keep GregTech's
-  font glyphs (`\uE012` for ², ...), which the page maps to Unicode. The export holds Shift by
-  patching mods' keyboard checks; Ctrl sections, and lines a mod adds only
-  with a player in the world, aren't in it.
-- `fluids`: each fluid's temperature in kelvin, whether it's a gas, and its
-  formula: that of a container (a cell) filled with it.
-- `mods`: each mod's name by its id.
-
-Bundles made before it existed have none of it. Before it, `ore_dict.json`
-also left out names only one item has.
-
-## In-game setup
-
-### Requirements
-
-- An OpenComputers computer with an **Internet Card**.
-- An **Adapter** touching the ME Controller (any face), or an ME Interface if
-  there is no controller.
-- For the power monitor, an Adapter touching the GregTech multiblock (any
-  casing block).
-- HTTP allowed in the Minecraft server's `OpenComputers.cfg` (`enableHttp`
-  and `enableHttpHeaders`, on by default), and your monitor's address not
-  blocked there. Local addresses are blocked by default; see
-  [Scripts can't reach the server](#scripts-cant-reach-the-server). If the
-  scripts can't POST, nothing on the Lua side can fix it. The installer also
-  needs `raw.githubusercontent.com` and `api.github.com`.
-- For craft requests, GTNH 2.9.0-beta-2 or later: they use OpenComputers'
-  `getCraftable()`, added in 1.12.47.
-- `allowItemStackNBTTags=true` (under `integration.vanilla`) in
-  `OpenComputers.cfg`, which is GTNH's default. Items that share an id but differ in NBT (seeds with
-  different stats, bees of one species) are then listed separately, as AE2
-  does. Without it they're only told apart by name, and GregTech tools
-  (turbines, drills...) all show one icon whatever their material.
-- Optional, GTNH 2.9 or later: an Adapter touching (or MFU-linked to) a block
-  holding an **ME Interface Terminal** part, on the same computer as
-  `network_browser.lua`. With it, the scanner also reads every pattern on the
-  network (see [Reading patterns](#reading-patterns)). Patterns need
-  `allowItemStackNBTTags`: crafting-table patterns for their output counts,
-  and all of them for their substitution settings.
-
-#### Connecting the Adapter
-
-An Adapter doesn't have to touch the ME Controller. Put an **MFU** in the
-Adapter's upgrade slot instead. Link it by sneak-right-clicking a face of the
-block, and the Adapter then works as if it touched that face, wirelessly. That
-way no controller face is used up. The MFU only reaches **16 blocks**, so keep
-the Adapter within that range of the block. It works the same way for the
-power monitor's Adapter and a GregTech multiblock.
-
-Run OpenComputers cable between the computer and its Adapters. Don't carry
-the connection through AE2's **OpenComputers P2P tunnels**: they're buggy.
-Components go missing from the computer, and the shell fills up with the
-scripts' crashes.
+## Troubleshooting
 
 ### Scripts can't reach the server
 
@@ -491,755 +119,53 @@ the range its address is in (or empty the list) and restart Minecraft. In
 single player, the "Minecraft server" is your own game, and the same applies.
 Also check that `enableHttp` and `enableHttpHeaders` are `true` there.
 
-### Install
-
-`gcm` installs the scripts from the latest release and updates them later.
-Download it to `/tmp` once and run it from there; `gcm install` installs
-itself to `/usr/bin`, so afterwards it runs as plain `gcm`:
-
-```
-wget -f https://raw.githubusercontent.com/Maselkov/gtnh-craft-monitor/main/oc/gcm.lua /tmp/gcm.lua
-/tmp/gcm.lua install --server=<url> --api-key=<key>
-```
-
-**Settings (&#9881;) → Status → Connect a computer** on the web page shows
-both as one command, joined with `&&`, with this server's address and API
-key filled in, ready to copy. Paste it into the computer with the middle
-mouse button or Insert.
-The address is the page's own unless `PUBLIC_URL` is set; change it there
-if the Minecraft server reaches the monitor some other way.
-
-`gcm install` asks which scripts to install. Then it checks that the
-computer reaches the server with the key, saying what's wrong if it
-doesn't, and writes both to `/home/config.lua`. Without `--server` and
-`--api-key` it asks for them. It can also enable the scripts so they start
-on every boot, and offers to reboot to start them.
-
-To install specific scripts without being asked, name them:
-
-```
-gcm install craft power network
-```
-
-Run `gcm install` again later to add scripts. `/home/config.lua` is only
-written if it doesn't exist yet; to change the address or key later, edit
-it.
-
-The scripts are independent: they can run on one computer or on separate
-ones.
-
-### Update
-
-```
-gcm update     # install the latest release, then offer to reboot
-gcm status     # installed version, installed scripts, latest release
-```
-
-`gcm update` replaces the scripts and libraries but never
-`/home/config.lua`. Keep your settings there (see
-[Script settings](#script-settings)). All files are downloaded before any
-are replaced, so a failed download leaves the old version in place. The
-reboot is needed because OpenOS keeps the old code loaded until then.
-
-Both commands take `--ref=<tag or branch>` to use something other than the
-latest release, for example `gcm update --ref=main` to try unreleased
-changes. Releases older than `gcm` itself can't be installed with it.
-
-Use a release that matches your server's version: the image tag and the
-scripts come from the same release.
-
-#### From the web page
-
-`gcm` also installs and enables `gcm_agent`, a small service that reports
-the computer to the web page every minute. Admins see each computer under
-**Settings (&#9881;) → Status**: its version and whether a newer release
-is out, which scripts are running, free memory and uptime. Buttons there
-update it (to the latest release, or to `main`) or reboot it. The agent
-runs `gcm update`, says how it went, and reboots.
-
-The server can only ask for those three things. `gcm` downloads from its
-own fixed GitHub repository, so nothing on the server can make a computer
-run other code. A computer installed before the agent existed shows up
-after one `gcm update` in game. `rc gcm_agent disable` turns it off.
-
-### Manual install
-
-Without `gcm`, copy these files to the computer yourself (with a floppy and
-`edit`, or `wget`):
-
-| File | Destination | Needed for |
-|---|---|---|
-| `oc/config.lua` | `/home/config.lua` | All scripts |
-| `oc/http.lua` | `/usr/lib/http.lua` | All scripts |
-| `oc/json.lua` | `/usr/lib/json.lua` | Craft monitor, network browser |
-| `oc/craft_monitor.lua` | `/etc/rc.d/craft_monitor.lua` | Crafts tab, remote crafting |
-| `oc/power_monitor.lua` | `/etc/rc.d/power_monitor.lua` | Power tab |
-| `oc/network_browser.lua` | `/etc/rc.d/network_browser.lua` | Network tab |
-
-Then set `SERVER_URL` (no trailing slash) and `API_KEY` (the server's API
-key; see [Quick start](#quick-start-docker)) in `/home/config.lua`.
-
-`http.lua` and `json.lua` go in `/usr/lib/` so `require()` finds them from
-any script. `config.lua` is loaded by absolute path; to keep it somewhere
-other than `/home/`, change `CONFIG_PATH` at the top of each script.
-
-### Run the scripts
-
-Each script is an OpenOS `rc` service:
-
-```
-rc craft_monitor enable     # start automatically on every boot
-rc craft_monitor start      # start now
-rc craft_monitor stop
-rc craft_monitor status
-```
-
-`start` alone lasts only until the next reboot. The same commands work for
-`power_monitor` and `network_browser`.
-
-### Script settings
-
-Change settings in `/home/config.lua`, not in the scripts, because
-`gcm update` replaces the scripts. Add a table named after the script with
-only the settings you want to change:
-
-```lua
-return {
-  SERVER_URL = "https://monitor.example.com",
-  API_KEY    = "...",
-
-  craft_monitor = {
-    SHOW_STATUS = true,
-  },
-  power_monitor = {
-    POLL_SECONDS = 30,
-  },
-}
-```
-
-Anything not listed keeps the default from the tables below. Changes take
-effect after a reboot.
-
-The scripts don't draw to the screen by default (`SHOW_STATUS = false`). If
-you turn on a status screen, enable it for only one script per screen: each
-one clears the terminal on every cycle, so two would flicker.
-
-**craft_monitor.lua**
-
-| Setting | Default | Description |
-|---|---|---|
-| `POLL_SECONDS` | `5` | How often crafting CPUs are read and posted |
-| `WATCH_SECONDS` | `1` | Between those, how often busy CPUs are checked, so a job's end is noticed sooner; `0` turns it off |
-| `CRAFT_REQUEST_POLL_SECONDS` | `1.5` | How often pending craft requests are checked |
-| `WATCH_REQUEST_OUTCOMES` | `true` | After a requested craft starts, report whether it finished or was cancelled |
-| `COMPONENT` | `nil` (auto) | Force `"me_controller"` or `"me_interface"` |
-| `HTTP_TIMEOUT_SECONDS` | `20` | Give up on a request to the server that stalls this long |
-| `SHOW_STATUS` | `false` | Draw a compact status screen |
-| `VERBOSE` | `false` | Print one line per CPU per cycle, for debugging |
-| `DEBUG_DUMP` | `false` | Print the raw `getCpus()` data once and exit |
-| `DEBUG_CPU_FILTER` | `nil` | Limit `DEBUG_DUMP` to one CPU by name |
-
-`DEBUG_DUMP` is useful on first setup to check what the script sees:
-set `craft_monitor = { DEBUG_DUMP = true }` in `config.lua`, reboot, read
-the output, then remove it again.
-
-**power_monitor.lua**
-
-| Setting | Default | Description |
-|---|---|---|
-| `POLL_SECONDS` | `60` | How often stored EU is read and posted |
-| `COMPONENT_ADDRESS` | `nil` | Pick a specific `gt_machine` if several are connected |
-| `MACHINES` | `nil` | Report several machines instead, each with its own chart: see below |
-| `HTTP_TIMEOUT_SECONDS` | `20` | Give up on a request to the server that stalls this long |
-| `SHOW_STATUS` | `false` | Draw a status screen |
-
-To chart several machines (say an LSC and a bank of battery buffers), list
-them with a name each:
-
-```lua
-power_monitor = {
-  MACHINES = {
-    { address = "1f3a..." },                      -- no name: keeps the existing chart
-    { address = "9c02...", name = "Batteries" },
-  },
-},
-```
-
-Each is read and posted every poll. A machine without a name keeps the
-history recorded before `MACHINES` was set, so leave the one you were
-already charting unnamed. The addresses are the ones `component.list("gt_machine")`
-prints, or that the script lists when it finds several.
-
-**gcm_agent.lua** (in a `gcm_agent` table)
-
-| Setting | Default | Description |
-|---|---|---|
-| `POLL_SECONDS` | `60` | How often it reports, and so how soon a button on the page takes effect |
-
-**network_browser.lua**
-
-| Setting | Default | Description |
-|---|---|---|
-| `SCAN_INTERVAL_SECONDS` | `600` | Time between full network scans |
-| `WATCH_INTERVAL_SECONDS` | `60` | Between full scans, how often to check just the items with a [stock rule](#stock-rules); `0` turns it off |
-| `PATTERN_SCAN_INTERVAL_SECONDS` | `3600` | How often to [read every pattern](#reading-patterns), if an ME Interface Terminal is connected; `0` turns it off |
-| `PATTERN_CHUNK_SIZE` | `20` | Patterns sent to the server per POST |
-| `CRASH_RESTART_SECONDS` | `30` | After an error stops scanning, how long to wait before starting over |
-| `CATALOG_PATH` | `/home/item_catalog.txt` | Item catalog to use when the server has no game data |
-| `BATCH_SIZE` | `300` | Item IDs queried per call |
-| `RESULT_CHUNK_SIZE` | `100` | Items sent to the server per POST |
-| `DELAY_BETWEEN_BATCHES_SECONDS` | `0.1` | Pause between batches |
-| `MAX_CONSECUTIVE_ERRORS` | `5` | Batches in a row that may fail before the scan is abandoned |
-| `HTTP_TIMEOUT_SECONDS` | `20` | Give up on a request to the server that stalls this long |
-| `SHOW_STATUS` | `false` | Draw a status screen |
-
-A full scan takes about 37 batches with the GTNH catalog and runs every
-10 minutes by default.
-
-`item_catalog.txt` lists about 11,000 item IDs (`modid:internalname`, damage
-values merged): everything in NEI's item list, including items NEI hides,
-plus anything in the ore dictionary or a recipe. It comes from the server:
-once a GTNH version is picked on the [Game data](#item-icons) page, the
-scanner downloads that version's catalog at the start of its next scan
-into `/home/item_catalog.server.txt` and uses that from then on, until the
-version changes again (the version is noted in
-`/home/item_catalog.server.txt.version`). If the download fails it keeps
-scanning with the catalog it has. A server without game data sends no
-catalog; the scanner then uses `CATALOG_PATH` if you've put one there, and
-otherwise reports that no version is picked.
-
-## Using the web page
-
-### Crafts tab
-
-One card per crafting CPU, updated within a second of each report from the
-game. A busy card shows:
-
-- **Output item** — needs an AE2 **Crafting Monitor** block in that CPU's
-  multiblock. Without one, the card shows "Crafting job (no monitor tile)".
-- **Progress** — each item or fluid type the job still has to make counts
-  as one step, and the bar is the average of how far along each step is.
-  It never moves backwards. It counts steps done, not time left.
-- **Run time** — how long the job has been running ("≥" for one that was
-  already running when the server started). After two minutes and 10% of
-  progress, a rough time left follows: what's left at the pace so far.
-  Since steps can take very different times, take it as a guess.
-- **Ingredients (N)** — opens a grid of everything the job holds, is crafting
-  and is waiting on, laid out like AE2's crafting status screen. It stays
-  live while open. Switch it to **Tree** to see the job step by step:
-  each step shows how much of it is made, steps being crafted are green
-  as in the grid, finished branches fold away, and a step that's crafting
-  but hasn't moved for `CRAFT_STALL_SECONDS` (10 minutes by default) turns
-  amber as stuck. A folded branch says what's under it ("1 stuck · 2
-  active"). Stuck steps are also listed above the tree; click one to jump
-  to it.
-
-  AE2 doesn't tell OpenComputers a job's own plan, so the tree is rebuilt
-  from the network's patterns (see [Reading patterns](#reading-patterns)):
-  an item the CPU reports crafting or waiting to craft is a crafted step,
-  anything else came from storage, and where several patterns make an
-  item, the one whose inputs the job holds is used. An item used in two
-  places shares one count, as the CPU reports it.
-
-Below the cards, **Recent crafts** lists every job that ended on any CPU,
-newest first and grouped by day. Each row shows the CPU, how long the job ran,
-and an Incomplete badge if it stopped early. Click an item's name to open its
-stock history. Jobs that were already running when the server started show no
-duration, since their start wasn't seen. The list is kept permanently in
-`data/app.db`. The filter box above it takes the same syntax as the
-Network tab's search, and **Incomplete** and **Auto** show only those jobs;
-both look through the whole list, not just the rows loaded so far.
-
-**Statistics**, below it, adds up the jobs that ended in the last day, week,
-month or ever: how many, how many stopped early or were auto-crafts, the most
-crafted items with how long one usually takes, and how much of the range each
-CPU spent busy. A job counts once it ends, and its time only from when the
-server saw it start, so jobs already running at a restart add no busy time.
-
-### Pins and notifications
-
-Click the pin icon on a card to pin its job to the top of the page. When a
-pinned job finishes, it shows as a completion to acknowledge and, if you've
-turned notifications on, triggers a notification. Pins and
-completions are saved per user on the server, so they follow you across
-devices.
-
-Turn notifications on with the **Notifications** switch in the settings
-(&#9881;) menu. Each browser you turn it on in gets them, delivered through
-the browser's push service (Web Push), so they arrive even with the page
-closed. Signing out stops them for that browser.
-
-For push, the server needs outbound HTTPS to the push services
-(`fcm.googleapis.com` for Chrome and Android, `*.push.services.mozilla.com`
-for Firefox, `*.push.apple.com` for Safari and iOS, `*.notify.windows.com` for
-Edge on Windows). Without it, notifications still show while the page is open.
-The server signs pushes with a key it generates on first start,
-`data/vapid_private.pem`. Keep it with your backups: if it's lost,
-every browser has to turn the switch off and on again.
-
-Browsers allow notifications only on a secure origin: `https://` or
-`http://localhost`. Opened over plain HTTP from another device, the switch is
-disabled with a "Needs HTTPS" note. Use a TLS reverse proxy (see
-[Exposing it beyond your LAN](#exposing-it-beyond-your-lan)) or open the page
-on the server machine itself.
-
-On phones: Android Chrome works as-is. On iPhone and iPad (iOS 16.4+),
-notifications only work after **Share → Add to Home Screen**, opening the page
-from that icon, and turning the switch on there.
-
-### Webhooks
-
-To also post notifications to a Discord channel (or Slack, or anything that
-takes a JSON POST), set `WEBHOOK_URLS` to one or more webhook URLs. A Discord
-webhook (**Channel settings → Integrations → Webhooks**) gets an embed with
-the item's icon; any other URL gets a JSON body with `event`, `title`,
-`body`, `icon` and `url`, plus a `text` line that Slack-style incoming webhooks
-show as is.
-
-Unlike push notifications, webhook posts are for the whole base, so
-`WEBHOOK_EVENTS` picks what's sent:
-
-| Event | Sent when |
-|---|---|
-| `crafts` | a pinned job finishes or stops (anyone's pin; one post per job) |
-| `autocraft` | a keep-in-stock target's auto-craft fails |
-| `stock` | a low-stock alert fires. Off by default, since alerts are each user's own; on, it posts once per item, without saying whose alert it was. |
-
-Icons and the link to the item's page need `PUBLIC_URL`, the address the page
-is reached at from outside; without it, posts are text only. Admins can check
-the setup with **Test webhooks** in the settings (&#9881;) menu.
-
-### Server status
-
-Admins get a **Status** dialog (**Settings (&#9881;) → Status**). The
-in-game computers are listed under it (see [From the web
-page](#from-the-web-page)), and above them a **Server** section shows:
-
-- each feed from the game (crafting CPUs, the ME network scan, patterns,
-  each power machine), with how long ago it last reported. A green dot
-  means it's current; amber means it's late (crafts after
-  `STALE_AFTER_SECONDS`, power after 5 minutes, the network after an hour
-  or a scan running over 10 minutes), crashed, or had its last scan turned
-  away as incomplete.
-- the size of each database and the free space where they're kept.
-- when stock history was last thinned, and how many rows that removed.
-- how many browsers get push notifications, and how the last webhook post
-  went.
-
-### Power tab
-
-Stored EU over time. The Hour, Day, Week, Month, and Lifetime
-ranges are downsampled on the server to at most 800 points, so long ranges
-stay fast. Readings are kept in `data/power.db`.
-
-Above the chart, an arrow shows the machine's net EU/s over the last 5
-seconds (hover it for input and output separately), and a line gives the
-rate over the past hour with the time until the machine is full or empty
-at that rate. The estimate needs at least 10 minutes of readings.
-
-With several machines (`MACHINES` in [power_monitor.lua's
-settings](#script-settings)), buttons above the readout switch between
-them, and the page's URL (`/power?machine=Batteries`) keeps the choice for
-links and link previews. The unnamed machine shows as **Main**, and the tab
-badge follows it.
-
-### Network tab
-
-Every item and fluid in the ME network, with icon, name, and amount (fluids in
-mB), and its essentia with Thaumic Energistics installed. It refreshes every
-minute, but its data changes only when a scan finishes.
-
-- Click an item to open its stock history chart. Each item has its own URL
-  (`/network/item/<mod:internal:damage>`, `/network/item/@<aspect>` for
-  essentia) that can be shared; link previews
-  include the current amount and a chart. Under the amount, the popup shows
-  how fast it changed over the chosen range and, if it's falling, when it
-  runs out at that rate.
-- Pin items to keep them at the top of the list.
-- Sort by **Change** to see what's being used up: items are ordered by how
-  much of their stock went over the last **Day** or **Week**, emptied ones
-  first and the ones that grew last, each labelled with the change
-  ("−80%"). Comparing shares rather than amounts lets items and fluids
-  sit side by side. The tooltip gives the amount at the start, the rate,
-  and when it runs out at that rate. An item whose history starts inside
-  the range is measured from its first recorded amount.
-- The last scan is saved to `data/item_history.db` and restored when
-  the server restarts. Until the next scan completes, the page marks the data
-  as restored rather than live.
-- Stock history keeps every change for 30 days. Older history keeps the last
-  value of each hour, and after a year of each day, so charts over long
-  ranges look the same while the file stops growing quickly (a base with
-  ~8,000 items records about 20,000 changes a day). A background job does
-  this daily; `HISTORY_HOURLY_AFTER_DAYS` and `HISTORY_DAILY_AFTER_DAYS` set
-  the ages, and `0` keeps everything.
-
-The search box takes NEI's syntax, matched against item names and ignoring
-case. Press `/` on any tab to jump to it.
-
-The grid works from the keyboard too: **↓** from the search box (or **Tab**)
-goes into it, the arrow keys, **Home**/**End** and **Page Up**/**Page Down**
-move, and the focused item shows its tooltip. **Enter** opens the item, **C**
-opens the craft dialog (as middle-click does), **P** pins it, and **Escape**
-(or **↑** from the top row) goes back to the search box. Closing a dialog
-with Escape returns to the item it was opened from.
-
-| Query | Matches |
-|---|---|
-| `molten neutronium` | items with both words, in any order, each in the name, description or an ore-dictionary name |
-| `copper\|tin` | items with either |
-| `"air shard"` | items with that exact phrase |
-| `@gregtech` | items from mods whose id or name contains `gregtech` (`@industrialcraft` and `@ic2` both work) |
-| `#dtpf` | only the description, not the name, as NEI's `#` does |
-| `$ingotiron` | only the ore-dictionary names |
-| `=sio2` | items whose chemical formula contains `sio2`, sub- and superscripts read as digits (GregTech's `=`) |
-| `-dust` | items without `dust`; `-` also works before `@mod`, `#`, `$`, `=`, `a\|b` and `"phrase"` |
-
-Plain words match descriptions and ore-dictionary names as well as names, as
-NEI's default search modes and AE2's terminal do: `boundaries` finds the
-Dimensionally Transcendent Plasma Forge by its tooltip. `#`, `$` and `=` take
-`a|b` and `"a phrase"` too. Descriptions are the
-items' in-game tooltips below their name (a GregTech machine's type and info
-lines, a material's formula, a fluid's temperature), from the game data,
-starting with the item's or fluid's GregTech formula where the tooltip
-doesn't have it. Hovering an
-item shows its description, with the name in its rarity's colour and its
-mod's name below; hold **Shift** to see what the game shows with Shift held,
-such as a multiblock's structure. The item's dialog shows the same, with a
-**Shift** button, and its ore-dictionary names: click one to search for it.
-Game data built before these existed has none of it, so `#` and `$` match
-nothing, `=` too, and `@` matches mod ids only.
-
-### Requesting and cancelling crafts
-
-Requires an operator or admin account. Craftable items in the Network tab
-have a small Blank Pattern icon in the corner.
-
-- **Left-click** a craftable item that has no stock, or **middle-click** any
-  craftable item, to open the request dialog. This matches AE2's terminal.
-- Left-clicking an item that is in stock does nothing, since the page can't
-  extract items.
-
-The amount can be written as `10k`, `1.5M` or `2G`, or as arithmetic such as
-`4*64+10` or `(10k-2k)/2`; the dialog shows the result before you submit. The
-stock rule fields below take the same forms.
-
-When the network's patterns have been read (see
-[Reading patterns](#reading-patterns)), the dialog also shows the **crafting
-plan** for the amount you've typed, before you submit. Like AE2's own Request
-Craft screen, it has two views:
-
-- **List**: every item the plan touches, missing ones first. As in the game,
-  an item taken from stock shows how much the plan takes ("Available") and
-  what share of the stock that is ("Used", red for all of it, then orange,
-  green and blue). An item that's crafted shows how many.
-- **Tree**: the recipes step by step, as a collapsible outline. Each step
-  says how much it needs, how much comes from stock, how much is crafted and
-  on which machine. A closed step with something short under it says how
-  many steps are short there. **Hide all available** shows only the way to
-  what's missing, already opened. Where several patterns make the same
-  item, pick another one to see that plan instead. Endgame plans can run
-  past 100,000 steps; they're planned in full, so the list and the missing
-  items cover all of it, and the tree loads deeper steps as you open them.
-
-Above both views is everything the plan is short of. Click an item there to
-jump to where it's short in the tree; click it again for the next place. If
-the plan would take an item from at or above your low-stock alert or a
-keep-in-stock target to below it, a **stock rules** button beside the views
-lists those items. An item that was already below its rule isn't listed,
-since the plan didn't cause it.
-
-The plan is the server's estimate from your patterns and the last network
-scan, worked out the way GTNH's AE2 plans:
-- The requested item is always crafted in full.
-- Everything below it comes first from what other steps made too much of (a
-  batch's extra output, or a pattern's other outputs), then from stock. Both
-  are only counted once, even when several steps need them.
-- Steps run in whole batches.
-- Where several patterns make an item, they're tried in AE2's order: by
-  slot, the last first. Each makes as many whole batches as its inputs can
-  be had for, and the next makes the rest, so one item can come from two
-  patterns; the tree shows each part as a "via" row. Anything none of them
-  can cover is planned with the first, and what that lacks is missing.
-  Picking a pattern in the tree uses that one alone.
-- A crafting pattern with Substitute ticked takes, for each input, the item
-  itself first, then anything sharing an ore-dictionary name with it: from
-  stock, then crafted with the item's own patterns, then with patterns
-  marked "can be substituted" that make an alternative. The tree lists the
-  alternatives taken from stock under the step ("instead: …"), and a part
-  making one names it ("Industrial Diamond via …"). This needs game data
-  with the ore dictionary.
-
-AE2 may still differ. It also orders patterns by the interface's priority,
-which OpenComputers doesn't report, and it checks each substitute against
-the recipe itself, where the plan takes anything sharing an ore-dictionary
-name. The Request button works whatever the plan says.
-
-Items that differ only in NBT (GregTech turbines of each material, seeds,
-bees) are separate entries in the grid, and requesting one crafts that
-variant: `getCraftable()` finds the pattern making exactly that stack, NBT
-included. The NBT comes from the last network scan, so a variant that hasn't
-been scanned since the server started fails rather than crafting the wrong
-item.
-
-After you submit, a pending card appears. Planning a large craft can take from
-under a second to several minutes, and the request survives closing the tab.
-
-- **Accepted** — the pending card is replaced by a pin on the CPU that AE2
-  assigned, and the job is tracked like any other pinned craft.
-- **Failed** — the card turns red with AE2's reason (usually
-  `request failed (missing resources?)`) until you dismiss it.
-
-To cancel a running job, click **×** on its card in the Crafts tab.
-
-Fluids can be requested too.
-
-### Stock rules
-
-Set them in an item's popup on the Network tab. Every rule is checked after
-each full network scan, and after a quicker check of just the rules' items
-that `network_browser.lua` makes every `WATCH_INTERVAL_SECONDS` (1 minute by
-default) in between.
-
-- **Alert me below N** — any signed-in user. You get one notification when the
-  item drops below N, and another only after it has been back at or above N.
-  Alerts are your own; other users don't see them.
-- **Keep at least N, refill to M** — operators and admins, craftable items
-  only (so not essentia, which OpenComputers can't ask AE2 to make). When
-  the item drops below N, the server requests a craft of
-  (M − current) and AE2 plans it like any other request. There's one target
-  per item for the whole base.
-
-A target holds off while a craft for it is already under way: its own request
-waiting on the game, a CPU busy making the item, or a job that finished making
-it during the scan. It only starts a craft while more than
-`AUTOCRAFT_KEEP_IDLE_CPUS` crafting CPUs are idle, so some stay free for
-requests made by hand. When CPUs are short, the emptiest items go first. If a
-craft fails (usually missing ingredients), the target waits
-`AUTOCRAFT_RETRY_SECONDS` before asking again, and anyone with an alert on
-that item is notified.
-
-Auto-crafts aren't pinned for anyone. They show with an **Auto** badge on their
-CPU card and in Recent crafts, and as "Auto request" in an admin's view of the
-user who last saved the target.
-
-When any rules exist, a **Stock rules** list sits above the Network tab's
-item grid. It shows each rule with the item's current amount and status
-(ok, low, craft requested, crafting, waiting for a free CPU, craft failed).
-Click a row to open that item. Grid cells with a rule carry a bell (alert) or
-circular-arrows (target) badge, tinted red while low, and the item's chart
-draws each threshold as a dashed line.
-
-## Limitations
-
-- Crafting status is only as fresh as `POLL_SECONDS` (5 s by default) plus the
-  page's 1 s refresh. Requests and cancellations wait for the next poll from
-  the game.
-- Progress counts steps, not crafting time, since recipe durations aren't
-  available. A job with one slow step and 63 quick ones shows as nearly done
-  once the 63 are made, and its time left is as far off.
-- Stock rules react within `WATCH_INTERVAL_SECONDS` (1 minute by default).
-  AE2 picks the CPU for each craft itself, so the idle-CPU limit is checked
-  when a craft is requested, not enforced while it runs.
-- With HTTP disabled in the Minecraft server's OpenComputers config, nothing works. The
-  only alternative is an in-game display.
-
-## Technical notes
-
-These notes explain design choices in the scripts, and were verified against
-the GTNH OpenComputers source and live testing.
-
-### Crafting CPUs
-
-GTNH's AE2 integration has no `getCraftingCPUs()`. The method is
-`getCpus()` (see `NetworkControl.scala` in `GTNewHorizons/OpenComputers`):
-
-```
-me.getCpus() -> array of { name, storage, coprocessors, busy, cpu }
-```
-
-Each `cpu` object provides `isActive()`, `isBusy()`, `activeItems()`,
-`pendingItems()`, `storedItems()`, `finalOutput()`, and `cancel()`.
-`finalOutput()` fails unless the CPU has a Crafting Monitor block.
-
-`craft_monitor.lua` only reports these lists; the server works out progress
-(`server/gcm/progress.py`). Every item or fluid type in `pendingItems()` and
-`activeItems()` is a step, measured as its remaining amount against the
-largest amount seen for it during the job, and the job's progress is the
-average over steps. That has no units, so fluids in mB don't swamp items,
-and thousands of cheap items don't outweigh one slow one. `storedItems()` is
-left out because it also holds the raw ingredients pulled at the start, which
-shrink as they're used and would make the bar go backwards.
-
-### Craft request results
-
-A request counts as finished when `isComputing()` returns `false`. `isDone()`
-isn't used, because it only reports whether a crafting link was created. A
-rejected request never creates one, so `isDone()` would stay `false` forever
-in exactly the case where an error must be shown.
-
-Fluids are requested by their Forge name, through the same `getCraftable()`.
-
-### Scanning the network
-
-Two obvious approaches fail on a large GTNH network:
-
-- `getItemsInNetwork()` builds the entire result in one table, which ran a
-  computer out of memory on a network with about 6,000 item types.
-- `allItems()` is a Java iterator held open across thousands of calls. When
-  the network changes during the scan, the iterator breaks. Tests returned as
-  little as 22% of the real item count, sometimes without any error.
-
-`network_browser.lua` uses `getItemsInNetworkById(idList)` instead. It is
-stateless per call, filters by item ID before converting results, and
-returned the correct count on every test. (The approach comes from
-[oc-influxdb-exporter](https://gitlab.com/uncountablyinfinite1056/oc-influxdb-exporter).)
-The candidate IDs are streamed from `item_catalog.txt` in batches rather than
-loaded all at once, which roughly doubles free memory during a scan compared
-with loading the full list.
-
-Fluids are read with a single `getFluidsInNetwork()` call, since networks
-hold far fewer fluid types than item types. Essentia likewise, with one
-`getEssentiaInNetwork()` call: Thaumic Energistics adds it to the same
-`me_controller`/`me_interface` component, and it names each aspect by its
-tag (`ordo`), as the Interface Terminal does in patterns, so the crafting
-plan finds essentia in stock. Without Thaumic Energistics there's no such
-method and the scan skips it.
-
-If an error escapes the scan loop (most likely the computer running out of
-memory, which the three scripts share), `network_browser.lua` writes it, with
-a stack traceback and free memory, to `network_browser_debug.log` in the
-directory it runs from. It also reports the error to the server, which ends
-the dead scan and shows the error on the Network tab until a scan finishes.
-Then it starts over after `CRASH_RESTART_SECONDS`. Each line of that log
-records free memory (`mem=`), so a slow leak shows as a falling number.
-Without this, the error was printed to a screen that other scripts keep
-clearing, `rc network_browser status` still said running, and the page just
-showed a scan that never finished.
-
-On the server, a scan is a `start` → `batch` × N → `finish` sequence. Batches
-fill a buffer, and `finish` swaps it in as the live snapshot, so the page
-never shows a half-finished scan.
-
-Between full scans, `network_browser.lua` checks the items that have a
-[stock rule](#stock-rules). It asks the server for them (`GET
-/api/network/watch`), looks them up with the same `getItemsInNetworkById()`
-call on just their IDs, and posts what it found (`POST /api/network/levels`).
-The server replaces only those items in the snapshot, records the changes
-in their history, and checks the rules. The call takes IDs without damage
-values, so a GregTech material brings back every stack sharing its ID
-(hundreds, for `gt.metaitem.01`), roughly one full-scan batch, and the script
-keeps only the watched ones. Each call's size and duration go to the
-script's debug log, `network_browser_debug.log`, in the directory it runs from.
-
-### Reading patterns
-
-GTNH 2.9's OpenComputers can read an ME Interface Terminal
-(`me_interface_terminal`). Its `getInterfaces()` lists everything the
-terminal would show: interfaces, molecular assemblers and GregTech pattern
-hatches, each with its name, location and patterns. The list is a copy taken
-when it's called, so the network changing during the walk doesn't disturb it,
-unlike `allItems()`. Each pattern comes with its inputs and outputs.
-
-After a full item scan, at most every `PATTERN_SCAN_INTERVAL_SECONDS`,
-`network_browser.lua` walks that list and posts the patterns in chunks, with
-the same `start` → `batch` × N → `finish` protocol as the item scan
-(`/api/network/patterns/...`). Running after the item scan rather than
-alongside it keeps the two from holding memory at the same time. A failed
-pattern scan is only logged, and is tried again after the next item scan.
-
-What it reports, found with `oc/pattern_dump.lua` on a real network:
-
-- Processing patterns have real sizes.
-- Crafting-table patterns report every size as 0. AE2's converter reads its
-  own `Cnt` field, and crafting patterns store a vanilla `Count`. The script
-  sends every pattern's NBT, and the server reads those counts from it the
-  way AE2 does (`Count`, else `Cnt`), along with the `substitute` and
-  `beSubstitute` settings the plan needs (OpenComputers reports neither).
-  Without `allowItemStackNBTTags` there's no NBT: inputs are still counted
-  (one per grid slot), but outputs have no count, the pattern is marked
-  inexact, and no pattern takes substitutes.
-- Fluids come either as fluid entries or, in older patterns, as ae2fc
-  `fluid_drop` items whose NBT names the fluid. The server turns both into
-  fluids. Thaumic essentia comes as an amount with no item ID.
-
-The craft dialog's plan is worked out from these patterns
-(`GET /api/network/plan`, `gcm/planner.py`).
-
-The server keeps the last complete scan, saved across restarts, and serves it
-to signed-in users at `GET /api/network/patterns` (it includes each machine's
-coordinates). Items are keyed like the Network tab's, NBT variants included.
-
-### Fluid items
-
-Fluid pseudo-items report `name` as a bare Forge fluid registry name with no
-colon, e.g. `molten.mutatedlivingsolder`. They aren't registered items, so
-their icons come from the exported fluids (`fluids_by_key`), not the items.
-
-### Reading EU
-
-`power_monitor.lua` uses `getEUStored()` and `getEUMaxStored()` on the
-`gt_machine` component. Older builds overflowed above 2³² EU
-(GTNewHorizons/GT-New-Horizons-Modpack#8619, fixed in
-GTNewHorizons/OpenComputers#78). If the numeric call fails or reports more
-stored than the capacity, the script falls back to parsing
-`getSensorInformation()`.
-
-## Development
-
-Run a local server with a fake game feeding it (Python with
-`server/requirements.txt` installed):
+### The Network tab is empty
+
+No GTNH version is picked yet: an admin picks one under **Settings (⚙) →
+Game data** (see [Game data](docs/server.md#game-data)). The scanner fetches
+the item list on its next scan.
+
+### Something is late or stopped
+
+Admins can see every feed from the game, and every in-game computer, under
+**Settings (⚙) → Status** (see [Server status](docs/using.md#server-status)).
+Then, in game:
+
+- `rc craft_monitor status` (or `power_monitor`, `network_browser`) says
+  whether a script is running.
+- `network_browser.lua` logs errors and its memory use to
+  `network_browser_debug.log` in the directory it runs from.
+- To see what `craft_monitor.lua` reads, set
+  `craft_monitor = { DEBUG_DUMP = true }` in `/home/config.lua` and reboot
+  (see [Script settings](docs/in-game.md#craft_monitorlua)).
+- Components that go missing, and a shell full of the scripts' crashes,
+  usually mean the computer reaches its Adapters through AE2's OpenComputers
+  P2P tunnels. Use OpenComputers cable or an MFU instead (see
+  [Connecting the Adapter](docs/in-game.md#connecting-the-adapter)).
+
+### Lost access token
+
+Another admin can issue a new one under **Manage users**. If no admin can
+sign in, issue one from the server; it revokes the user's existing tokens
+and prints the new one:
 
 ```bash
-cd server
-python dev.py --open
+docker compose exec gtnh-craft-monitor python app.py new-token "Your name"
 ```
 
-It prints an admin access token to sign in with, and serves
-http://127.0.0.1:8421/ from a temporary data directory (deleted on exit;
-`--data-dir PATH` keeps one between runs). There are fake crafting CPUs
-whose jobs progress, finish and restart, network scans, power readings,
-a week of history for the charts, and an icon for every fake item. Craft
-and cancel requests from the page are answered the way the in-game
-scripts would. `--host 0.0.0.0` makes it reachable from a phone on the
-same network; `--no-icons` runs without game data. It never touches
-`server/data/`.
+## Documentation
 
-### Tests
-
-CI runs all of these on every push and pull request; run all of them before
-pushing:
-
-```bash
-cd server && python -m pytest -q                        # server + dev.py
-node --test 'server/tests/js/*.test.js'                 # from the repo root
-node server/tests/e2e/run.mjs                           # browser, needs Chromium
-for f in server/static/js/*.js; do node --check "$f"; done
-lua5.3 oc/tests/run.lua                                 # from the repo root
-```
-
-- **Server** (`pip install -r server/tests/requirements-test.txt`): Flask's
-  test client on a temporary data directory, so no running server or Docker
-  and never `server/data/`. `test_oc_scripts.py` also runs the real
-  `oc/*.lua` scripts against the app, so a payload change on either side
-  shows up there; it needs a Lua interpreter (`OC_LUA=/path/to/lua` if it
-  isn't found) and is skipped without one.
-- **Frontend** (Node 24 or newer, no dependencies): the page's pure
-  functions, such as search, amounts and formatting.
-- **Browser** (Python with `server/requirements.txt`, Node 24+, Chrome or
-  Chromium; set `CHROME=/path/to/binary` if it isn't found): starts the real
-  server on seeded data and clicks through the page.
-- **OC scripts** (any Lua 5.3+; OpenComputers uses 5.3): `oc/tests/harness/`
-  runs the real scripts on a fake OpenOS computer with a virtual clock, a fake
-  ME network and a fake GT machine, against scripted HTTP.
-  `lua5.3 oc/tests/run.lua craft` runs only tests whose name contains
-  `craft`, and `OC_HARNESS_ECHO=1` shows what the scripts print. The fakes
-  follow the AE2 and GT APIs as described in [Technical notes](#technical-notes),
-  so they can't catch the real API differing from those.
-
-CI (`.github/workflows/ci.yml`) also checks `oc/*.lua` with `luac5.3 -p`,
-checks that every file `oc/manifest.lua` lists exists, tests the icon export
-tools and builds the Docker image. Pushing a `v*` tag publishes the image to
-GHCR (`.github/workflows/publish.yml`).
+- [Server setup](docs/server.md) — Docker, configuration, HTTPS, accounts,
+  backups, game data
+- [In-game setup](docs/in-game.md) — requirements, installing and updating
+  the scripts, their settings
+- [Using the web page](docs/using.md) — every tab, search syntax, crafting,
+  stock rules, notifications, webhooks
+- [How it works](docs/how-it-works.md) — what the scripts read from AE2 and
+  GregTech, and why
+- [Icon export](tools/icon-export/README.md) — building game data for
+  another pack
+- [Contributing](CONTRIBUTING.md) — running it locally and the tests
 
 ## License
 
@@ -1257,5 +183,7 @@ this project's license. Thanks to all of them. See the
 [data repo's notice](https://github.com/Maselkov/gtnh-craft-monitor-data#notice)
 for the rest of the published game data.
 
-The headless client launch in `tools/icon-export/` follows
+The network scan's approach comes from
+[oc-influxdb-exporter](https://gitlab.com/uncountablyinfinite1056/oc-influxdb-exporter),
+and the icon export's headless client launch follows
 [gtnh-factory-flow](https://github.com/jackwrichards/gtnh-factory-flow) (MIT).

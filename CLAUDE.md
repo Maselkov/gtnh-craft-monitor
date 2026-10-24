@@ -4,6 +4,12 @@ OpenComputers Lua scripts in `oc/` post to a Flask server in `server/`,
 which serves one page (`server/index.html` + `server/static/`, plain ES
 modules, no build step).
 
+User docs: `README.md` is the front page, the guides are in `docs/`
+(`server.md`, `in-game.md`, `using.md`, `how-it-works.md`); a user-visible
+change updates the guide that describes it. `docs/CONTEXT.md` holds design
+notes. `CONTRIBUTING.md` repeats the check list below for humans; keep the
+two in sync.
+
 ## Seeing a change
 
 `cd server && python dev.py` runs the real app with a fake game feeding it
