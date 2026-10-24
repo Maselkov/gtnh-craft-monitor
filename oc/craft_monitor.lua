@@ -64,7 +64,6 @@
 
 local component = require("component")
 local computer = require("computer")
-local event = require("event")
 local serialization = require("serialization")
 local term = require("term")
 local thread = require("thread")
@@ -560,7 +559,7 @@ local function run_craft_request_loop(me)
   while running do
     -- Pick up any new pending requests.
     do
-      local pendingResp, err = craft_get_json("/requests/pending")
+      local pendingResp = craft_get_json("/requests/pending")
       if pendingResp and pendingResp.requests then
         for _, reqData in ipairs(pendingResp.requests) do
           if not tracked[reqData.id] then

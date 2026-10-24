@@ -246,7 +246,7 @@ test("watched essentia without Thaumic Energistics isn't claimed as checked", fu
 end)
 
 test("a watched item that's gone is reported as not found", function()
-  local env, me = setup({ routes = { ["GET /api/network/watch"] = IRON_WATCH } })
+  local env = setup({ routes = { ["GET /api/network/watch"] = IRON_WATCH } })
   env:start_service("network_browser")
   env:run({ seconds = 70 })
   t.eq(levels(env)[1].items, {})
