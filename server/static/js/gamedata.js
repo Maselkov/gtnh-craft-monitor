@@ -3,6 +3,7 @@
 // rendered with (server/gcm/gamedata.py).
 
 import { AUTH_USER, closeSettingsMenu } from './auth.js';
+import { fetchNetwork } from './network.js';
 import { delegateActions, escapeHtml, onBackdropClick } from './util.js';
 
 let pollTimer = null;
@@ -187,7 +188,7 @@ async function installGameData() {
   }
 }
 
-async function openGameDataModal() {
+export async function openGameDataModal() {
   if (!AUTH_USER || AUTH_USER.role !== 'admin') return;
   document.getElementById('gamedataModal').style.display = 'flex';
   await loadGameData(false);
@@ -196,6 +197,7 @@ async function openGameDataModal() {
 export function closeGameDataModal() {
   document.getElementById('gamedataModal').style.display = 'none';
   stopPolling();
+  fetchNetwork();  // the Network tab's "no GTNH version" note
 }
 
 export function setupGameDataActions() {

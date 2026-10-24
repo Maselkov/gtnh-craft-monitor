@@ -143,6 +143,7 @@ def _network_etag():
         for v in (
             _PROCESS_TAG,
             icons.data_version(),
+            gamedata.selected_version(),
             state.network["updated_at"],
             state.network["in_progress"],
             state.network["scan_started_at"],
@@ -173,6 +174,9 @@ def network_get():
                     "scan_started_at": state.network["scan_started_at"],
                     "is_reconstructed": state.network["is_reconstructed"],
                     "crash": state.network["crash"],
+                    # None until an admin picks a GTNH version: the
+                    # page then says so, as nothing else would.
+                    "game_data": gamedata.selected_version(),
                 }
             )
     response.set_etag(etag)

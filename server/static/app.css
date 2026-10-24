@@ -66,6 +66,21 @@ h1 {
   color: var(--stale);
   font-weight: 600;
 }
+/* Network tab, until an admin picks a GTNH version (network.js). */
+.gamedata-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  margin-bottom: 16px;
+  border: 1px solid rgba(128,128,128,0.2);
+  border-radius: 10px;
+  font-size: 13px;
+}
+.gamedata-note[hidden] {
+  display: none;
+}
 .stale-banner {
   display: none;
   background: var(--stale);

@@ -128,6 +128,11 @@
 
   <div id="networkTab" style="display:none;">
     <div class="sub" id="networkSourceLine">Waiting for data&hellip;</div>
+    <div class="gamedata-note" id="networkGameDataNote" hidden>
+      <span>No GTNH version is picked yet, so items have no icons and the network scanner has no item list.</span>
+      <button class="range-btn" id="networkGameDataBtn" data-action="open-gamedata">Pick the GTNH version</button>
+      <span id="networkGameDataAsk">An admin can pick it under Settings &rarr; Game data.</span>
+    </div>
     <div id="craftRequestsSection"></div>
     <details class="stock-rules" id="stockRules" hidden>
       <summary id="stockRulesSummary">Stock rules</summary>

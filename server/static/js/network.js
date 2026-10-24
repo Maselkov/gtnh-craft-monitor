@@ -1,6 +1,6 @@
 // Network tab: item grid, tooltip, pins, infinite scroll.
 
-import { isOperator } from './auth.js';
+import { AUTH_USER, isOperator } from './auth.js';
 import { openCraftRequestModal } from './craft-actions.js';
 import { descriptionHtml, descriptionPlainText, formulaSearchText } from './description.js';
 import { openItemHistory, tryOpenItemFromUrl, updateItemHistoryPinButton } from './history.js';
@@ -450,11 +450,22 @@ export function tickNetworkSourceLine() {
   el.textContent = baseText + progressNote + crashNote(crash);
 }
 
+// Until an admin picks a GTNH version the Network tab stays empty, and
+// nothing else on the page says why: admins get a button to pick one.
+export function updateGameDataNote() {
+  const note = document.getElementById('networkGameDataNote');
+  note.hidden = !lastNetworkData || lastNetworkData.game_data !== null;
+  const admin = Boolean(AUTH_USER && AUTH_USER.role === 'admin');
+  document.getElementById('networkGameDataBtn').hidden = !admin;
+  document.getElementById('networkGameDataAsk').hidden = admin;
+}
+
 export async function fetchNetwork() {
   try {
     const res = await fetch('/api/network');
     const data = await res.json();
     lastNetworkData = data;
+    updateGameDataNote();
     // Its ETag makes this an empty 304 unless the items or game data changed.
     if (itemInfoWanted) fetchNetworkItemInfo();
     if (networkSort === 'change') await fetchNetworkChanges();

@@ -711,6 +711,16 @@ class TestNetworkRevalidation:
         assert res.status_code == 200
         assert res.get_json()["in_progress"] is True
 
+    def test_says_which_game_data_is_picked_and_a_change_of_it_changes_the_etag(self, client, monkeypatch):
+        from gcm import gamedata
+
+        first = client.get("/api/network")
+        assert first.get_json()["game_data"] is None
+        monkeypatch.setattr(gamedata, "selected_version", lambda: "2.9.0")
+        res = client.get("/api/network", headers={"If-None-Match": first.headers["ETag"]})
+        assert res.status_code == 200
+        assert res.get_json()["game_data"] == "2.9.0"
+
 
 class TestCrashReports:
     REPORT = {"error": "not enough memory", "phase": "Batch 30: calling getItemsInNetworkById()",
