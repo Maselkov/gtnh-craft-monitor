@@ -8,7 +8,7 @@ import pytest
 from conftest import login_as
 from gcm import agents, nbt
 from nbt_fixtures import tag_hex
-from oc_game import OcGame, find_lua
+from oc_game import OcGame, lua_string, find_lua
 
 pytestmark = pytest.mark.skipif(find_lua() is None, reason="no Lua interpreter installed")
 
@@ -292,3 +292,26 @@ def test_agent_reports_and_reboots_on_command(game, client, monkeypatch):
     assert game.lua("return env.shutdown and env.shutdown.reboot") is True
     cmd = client.get("/api/admin/agents").get_json()["computers"][0]["command"]
     assert (cmd["status"], cmd["ok"], cmd["message"]) == ("done", True, "Rebooting.")
+
+
+def test_install_checks_the_key_with_the_server(game, api_key):
+    # A fresh computer, the way "Connect a computer" sets one up; no to
+    # starting on boot and to rebooting.
+    game.lua('os.remove(env:path("/home/config.lua")); env:mkdir("/etc"); env:mkdir("/usr/bin"); env.stdin = { "n", "n" }')
+
+    def install(key):
+        game.lua(
+            'env.output = {}; local gcm = assert(loadfile(require("oc_env").OC_DIR .. "/gcm.lua", "t", env.globals));'
+            'gcm("install", "power", "--server=http://gcm.test", "--api-key=" .. %s)' % lua_string(key)
+        )
+        return game.lua('return env:read_file("/home/config.lua")')
+
+    config = install(api_key)
+    assert ("POST", "/api/agent/ping", 200) in game.requests
+    assert '"%s"' % api_key in config
+    assert game.lua('return env:printed("The server accepted the API key.")') is True
+
+    game.lua('os.remove(env:path("/home/config.lua")); env.stdin = { "n", "n" }')
+    install("not-the-key")
+    assert ("POST", "/api/agent/ping", 401) in game.requests
+    assert game.lua('return env:printed("The server refused the API key.")') is True

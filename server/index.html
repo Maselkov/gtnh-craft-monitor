@@ -358,6 +358,18 @@
         <div class="status-heading">Computers</div>
         <div id="agentsLatest" class="modal-note"></div>
         <div id="agentsList" class="agents-list"></div>
+        <div class="status-heading connect-heading">Connect a computer</div>
+        <div class="connect-computer">
+          <div class="modal-note">On an OpenComputers computer with an Internet Card, run this command: copy it and paste it into the computer with the middle mouse button or Insert.</div>
+          <label class="modal-label" for="connectServerUrl">This server's address, as the Minecraft server reaches it</label>
+          <input id="connectServerUrl" class="modal-amount-input" spellcheck="false" autocomplete="off">
+          <div id="connectLocalNote" class="agent-line agent-command failed" style="display:none;">OpenComputers blocks local addresses like this one unless the Minecraft server's config allows them: see <a href="https://github.com/Maselkov/gtnh-craft-monitor#scripts-cant-reach-the-server" target="_blank" rel="noopener">Scripts can't reach the server</a>.</div>
+          <div class="connect-command"><code id="connectCommand"></code><button class="range-btn" data-action="copy-connect">Copy</button></div>
+          <div class="agent-line">It downloads the installer, which asks which scripts to install, checks that the computer reaches this server with the API key, and saves both.</div>
+          <div class="agent-buttons">
+            <button class="range-btn" id="connectKeyBtn" data-action="toggle-connect-key">Show API key</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>

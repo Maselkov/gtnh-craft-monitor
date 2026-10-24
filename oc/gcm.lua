@@ -7,6 +7,8 @@
 --
 -- Add --ref=<tag or branch> to install or update from something other
 -- than the latest release, e.g. --ref=main to test unreleased changes.
+-- install --server=<url> --api-key=<key> skips asking for those two: the
+-- web page's Status dialog shows the whole command to paste.
 -- update --no-reboot skips the reboot question: gcm_agent.lua runs it
 -- that way for the web page's update button, and reboots itself.
 --
@@ -34,11 +36,16 @@ local function raw_url(ref, src)
   return "https://raw.githubusercontent.com/" .. REPO .. "/" .. ref .. "/oc/" .. src
 end
 
--- Opens a GET request and waits for the status line. Returns the request
--- handle on HTTP 200, or nil and an error message.
-local function open_request(url)
+-- Opens a request (a GET, or a POST if there's a body) and waits for the
+-- status line. Returns the request handle on HTTP 200, or nil, an error
+-- message and the status if there was one.
+local function open_request(url, body, headers)
   local inet = component.internet
-  local ok, handle, reason = pcall(inet.request, url, nil, { ["User-Agent"] = "gcm" })
+  local allHeaders = { ["User-Agent"] = "gcm" }
+  for k, v in pairs(headers or {}) do
+    allHeaders[k] = v
+  end
+  local ok, handle, reason = pcall(inet.request, url, body, allHeaders)
   if not ok or not handle then
     return nil, tostring(ok and reason or handle)
   end
@@ -63,7 +70,7 @@ local function open_request(url)
   until code
   if code ~= 200 then
     handle.close()
-    return nil, "HTTP " .. tostring(code)
+    return nil, "HTTP " .. tostring(code), code
   end
   return handle
 end
@@ -325,11 +332,57 @@ local function replace_once(text, old, new)
   return text:sub(1, first - 1) .. new .. text:sub(last + 1), true
 end
 
+-- Whether the URL's host is one OpenComputers' default internet
+-- blacklist refuses: loopback and the private ranges.
+local function is_local_host(url)
+  local host = url:match("^%a+://([^/:]+)") or ""
+  if host == "localhost" then
+    return true
+  end
+  local a, b = host:match("^(%d+)%.(%d+)%.%d+%.%d+$")
+  a, b = tonumber(a), tonumber(b)
+  return a == 127 or a == 10 or (a == 192 and b == 168) or (a == 172 and b >= 16 and b <= 31)
+end
+
+-- Tries the URL and key on the server now, so a mistake shows here
+-- rather than as scripts that never report. Says what went wrong.
+local function check_server(url, key)
+  print("Checking " .. url .. " ...")
+  local handle, err, code = open_request(url .. "/api/agent/ping", "{}",
+    { ["X-API-Key"] = key, ["Content-Type"] = "application/json" })
+  if handle then
+    handle.close()
+    print("The server accepted the API key.")
+    return true
+  end
+  if code == 401 then
+    print("The server refused the API key. Copy the command again from the web page:")
+    print("Settings > Status > Connect a computer.")
+  elseif code then
+    print("The server answered " .. err .. ". Is " .. url .. " the monitor's address,")
+    print("and is the monitor as new as these scripts?")
+  else
+    print("Couldn't connect: " .. err)
+    print("The request comes from the Minecraft server, so the address must work from there.")
+    local lowerErr = err:lower()
+    if is_local_host(url) or lowerErr:find("blacklist") or lowerErr:find("whitelist") then
+      print("OpenComputers blocks local addresses by default: take this one's range out of")
+      print("`blacklist` under `internet` in the Minecraft server's config/OpenComputers.cfg.")
+    end
+  end
+  print("Saving the settings anyway; fix them in the config file if they're wrong.")
+  return false
+end
+
 -- Creates config.lua from the release's template, filling in the server
--- URL and API key. An existing config.lua is never touched.
-local function write_config(ref, cfg)
+-- URL and API key (from --server and --api-key, or asked for). An
+-- existing config.lua is never touched.
+local function write_config(ref, cfg, opts)
   if filesystem.exists(cfg.dst) then
     print("Keeping existing " .. cfg.dst)
+    if opts.server or opts["api-key"] then
+      print("--server and --api-key weren't used; edit " .. cfg.dst .. " to change them.")
+    end
     return
   end
   local template, err = fetch_text(raw_url(ref, cfg.src))
@@ -337,9 +390,16 @@ local function write_config(ref, cfg)
     error("couldn't download " .. cfg.src .. ": " .. err, 0)
   end
   print()
-  print("Creating " .. cfg.dst .. ". Leave a value blank to fill it in later.")
-  local url = prompt("Server URL, e.g. https://monitor.example.com"):gsub("/+$", "")
-  local key = prompt("API key (the server's API_KEY)")
+  print("Creating " .. cfg.dst .. ".")
+  if not (opts.server and opts["api-key"]) then
+    print("Leave a value blank to fill it in later.")
+  end
+  local url = (opts.server or prompt("Server URL, e.g. https://monitor.example.com")):gsub("/+$", "")
+  local key = opts["api-key"]
+    or prompt("API key (on the web page: Settings > Status > Connect a computer)")
+  if url ~= "" and key ~= "" then
+    check_server(url, key)
+  end
   local replaced
   if url ~= "" then
     template, replaced = replace_once(template, '"https://YOUR-SERVER-HOST:8420"', string.format("%q", url))
@@ -426,7 +486,7 @@ local function cmd_install(args, opts)
   local state = { version = ref, components = all, services = services_for(manifest, all),
                   agent_set_up = previous and previous.agent_set_up }
   write_state(state)
-  write_config(ref, manifest.config)
+  write_config(ref, manifest.config, opts)
 
   print()
   if ask("Start the installed scripts automatically on every boot?", true) then
@@ -496,14 +556,18 @@ local function usage()
   print("  gcm status")
   print("Options:")
   print("  --ref=<tag or branch>   use this instead of the latest release")
+  print("  --server=<url>          (install) the monitor's address")
+  print("  --api-key=<key>         (install) the monitor's API key")
   print("  --no-reboot             (update) don't ask to reboot afterwards")
 end
 
 local function main(...)
   local args, opts = shell.parse(...)
   local command = table.remove(args, 1)
-  if opts.ref == true then
-    error("--ref needs a value, e.g. --ref=main", 0)
+  for _, name in ipairs({ "ref", "server", "api-key" }) do
+    if opts[name] == true then
+      error("--" .. name .. " needs a value, e.g. --" .. name .. "=...", 0)
+    end
   end
   if command == "install" then
     cmd_install(args, opts)

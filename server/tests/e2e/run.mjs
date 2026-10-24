@@ -1308,6 +1308,28 @@ async function main() {
       { ok: true, message: 'Updated v1.1.0 -> v1.2.0, rebooting.', version: 'v1.2.0' });
     await waitFor('result shown', `$('#agentsList').textContent.includes('Updated v1.1.0 -> v1.2.0, rebooting.')
       && !$('#agentsList').textContent.includes('update available')`);
+
+    // Connect a computer: this page's address, the key masked until shown.
+    const install = '/tmp/gcm.lua install --server=';
+    await waitFor('connect command', `$('#connectServerUrl').value === location.origin
+      && $('#connectCommand').textContent.startsWith('wget -f ')
+      && $('#connectCommand').textContent.endsWith('/oc/gcm.lua /tmp/gcm.lua && ${install}' + location.origin + ' --api-key=' + '•'.repeat(12))
+      && visible($('#connectLocalNote'))`);
+    await click(`$('#connectKeyBtn')`);
+    await waitFor('key shown', `$('#connectCommand').textContent.endsWith('--api-key=${API_KEY}')`);
+    await evaluate(`typeInto('#connectServerUrl', 'https://gtnh.example.com/'), true`);
+    await waitFor('address followed', `$('#connectCommand').textContent.includes('${install}https://gtnh.example.com --api-key=')
+      && !visible($('#connectLocalNote'))`);
+    await click(`$('#connectKeyBtn')`);
+    // Copies the key in full though it's masked again.
+    await cdp.send('Browser.grantPermissions', { origin: base, permissions: ['clipboardReadWrite', 'clipboardSanitizedWrite'] });
+    await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
+    await click(`$('[data-action="copy-connect"]')`);
+    await waitFor('copied', `$('#toastContainer').textContent.includes('Copied. Paste it into the computer')`);
+    const copied = await evaluate(`navigator.clipboard.readText()`);
+    if (!copied.startsWith('wget -f ') || !copied.endsWith(` && ${install}https://gtnh.example.com --api-key=${API_KEY}`)) {
+      throw new Error(`copied: ${copied}`);
+    }
     await evaluate(`pressKey('Escape'), true`);
     await waitFor('closed', `!visible($('#agentsModal'))`);
   });

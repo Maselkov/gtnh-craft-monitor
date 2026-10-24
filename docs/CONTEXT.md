@@ -1170,6 +1170,18 @@ compromised server can trigger a real release, main, or a reboot, and
 nothing else. Separate from craft_monitor on purpose: an update must
 still work when the script it would fix has crashed.
 
+Connecting a computer: the Status dialog's "Connect a computer" builds
+one line, `wget ... gcm.lua && /tmp/gcm.lua install --server=<url>
+--api-key=<key>` (OpenOS's shell chains with `&&`; checked in game), from
+`/api/admin/connect` (the API key and `PUBLIC_URL`; the page's own origin
+without it). The key is masked on screen but copied in full - the
+clipboard API needs HTTPS or localhost, so it falls back to
+`execCommand('copy')` for a plain-HTTP LAN page. Before writing
+config.lua, `gcm install` POSTs `/api/agent/ping` with the key and says
+what went wrong (401: wrong key; no connection: the address must work
+from the Minecraft server, and a local one is in OC's default internet
+blacklist). It saves the settings either way.
+
 `is_running()` (each service, from its worker thread's status) exists
 because `running` stays true when a loop dies of an error; `start()`
 uses it too, so `rc <name> start` works again after such a crash.

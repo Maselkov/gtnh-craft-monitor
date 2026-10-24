@@ -1170,6 +1170,27 @@ h1 {
   flex-direction: column;
   gap: 10px;
 }
+.connect-heading {
+  margin-top: 16px;
+}
+.connect-command {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 8px;
+}
+.connect-computer a {
+  color: inherit;
+}
+.connect-command code {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--muted) 14%, transparent);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
 .agent-card {
   padding: 10px 12px;
   border: 1px solid rgba(128,128,128,0.2);

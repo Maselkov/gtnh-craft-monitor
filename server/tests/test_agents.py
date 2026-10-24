@@ -143,3 +143,21 @@ class TestCommands:
     def test_result_for_unknown_command(self, client, api_headers):
         res = client.post("/api/agent/commands/99/result", json={"ok": True}, headers=api_headers)
         assert res.status_code == 404
+
+
+class TestConnect:
+    def test_ping_checks_the_api_key(self, client, api_headers):
+        assert client.post("/api/agent/ping", json={}).status_code == 401
+        assert client.post("/api/agent/ping", json={}, headers={"X-API-Key": "nope"}).status_code == 401
+        assert client.post("/api/agent/ping", json={}, headers=api_headers).get_json() == {"ok": True}
+
+    def test_admins_get_the_key_and_public_url(self, client, api_key, monkeypatch):
+        from gcm import config
+
+        monkeypatch.setattr(config, "PUBLIC_URL", "https://gtnh.example.com")
+        login_as(client, "olive", role="operator")
+        assert client.get("/api/admin/connect").status_code == 403
+        login_as(client, "root", role="admin")
+        res = client.get("/api/admin/connect")
+        assert res.get_json() == {"api_key": api_key, "public_url": "https://gtnh.example.com"}
+        assert res.headers["Cache-Control"] == "no-store"

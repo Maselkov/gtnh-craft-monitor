@@ -1,9 +1,10 @@
-"""gcm_agent.lua's heartbeat and command results, and the admin
-Scripts dialog that reads them and queues commands (gcm/agents.py)."""
+"""gcm_agent.lua's heartbeat and command results, gcm install's
+connection check, and the admin Status dialog that reads them, queues
+commands (gcm/agents.py) and shows how to connect a computer."""
 
 from flask import Blueprint, g, jsonify, request
 
-from gcm import agents, auth, health
+from gcm import agents, auth, config, health
 
 bp = Blueprint("agent", __name__)
 
@@ -18,6 +19,14 @@ def agent_heartbeat():
     if not isinstance(address, str) or not 0 < len(address) <= _MAX_ADDRESS_LENGTH:
         return jsonify({"error": "missing address"}), 400
     return jsonify({"command": agents.heartbeat(address, payload)})
+
+
+@bp.route("/api/agent/ping", methods=["POST"])
+@auth.api_key_required
+def agent_ping():
+    """gcm install's check that the computer reaches this server with
+    the key it was given, before it saves them."""
+    return jsonify({"ok": True})
 
 
 @bp.route("/api/agent/commands/<int:cmd_id>/result", methods=["POST"])
@@ -37,6 +46,13 @@ def admin_agents_get():
     for computer in computers:
         computer["behind"] = agents.is_behind(computer["version"], latest)
     return jsonify({"computers": computers, "latest_release": latest, "latest_error": error})
+
+
+@bp.route("/api/admin/connect", methods=["GET"])
+@auth.admin_required
+def admin_connect_get():
+    """What the Status dialog's "Connect a computer" commands need."""
+    return jsonify({"api_key": config.API_KEY, "public_url": config.PUBLIC_URL})
 
 
 @bp.route("/api/admin/health", methods=["GET"])
