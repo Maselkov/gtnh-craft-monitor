@@ -16,11 +16,12 @@ from gcm.routes import stock as stock_routes
 
 def create_app(data_dir=None, api_key=None):
     """Points the app at its data directory, runs every startup step
-    (schema creation/migration, restart cleanup, admin bootstrap, network
+    (schema creation/migration, restart cleanup, first-run setup, network
     snapshot reload) and returns a Flask app with every route registered.
     data_dir/api_key default to the DATA_DIR/API_KEY environment
     variables."""
     config.configure(data_dir, api_key)
+    config.load_api_key()
     gamedata.activate()
     db.adopt_legacy_app_db()
     db.init_app_db()
@@ -29,7 +30,7 @@ def create_app(data_dir=None, api_key=None):
     last_craft_id, last_cancel_id = store.requests.last_ids()
     commands.craft_requests.start_after(last_craft_id)
     commands.cancel_requests.start_after(last_cancel_id)
-    auth.bootstrap_admin()
+    auth.start_setup()
     db.init_power_db()
     db.init_item_history_db()
     inventory.load_snapshot()
@@ -62,6 +63,7 @@ def reset_runtime_state():
     """Clears every piece of in-memory state back to a fresh process.
     Used by the test suite between tests."""
     state.reset()
+    auth.reset()
     commands.reset()
     agents.reset()
     charts.reset()

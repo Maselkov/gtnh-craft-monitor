@@ -13,7 +13,6 @@ import {
 import { delegateActions, escapeHtml, formatQty, onBackdropClick } from './util.js';
 
 export let AUTH_USER = null;
-let AUTH_MUST_ROTATE_BOOTSTRAP = false;
 
 // Mirrors auth.is_operator on the server: who may request or cancel crafts.
 export function isOperator() {
@@ -30,22 +29,21 @@ function updateAuthenticationControl() {
   document.getElementById('settingsWrap').style.display = AUTH_USER ? '' : 'none';
   document.getElementById('settingsUser').textContent = AUTH_USER ? `Signed in as ${AUTH_USER.display_name}` : '';
   if (!AUTH_USER) closeSettingsMenu();
-  const adminVisible = AUTH_USER && AUTH_USER.role === 'admin' && !AUTH_MUST_ROTATE_BOOTSTRAP;
+  const adminVisible = AUTH_USER && AUTH_USER.role === 'admin';
   adminButton.style.display = adminVisible ? '' : 'none';
   document.getElementById('gamedataBtn').style.display = adminVisible ? '' : 'none';
   document.getElementById('webhookTestBtn').style.display = adminVisible ? '' : 'none';
   document.getElementById('backupBtn').style.display = adminVisible ? '' : 'none';
   document.getElementById('agentsBtn').style.display = adminVisible ? '' : 'none';
-  if (AUTH_USER && !AUTH_MUST_ROTATE_BOOTSTRAP) syncPushSubscription();
+  if (AUTH_USER) syncPushSubscription();
 }
 
 export async function loadAuthentication() {
   const response = await fetch('/api/auth/session');
   const data = await response.json();
   AUTH_USER = data.authenticated ? data.user : null;
-  AUTH_MUST_ROTATE_BOOTSTRAP = Boolean(data.must_rotate_bootstrap);
   updateAuthenticationControl();
-  if (AUTH_MUST_ROTATE_BOOTSTRAP) showBootstrapRotationModal();
+  if (data.setup_required) showSetupModal();
 }
 
 // Posts a test message to every webhook the server has (WEBHOOK_URLS)
@@ -113,9 +111,7 @@ async function submitAccessToken() {
     return;
   }
   AUTH_USER = data.user;
-  AUTH_MUST_ROTATE_BOOTSTRAP = Boolean(data.must_rotate_bootstrap);
   updateAuthenticationControl();
-  if (AUTH_MUST_ROTATE_BOOTSTRAP) showBootstrapRotationModal();
   await refreshPinsAndCompletions();
   if (lastData) render(lastData);
 }
@@ -173,13 +169,20 @@ export function setupAuthControls() {
     e.preventDefault();
     submitAccessToken();
   });
+  for (const id of ['setupName', 'setupCode']) {
+    document.getElementById(id).addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') finishSetup();
+    });
+  }
   delegateActions(document, {
     'toggle-settings': () => toggleSettingsMenu(),
     'open-admin': () => { closeSettingsMenu(); openAdminUsersModal(); },
     'test-webhooks': () => { closeSettingsMenu(); testWebhooks(); },
     'download-backup': () => { closeSettingsMenu(); downloadBackup(); },
     'sign-out': () => { closeSettingsMenu(); signOut(); },
-    'rotate-bootstrap': () => rotateBootstrapToken(),
+    'finish-setup': () => finishSetup(),
+    'copy-setup-token': () => copySetupToken(),
+    'close-setup': () => closeSetup(),
     'close-admin': () => closeAdminUsersModal(),
     'create-user': () => createAdminUser(),
     'copy-token': () => copyAdminToken(),
@@ -313,40 +316,72 @@ async function copyAdminToken() {
   }
 }
 
-function showBootstrapRotationModal() {
-  document.getElementById('bootstrapRotationModal').style.display = 'flex';
-  document.getElementById('bootstrapRotationError').style.display = 'none';
-  document.getElementById('bootstrapRotationResult').style.display = 'none';
-  document.getElementById('bootstrapRotationBtn').textContent = 'Create replacement token';
-  document.getElementById('bootstrapRotationBtn').disabled = false;
+// No users yet: the server printed a setup link, /#setup=<code>, to its
+// log. The code is taken out of the address bar straight away so it
+// isn't left in the history.
+function showSetupModal() {
+  const match = /(?:^#|&)setup=([^&]+)/.exec(location.hash);
+  if (match) {
+    document.getElementById('setupCode').value = decodeURIComponent(match[1]);
+    history.replaceState(null, '', location.pathname + location.search);
+  }
+  document.getElementById('setupModal').style.display = 'flex';
+  document.getElementById('setupName').focus();
 }
 
-async function rotateBootstrapToken() {
-  const button = document.getElementById('bootstrapRotationBtn');
-  const error = document.getElementById('bootstrapRotationError');
-  if (document.getElementById('bootstrapRotationResult').style.display !== 'none') {
-    AUTH_MUST_ROTATE_BOOTSTRAP = false;
-    document.getElementById('bootstrapRotationModal').style.display = 'none';
-    updateAuthenticationControl();
-    showToast('Bootstrap token revoked. Remove it from .env and restart the service.');
+async function finishSetup() {
+  const button = document.getElementById('setupBtn');
+  const error = document.getElementById('setupError');
+  const displayName = document.getElementById('setupName').value.trim();
+  const code = document.getElementById('setupCode').value.trim();
+  if (!displayName || !code) {
+    error.textContent = 'Enter your name and the setup code.';
+    error.style.display = 'block';
     return;
   }
   button.disabled = true;
   error.style.display = 'none';
   try {
-    const response = await fetch('/api/auth/rotate-bootstrap', { method: 'POST' });
+    const response = await fetch('/api/auth/setup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, display_name: displayName }),
+    });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      error.textContent = data.error || 'Could not rotate the bootstrap token.';
+      error.textContent = data.error || 'Setup failed.';
       error.style.display = 'block';
       return;
     }
-    document.getElementById('bootstrapRotationToken').value = data.token;
-    document.getElementById('bootstrapRotationIntro').textContent = 'Copy and securely store the replacement token before continuing.';
-    document.getElementById('bootstrapRotationResult').style.display = 'block';
-    button.textContent = 'I saved the replacement token';
+    AUTH_USER = data.user;
+    document.getElementById('setupToken').value = data.token;
+    document.getElementById('setupForm').style.display = 'none';
+    document.getElementById('setupResult').style.display = 'block';
+  } catch (e) {
+    error.textContent = 'Could not reach the server.';
+    error.style.display = 'block';
   } finally {
     button.disabled = false;
+  }
+}
+
+async function closeSetup() {
+  document.getElementById('setupModal').style.display = 'none';
+  document.getElementById('setupToken').value = '';
+  updateAuthenticationControl();
+  showToast('Next: pick your GTNH version under Settings → Game data.');
+  await refreshPinsAndCompletions();
+  if (lastData) render(lastData);
+}
+
+async function copySetupToken() {
+  const field = document.getElementById('setupToken');
+  try {
+    await navigator.clipboard.writeText(field.value);
+    showToast('Access token copied.');
+  } catch (e) {
+    field.focus();
+    field.select();
   }
 }
 
@@ -372,7 +407,6 @@ async function signOut() {
   await dropPushSubscription();
   await fetch('/api/auth/logout', { method: 'POST' });
   AUTH_USER = null;
-  AUTH_MUST_ROTATE_BOOTSTRAP = false;
   clearPins();
   updateAuthenticationControl();
   if (lastData) render(lastData);

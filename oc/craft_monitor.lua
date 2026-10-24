@@ -38,10 +38,11 @@
   REQUIREMENTS (in-game):
     - Adapter block touching your ME Controller (or an ME Interface).
     - Internet Card in the computer.
-    - Server config allowInternet must be true, and if there's a
-      whitelist/blacklist for hosts/ports in OpenComputers.cfg, your
-      server's host must be allowed. This is a server-admin setting,
-      not something fixable from Lua.
+    - enableHttp and enableHttpHeaders on in the Minecraft server's
+      OpenComputers.cfg, and your monitor's host not in its internet
+      blacklist (which has every local address by default) or left out
+      of a non-empty whitelist. This is a server-admin setting, not
+      something fixable from Lua.
 
   SETUP:
     1. Edit the CONFIG block below (URL, API_KEY, interval).

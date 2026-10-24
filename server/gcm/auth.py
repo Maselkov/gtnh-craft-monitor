@@ -1,5 +1,5 @@
 """Authentication: the Lua-side API key, the signed-in user and their
-role, first-run admin bootstrap, and the route decorators that enforce
+role, the first-run setup code, and the route decorators that enforce
 them. Tokens and sessions are stored by gcm/store/users.py.
 
 Every route declares its policy with exactly one decorator below
@@ -17,7 +17,7 @@ anonymous request with 401 before the role check's 403."""
 
 import functools
 import hmac
-import os
+import secrets
 
 from flask import g, jsonify, request
 
@@ -52,28 +52,42 @@ def is_operator(user):
     return user is not None and user["role"] in ("operator", "admin")
 
 
-def bootstrap_admin():
-    token = os.environ.get("GCM_BOOTSTRAP_ADMIN_TOKEN", "").strip()
-    if not token:
-        return
-    parsed = store.users.parse_access_token(token)
-    if not parsed:
-        raise RuntimeError(
-            "GCM_BOOTSTRAP_ADMIN_TOKEN must use the gcm_<token-id>_<secret> format"
-        )
-    token_id, secret = parsed
-    store.users.bootstrap_admin(
-        token_id, secret, os.environ.get("GCM_BOOTSTRAP_ADMIN_NAME", "Administrator")
-    )
+# First-run setup (no users yet): a one-time code, printed at startup,
+# that lets whoever opens the setup link create the first admin. Only
+# kept in memory, so each restart prints a new one.
+_setup_code = None
 
 
-def require_initial_admin():
-    if store.users.count():
-        return
-    raise RuntimeError(
-        "No users exist. Create .env from .env.example, set "
-        "GCM_BOOTSTRAP_ADMIN_TOKEN, then restart the server."
-    )
+def start_setup():
+    global _setup_code
+    _setup_code = None if store.users.count() else secrets.token_urlsafe(24)
+
+
+def reset():
+    global _setup_code
+    _setup_code = None
+
+
+def setup_code():
+    """The current setup code, or None once a user exists - made here or
+    with `app.py create-admin` while the server runs."""
+    global _setup_code
+    if _setup_code and store.users.count():
+        _setup_code = None
+    return _setup_code
+
+
+def finish_setup(code, display_name):
+    """Creates the first admin if `code` is the setup code. Returns
+    (user, token, session_token), or None for a wrong code or once any
+    user exists."""
+    global _setup_code
+    expected = setup_code()
+    if not expected or not hmac.compare_digest(code.encode(), expected.encode()):
+        return None
+    created = store.users.create_first_admin(display_name, config.SESSION_LIFETIME_SECONDS)
+    _setup_code = None
+    return created
 
 
 def _policy(name, check=None):

@@ -31,13 +31,12 @@ def parse_access_token(token):
     return token_id, secret
 
 
-def create_access_token(conn, user_id, is_bootstrap=False):
+def create_access_token(conn, user_id):
     token_id = f"tok-{secrets.token_hex(12)}"
     secret = secrets.token_urlsafe(32)
     conn.execute(
-        "INSERT INTO access_tokens "
-        "(id, user_id, secret_hash, created_at, is_bootstrap) VALUES (?, ?, ?, ?, ?)",
-        (token_id, user_id, hash_secret(secret), time.time(), int(is_bootstrap)),
+        "INSERT INTO access_tokens (id, user_id, secret_hash, created_at) VALUES (?, ?, ?, ?)",
+        (token_id, user_id, hash_secret(secret), time.time()),
     )
     return f"gcm_{token_id}_{secret}"
 
@@ -48,8 +47,7 @@ def find_access_token(conn, token):
         return None
     token_id, secret = parsed
     row = conn.execute(
-        "SELECT id, user_id, secret_hash, revoked_at, is_bootstrap "
-        "FROM access_tokens WHERE id = ?",
+        "SELECT id, user_id, secret_hash, revoked_at FROM access_tokens WHERE id = ?",
         (token_id,),
     ).fetchone()
     if (
@@ -58,7 +56,7 @@ def find_access_token(conn, token):
         or not hmac.compare_digest(row[2], hash_secret(secret))
     ):
         return None
-    return {"id": row[0], "user_id": row[1], "is_bootstrap": bool(row[4])}
+    return {"id": row[0], "user_id": row[1]}
 
 
 def create_session(conn, access_token, lifetime_seconds):
@@ -66,14 +64,13 @@ def create_session(conn, access_token, lifetime_seconds):
     now = time.time()
     conn.execute(
         "INSERT INTO sessions "
-        "(id, user_id, token_hash, access_token_id, must_rotate_bootstrap, created_at, expires_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "(id, user_id, token_hash, access_token_id, created_at, expires_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
         (
             f"ses_{uuid.uuid4().hex}",
             access_token["user_id"],
             hash_secret(session_token),
             access_token["id"],
-            int(access_token["is_bootstrap"]),
             now,
             now + lifetime_seconds,
         ),
@@ -96,8 +93,8 @@ def prune_sessions():
 
 def sign_in(token, session_lifetime_seconds):
     """Checks an access token and starts a session for its user.
-    Returns (user, session_token, must_rotate_bootstrap), or None for a
-    bad token or a disabled user."""
+    Returns (user, session_token), or None for a bad token or a disabled
+    user."""
     with db.transaction(db.app_db) as conn:
         access_token = find_access_token(conn, token)
         if not access_token:
@@ -115,7 +112,7 @@ def sign_in(token, session_lifetime_seconds):
         _prune_sessions(conn)
         session_token = create_session(conn, access_token, session_lifetime_seconds)
     user = {"id": row[0], "display_name": row[1], "role": row[2]}
-    return user, session_token, access_token["is_bootstrap"]
+    return user, session_token
 
 
 def session_user(session_token):
@@ -124,7 +121,7 @@ def session_user(session_token):
     with db.transaction(db.app_db) as conn:
         row = conn.execute(
             "SELECT users.id, users.display_name, users.role, sessions.id, "
-            "sessions.access_token_id, sessions.must_rotate_bootstrap FROM sessions "
+            "sessions.access_token_id FROM sessions "
             "JOIN users ON users.id = sessions.user_id "
             "WHERE sessions.token_hash = ? AND sessions.revoked_at IS NULL "
             "AND sessions.expires_at > ? AND users.disabled_at IS NULL",
@@ -138,7 +135,6 @@ def session_user(session_token):
         "role": row[2],
         "session_id": row[3],
         "access_token_id": row[4],
-        "must_rotate_bootstrap": bool(row[5]),
     }
 
 
@@ -148,29 +144,6 @@ def sign_out(session_token):
             "UPDATE sessions SET revoked_at = ? WHERE token_hash = ?",
             (time.time(), hash_secret(session_token)),
         )
-
-
-def rotate_bootstrap_token(user):
-    """Replaces the bootstrap token `user` (a session_user() result)
-    signed in with: revokes it and every other session made from it,
-    and moves this session onto the new token. Returns the new token."""
-    with db.transaction(db.app_db) as conn:
-        replacement_token = create_access_token(conn, user["id"])
-        replacement_token_id, _ = parse_access_token(replacement_token)
-        now = time.time()
-        conn.execute(
-            "UPDATE access_tokens SET revoked_at = ? WHERE id = ? AND is_bootstrap = 1",
-            (now, user["access_token_id"]),
-        )
-        conn.execute(
-            "UPDATE sessions SET revoked_at = ? WHERE access_token_id = ? AND id != ?",
-            (now, user["access_token_id"], user["session_id"]),
-        )
-        conn.execute(
-            "UPDATE sessions SET access_token_id = ?, must_rotate_bootstrap = 0 WHERE id = ?",
-            (replacement_token_id, user["session_id"]),
-        )
-    return replacement_token
 
 
 def count():
@@ -298,37 +271,27 @@ def revoke_token(token_id):
     return True
 
 
-def bootstrap_admin(token_id, secret, display_name):
-    """First run (no users yet): creates an admin whose only token is
-    the given bootstrap token. Later runs: if that token is still a live
-    token, re-marks it as a bootstrap token and revokes its user's
-    sessions, so signing in with it again forces a rotation."""
+def create_first_admin(display_name, session_lifetime_seconds):
+    """First-run setup: creates an admin with a first access token and
+    signs them in, all in one transaction. Returns (user, token,
+    session_token), or None once any user exists."""
     with db.transaction(db.app_db) as conn:
         if conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]:
-            row = conn.execute(
-                "SELECT user_id FROM access_tokens "
-                "WHERE id = ? AND secret_hash = ? AND revoked_at IS NULL",
-                (token_id, hash_secret(secret)),
-            ).fetchone()
-            if row:
-                conn.execute(
-                    "UPDATE access_tokens SET is_bootstrap = 1 WHERE id = ?",
-                    (token_id,),
-                )
-                conn.execute(
-                    "UPDATE sessions SET revoked_at = ? "
-                    "WHERE user_id = ? AND revoked_at IS NULL",
-                    (time.time(), row[0]),
-                )
-            return
+            return None
         user_id = f"usr_{uuid.uuid4().hex}"
-        now = time.time()
         conn.execute(
             "INSERT INTO users (id, display_name, role, created_at) VALUES (?, ?, 'admin', ?)",
-            (user_id, display_name, now),
+            (user_id, display_name, time.time()),
         )
-        conn.execute(
-            "INSERT INTO access_tokens "
-            "(id, user_id, secret_hash, created_at, is_bootstrap) VALUES (?, ?, ?, ?, 1)",
-            (token_id, user_id, hash_secret(secret), now),
-        )
+        token = create_access_token(conn, user_id)
+        session_token = create_session(conn, find_access_token(conn, token), session_lifetime_seconds)
+    return {"id": user_id, "display_name": display_name, "role": "admin"}, token, session_token
+
+
+def live_bootstrap_tokens():
+    """How many unrevoked tokens are still the first admin token that an
+    older version took from GCM_BOOTSTRAP_ADMIN_TOKEN and never rotated."""
+    with db.transaction(db.app_db) as conn:
+        return conn.execute(
+            "SELECT COUNT(*) FROM access_tokens WHERE is_bootstrap = 1 AND revoked_at IS NULL"
+        ).fetchone()[0]

@@ -22,11 +22,7 @@ def test_access_token_resolves_stable_user_id():
     finally:
         conn.close()
 
-    assert identity == {
-        "id": identity["id"],
-        "user_id": "usr_alice",
-        "is_bootstrap": False,
-    }
+    assert identity == {"id": identity["id"], "user_id": "usr_alice"}
     assert identity["id"].startswith("tok-")
 
 
@@ -94,7 +90,7 @@ def test_disabling_a_user_invalidates_existing_sessions(client):
     finally:
         conn.close()
 
-    assert client.get("/api/auth/session").get_json() == {"authenticated": False}
+    assert client.get("/api/auth/session").get_json() == {"authenticated": False, "setup_required": False}
 
 
 def test_only_admins_can_list_or_create_users(client):
@@ -152,77 +148,100 @@ def test_only_admins_can_list_or_create_users(client):
     assert all("secret_hash" not in user for user in users)
 
 
-def test_initial_admin_is_required_for_direct_server_startup():
-    with pytest.raises(RuntimeError, match="No users exist"):
-        auth.require_initial_admin()
+def test_setup_code_exists_only_while_there_are_no_users(client):
+    auth.start_setup()
+    assert auth.setup_code()
+    assert client.get("/api/auth/session").get_json() == {
+        "authenticated": False,
+        "setup_required": True,
+    }
+
+    store.users.create("Admin", "admin")
+    assert auth.setup_code() is None
+    auth.start_setup()
+    assert auth.setup_code() is None
 
 
-def test_bootstrap_token_must_be_rotated_before_admin_actions(client, flask_app):
-    conn = db.app_db()
-    try:
-        conn.execute(
-            "INSERT INTO users (id, display_name, role, created_at) "
-            "VALUES (?, ?, ?, ?)",
-            ("usr_admin", "Admin", "admin", time.time()),
-        )
-        bootstrap_token = store.users.create_access_token(
-            conn, "usr_admin", is_bootstrap=True
-        )
-        conn.commit()
-    finally:
-        conn.close()
+def test_setup_creates_the_first_admin_and_signs_them_in(client, flask_app):
+    auth.start_setup()
+    code = auth.setup_code()
 
-    login = client.post("/api/auth/login", json={"token": bootstrap_token})
-    assert login.get_json()["must_rotate_bootstrap"] is True
-    assert client.get("/api/admin/users").status_code == 403
+    wrong = client.post("/api/auth/setup", json={"code": "nope", "display_name": "Ann"})
+    assert wrong.status_code == 403
+    assert store.users.count() == 0
+    assert client.post("/api/auth/setup", json={"code": code}).status_code == 400
 
-    rotation = client.post("/api/auth/rotate-bootstrap")
-    assert rotation.status_code == 200
-    replacement_token = rotation.get_json()["token"]
-    assert replacement_token.startswith("gcm_tok-")
+    response = client.post("/api/auth/setup", json={"code": code, "display_name": " Ann "})
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["user"]["display_name"] == "Ann"
+    assert body["user"]["role"] == "admin"
+    assert response.headers["Cache-Control"] == "no-store"
+    # Signed in by the same response, as an admin.
     assert client.get("/api/admin/users").status_code == 200
+    # The token it shows signs in elsewhere.
+    other = flask_app.test_client()
+    assert other.post("/api/auth/login", json={"token": body["token"]}).status_code == 200
 
-    other_client = flask_app.test_client()
-    assert (
-        other_client.post(
-            "/api/auth/login", json={"token": bootstrap_token}
-        ).status_code
-        == 401
+    again = flask_app.test_client().post(
+        "/api/auth/setup", json={"code": code, "display_name": "Mallory"}
     )
+    assert again.status_code == 409
+    assert store.users.count() == 1
 
 
-def test_existing_bootstrap_session_is_revoked_during_startup_recognition(monkeypatch):
+def test_setup_is_closed_once_an_admin_is_made_from_the_command_line(client, capsys):
+    auth.start_setup()
+    code = auth.setup_code()
+    app_module._cli_create_admin("Admin")
+    token = capsys.readouterr().out.strip()
+
+    response = client.post("/api/auth/setup", json={"code": code, "display_name": "Ann"})
+    assert response.status_code == 409
+    assert client.post("/api/auth/login", json={"token": token}).status_code == 200
+    with pytest.raises(SystemExit):
+        app_module._cli_create_admin("Admin")
+
+
+def test_startup_logs_the_setup_link_or_an_unrotated_bootstrap_token(caplog):
+    import logging
+
+    log = logging.getLogger("gcm-test")
+    auth.start_setup()
+    with caplog.at_level(logging.WARNING, logger="gcm-test"):
+        app_module._log_setup_status(log)
+    assert f"/#setup={auth.setup_code()}" in caplog.text
+
+    caplog.clear()
+    user_id, _ = store.users.create("Admin", "admin")
     conn = db.app_db()
     try:
-        conn.execute(
-            "INSERT INTO users (id, display_name, role, created_at) "
-            "VALUES (?, ?, ?, ?)",
-            ("usr_admin", "Admin", "admin", time.time()),
-        )
-        bootstrap_token = store.users.create_access_token(conn, "usr_admin")
-        access_token = store.users.find_access_token(conn, bootstrap_token)
-        store.users.create_session(conn, access_token, config.SESSION_LIFETIME_SECONDS)
+        conn.execute("UPDATE access_tokens SET is_bootstrap = 1 WHERE user_id = ?", (user_id,))
         conn.commit()
     finally:
         conn.close()
+    with caplog.at_level(logging.WARNING, logger="gcm-test"):
+        app_module._log_setup_status(log)
+    assert "GCM_BOOTSTRAP_ADMIN_TOKEN" in caplog.text
 
-    monkeypatch.setenv("GCM_BOOTSTRAP_ADMIN_TOKEN", bootstrap_token)
-    auth.bootstrap_admin()
 
-    conn = db.app_db()
-    try:
-        token_row = conn.execute(
-            "SELECT is_bootstrap FROM access_tokens WHERE id = ?", (access_token["id"],)
-        ).fetchone()
-        session_row = conn.execute(
-            "SELECT revoked_at FROM sessions WHERE access_token_id = ?",
-            (access_token["id"],),
-        ).fetchone()
-    finally:
-        conn.close()
+def test_api_key_is_generated_once_when_the_environment_has_none(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr(config, "API_KEY_PATH", str(tmp_path / "data" / "api_key"))
+    monkeypatch.setattr(config, "API_KEY", "")
+    config.load_api_key()
+    generated = config.API_KEY
+    assert len(generated) == 64
+    assert (tmp_path / "data" / "api_key").stat().st_mode & 0o777 == 0o600
+    config.require_runtime_secrets()
 
-    assert token_row == (1,)
-    assert session_row[0] is not None
+    monkeypatch.setattr(config, "API_KEY", "")
+    config.load_api_key()
+    assert config.API_KEY == generated
+
+    monkeypatch.setattr(config, "API_KEY", "from-the-environment-" + "x" * 32)
+    config.load_api_key()
+    assert config.API_KEY == "from-the-environment-" + "x" * 32
 
 
 def test_default_or_short_service_key_is_rejected(monkeypatch):
@@ -348,7 +367,8 @@ def test_admin_can_revoke_a_token_and_its_sessions(client, flask_app):
     response = client.post(f"/api/admin/tokens/{operator_token_id}/revoke")
     assert response.status_code == 200
     assert operator_client.get("/api/auth/session").get_json() == {
-        "authenticated": False
+        "authenticated": False,
+        "setup_required": False,
     }
     assert (
         operator_client.post(
@@ -479,7 +499,7 @@ def test_admin_can_delete_a_user_and_their_credentials(client, flask_app):
 
     users = client.get("/api/admin/users").get_json()["users"]
     assert all(user["id"] != "usr_alice" for user in users)
-    assert alice_client.get("/api/auth/session").get_json() == {"authenticated": False}
+    assert alice_client.get("/api/auth/session").get_json() == {"authenticated": False, "setup_required": False}
     assert (
         alice_client.post("/api/auth/login", json={"token": alice_token}).status_code
         == 401
@@ -549,7 +569,7 @@ def test_admin_can_regenerate_a_users_token(client, flask_app):
     assert new_token != old_token
 
     # Old token and its session are dead...
-    assert alice_client.get("/api/auth/session").get_json() == {"authenticated": False}
+    assert alice_client.get("/api/auth/session").get_json() == {"authenticated": False, "setup_required": False}
     assert (
         alice_client.post("/api/auth/login", json={"token": old_token}).status_code
         == 401

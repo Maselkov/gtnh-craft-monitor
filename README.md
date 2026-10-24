@@ -9,13 +9,12 @@ Basically, it's web AE2 for your base.
 
 ## Quick start
 
-1. On the server, create `.env` with an API key and a first admin token
-   (see [Server setup](#quick-start-docker)), then run
-   `docker compose up -d`.
-2. Open `http://<your-host>:8420/` and sign in with the bootstrap token. The
-   page swaps it for a new admin token to keep (see
-   [User accounts](#user-accounts)). Then pick your GTNH version under
-   **Settings (⚙) → Game data**.
+1. On the server, in a clone of this repository, run `docker compose up -d`
+   (see [Server setup](#server-setup)).
+2. Run `docker compose logs gtnh-craft-monitor` and open the setup link it
+   printed, `http://<your-host>:8420/#setup=...`. Pick a name, and save the
+   access token it shows: that's how you sign in from now on. Then pick your
+   GTNH version under **Settings (⚙) → Game data**.
 3. In game, on a computer with an Internet Card and an Adapter touching the ME
    Controller, or linked to it with an MFU (see
    [Connecting the Adapter](#connecting-the-adapter)):
@@ -23,8 +22,10 @@ Basically, it's web AE2 for your base.
    wget -f https://raw.githubusercontent.com/Maselkov/gtnh-craft-monitor/main/oc/gcm.lua /tmp/gcm.lua
    /tmp/gcm.lua install
    ```
-   It asks for the server URL and the `API_KEY` from `.env`, and can start
-   the scripts on every boot.
+   It asks for the server URL and the API key, which
+   `docker compose exec gtnh-craft-monitor cat data/api_key` shows, and can
+   start the scripts on every boot. If they can't reach the server, see
+   [Scripts can't reach the server](#scripts-cant-reach-the-server).
 
 ## Features
 
@@ -88,28 +89,39 @@ never connects into the game.
 
 ### Quick start (Docker)
 
-Create the secrets file:
-
 ```bash
-printf 'API_KEY=%s\n' "$(openssl rand -hex 32)" > .env
-printf 'GCM_BOOTSTRAP_ADMIN_TOKEN=gcm_tok-%s_%s\n' \
-  "$(openssl rand -hex 12)" "$(openssl rand -hex 32)" >> .env
-printf 'GCM_BOOTSTRAP_ADMIN_NAME=Administrator\n' >> .env
-chmod 600 .env
-```
-
-Start the server:
-
-```bash
+git clone https://github.com/Maselkov/gtnh-craft-monitor.git
+cd gtnh-craft-monitor
 docker compose up -d --build
+docker compose logs gtnh-craft-monitor
 ```
 
 The page is served at `http://<your-host>:8420/`. It shows "waiting for data"
-until the in-game scripts are running. Sign in with the bootstrap token as
-described in [User accounts](#user-accounts).
+until the in-game scripts are running. Until there's a user, the log shows a
+setup link:
 
-`API_KEY` is the shared secret the in-game scripts use; `gcm install` asks
-for it later and saves it in `/home/config.lua`.
+```
+No users yet. To create the first admin, open
+
+    http://<this-host>:8420/#setup=...
+```
+
+Open it with `<this-host>` replaced by the server's address, pick a name and
+save the access token the page shows (see [User accounts](#user-accounts)).
+The link works once, and a restart prints a new one.
+
+The in-game scripts sign their reports with an API key. The first start
+generates one into `server/data/api_key`; `gcm install` asks for it and
+saves it in `/home/config.lua`. The file belongs to the container's root
+user, so show it through the container:
+
+```bash
+docker compose exec gtnh-craft-monitor cat data/api_key
+```
+
+No `.env` is needed. To change settings, copy `.env.example` to `.env` and
+set them there (see [Configuration](#configuration)), then
+`docker compose up -d` again.
 
 All persistent data (databases, game data) lives in `server/data/`, which
 `docker-compose.yml` mounts into the container, so rebuilding the image
@@ -119,34 +131,31 @@ doesn't lose history or the downloaded game data.
 
 Tagged releases are published to `ghcr.io/maselkov/gtnh-craft-monitor` for
 amd64 and arm64. [`deploy/docker-compose.yml`](deploy/docker-compose.yml)
-runs it: copy it and `.env` into a directory of their own, add a `data/`
-directory beside them, and run
-`docker compose up -d`. It runs `latest` unless `GCM_TAG` names a version;
-`deploy/gcm-deploy.sh` sets it on each release deploy.
+runs it: copy it (and a `.env`, if you have one) into a directory of its own,
+add a `data/` directory beside it, and run `docker compose up -d`. It runs
+`latest` unless `GCM_TAG` names a version; `deploy/gcm-deploy.sh` sets it on
+each release deploy.
 
 ### Without Docker
-
-Create `.env` as above, then:
 
 ```bash
 cd server
 pip install -r requirements.txt
-set -a; . ../.env; set +a
 SESSION_COOKIE_SECURE=0 python app.py
 ```
+
+With a `.env`, load it first: `set -a; . ../.env; set +a`.
 
 `SESSION_COOKIE_SECURE=0` is needed to sign in over plain HTTP; see
 [Exposing it beyond your LAN](#exposing-it-beyond-your-lan).
 
 ### Configuration
 
-Environment variables (set in `.env` for Docker):
+Environment variables (set in `.env` for Docker; all optional):
 
 | Variable | Default | Description |
 |---|---|---|
-| `API_KEY` | — (required) | Shared secret for the in-game scripts. Use 32+ characters. |
-| `GCM_BOOTSTRAP_ADMIN_TOKEN` | — | Token for the first admin; only used while no users exist. |
-| `GCM_BOOTSTRAP_ADMIN_NAME` | `Administrator` | Display name of the bootstrap admin. |
+| `API_KEY` | generated | Shared secret for the in-game scripts, 32+ characters. Unset, one is generated into `DATA_DIR/api_key` on first start. |
 | `SESSION_COOKIE_SECURE` | `1` (`0` in Compose) | Mark the session cookie HTTPS-only. |
 | `TRUSTED_PROXIES` | empty | Comma-separated IPs/CIDRs allowed to send `X-Forwarded-*` headers. |
 | `SESSION_LIFETIME_SECONDS` | `604800` (7 days) | Browser session length. |
@@ -206,13 +215,21 @@ so a token can be replaced without losing data.
 
 First sign-in:
 
-1. Enter `GCM_BOOTSTRAP_ADMIN_TOKEN` in the page's **Access token** field.
-2. The page immediately issues a replacement admin token. Copy it, confirm
-   that you saved it, and use it from now on.
+1. Open the setup link from the server's log (see
+   [Quick start](#quick-start-docker)). Opening the page without it shows the
+   same dialog; paste the code from the link there.
+2. Pick your display name. The page makes you an admin, signs you in and
+   shows your access token once. Save it (a password manager will offer to)
+   and use it to sign in from now on.
 3. **Manage users** is now available for creating accounts. Consider
    creating a second admin as a backup.
-4. Once you're signed in with the new token, remove `GCM_BOOTSTRAP_ADMIN_TOKEN`
-   from `.env` and restart the service.
+
+On a server you can't open a browser to, create the first admin from the
+command line instead. It prints the token:
+
+```bash
+docker compose exec gtnh-craft-monitor python app.py create-admin "Your name"
+```
 
 Managing users:
 
@@ -222,9 +239,6 @@ Managing users:
 - **New token** replaces a user's current token in one step.
 - **Delete** permanently removes a user with their tokens, sessions,
   pins and pending notifications. Their craft request history is kept.
-
-If the server starts with no users and no bootstrap token, it exits with a
-setup error rather than running without an administrator.
 
 If you lose a token and no admin can sign in, issue a new one from the
 server. This revokes the user's existing tokens and sessions and prints the
@@ -243,18 +257,18 @@ files from a running server can miss data. Instead, take a consistent copy
 while the server keeps running, in either of two ways:
 
 - **Settings (&#9881;) → Download backup** (admins) makes a zip of every
-  database and `vapid_private.pem`, the key that signs notifications, and
-  downloads it. It's made beside the databases first, so it needs about
-  their size in free space there; it's deleted once downloaded, or after 10
-  minutes.
+  database, `vapid_private.pem`, the key that signs notifications, and
+  `api_key`, the generated API key, and downloads it. It's made beside the
+  databases first, so it needs about their size in free space there; it's
+  deleted once downloaded, or after 10 minutes.
 - The built-in command writes the databases to a directory:
 
   ```bash
   docker compose exec gtnh-craft-monitor python app.py backup "/app/data/backup-$(date +%F)"
   ```
 
-  It doesn't include `server/data/vapid_private.pem`. That key never
-  changes, so copy it once alongside.
+  It doesn't include `server/data/vapid_private.pem` or
+  `server/data/api_key`. They never change, so copy them once alongside.
 
 To restore, stop the container, replace the `.db` file in `server/data/`
 (unzipped, if from a download), delete that file's `-wal` and `-shm` files if
@@ -397,9 +411,11 @@ also left out names only one item has.
   there is no controller.
 - For the power monitor, an Adapter touching the GregTech multiblock (any
   casing block).
-- `allowInternet` enabled in the server's `OpenComputers.cfg`, and your
-  server's host not blocked by its whitelist. If this is off, the scripts
-  can't POST, and nothing on the Lua side can fix it. The installer also
+- HTTP allowed in the Minecraft server's `OpenComputers.cfg` (`enableHttp`
+  and `enableHttpHeaders`, on by default), and your monitor's address not
+  blocked there. Local addresses are blocked by default; see
+  [Scripts can't reach the server](#scripts-cant-reach-the-server). If the
+  scripts can't POST, nothing on the Lua side can fix it. The installer also
   needs `raw.githubusercontent.com` and `api.github.com`.
 - For craft requests, GTNH 2.9.0-beta-2 or later: they use OpenComputers'
   `getCraftable()`, added in 1.12.47.
@@ -429,6 +445,27 @@ the connection through AE2's **OpenComputers P2P tunnels**: they're buggy.
 Components go missing from the computer, and the shell fills up with the
 scripts' crashes.
 
+### Scripts can't reach the server
+
+The scripts' requests come from the **Minecraft server**, not from your PC,
+so `SERVER_URL` must be an address the Minecraft server can reach. And by
+default OpenComputers refuses to connect to local addresses at all. Its
+`config/OpenComputers.cfg` has, under `internet`:
+
+```
+blacklist=[
+  "127.0.0.0/8",
+  "10.0.0.0/8",
+  "192.168.0.0/16",
+  "172.16.0.0/12"
+]
+```
+
+If the monitor runs on the same machine as Minecraft, or on your LAN, remove
+the range its address is in (or empty the list) and restart Minecraft. In
+single player, the "Minecraft server" is your own game, and the same applies.
+Also check that `enableHttp` and `enableHttpHeaders` are `true` there.
+
 ### Install
 
 `gcm` installs the scripts from the latest release and updates them later.
@@ -441,7 +478,8 @@ wget -f https://raw.githubusercontent.com/Maselkov/gtnh-craft-monitor/main/oc/gc
 ```
 
 `gcm install` asks which scripts to install, then asks for the server URL
-and API key and writes them to `/home/config.lua`. It can also enable the
+and API key (see [Quick start](#quick-start-docker), or `API_KEY` if you
+set one) and writes them to `/home/config.lua`. It can also enable the
 scripts so they start on every boot, and offers to reboot to start them.
 
 To install specific scripts without being asked, name them:
@@ -504,8 +542,8 @@ Without `gcm`, copy these files to the computer yourself (with a floppy and
 | `oc/power_monitor.lua` | `/etc/rc.d/power_monitor.lua` | Power tab |
 | `oc/network_browser.lua` | `/etc/rc.d/network_browser.lua` | Network tab |
 
-Then set `SERVER_URL` (no trailing slash) and `API_KEY` (the server's
-`API_KEY`) in `/home/config.lua`.
+Then set `SERVER_URL` (no trailing slash) and `API_KEY` (the server's API
+key; see [Quick start](#quick-start-docker)) in `/home/config.lua`.
 
 `http.lua` and `json.lua` go in `/usr/lib/` so `require()` finds them from
 any script. `config.lua` is loaded by absolute path; to keep it somewhere
@@ -968,7 +1006,7 @@ draws each threshold as a dashed line.
 - Stock rules react within `WATCH_INTERVAL_SECONDS` (1 minute by default).
   AE2 picks the CPU for each craft itself, so the idle-CPU limit is checked
   when a craft is requested, not enforced while it runs.
-- With `allowInternet` disabled on the Minecraft server, nothing works. The
+- With HTTP disabled in the Minecraft server's OpenComputers config, nothing works. The
   only alternative is an in-game display.
 
 ## Technical notes

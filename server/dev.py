@@ -37,11 +37,10 @@ import zipfile
 import zlib
 
 # A deployment's settings (a sourced .env, say) mustn't leak in: a real
-# bootstrap token, data directory or GTNH version would override the dev
-# ones, or refuse to start.
-for _name in ("API_KEY", "DATA_DIR", "GCM_BOOTSTRAP_ADMIN_TOKEN", "GCM_BOOTSTRAP_ADMIN_NAME",
-              "GTNH_VERSION", "GTNH_TEXTURES", "GAMEDATA_API_URL", "GAMEDATA_REPO",
-              "TRUSTED_PROXIES", "VAPID_SUBJECT", "STALE_AFTER_SECONDS", "SESSION_LIFETIME_SECONDS",
+# API key, data directory or GTNH version would override the dev ones,
+# or refuse to start.
+for _name in ("API_KEY", "DATA_DIR", "GTNH_VERSION", "GTNH_TEXTURES", "GAMEDATA_API_URL",
+              "GAMEDATA_REPO", "TRUSTED_PROXIES", "VAPID_SUBJECT", "STALE_AFTER_SECONDS", "SESSION_LIFETIME_SECONDS",
               "AUTOCRAFT_KEEP_IDLE_CPUS", "AUTOCRAFT_RETRY_SECONDS", "CRAFT_STALL_SECONDS",
               "WEBHOOK_URLS", "WEBHOOK_EVENTS", "PUBLIC_URL", "SCRIPTS_REPO",
               "HISTORY_HOURLY_AFTER_DAYS", "HISTORY_DAILY_AFTER_DAYS"):

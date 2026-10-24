@@ -1,7 +1,7 @@
 """Backups from the page: every database, consistently (db.backup_all()),
-and the push signing key, zipped for an admin to download. One is made at
-a time, on the data volume beside the databases, and deleted once it's
-downloaded or after BACKUP_KEEP_SECONDS."""
+the push signing key and the generated API key, zipped for an admin to
+download. One is made at a time, on the data volume beside the
+databases, and deleted once it's downloaded or after BACKUP_KEEP_SECONDS."""
 
 import glob
 import os
@@ -75,8 +75,9 @@ def prepare(now=None):
                 for copy in copies:
                     zf.write(copy, os.path.basename(copy))
                     os.remove(copy)  # free the space as it goes
-                if os.path.exists(config.VAPID_KEY_PATH):
-                    zf.write(config.VAPID_KEY_PATH, os.path.basename(config.VAPID_KEY_PATH))
+                for key_path in (config.VAPID_KEY_PATH, config.API_KEY_PATH):
+                    if os.path.exists(key_path):
+                        zf.write(key_path, os.path.basename(key_path))
         except BaseException:
             shutil.rmtree(work, ignore_errors=True)
             raise
