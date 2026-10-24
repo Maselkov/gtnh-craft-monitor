@@ -22,7 +22,12 @@ node --test 'server/tests/js/*.test.js'                 # from the repo root
 node server/tests/e2e/run.mjs                           # browser, needs Chromium
 for f in server/static/js/*.js; do node --check "$f"; done
 lua5.3 oc/tests/run.lua                                 # from the repo root
+ruff check                                              # from the repo root
+zizmor .github/workflows                                # after editing a workflow
 ```
+
+The linters' versions are in `.github/requirements-lint.txt`. Actions are
+pinned to commit SHAs with the version in a comment; Dependabot bumps both.
 
 ## Testing the OC scripts
 

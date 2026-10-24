@@ -486,12 +486,12 @@ class _Planner:
             return part, made
         below = used | {p.id}
         can = batches
-        for k, e, size in p.once:
+        for _k, e, size in p.once:
             child, got = yield (e, size, below, p.substitute)
             part["children"].append(child)
             if got < size:
                 can = 0
-        for k, e, size in p.inputs:
+        for _k, e, size in p.inputs:
             child, got = yield (e, size * batches, below, p.substitute)
             part["children"].append(child)
             can = min(can, got // size)

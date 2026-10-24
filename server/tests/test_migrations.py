@@ -77,7 +77,7 @@ def test_app_databases_are_at_their_latest_version(flask_app):
         (config.POWER_DB_PATH, db.POWER_MIGRATIONS),
         (config.ITEM_HISTORY_DB_PATH, db.ITEM_HISTORY_MIGRATIONS),
     ):
-        assert version(lambda: sqlite3.connect(path)) == len(steps), path
+        assert version(lambda path=path: sqlite3.connect(path)) == len(steps), path
 
 
 def version_2_app_db(path):
@@ -190,8 +190,8 @@ def test_backup_copies_every_database_and_never_overwrites(flask_app, tmp_path):
     written = db.backup_all(target)
 
     assert sorted(os.path.basename(p) for p in written) == ["app.db", "item_history.db", "power.db"]
-    for path, steps in zip(written, (db.APP_MIGRATIONS, db.POWER_MIGRATIONS, db.ITEM_HISTORY_MIGRATIONS)):
-        assert version(lambda: sqlite3.connect(path)) == len(steps)
+    for path, steps in zip(written, (db.APP_MIGRATIONS, db.POWER_MIGRATIONS, db.ITEM_HISTORY_MIGRATIONS), strict=True):
+        assert version(lambda path=path: sqlite3.connect(path)) == len(steps)
     copy = sqlite3.connect(written[1])
     try:
         assert copy.execute("SELECT ts, stored, capacity FROM power_readings").fetchall() == [(1, 2, 3)]

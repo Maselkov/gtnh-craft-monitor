@@ -597,7 +597,7 @@ def build_animations(out_dir):
             if len(loop) == len(ticks):
                 images = {}
 
-                def image(frame, path=path):
+                def image(frame, path=path, images=images):
                     if frame not in images:
                         images[frame] = Image.open(BytesIO(frames_zip.read(
                             f"{path}/{frame}.png"))).convert("RGBA")

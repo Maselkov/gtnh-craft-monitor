@@ -12,3 +12,7 @@ updates:
     directory: /server
     schedule:
       interval: monthly
+  - package-ecosystem: pip
+    directory: /.github
+    schedule:
+      interval: monthly
