@@ -1365,9 +1365,10 @@ async function main() {
   });
 
   step('admin: switch game data version and textures; the new icons show', async () => {
-    await click(`$('#settingsBtn')`);
-    await waitFor('menu open', `visible($('#settingsMenu'))`);
-    await click(`$('#gamedataBtn')`);
+    // With none picked, the Network tab says so, with a button for admins.
+    await click(`$('#tabBtnNetwork')`);
+    await waitFor('no game data note', `visible($('#networkGameDataNote')) && visible($('#networkGameDataBtn')) && !visible($('#networkGameDataAsk'))`);
+    await click(`$('#networkGameDataBtn')`);
     await waitFor('game data dialog', `visible($('#gamedataModal')) && $('#gamedataCurrent').textContent.includes('no game data')`);
     await waitFor('version listed', `$$('#gamedataVersion option').some((o) => o.value === '${E2E_DATA_VERSION}')`);
     await evaluate(`$('#gamedataVersion').value = '${E2E_DATA_VERSION}', true`);
@@ -1375,7 +1376,7 @@ async function main() {
     await waitFor('installed', `$('#gamedataCurrent').textContent === 'In use: GTNH ${E2E_DATA_VERSION}, Default textures'`);
     await waitFor('listed as in use', `$('#gamedataVersion').selectedOptions[0].textContent.includes('(in use)')`);
     await click(`$('#gamedataModal')`);
-    await waitFor('closed by backdrop', `!visible($('#gamedataModal'))`);
+    await waitFor('closed by backdrop, the note gone', `!visible($('#gamedataModal')) && !visible($('#networkGameDataNote'))`);
     await click(`$('#settingsBtn')`);
     await click(`$('#gamedataBtn')`);
     await waitFor('open again', `visible($('#gamedataModal'))`);
@@ -1579,6 +1580,7 @@ async function main() {
     await waitFor('token shown', `visible($('#setupResult')) && $('#setupToken').value.startsWith('gcm_')`);
     await click(`$('#setupDoneBtn')`);
     await waitFor('signed in as the new admin', `!visible($('#setupModal')) && $('#settingsUser').textContent === 'Signed in as Ann' && $('#adminBtn').style.display === ''`);
+    await waitFor('then on to picking the GTNH version', `visible($('#gamedataModal'))`);
   });
 
   let failed = 0;

@@ -9,8 +9,12 @@ Basically, it's web AE2 for your base.
 
 ## Quick start
 
-1. On the server, in a clone of this repository, run `docker compose up -d`
-   (see [Server setup](#server-setup)).
+1. On the server, in an empty directory, download the Compose file and start
+   it (see [Server setup](#server-setup)):
+   ```bash
+   curl -O https://raw.githubusercontent.com/Maselkov/gtnh-craft-monitor/main/deploy/docker-compose.yml
+   docker compose up -d
+   ```
 2. Run `docker compose logs gtnh-craft-monitor` and open the setup link it
    printed, `http://<your-host>:8420/#setup=...`. Pick a name, and save the
    access token it shows: that's how you sign in from now on. Then pick your
@@ -86,10 +90,12 @@ never connects into the game.
 
 ### Quick start (Docker)
 
+Releases are published as an image, `ghcr.io/maselkov/gtnh-craft-monitor`,
+for amd64 and arm64. In an empty directory:
+
 ```bash
-git clone https://github.com/Maselkov/gtnh-craft-monitor.git
-cd gtnh-craft-monitor
-docker compose up -d --build
+curl -O https://raw.githubusercontent.com/Maselkov/gtnh-craft-monitor/main/deploy/docker-compose.yml
+docker compose up -d
 docker compose logs gtnh-craft-monitor
 ```
 
@@ -108,7 +114,7 @@ save the access token the page shows (see [User accounts](#user-accounts)).
 The link works once, and a restart prints a new one.
 
 The in-game scripts sign their reports with an API key. The first start
-generates one into `server/data/api_key`. **Settings (⚙) → Status →
+generates one into `data/api_key`. **Settings (⚙) → Status →
 Connect a computer** puts it in the install command for you; to see it
 otherwise, show it through the container, as the file belongs to the
 container's root user:
@@ -117,22 +123,43 @@ container's root user:
 docker compose exec gtnh-craft-monitor cat data/api_key
 ```
 
-No `.env` is needed. To change settings, copy `.env.example` to `.env` and
-set them there (see [Configuration](#configuration)), then
-`docker compose up -d` again.
+No `.env` is needed. To change settings, create one beside
+`docker-compose.yml` ([`.env.example`](.env.example) lists the common
+settings; see [Configuration](#configuration)), then `docker compose up -d`
+again.
 
-All persistent data (databases, game data) lives in `server/data/`, which
-`docker-compose.yml` mounts into the container, so rebuilding the image
-doesn't lose history or the downloaded game data.
+All persistent data (databases, game data, keys) lives in `data/`, beside
+`docker-compose.yml`, which mounts it into the container. Replacing the
+container keeps it. The rest of this README calls it `data/`.
 
-### Prebuilt image
+### Updating
 
-Tagged releases are published to `ghcr.io/maselkov/gtnh-craft-monitor` for
-amd64 and arm64. [`deploy/docker-compose.yml`](deploy/docker-compose.yml)
-runs it: copy it (and a `.env`, if you have one) into a directory of its own,
-add a `data/` directory beside it, and run `docker compose up -d`. It runs
-`latest` unless `GCM_TAG` names a version; `deploy/gcm-deploy.sh` sets it on
-each release deploy.
+```bash
+docker compose pull
+docker compose up -d
+```
+
+Then update the in-game scripts to the same release: each computer's
+**Update** button under **Settings (&#9881;) → Status**, or `gcm update` in
+game. The Compose file runs the newest release (`latest`); to stay on one,
+set `GCM_TAG` in `.env` to its version, e.g. `GCM_TAG=5.0.0`.
+`deploy/gcm-deploy.sh` sets it on each release deploy.
+
+### Building from a clone
+
+To run your own changes, or unreleased ones, build the image from a clone
+instead. Its [`docker-compose.yml`](docker-compose.yml) keeps the data in
+`server/data/`.
+
+```bash
+git clone https://github.com/Maselkov/gtnh-craft-monitor.git
+cd gtnh-craft-monitor
+docker compose up -d --build
+```
+
+`main` can be ahead of the latest release, which is what `gcm` installs in
+game; check out a release tag (`git checkout v5.0.0`) to keep the two
+matched, or install the scripts with `gcm install --ref=main`.
 
 ### Without Docker
 
@@ -248,7 +275,7 @@ docker compose exec gtnh-craft-monitor python app.py new-token "Administrator"
 
 ### Backups
 
-The databases are in `server/data/` (`app.db` for accounts, pins and craft
+The databases are in `data/` (`app.db` for accounts, pins and craft
 history; `power.db`; `item_history.db`). They run in SQLite's WAL mode, so
 recent changes can sit in the `*.db-wal` files for a while: copying the `.db`
 files from a running server can miss data. Instead, take a consistent copy
@@ -265,12 +292,12 @@ while the server keeps running, in either of two ways:
   docker compose exec gtnh-craft-monitor python app.py backup "/app/data/backup-$(date +%F)"
   ```
 
-  It doesn't include `server/data/vapid_private.pem` or
-  `server/data/api_key`. They never change, so copy them once alongside.
+  It doesn't include `data/vapid_private.pem` or `data/api_key`. They
+  never change, so copy them once alongside.
 
-To restore, stop the container, replace the `.db` file in `server/data/`
+To restore, stop the container, replace the `.db` file in `data/`
 (unzipped, if from a download), delete that file's `-wal` and `-shm` files if
-present, and start it again. WAL mode needs `server/data/` on a local disk,
+present, and start it again. WAL mode needs `data/` on a local disk,
 not a network share.
 
 ### Item icons
@@ -719,7 +746,7 @@ newest first and grouped by day. Each row shows the CPU, how long the job ran,
 and an Incomplete badge if it stopped early. Click an item's name to open its
 stock history. Jobs that were already running when the server started show no
 duration, since their start wasn't seen. The list is kept permanently in
-`server/data/app.db`. The filter box above it takes the same syntax as the
+`data/app.db`. The filter box above it takes the same syntax as the
 Network tab's search, and **Incomplete** and **Auto** show only those jobs;
 both look through the whole list, not just the rows loaded so far.
 
@@ -747,7 +774,7 @@ For push, the server needs outbound HTTPS to the push services
 for Firefox, `*.push.apple.com` for Safari and iOS, `*.notify.windows.com` for
 Edge on Windows). Without it, notifications still show while the page is open.
 The server signs pushes with a key it generates on first start,
-`server/data/vapid_private.pem`. Keep it with your backups: if it's lost,
+`data/vapid_private.pem`. Keep it with your backups: if it's lost,
 every browser has to turn the switch off and on again.
 
 Browsers allow notifications only on a secure origin: `https://` or
@@ -803,7 +830,7 @@ page](#from-the-web-page)), and above them a **Server** section shows:
 
 Stored EU over time. The Hour, Day, Week, Month, and Lifetime
 ranges are downsampled on the server to at most 800 points, so long ranges
-stay fast. Readings are kept in `server/data/power.db`.
+stay fast. Readings are kept in `data/power.db`.
 
 Above the chart, an arrow shows the machine's net EU/s over the last 5
 seconds (hover it for input and output separately), and a line gives the
@@ -836,7 +863,7 @@ minute, but its data changes only when a scan finishes.
   sit side by side. The tooltip gives the amount at the start, the rate,
   and when it runs out at that rate. An item whose history starts inside
   the range is measured from its first recorded amount.
-- The last scan is saved to `server/data/item_history.db` and restored when
+- The last scan is saved to `data/item_history.db` and restored when
   the server restarts. Until the next scan completes, the page marks the data
   as restored rather than live.
 - Stock history keeps every change for 30 days. Older history keeps the last

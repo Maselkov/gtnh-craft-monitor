@@ -10,6 +10,8 @@ import {
   syncPushSubscription,
   updateNotifToggle,
 } from './crafts.js';
+import { openGameDataModal } from './gamedata.js';
+import { updateGameDataNote } from './network.js';
 import { delegateActions, escapeHtml, formatQty, onBackdropClick } from './util.js';
 
 export let AUTH_USER = null;
@@ -36,6 +38,7 @@ function updateAuthenticationControl() {
   document.getElementById('backupBtn').style.display = adminVisible ? '' : 'none';
   document.getElementById('agentsBtn').style.display = adminVisible ? '' : 'none';
   if (AUTH_USER) syncPushSubscription();
+  updateGameDataNote();
 }
 
 export async function loadAuthentication() {
@@ -365,11 +368,13 @@ async function finishSetup() {
   }
 }
 
+// Then straight on to the one other thing a new server needs: which GTNH
+// version's icons and item list to use.
 async function closeSetup() {
   document.getElementById('setupModal').style.display = 'none';
   document.getElementById('setupToken').value = '';
   updateAuthenticationControl();
-  showToast('Next: pick your GTNH version under Settings → Game data.');
+  openGameDataModal();
   await refreshPinsAndCompletions();
   if (lastData) render(lastData);
 }
