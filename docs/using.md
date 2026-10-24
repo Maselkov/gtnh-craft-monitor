@@ -150,7 +150,9 @@ minute, but its data changes only when a scan finishes.
 - Click an item to open its stock history chart. Each item has its own URL
   (`/network/item/<mod:internal:damage>`, `/network/item/@<aspect>` for
   essentia) that can be shared; link previews
-  include the current amount and a chart. Under the amount, the popup shows
+  include the current amount and a chart. Discord reuses its preview of a
+  link it has already seen for a while; to get a current one, post the
+  link with anything added (`?1`). Under the amount, the popup shows
   how fast it changed over the chosen range and, if it's falling, when it
   runs out at that rate.
 - Pin items to keep them at the top of the list.

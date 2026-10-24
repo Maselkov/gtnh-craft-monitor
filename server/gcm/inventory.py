@@ -9,7 +9,7 @@ import secrets
 import threading
 import time
 
-from gcm import icons, nbt, rates, state, store
+from gcm import charts, icons, nbt, rates, state, store
 
 log = logging.getLogger(__name__)
 
@@ -490,6 +490,18 @@ def history(mod, internal, damage, kind, range_key, variant=None):
     since = None if seconds is None else now - seconds
     rows = store.items.history(store.items.item_key(mod, internal, damage, kind, variant), since)
     return range_key, downsample_steps(rows), rates.stock_trend(rows, now)
+
+
+def day_chart_version(mod, internal, damage, kind, variant=None):
+    """charts.version() of what an item's day chart draws: it changes when
+    a change is recorded or one ages out of the day. The lead row
+    store.items.history() prepends is left out - its time is the range
+    start, which moves on every call."""
+    since = time.time() - HISTORY_RANGE_SECONDS["day"]
+    rows = store.items.history(store.items.item_key(mod, internal, damage, kind, variant), since)
+    if rows and rows[0][0] == since:
+        rows = rows[1:]
+    return charts.version(rows)
 
 
 CHANGE_RANGE_SECONDS = {"day": 86400, "week": 7 * 86400}

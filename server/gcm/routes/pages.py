@@ -111,7 +111,11 @@ def _build_og_tags(path, args):
             stored, capacity = latest[1], latest[2]
             pct = round(stored / capacity * 100, 1) if capacity else 0
             desc = f"{charts.format_qty(stored)} EU stored of {charts.format_qty(capacity)} EU ({pct}%)"
-            image = f"{base}/api/power/chart.png?range=day&machine={quote(machine, safe='')}"
+            _, rows = store.power.range_readings("day", machine)
+            image = (
+                f"{base}/api/power/chart.png?range=day&machine={quote(machine, safe='')}"
+                f"&v={charts.version(rows)}"
+            )
         else:
             desc = "No power data yet"
 
@@ -135,7 +139,8 @@ def _build_og_tags(path, args):
             q = f"mod={mod or ''}&internal={internal}&damage={damage if damage is not None else ''}&kind={kind}"
             if variant:
                 q += f"&variant={variant}"
-            image = f"{base}/api/network/history/chart.png?{q}&range=day"
+            v = inventory.day_chart_version(mod, internal, damage, kind, variant)
+            image = f"{base}/api/network/history/chart.png?{q}&range=day&v={v}"
         else:
             title = "Item"
 

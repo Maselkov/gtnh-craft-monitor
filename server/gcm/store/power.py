@@ -1,6 +1,22 @@
 """power.db: stored-energy readings from power_monitor.lua."""
 
+import time
+
 from gcm import db
+
+
+RANGE_SECONDS = {
+    "hour": 3600,
+    "day": 86400,
+    "week": 7 * 86400,
+    "month": 30 * 86400,
+    "lifetime": None,
+}
+
+
+# Cap on returned points regardless of range, so the chart stays fast
+# and the payload stays small even after months of 1-minute-ish polling.
+MAX_POINTS = 800
 
 
 def add_reading(ts, stored, capacity, trends, machine=""):
@@ -57,6 +73,16 @@ def readings(since, max_points, machine=""):
             "GROUP BY MIN(CAST((ts - ?) / ? AS INTEGER), ?) ORDER BY 1",
             params + (first, width, max_points - 1),
         ).fetchall()
+
+
+def range_readings(range_key, machine=""):
+    """(range_key, rows) of readings() for a chart range name; unknown
+    names mean "day"."""
+    if range_key not in RANGE_SECONDS:
+        range_key = "day"
+    seconds = RANGE_SECONDS[range_key]
+    since = None if seconds is None else time.time() - seconds
+    return range_key, readings(since, MAX_POINTS, machine)
 
 
 def latest(machine=""):

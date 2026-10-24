@@ -11,19 +11,6 @@ from gcm import auth, charts, rates, store
 bp = Blueprint("power", __name__)
 
 
-POWER_RANGE_SECONDS = {
-    "hour": 3600,
-    "day": 86400,
-    "week": 7 * 86400,
-    "month": 30 * 86400,
-    "lifetime": None,
-}
-
-
-# Cap on returned points regardless of range, so the chart stays fast
-# and the payload stays small even after months of 1-minute-ish polling.
-POWER_MAX_POINTS = 800
-
 MACHINE_NAME_MAX = 64
 # A posted timestamp (power_monitor.lua sends none; tests and backfills
 # do) must be about now: one from a game clock or a typo would put a
@@ -84,16 +71,6 @@ def power_post():
     return jsonify({"ok": True})
 
 
-def range_rows(range_key, machine):
-    """(range_key, rows) for a chart range name; unknown names mean
-    "day"."""
-    if range_key not in POWER_RANGE_SECONDS:
-        range_key = "day"
-    seconds = POWER_RANGE_SECONDS[range_key]
-    since = None if seconds is None else time.time() - seconds
-    return range_key, store.power.readings(since, POWER_MAX_POINTS, machine)
-
-
 def _machine_entry(name, t, latest=None):
     """A machine for the picker and the tab's fill: its name, last
     reading time and that reading's stored/capacity."""
@@ -107,11 +84,11 @@ def power_get():
     """One machine's readings (?machine=, see store.power.pick) over
     ?range=, and the list of machines."""
     machine, machines = store.power.pick(request.args.get("machine"))
-    range_key, rows = range_rows(request.args.get("range", "day"), machine)
+    range_key, rows = store.power.range_readings(request.args.get("range", "day"), machine)
     latest = store.power.latest(machine)
     now = time.time()
     trend = rates.power_trend(
-        store.power.readings(now - rates.POWER_WINDOW_SECONDS, POWER_MAX_POINTS, machine), now
+        store.power.readings(now - rates.POWER_WINDOW_SECONDS, store.power.MAX_POINTS, machine), now
     )
 
     return jsonify(
@@ -143,13 +120,13 @@ def power_chart_png():
     if rate_limited:
         return rate_limited
     machine, _ = store.power.pick(request.args.get("machine"))
-    range_key, rows = range_rows(request.args.get("range", "day"), machine)
+    range_key, rows = store.power.range_readings(request.args.get("range", "day"), machine)
     png_bytes = charts.cached_png(
         ("power", machine, range_key),
         lambda: charts.render_png(
             [(r[0], r[1]) for r in rows],
             stepped=False,
-            span_seconds=POWER_RANGE_SECONDS[range_key],
+            span_seconds=store.power.RANGE_SECONDS[range_key],
         ).getvalue(),
     )
     resp = Response(png_bytes, mimetype="image/png")
