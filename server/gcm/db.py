@@ -701,7 +701,7 @@ def backup_all(target_dir):
     if existing:
         raise RuntimeError(f"Backup target already exists: {', '.join(existing)}")
     os.makedirs(target_dir, exist_ok=True)
-    for (_, open_db), target in zip(sources, targets):
+    for (_, open_db), target in zip(sources, targets, strict=True):
         source = open_db()
         destination = sqlite3.connect(target)
         try:
