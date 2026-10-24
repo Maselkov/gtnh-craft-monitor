@@ -1,17 +1,15 @@
 """Request-level security: which proxies may set X-Forwarded-* headers,
-routes blocked until the bootstrap token is rotated, cross-origin
-checks on session writes, and browser security headers.
+cross-origin checks on session writes, and browser security headers.
 
-The first two are decided from each route's gcm.auth decorator and the
-request method, not from lists of endpoint names. NO_STORE_ENDPOINTS is
-still by name; tests/test_security_endpoints.py checks each one
-exists."""
+The cross-origin check is decided from the request method, not from
+lists of endpoint names. NO_STORE_ENDPOINTS is by name;
+tests/test_security_endpoints.py checks each one exists."""
 
 import base64
 import hashlib
 import ipaddress
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, jsonify, request
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from gcm import auth, config
@@ -43,17 +41,7 @@ def _is_trusted_proxy_address(address):
     return any(ip_address in network for network in config.TRUSTED_PROXY_NETWORKS)
 
 
-# Routes a bootstrap-token session may not use until the token is
-# rotated: every route that acts as a signed-in user, read from its
-# gcm.auth decorator so a new route is covered without being listed.
-BOOTSTRAP_BLOCKED_POLICIES = {"login", "operator", "admin"}
-
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
-
-
-def _auth_policies():
-    view = current_app.view_functions.get(request.endpoint)
-    return getattr(view, "auth_policies", ())
 
 
 # Responses that carry session or token state; never cached.
@@ -61,23 +49,13 @@ NO_STORE_ENDPOINTS = {
     "users.auth_session_get",
     "users.auth_login_post",
     "users.auth_logout_post",
-    "users.auth_rotate_bootstrap_post",
+    "users.auth_setup_post",
     "users.admin_user_post",
     "users.admin_token_revoke_post",
     "users.admin_user_history_get",
     "users.admin_user_delete",
     "users.admin_user_token_regenerate",
 }
-
-
-@bp.before_app_request
-def block_unrotated_bootstrap_sessions():
-    if not BOOTSTRAP_BLOCKED_POLICIES.intersection(_auth_policies()):
-        return None
-    user = auth.session_user()
-    if user and user["must_rotate_bootstrap"]:
-        return jsonify({"error": "rotate the bootstrap token before continuing"}), 403
-    return None
 
 
 @bp.before_app_request

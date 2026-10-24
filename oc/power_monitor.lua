@@ -37,7 +37,7 @@
       block touching the controller should work, same as any other GT
       multiblock <-> Adapter hookup).
     - Internet Card in the computer.
-    - Same allowInternet / host-allowlist requirements as craft_monitor.lua.
+    - Same OpenComputers.cfg internet requirements as craft_monitor.lua.
 
   SEVERAL MACHINES:
     Set MACHINES in config.lua's power_monitor table to a list of

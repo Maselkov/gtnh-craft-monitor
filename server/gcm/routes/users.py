@@ -1,5 +1,4 @@
-"""Sign-in/sign-out, bootstrap token rotation, and admin user/token
-management."""
+"""Sign-in/sign-out, first-run setup, and admin user/token management."""
 
 from flask import Blueprint, g, jsonify, request
 
@@ -14,14 +13,27 @@ bp = Blueprint("users", __name__)
 def auth_session_get():
     user = auth.session_user()
     if not user:
-        return jsonify({"authenticated": False})
+        return jsonify({"authenticated": False, "setup_required": auth.setup_code() is not None})
     return jsonify(
         {
             "authenticated": True,
             "user": {key: user[key] for key in ("id", "display_name", "role")},
-            "must_rotate_bootstrap": user["must_rotate_bootstrap"],
         }
     )
+
+
+def _signed_in_response(body, session_token):
+    response = jsonify(body)
+    response.set_cookie(
+        "gcm_session",
+        session_token,
+        max_age=config.SESSION_LIFETIME_SECONDS,
+        secure=config.SESSION_COOKIE_SECURE,
+        httponly=True,
+        samesite="Lax",
+        path="/",
+    )
+    return response
 
 
 @bp.route("/api/auth/login", methods=["POST"])
@@ -35,25 +47,28 @@ def auth_login_post():
     signed_in = store.users.sign_in(token.strip(), config.SESSION_LIFETIME_SECONDS)
     if not signed_in:
         return jsonify({"error": "invalid credentials"}), 401
-    user, session_token, must_rotate_bootstrap = signed_in
+    user, session_token = signed_in
+    return _signed_in_response({"authenticated": True, "user": user}, session_token)
 
-    response = jsonify(
-        {
-            "authenticated": True,
-            "user": user,
-            "must_rotate_bootstrap": must_rotate_bootstrap,
-        }
-    )
-    response.set_cookie(
-        "gcm_session",
-        session_token,
-        max_age=config.SESSION_LIFETIME_SECONDS,
-        secure=config.SESSION_COOKIE_SECURE,
-        httponly=True,
-        samesite="Lax",
-        path="/",
-    )
-    return response
+
+@bp.route("/api/auth/setup", methods=["POST"])
+@auth.custom_check
+def auth_setup_post():
+    # Checked by the setup code (gcm.auth.finish_setup), which only
+    # exists while there are no users.
+    payload = request.get_json(silent=True) or {}
+    code = payload.get("code")
+    display_name = payload.get("display_name")
+    display_name = display_name.strip() if isinstance(display_name, str) else ""
+    if auth.setup_code() is None:
+        return jsonify({"error": "setup is already done; sign in instead"}), 409
+    if not isinstance(code, str) or not display_name:
+        return jsonify({"error": "the setup code and a display name are required"}), 400
+    created = auth.finish_setup(code.strip(), display_name)
+    if not created:
+        return jsonify({"error": "wrong setup code"}), 403
+    user, token, session_token = created
+    return _signed_in_response({"authenticated": True, "user": user, "token": token}, session_token)
 
 
 @bp.route("/api/auth/logout", methods=["POST"])
@@ -65,18 +80,6 @@ def auth_logout_post():
     response = jsonify({"ok": True})
     response.delete_cookie("gcm_session", path="/")
     return response
-
-
-@bp.route("/api/auth/rotate-bootstrap", methods=["POST"])
-@auth.custom_check
-def auth_rotate_bootstrap_post():
-    # Only the admin session that signed in with the bootstrap token may
-    # rotate it - one combined check with one deliberately uninformative
-    # message, rather than admin_required's.
-    user = auth.session_user()
-    if not user or not user["must_rotate_bootstrap"] or not auth.is_admin(user):
-        return jsonify({"error": "bootstrap rotation is not available"}), 403
-    return jsonify({"token": store.users.rotate_bootstrap_token(user)})
 
 
 @bp.route("/api/admin/users", methods=["POST"])

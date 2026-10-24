@@ -6,6 +6,7 @@ monkeypatching take effect everywhere."""
 
 import ipaddress
 import os
+import secrets
 
 
 def _parse_trusted_proxies(value):
@@ -80,6 +81,7 @@ POWER_DB_PATH = None
 ITEM_HISTORY_DB_PATH = None
 APP_DB_PATH = None
 VAPID_KEY_PATH = None
+API_KEY_PATH = None
 LEGACY_CRAFT_DB_PATH = None
 
 SERVER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -88,7 +90,7 @@ SERVER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 def configure(data_dir=None, api_key=None):
     global API_KEY, DATA_DIR, GAMEDATA_DIR
     global POWER_DB_PATH, ITEM_HISTORY_DB_PATH, APP_DB_PATH, LEGACY_CRAFT_DB_PATH
-    global VAPID_KEY_PATH
+    global VAPID_KEY_PATH, API_KEY_PATH
     if api_key is not None:
         API_KEY = api_key
     DATA_DIR = data_dir or os.environ.get("DATA_DIR") or os.path.join(SERVER_DIR, "data")
@@ -97,14 +99,31 @@ def configure(data_dir=None, api_key=None):
     ITEM_HISTORY_DB_PATH = os.path.join(DATA_DIR, "item_history.db")
     APP_DB_PATH = os.path.join(DATA_DIR, "app.db")
     VAPID_KEY_PATH = os.path.join(DATA_DIR, "vapid_private.pem")
+    API_KEY_PATH = os.path.join(DATA_DIR, "api_key")
     # app.db's name before it held more than craft history; startup
     # renames it (db.adopt_legacy_app_db()).
     LEGACY_CRAFT_DB_PATH = os.path.join(DATA_DIR, "craft_history.db")
+
+
+def load_api_key():
+    """Without API_KEY in the environment, uses the key in DATA_DIR/api_key,
+    generating it on first startup - so a server runs with no .env."""
+    global API_KEY
+    if API_KEY:
+        return
+    if not os.path.exists(API_KEY_PATH):
+        os.makedirs(DATA_DIR, exist_ok=True)
+        # Created 0600: it's what lets a computer post as the game.
+        fd = os.open(API_KEY_PATH, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write(secrets.token_hex(32) + "\n")
+    with open(API_KEY_PATH, encoding="utf-8") as f:
+        API_KEY = f.read().strip()
 
 
 def require_runtime_secrets():
     if len(API_KEY) < 32 or API_KEY == "change-me":
         raise RuntimeError(
             "API_KEY must be a unique secret of at least 32 characters. "
-            "Set it in .env before starting the server."
+            "Fix it in .env, or remove it to use a generated one."
         )

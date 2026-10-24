@@ -21,7 +21,6 @@ import zlib from 'node:zlib';
 
 const SERVER_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const API_KEY = 'e2e-api-key-0123456789abcdef0123456789abcdef';
-const BOOTSTRAP_TOKEN = 'gcm_e2ebootstrap01_' + 'x'.repeat(32);
 const TIMEOUT_MS = 12000;
 
 const children = [];
@@ -59,6 +58,8 @@ function findChrome() {
 
 // ---------------------------------------------------------------- server
 
+// Resolves to { base, setupCode }: the code from the setup link a server
+// with no users prints at startup.
 async function startServer(extraEnv = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcm-e2e-data-'));
   tempDirs.push(dataDir);
@@ -69,8 +70,6 @@ async function startServer(extraEnv = {}) {
       ...process.env,
       DATA_DIR: dataDir,
       API_KEY,
-      GCM_BOOTSTRAP_ADMIN_TOKEN: BOOTSTRAP_TOKEN,
-      GCM_BOOTSTRAP_ADMIN_NAME: 'Administrator',
       SESSION_COOKIE_SECURE: '0',
       // The live crafting tree calls a step stuck after this long unmoved.
       CRAFT_STALL_SECONDS: '4',
@@ -86,7 +85,9 @@ async function startServer(extraEnv = {}) {
   const base = `http://127.0.0.1:${port}`;
   for (let i = 0; i < 100; i++) {
     try {
-      if ((await fetch(base + '/')).ok) return base;
+      if ((await fetch(base + '/')).ok) {
+        return { base, setupCode: (/\/#setup=(\S+)/.exec(log) || [])[1] };
+      }
     } catch (e) { /* not up yet */ }
     if (child.exitCode !== null) break;
     await sleep(100);
@@ -428,12 +429,20 @@ const PAGE_LIB = `
 
 async function main() {
   const github = await startFakeGitHub();
-  const base = await startServer({
+  const { base, setupCode } = await startServer({
     GAMEDATA_API_URL: github, GAMEDATA_REPO: 'e2e/repo', WEBHOOK_URLS: `${github}/webhook`,
     SCRIPTS_REPO: 'e2e/scripts',
   });
+  // The first admin, made the way the setup dialog makes it; the dialog
+  // itself is tried on a server of its own, last.
+  const setup = await fetch(base + '/api/auth/setup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code: setupCode, display_name: 'Administrator' }),
+  });
+  if (!setup.ok) throw new Error(`setup: ${setup.status} ${await setup.text()}`);
+  const adminToken = (await setup.json()).token;
   await seed(base);
-  let adminToken;  // the bootstrap replacement, created through the UI below
   const cdp = await startBrowser();
   const { errors, evaluate, waitFor } = pageHelpers(cdp);
   await cdp.send('Runtime.enable');
@@ -491,15 +500,10 @@ async function main() {
     }
   });
 
-  step('sign in with the bootstrap token and rotate it', async () => {
-    await evaluate(`typeInto('#accessTokenInput', ${JSON.stringify(BOOTSTRAP_TOKEN)})`);
+  step('sign in with the admin token', async () => {
+    await evaluate(`typeInto('#accessTokenInput', ${JSON.stringify(adminToken)})`);
     await click(`$('#authBtn')`);
-    await waitFor('rotation dialog', `visible($('#bootstrapRotationModal'))`);
-    await click(`$('#bootstrapRotationBtn')`);
-    await waitFor('replacement token', `$('#bootstrapRotationToken').value.startsWith('gcm_')`);
-    adminToken = await evaluate(`$('#bootstrapRotationToken').value`);
-    await click(`$('#bootstrapRotationBtn')`);  // "I saved the replacement token"
-    await waitFor('dialog closed, admin menu available', `!visible($('#bootstrapRotationModal')) && visible($('#settingsWrap'))`);
+    await waitFor('admin menu available', `visible($('#settingsWrap')) && !visible($('#authBtn'))`);
   });
 
   step('sign out, then sign in again with the Enter key', async () => {
@@ -1523,6 +1527,26 @@ async function main() {
     await waitFor('reloaded', `document.readyState === 'complete' && !window.byText`);
     await evaluate(PAGE_LIB);
     await waitFor('power tab', `visible($('#powerTab')) && $('#tabBtnPower').classList.contains('active')`);
+  });
+
+  // Last, as its session cookie replaces the main server's (cookies
+  // don't tell ports apart).
+  step('first-time setup through the setup link on a server with no users', async () => {
+    const fresh = await startServer();
+    if (!fresh.setupCode) throw new Error('no setup link in the server log');
+    await cdp.send('Page.navigate', { url: `${fresh.base}/#setup=${fresh.setupCode}` });
+    await waitFor('reloaded', `document.readyState === 'complete' && !window.byText`);
+    await evaluate(PAGE_LIB);
+    await waitFor('setup dialog, code filled in', `visible($('#setupModal')) && $('#setupCode').value === ${JSON.stringify(fresh.setupCode)}`);
+    await waitFor('code taken out of the address bar', `location.hash === ''`);
+    await evaluate(`typeInto('#setupName', 'Ann'), typeInto('#setupCode', 'wrong'), true`);
+    await click(`$('#setupBtn')`);
+    await waitFor('wrong code refused', `visible($('#setupError')) && $('#setupError').textContent === 'wrong setup code'`);
+    await evaluate(`typeInto('#setupCode', ${JSON.stringify(fresh.setupCode)})`);
+    await evaluate(`pressEnter('#setupCode'), true`);
+    await waitFor('token shown', `visible($('#setupResult')) && $('#setupToken').value.startsWith('gcm_')`);
+    await click(`$('#setupDoneBtn')`);
+    await waitFor('signed in as the new admin', `!visible($('#setupModal')) && $('#settingsUser').textContent === 'Signed in as Ann' && $('#adminBtn').style.display === ''`);
   });
 
   let failed = 0;

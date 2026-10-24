@@ -362,20 +362,30 @@
     </div>
   </div>
 
-  <div id="bootstrapRotationModal" class="modal-overlay" style="display:none;">
+  <div id="setupModal" class="modal-overlay" style="display:none;">
     <div class="modal-box">
       <div class="modal-header">
-        <div class="modal-item-name">Secure your admin account</div>
+        <div class="modal-item-name">First-time setup</div>
       </div>
-      <div id="bootstrapRotationIntro" class="modal-note">The first administrator token is for setup only. Create and save your replacement token before continuing.</div>
-      <div id="bootstrapRotationError" class="modal-error" style="display:none;"></div>
-      <div id="bootstrapRotationResult" style="display:none;">
-        <label class="modal-label">Replacement admin token</label>
-        <textarea id="bootstrapRotationToken" class="modal-amount-input admin-token-value" readonly></textarea>
-        <div class="modal-note">Store this token securely. It is shown only once.</div>
+      <div id="setupForm">
+        <div class="modal-note">Create the first admin account. The setup code is in the server's log (<code>docker compose logs gtnh-craft-monitor</code>); opening the link printed there fills it in.</div>
+        <label class="modal-label" for="setupName">Your name</label>
+        <input id="setupName" class="modal-amount-input" maxlength="100" placeholder="Display name" autocomplete="off">
+        <label class="modal-label" for="setupCode">Setup code</label>
+        <input id="setupCode" class="modal-amount-input" autocomplete="off" spellcheck="false">
+        <div id="setupError" class="modal-error" style="display:none;"></div>
+        <div class="modal-buttons">
+          <button class="modal-btn primary" id="setupBtn" data-action="finish-setup">Create admin account</button>
+        </div>
       </div>
-      <div class="modal-buttons">
-        <button class="modal-btn primary" id="bootstrapRotationBtn" data-action="rotate-bootstrap">Create replacement token</button>
+      <div id="setupResult" style="display:none;">
+        <div class="modal-note">You're signed in. This is your access token: use it to sign in from any browser, and save it now, in a password manager say. It is shown only once.</div>
+        <label class="modal-label" for="setupToken">Your access token</label>
+        <textarea id="setupToken" class="modal-amount-input admin-token-value" readonly></textarea>
+        <div class="modal-buttons">
+          <button class="modal-btn secondary" data-action="copy-setup-token">Copy token</button>
+          <button class="modal-btn primary" id="setupDoneBtn" data-action="close-setup">I saved my token</button>
+        </div>
       </div>
     </div>
   </div>

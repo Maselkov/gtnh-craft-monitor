@@ -101,8 +101,8 @@ gcm/config.py       every env setting + data paths (read as config.X at call tim
 gcm/db.py           SQLite connections, transaction(), schemas + migrations
 gcm/store/*.py      ALL other SQL, one module per domain: power, items,
                     crafts, requests, users
-gcm/auth.py         API key, signed-in user, roles, bootstrap, route decorators
-gcm/security.py     trusted-proxy wrapper, bootstrap/cross-origin hooks, headers
+gcm/auth.py         API key, signed-in user, roles, setup code, route decorators
+gcm/security.py     trusted-proxy wrapper, cross-origin hook, headers
 gcm/state.py        in-memory live state (crafts, network scan, CPU
                     transition tracking) + reset() - plain data, no SQL
 gcm/commands.py     craft/cancel request queues + their history rows
@@ -125,7 +125,7 @@ import `store`.
 
 Four rules keep this layout honest:
 - **Importing any `gcm` module has no side effects.** Schema creation,
-  migrations, restart cleanup, admin bootstrap and the network snapshot
+  migrations, restart cleanup, the first-run setup code and the network snapshot
   reload all run inside `create_app()`. The test suite relies on this -
   it points `create_app()` at a temp directory instead of juggling env
   vars before import.
@@ -137,12 +137,8 @@ Four rules keep this layout honest:
 - **Settings live in `config.py`, and other modules read them as
   `config.NAME` at call time**, never `from gcm.config import NAME` and
   never `os.environ` themselves - otherwise `configure()` (and tests'
-  monkeypatching) would silently not reach them. The one exception is
-  the bootstrap admin token/name, which `auth.bootstrap_admin()` reads
-  from the environment when it runs, since nothing else uses them.
-- **Security hooks never list routes by name.** The bootstrap-rotation
-  block covers every route whose auth decorator is `login_required`,
-  `operator_required` or `admin_required`, and the cross-origin check
+  monkeypatching) would silently not reach them.
+- **Security hooks never list routes by name.** The cross-origin check
   covers every non-GET request that carries a live session. A new
   route is protected without being listed; `tests/test_security_endpoints.py`
   requests every registered route to prove it. Only `NO_STORE_ENDPOINTS`

@@ -43,13 +43,18 @@ class TestBackup:
         conn.close()
         res.close()
 
-    def test_includes_the_push_key_when_there_is_one(self, client, monkeypatch, tmp_path):
+    def test_includes_the_push_and_api_keys_when_there_are_some(self, client, monkeypatch, tmp_path):
         key = tmp_path / "vapid_private.pem"
         key.write_text("-----BEGIN PRIVATE KEY-----\n")
         monkeypatch.setattr(config, "VAPID_KEY_PATH", str(key))
+        api_key = tmp_path / "api_key"
+        api_key.write_text("k" * 64 + "\n")
+        monkeypatch.setattr(config, "API_KEY_PATH", str(api_key))
         login_as(client, "root", role="admin")
         res = client.get(f"/api/admin/backup/{make(client)['id']}")
-        assert "vapid_private.pem" in zipfile.ZipFile(io.BytesIO(res.data)).namelist()
+        names = zipfile.ZipFile(io.BytesIO(res.data)).namelist()
+        assert "vapid_private.pem" in names
+        assert "api_key" in names
         res.close()
 
     def test_downloads_once_then_is_deleted(self, client):
