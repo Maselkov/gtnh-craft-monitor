@@ -55,6 +55,7 @@ NO_STORE_ENDPOINTS = {
     "users.admin_user_history_get",
     "users.admin_user_delete",
     "users.admin_user_token_regenerate",
+    "agent.admin_connect_get",
 }
 
 

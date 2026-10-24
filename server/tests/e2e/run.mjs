@@ -1298,6 +1298,25 @@ async function main() {
       { ok: true, message: 'Updated v1.1.0 -> v1.2.0, rebooting.', version: 'v1.2.0' });
     await waitFor('result shown', `$('#agentsList').textContent.includes('Updated v1.1.0 -> v1.2.0, rebooting.')
       && !$('#agentsList').textContent.includes('update available')`);
+
+    // Connect a computer: this page's address, the key masked until shown.
+    await waitFor('connect commands', `$('#connectServerUrl').value === location.origin
+      && $('#connectInstall').textContent === '/tmp/gcm.lua install --server=' + location.origin + ' --api-key=' + '•'.repeat(12)
+      && $('#connectDownload').textContent.endsWith('/oc/gcm.lua /tmp/gcm.lua')
+      && visible($('#connectLocalNote'))`);
+    await click(`$('#connectKeyBtn')`);
+    await waitFor('key shown', `$('#connectInstall').textContent.endsWith('--api-key=${API_KEY}')`);
+    await evaluate(`typeInto('#connectServerUrl', 'https://gtnh.example.com/'), true`);
+    await waitFor('address followed', `$('#connectInstall').textContent.startsWith('/tmp/gcm.lua install --server=https://gtnh.example.com --api-key=')
+      && !visible($('#connectLocalNote'))`);
+    await click(`$('#connectKeyBtn')`);
+    // Copies the key in full though it's masked again.
+    await cdp.send('Browser.grantPermissions', { origin: base, permissions: ['clipboardReadWrite', 'clipboardSanitizedWrite'] });
+    await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
+    await click(`$('[data-action="copy-connect"][data-step="install"]')`);
+    await waitFor('copied', `$('#toastContainer').textContent.includes('Copied. Paste it into the computer')`);
+    const copied = await evaluate(`navigator.clipboard.readText()`);
+    if (copied !== `/tmp/gcm.lua install --server=https://gtnh.example.com --api-key=${API_KEY}`) throw new Error(`copied: ${copied}`);
     await evaluate(`pressKey('Escape'), true`);
     await waitFor('closed', `!visible($('#agentsModal'))`);
   });

@@ -5,7 +5,8 @@ OcGame starts oc/tests/bridge.lua: a fake OpenComputers computer
 up and advance its virtual clock with Lua snippets; every HTTP request a
 script makes along the way is answered here by a Flask test client, so a
 payload goes through the real routes exactly as one from the game would.
-See bridge.lua for the wire format."""
+GitHub, where gcm.lua installs from, is answered from this checkout. See
+bridge.lua for the wire format."""
 
 import json
 import os
@@ -43,7 +44,7 @@ class OcGame:
         )
         self.lua(
             "env:write_config({ SERVER_URL = 'http://gcm.test', API_KEY = %s })"
-            % _lua_string(api_key)
+            % lua_string(api_key)
         )
 
     def lua(self, code):
@@ -74,7 +75,7 @@ class OcGame:
         self.lua("env:run({ seconds = %r })" % float(seconds))
 
     def write_file(self, path, content):
-        self.lua("env:write_file(%s, %s)" % (_lua_string(path), _lua_string(content)))
+        self.lua("env:write_file(%s, %s)" % (lua_string(path), lua_string(content)))
 
     def close(self):
         self.proc.stdin.close()
@@ -89,16 +90,31 @@ class OcGame:
     def _answer(self, meta, body):
         url = urlsplit(meta["url"])
         path = url.path + ("?" + url.query if url.query else "")
-        response = self.client.open(
-            path, method=meta["method"], data=body, headers=meta.get("headers") or {}
-        )
-        self.requests.append((meta["method"], path, response.status_code))
-        payload = response.get_data()
-        self.proc.stdin.write(b"%d %d\n" % (response.status_code, len(payload)) + payload)
+        if url.netloc in ("api.github.com", "raw.githubusercontent.com"):
+            status, payload = _github(url)
+        else:
+            response = self.client.open(
+                path, method=meta["method"], data=body, headers=meta.get("headers") or {}
+            )
+            status, payload = response.status_code, response.get_data()
+        self.requests.append((meta["method"], path, status))
+        self.proc.stdin.write(b"%d %d\n" % (status, len(payload)) + payload)
         self.proc.stdin.flush()
 
 
-def _lua_string(s):
+def _github(url):
+    """GitHub as gcm.lua sees it: one release, whose raw files are this
+    checkout's oc/."""
+    if url.netloc == "api.github.com":
+        return 200, b'[{"name":"v1.0.0"}]'
+    path = os.path.join(REPO_ROOT, "oc", url.path.split("/oc/", 1)[-1])
+    if not os.path.isfile(path):
+        return 404, b"404: Not Found"
+    with open(path, "rb") as f:
+        return 200, f.read()
+
+
+def lua_string(s):
     """s as a Lua string literal, escaping everything but plain ASCII
     letters, digits and a few safe symbols."""
     safe = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ._-:/"

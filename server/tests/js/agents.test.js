@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { renderComputer, renderHealth } from '../../static/js/agents.js';
+import { connectCommands, isLocalAddress, renderComputer, renderHealth } from '../../static/js/agents.js';
 
 const COMPUTER = {
   address: '1f3a9c20-5b1e-4d2a', version: 'v1.0.0', behind: true, offline: false,
@@ -55,4 +55,20 @@ test('server health: each feed, storage, background jobs', () => {
   assert.match(html, /hasn&#39;t run since the server started/);
   assert.match(html, /1 browser with push &middot; 2 webhooks, last post 2m 0s ago - failed: bad\.test \(refused\)/);
   assert.match(html, /Up 1d 1h &middot; game data 2\.7\.2/);
+});
+
+test('connect commands: the address without a trailing slash, odd values quoted', () => {
+  const { download, install } = connectCommands(' https://gtnh.example.com/ ', 'ab12');
+  assert.equal(download, 'wget -f https://raw.githubusercontent.com/Maselkov/gtnh-craft-monitor/main/oc/gcm.lua /tmp/gcm.lua');
+  assert.equal(install, '/tmp/gcm.lua install --server=https://gtnh.example.com --api-key=ab12');
+  assert.equal(connectCommands('http://h:8420', 'my key;x').install, '/tmp/gcm.lua install --server=http://h:8420 --api-key="my key;x"');
+});
+
+test('local addresses are the ones OpenComputers blocks by default', () => {
+  for (const url of ['http://localhost:8420', 'http://127.0.0.1:8420', 'http://10.1.2.3', 'http://192.168.1.20:8420', 'http://172.20.0.5']) {
+    assert.equal(isLocalAddress(url), true, url);
+  }
+  for (const url of ['https://gtnh.example.com', 'http://172.32.0.1', 'http://8.8.8.8', 'not a url']) {
+    assert.equal(isLocalAddress(url), false, url);
+  }
 });

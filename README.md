@@ -15,16 +15,13 @@ Basically, it's web AE2 for your base.
    printed, `http://<your-host>:8420/#setup=...`. Pick a name, and save the
    access token it shows: that's how you sign in from now on. Then pick your
    GTNH version under **Settings (⚙) → Game data**.
-3. In game, on a computer with an Internet Card and an Adapter touching the ME
+3. Open **Settings (⚙) → Status → Connect a computer**. Check the address
+   there is one the Minecraft server can reach, then paste its two commands
+   into a computer with an Internet Card and an Adapter touching the ME
    Controller, or linked to it with an MFU (see
-   [Connecting the Adapter](#connecting-the-adapter)):
-   ```
-   wget -f https://raw.githubusercontent.com/Maselkov/gtnh-craft-monitor/main/oc/gcm.lua /tmp/gcm.lua
-   /tmp/gcm.lua install
-   ```
-   It asks for the server URL and the API key, which
-   `docker compose exec gtnh-craft-monitor cat data/api_key` shows, and can
-   start the scripts on every boot. If they can't reach the server, see
+   [Connecting the Adapter](#connecting-the-adapter)). The second one asks
+   which scripts to install, checks that the computer can reach the server,
+   and can start the scripts on every boot. If it can't, see
    [Scripts can't reach the server](#scripts-cant-reach-the-server).
 
 ## Features
@@ -111,9 +108,10 @@ save the access token the page shows (see [User accounts](#user-accounts)).
 The link works once, and a restart prints a new one.
 
 The in-game scripts sign their reports with an API key. The first start
-generates one into `server/data/api_key`; `gcm install` asks for it and
-saves it in `/home/config.lua`. The file belongs to the container's root
-user, so show it through the container:
+generates one into `server/data/api_key`. **Settings (⚙) → Status →
+Connect a computer** puts it in the install command for you; to see it
+otherwise, show it through the container, as the file belongs to the
+container's root user:
 
 ```bash
 docker compose exec gtnh-craft-monitor cat data/api_key
@@ -474,13 +472,20 @@ itself to `/usr/bin`, so afterwards it runs as plain `gcm`:
 
 ```
 wget -f https://raw.githubusercontent.com/Maselkov/gtnh-craft-monitor/main/oc/gcm.lua /tmp/gcm.lua
-/tmp/gcm.lua install
+/tmp/gcm.lua install --server=<url> --api-key=<key>
 ```
 
-`gcm install` asks which scripts to install, then asks for the server URL
-and API key (see [Quick start](#quick-start-docker), or `API_KEY` if you
-set one) and writes them to `/home/config.lua`. It can also enable the
-scripts so they start on every boot, and offers to reboot to start them.
+**Settings (&#9881;) → Status → Connect a computer** on the web page shows
+both commands with this server's address and API key filled in, ready to
+copy. Paste them into the computer with the middle mouse button or Insert.
+The address is the page's own unless `PUBLIC_URL` is set; change it there
+if the Minecraft server reaches the monitor some other way.
+
+`gcm install` asks which scripts to install. Then it checks that the
+computer reaches the server with the key, saying what's wrong if it
+doesn't, and writes both to `/home/config.lua`. Without `--server` and
+`--api-key` it asks for them. It can also enable the scripts so they start
+on every boot, and offers to reboot to start them.
 
 To install specific scripts without being asked, name them:
 
@@ -489,7 +494,8 @@ gcm install craft power network
 ```
 
 Run `gcm install` again later to add scripts. `/home/config.lua` is only
-written if it doesn't exist yet.
+written if it doesn't exist yet; to change the address or key later, edit
+it.
 
 The scripts are independent: they can run on one computer or on separate
 ones.

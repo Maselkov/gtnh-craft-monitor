@@ -1,7 +1,8 @@
 // Status admin dialog: how fresh each in-game feed is and how the server
 // is doing (server/gcm/health.py), then every in-game computer running
 // gcm_agent.lua, what it runs and how it's doing, with buttons to update
-// or reboot it (server/gcm/agents.py). Refreshes while open.
+// or reboot it (server/gcm/agents.py), and the commands that connect a
+// new computer. Refreshes while open.
 
 import { AUTH_USER, closeSettingsMenu } from './auth.js';
 import { showToast } from './craft-actions.js';
@@ -162,12 +163,98 @@ async function loadAgents() {
     const list = document.getElementById('agentsList');
     list.innerHTML = data.computers.length
       ? data.computers.map(c => renderComputer(c, data.latest_release)).join('')
-      : '<div class="empty">No computers yet. In game, run <code>gcm update</code> once on each computer: it installs gcm_agent, which shows the computer here.</div>';
+      : '<div class="empty">No computers yet. Connect one with the commands below. A computer installed before gcm_agent existed shows up after one <code>gcm update</code>.</div>';
     for (const bar of list.querySelectorAll('.stats-bar-fill')) {
       bar.style.width = `${Number(bar.dataset.fill)}%`;
     }
   } catch (e) {
     document.getElementById('agentsLatest').textContent = 'Could not reach the server.';
+  }
+}
+
+// "Connect a computer": the two commands that install the scripts on a
+// new computer with this server's address and API key. The key is masked
+// on screen, for streams and screenshots, but always copied in full.
+const GCM_URL = 'https://raw.githubusercontent.com/Maselkov/gtnh-craft-monitor/main/oc/gcm.lua';
+const LOCAL_HOST = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/;
+
+let connectInfo = null;
+let connectKeyShown = false;
+
+// Addresses OpenComputers' default internet blacklist refuses.
+export function isLocalAddress(url) {
+  try {
+    return LOCAL_HOST.test(new URL(url).hostname);
+  } catch (e) {
+    return false;
+  }
+}
+
+// One word for the OpenOS shell: as it is, or quoted if it has anything
+// the shell might treat specially.
+function shellWord(s) {
+  return /^[\w.:/@%+=~-]+$/.test(s) ? s : `"${s}"`;
+}
+
+export function connectCommands(serverUrl, apiKey) {
+  const url = serverUrl.trim().replace(/\/+$/, '');
+  return {
+    download: `wget -f ${GCM_URL} /tmp/gcm.lua`,
+    install: `/tmp/gcm.lua install --server=${shellWord(url)} --api-key=${shellWord(apiKey)}`,
+  };
+}
+
+function renderConnect() {
+  if (!connectInfo) return;
+  const url = document.getElementById('connectServerUrl').value;
+  const { download, install } = connectCommands(url, connectInfo.api_key);
+  document.getElementById('connectDownload').textContent = download;
+  document.getElementById('connectInstall').textContent = connectKeyShown
+    ? install : install.replace(connectInfo.api_key, '•'.repeat(12));
+  document.getElementById('connectLocalNote').style.display = isLocalAddress(url) ? '' : 'none';
+  document.getElementById('connectKeyBtn').textContent = connectKeyShown ? 'Hide API key' : 'Show API key';
+}
+
+async function loadConnect() {
+  try {
+    const res = await fetch('/api/admin/connect');
+    if (!res.ok) throw new Error(`connect: ${res.status}`);
+    connectInfo = await res.json();
+  } catch (e) {
+    document.getElementById('connectInstall').textContent = 'Could not reach the server.';
+    return;
+  }
+  const input = document.getElementById('connectServerUrl');
+  if (!input.value) input.value = connectInfo.public_url || location.origin;
+  renderConnect();
+}
+
+// navigator.clipboard only exists on HTTPS or localhost, and this page is
+// often opened over plain HTTP on a LAN; execCommand still works there.
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (e) {
+    const field = document.createElement('textarea');
+    field.value = text;
+    field.style.position = 'fixed';
+    field.style.opacity = '0';
+    document.body.appendChild(field);
+    field.select();
+    const copied = document.execCommand('copy');
+    field.remove();
+    return copied;
+  }
+}
+
+async function copyConnect(step) {
+  if (!connectInfo) return;
+  const url = document.getElementById('connectServerUrl').value;
+  if (await copyText(connectCommands(url, connectInfo.api_key)[step])) {
+    showToast('Copied. Paste it into the computer with the middle mouse button or Insert.');
+  } else {
+    showToast('Could not copy: show the API key and copy the command by hand.', true);
   }
 }
 
@@ -194,12 +281,14 @@ function openAgentsModal() {
   document.getElementById('agentsModal').style.display = 'flex';
   loadHealth();
   loadAgents();
+  loadConnect();
   clearInterval(refreshTimer);
   refreshTimer = setInterval(() => { loadHealth(); loadAgents(); }, REFRESH_MS);
 }
 
 export function closeAgentsModal() {
   document.getElementById('agentsModal').style.display = 'none';
+  connectKeyShown = false;
   clearInterval(refreshTimer);
   refreshTimer = null;
 }
@@ -209,6 +298,9 @@ export function setupAgentsActions() {
     'open-agents': () => { closeSettingsMenu(); openAgentsModal(); },
     'close-agents': () => closeAgentsModal(),
     'agent-command': (el) => sendCommand(el),
+    'copy-connect': (el) => copyConnect(el.dataset.step),
+    'toggle-connect-key': () => { connectKeyShown = !connectKeyShown; renderConnect(); },
   });
+  document.getElementById('connectServerUrl').addEventListener('input', renderConnect);
   onBackdropClick('agentsModal', closeAgentsModal);
 }
