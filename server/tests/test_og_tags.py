@@ -1,5 +1,12 @@
+import re
 import time
 import urllib.parse
+
+from gcm import store
+
+
+def image_version(html):
+    return re.search(r'og:image" content="[^"]*&amp;v=(\w+)"', html).group(1)
 
 
 def run_scan(client, api_headers, items):
@@ -58,6 +65,15 @@ class TestPowerOgTags:
         assert "70.0%" in html
         assert 'og:image" content="' in html
         assert "/api/power/chart.png" in html
+
+    def test_image_url_changes_with_the_chart(self, client, api_headers):
+        # Discord's media proxy keeps an image by URL: a new reading must
+        # give a new one, and no reading the same one.
+        client.post("/api/power", json={"stored": 1, "capacity": 4}, headers=api_headers)
+        first = image_version(client.get("/power").get_data(as_text=True))
+        assert image_version(client.get("/power").get_data(as_text=True)) == first
+        client.post("/api/power", json={"stored": 2, "capacity": 4}, headers=api_headers)
+        assert image_version(client.get("/power").get_data(as_text=True)) != first
 
     def test_uses_latest_reading_even_when_older_than_an_hour(self, client, api_headers):
         client.post(
@@ -142,6 +158,19 @@ class TestNetworkItemOgTags:
         assert '<meta property="og:title" content="Sugar Beet Seeds">' in html
         assert "Currently stored: 27" in html
         assert f"variant={variant}" in html
+
+    def test_image_url_changes_with_the_chart(self, client, api_headers):
+        iron = {"name": "Iron Ingot", "size": 500, "mod": "minecraft", "internal": "iron_ingot",
+                "damage": 0, "kind": "item"}
+        key = store.items.key_of(iron)
+        path = self._item_path("minecraft", "iron_ingot", 0, "item")
+        # Only a change from over a day ago: the chart holds it flat, and
+        # the held lead row's moving start time mustn't change the URL.
+        store.items.add_rows([(key, "Iron Ingot", 400, time.time() - 2 * 86400)])
+        first = image_version(client.get(path).get_data(as_text=True))
+        assert image_version(client.get(path).get_data(as_text=True)) == first
+        store.items.add_rows([(key, "Iron Ingot", 500, time.time())])
+        assert image_version(client.get(path).get_data(as_text=True)) != first
 
     def test_malformed_variant_is_ignored(self, client):
         html = client.get('/network/item/cropsnh:genericSeed:0~"><script>').get_data(as_text=True)

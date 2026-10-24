@@ -3,7 +3,6 @@ import sqlite3
 import time
 
 from gcm import config, db, store
-from gcm.routes import power
 
 REAL_TS = 1790121600.0  # 2026-09-23, after the impossible-times cutoff
 
@@ -76,7 +75,7 @@ class TestLatestReadingIsRangeIndependent:
     last bucket's average genuinely differed between them.
 
     IMPORTANT: this only manifests once _downsample's bucketing actually
-    kicks in (POWER_MAX_POINTS=800) - a first version of this test
+    kicks in (store.power.MAX_POINTS=800) - a first version of this test
     inserted only a handful of readings and PASSED even with the bug
     deliberately reintroduced, because that few rows never exceeds the
     cap and _downsample returns them unchanged either way. Confirmed
@@ -88,7 +87,7 @@ class TestLatestReadingIsRangeIndependent:
         # ALL packed into the last 24h specifically, dense enough that
         # even the "day" range - the shortest, so the hardest to
         # accidentally exceed the cap on - comfortably exceeds
-        # POWER_MAX_POINTS and forces real bucket-averaging.
+        # store.power.MAX_POINTS and forces real bucket-averaging.
         now = time.time()
         rows = []
         for i in range(count):
@@ -122,7 +121,7 @@ class TestLatestReadingIsRangeIndependent:
         # stop depending on it.
         self._seed_dense_readings()
         day_points = client.get("/api/power?range=day").get_json()["points"]
-        assert len(day_points) == power.POWER_MAX_POINTS
+        assert len(day_points) == store.power.MAX_POINTS
 
 
 class TestPowerDbMigration:

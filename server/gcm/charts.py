@@ -5,6 +5,7 @@ runs JS, so the in-app Chart.js rendering is invisible to it entirely.
 This renders an actual PNG server-side, independent of the browser,
 with a small TTL cache and a per-client rate limit in front of it."""
 
+import hashlib
 import threading
 import time
 from collections import OrderedDict, deque
@@ -82,6 +83,14 @@ def cached_png(cache_key, render):
         while len(_chart_cache) > config.CHART_CACHE_MAX_ENTRIES:
             _chart_cache.popitem(last=False)
     return png_bytes
+
+
+def version(rows):
+    """A short hash of a chart's rows, for its og:image URL. Discord's
+    media proxy keeps an image by its URL for far longer than our
+    max-age, so a URL that changes with the data is what gets a fresh
+    chart into a new link preview."""
+    return hashlib.sha1(repr(list(rows)).encode()).hexdigest()[:12]
 
 
 def format_qty(n):
