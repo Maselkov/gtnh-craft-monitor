@@ -172,8 +172,8 @@ async function loadAgents() {
   }
 }
 
-// "Connect a computer": the two commands that install the scripts on a
-// new computer with this server's address and API key. The key is masked
+// "Connect a computer": the command that installs the scripts on a new
+// computer with this server's address and API key. The key is masked
 // on screen, for streams and screenshots, but always copied in full.
 const GCM_URL = 'https://raw.githubusercontent.com/Maselkov/gtnh-craft-monitor/main/oc/gcm.lua';
 const LOCAL_HOST = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/;
@@ -196,21 +196,18 @@ function shellWord(s) {
   return /^[\w.:/@%+=~-]+$/.test(s) ? s : `"${s}"`;
 }
 
-export function connectCommands(serverUrl, apiKey) {
+export function connectCommand(serverUrl, apiKey) {
   const url = serverUrl.trim().replace(/\/+$/, '');
-  return {
-    download: `wget -f ${GCM_URL} /tmp/gcm.lua`,
-    install: `/tmp/gcm.lua install --server=${shellWord(url)} --api-key=${shellWord(apiKey)}`,
-  };
+  return `wget -f ${GCM_URL} /tmp/gcm.lua && `
+    + `/tmp/gcm.lua install --server=${shellWord(url)} --api-key=${shellWord(apiKey)}`;
 }
 
 function renderConnect() {
   if (!connectInfo) return;
   const url = document.getElementById('connectServerUrl').value;
-  const { download, install } = connectCommands(url, connectInfo.api_key);
-  document.getElementById('connectDownload').textContent = download;
-  document.getElementById('connectInstall').textContent = connectKeyShown
-    ? install : install.replace(connectInfo.api_key, '•'.repeat(12));
+  const command = connectCommand(url, connectInfo.api_key);
+  document.getElementById('connectCommand').textContent = connectKeyShown
+    ? command : command.replace(connectInfo.api_key, '•'.repeat(12));
   document.getElementById('connectLocalNote').style.display = isLocalAddress(url) ? '' : 'none';
   document.getElementById('connectKeyBtn').textContent = connectKeyShown ? 'Hide API key' : 'Show API key';
 }
@@ -221,7 +218,7 @@ async function loadConnect() {
     if (!res.ok) throw new Error(`connect: ${res.status}`);
     connectInfo = await res.json();
   } catch (e) {
-    document.getElementById('connectInstall').textContent = 'Could not reach the server.';
+    document.getElementById('connectCommand').textContent = 'Could not reach the server.';
     return;
   }
   const input = document.getElementById('connectServerUrl');
@@ -248,10 +245,10 @@ async function copyText(text) {
   }
 }
 
-async function copyConnect(step) {
+async function copyConnect() {
   if (!connectInfo) return;
   const url = document.getElementById('connectServerUrl').value;
-  if (await copyText(connectCommands(url, connectInfo.api_key)[step])) {
+  if (await copyText(connectCommand(url, connectInfo.api_key))) {
     showToast('Copied. Paste it into the computer with the middle mouse button or Insert.');
   } else {
     showToast('Could not copy: show the API key and copy the command by hand.', true);
@@ -298,7 +295,7 @@ export function setupAgentsActions() {
     'open-agents': () => { closeSettingsMenu(); openAgentsModal(); },
     'close-agents': () => closeAgentsModal(),
     'agent-command': (el) => sendCommand(el),
-    'copy-connect': (el) => copyConnect(el.dataset.step),
+    'copy-connect': () => copyConnect(),
     'toggle-connect-key': () => { connectKeyShown = !connectKeyShown; renderConnect(); },
   });
   document.getElementById('connectServerUrl').addEventListener('input', renderConnect);

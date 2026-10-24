@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { connectCommands, isLocalAddress, renderComputer, renderHealth } from '../../static/js/agents.js';
+import { connectCommand, isLocalAddress, renderComputer, renderHealth } from '../../static/js/agents.js';
 
 const COMPUTER = {
   address: '1f3a9c20-5b1e-4d2a', version: 'v1.0.0', behind: true, offline: false,
@@ -57,11 +57,11 @@ test('server health: each feed, storage, background jobs', () => {
   assert.match(html, /Up 1d 1h &middot; game data 2\.7\.2/);
 });
 
-test('connect commands: the address without a trailing slash, odd values quoted', () => {
-  const { download, install } = connectCommands(' https://gtnh.example.com/ ', 'ab12');
-  assert.equal(download, 'wget -f https://raw.githubusercontent.com/Maselkov/gtnh-craft-monitor/main/oc/gcm.lua /tmp/gcm.lua');
-  assert.equal(install, '/tmp/gcm.lua install --server=https://gtnh.example.com --api-key=ab12');
-  assert.equal(connectCommands('http://h:8420', 'my key;x').install, '/tmp/gcm.lua install --server=http://h:8420 --api-key="my key;x"');
+test('connect command: download, then install with the address (no trailing slash) and key', () => {
+  assert.equal(connectCommand(' https://gtnh.example.com/ ', 'ab12'),
+    'wget -f https://raw.githubusercontent.com/Maselkov/gtnh-craft-monitor/main/oc/gcm.lua /tmp/gcm.lua'
+    + ' && /tmp/gcm.lua install --server=https://gtnh.example.com --api-key=ab12');
+  assert.ok(connectCommand('http://h:8420', 'my key;x').endsWith(' --server=http://h:8420 --api-key="my key;x"'));
 });
 
 test('local addresses are the ones OpenComputers blocks by default', () => {

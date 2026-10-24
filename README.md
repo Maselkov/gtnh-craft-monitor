@@ -16,12 +16,12 @@ Basically, it's web AE2 for your base.
    access token it shows: that's how you sign in from now on. Then pick your
    GTNH version under **Settings (⚙) → Game data**.
 3. Open **Settings (⚙) → Status → Connect a computer**. Check the address
-   there is one the Minecraft server can reach, then paste its two commands
-   into a computer with an Internet Card and an Adapter touching the ME
+   there is one the Minecraft server can reach, then paste its command into
+   a computer with an Internet Card and an Adapter touching the ME
    Controller, or linked to it with an MFU (see
-   [Connecting the Adapter](#connecting-the-adapter)). The second one asks
-   which scripts to install, checks that the computer can reach the server,
-   and can start the scripts on every boot. If it can't, see
+   [Connecting the Adapter](#connecting-the-adapter)). It asks which
+   scripts to install, checks that the computer can reach the server, and
+   can start the scripts on every boot. If it can't, see
    [Scripts can't reach the server](#scripts-cant-reach-the-server).
 
 ## Features
@@ -476,8 +476,9 @@ wget -f https://raw.githubusercontent.com/Maselkov/gtnh-craft-monitor/main/oc/gc
 ```
 
 **Settings (&#9881;) → Status → Connect a computer** on the web page shows
-both commands with this server's address and API key filled in, ready to
-copy. Paste them into the computer with the middle mouse button or Insert.
+both as one command, joined with `&&`, with this server's address and API
+key filled in, ready to copy. Paste it into the computer with the middle
+mouse button or Insert.
 The address is the page's own unless `PUBLIC_URL` is set; change it there
 if the Minecraft server reaches the monitor some other way.
 
