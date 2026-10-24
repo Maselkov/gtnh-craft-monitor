@@ -64,7 +64,6 @@
 
 local component = require("component")
 local computer = require("computer")
-local event = require("event")
 local filesystem = require("filesystem")
 local term = require("term")
 local thread = require("thread")
@@ -515,7 +514,7 @@ local function run_scan(me)
     -- Stream the candidate list from disk, same reasoning as the results
     -- below - never hold more than one batch's worth in memory.
     local batch = {}
-    for i = 1, CONFIG.BATCH_SIZE do
+    for _ = 1, CONFIG.BATCH_SIZE do
       local line = f:read("*l")
       if line == nil then break end
       if line ~= "" then batch[#batch + 1] = line end
@@ -707,7 +706,7 @@ end
 local MAX_PATTERN_TAG_BYTES = 8192
 
 local function find_interface_terminal()
-  for address in component.list("me_interface_terminal", true) do
+  for address in component.list("me_interface_terminal", true) do -- luacheck: ignore 512 (the first one)
     return component.proxy(address)
   end
   return nil

@@ -23,11 +23,15 @@ node server/tests/e2e/run.mjs                           # browser, needs Chromiu
 for f in server/static/js/*.js; do node --check "$f"; done
 lua5.3 oc/tests/run.lua                                 # from the repo root
 ruff check                                              # from the repo root
+luacheck oc                                             # from the repo root
+shellcheck $(git ls-files '*.sh')
 zizmor .github/workflows                                # after editing a workflow
 ```
 
-The linters' versions are in `.github/requirements-lint.txt`. Actions are
-pinned to commit SHAs with the version in a comment; Dependabot bumps both.
+ruff's and zizmor's versions are in `.github/requirements-lint.txt`;
+luacheck and shellcheck are CI's Ubuntu packages (`lua-check`,
+`shellcheck`). Actions are pinned to commit SHAs with the version in a
+comment; Dependabot bumps both.
 
 ## Testing the OC scripts
 
