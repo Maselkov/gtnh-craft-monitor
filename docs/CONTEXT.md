@@ -1240,7 +1240,11 @@ clipboard API needs HTTPS or localhost, so it falls back to
 config.lua, `gcm install` POSTs `/api/agent/ping` with the key and says
 what went wrong (401: wrong key; no connection: the address must work
 from the Minecraft server, and a local one is in OC's default internet
-blacklist). It saves the settings either way. The address field is
+blacklist). It saves the settings either way. On an existing config.lua
+the options overwrite just those two string values in place (the first
+`SERVER_URL =`/`API_KEY =` not in a comment), keeping per-script
+overrides, so pasting the command again fixes a moved server or a new
+key; the missing one is read from the file for the check. The address field is
 hidden behind "Use a different address": most pages are opened at the
 address the game reaches too. Each tab's never-reported empty state
 (crafts: no `source`; power: no `latest`; network: no items and no scan

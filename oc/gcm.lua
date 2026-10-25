@@ -8,7 +8,8 @@
 -- Add --ref=<tag or branch> to install or update from something other
 -- than the latest release, e.g. --ref=main to test unreleased changes.
 -- install --server=<url> --api-key=<key> skips asking for those two: the
--- web page's Status dialog shows the whole command to paste.
+-- web page's Status dialog shows the whole command to paste. They also
+-- replace the ones in an existing config.lua.
 -- update --no-reboot skips the reboot question: gcm_agent.lua runs it
 -- that way for the web page's update button, and reboots itself.
 --
@@ -324,12 +325,25 @@ local function prompt(question)
   return (answer:gsub("^%s+", ""):gsub("%s+$", ""))
 end
 
-local function replace_once(text, old, new)
-  local first, last = text:find(old, 1, true)
-  if not first then
-    return text, false
+-- Sets the string in config text's first `name = "..."` that isn't in a
+-- comment, keeping the rest of the file as it is. Returns the text and
+-- whether there was one.
+local function set_value(text, name, value)
+  local from = 1
+  while true do
+    local first, open, quote = text:find(name .. "%s*=%s*([\"'])", from)
+    if not first then
+      return text, false
+    end
+    local close = text:find(quote, open + 1, true)
+    local lineStart = text:sub(1, first - 1):match(".*\n()") or 1
+    local inComment = text:sub(lineStart, first - 1):find("--", 1, true)
+    local inLongerName = text:sub(first - 1, first - 1):match("[%w_]")
+    if close and not inComment and not inLongerName then
+      return text:sub(1, open - 1) .. string.format("%q", value) .. text:sub(close + 1), true
+    end
+    from = open + 1
   end
-  return text:sub(1, first - 1) .. new .. text:sub(last + 1), true
 end
 
 -- Whether the URL's host is one OpenComputers' default internet
@@ -374,43 +388,60 @@ local function check_server(url, key)
   return false
 end
 
--- Creates config.lua from the release's template, filling in the server
--- URL and API key (from --server and --api-key, or asked for). An
--- existing config.lua is never touched.
+-- Writes the server URL and API key into config.lua. The first time,
+-- config.lua is the release's template with --server and --api-key (or
+-- answers) filled in. After that, only the options given are written and
+-- the rest of the file is kept, so pasting the page's command again moves
+-- a computer to a new address or key; without them it's left alone.
 local function write_config(ref, cfg, opts)
-  if filesystem.exists(cfg.dst) then
-    print("Keeping existing " .. cfg.dst)
-    if opts.server or opts["api-key"] then
-      print("--server and --api-key weren't used; edit " .. cfg.dst .. " to change them.")
-    end
-    return
-  end
-  local template, err = fetch_text(raw_url(ref, cfg.src))
-  if not template then
-    error("couldn't download " .. cfg.src .. ": " .. err, 0)
-  end
-  print()
-  print("Creating " .. cfg.dst .. ".")
-  if not (opts.server and opts["api-key"]) then
-    print("Leave a value blank to fill it in later.")
-  end
-  local url = (opts.server or prompt("Server URL, e.g. https://monitor.example.com")):gsub("/+$", "")
+  local url = opts.server and opts.server:gsub("/+$", "")
   local key = opts["api-key"]
-    or prompt("API key (on the web page: Settings > Status > Connect a computer)")
-  if url ~= "" and key ~= "" then
-    check_server(url, key)
-  end
-  local replaced
-  if url ~= "" then
-    template, replaced = replace_once(template, '"https://YOUR-SERVER-HOST:8420"', string.format("%q", url))
-    if not replaced then
-      print("Couldn't find the SERVER_URL placeholder; set it in " .. cfg.dst .. " yourself.")
+  local existing = filesystem.exists(cfg.dst)
+  local text, checkUrl, checkKey
+  if existing then
+    if not (url or key) then
+      print("Keeping existing " .. cfg.dst)
+      return
     end
+    local file = assert(io.open(cfg.dst, "r"))
+    text = file:read("*a")
+    file:close()
+    -- The value not given is checked against the server as it is.
+    local chunk = load(text, "=config", "t", {})
+    local ok, current = false, nil
+    if chunk then
+      ok, current = pcall(chunk)
+    end
+    current = ok and type(current) == "table" and current or {}
+    checkUrl, checkKey = url or current.SERVER_URL, key or current.API_KEY
+    print()
+    print("Updating " .. cfg.dst .. ".")
+  else
+    local err
+    text, err = fetch_text(raw_url(ref, cfg.src))
+    if not text then
+      error("couldn't download " .. cfg.src .. ": " .. err, 0)
+    end
+    print()
+    print("Creating " .. cfg.dst .. ".")
+    if not (url and key) then
+      print("Leave a value blank to fill it in later.")
+    end
+    url = url or prompt("Server URL, e.g. https://monitor.example.com"):gsub("/+$", "")
+    key = key or prompt("API key (on the web page: Settings > Status > Connect a computer)")
+    checkUrl, checkKey = url, key
   end
-  if key ~= "" then
-    template, replaced = replace_once(template, '"change-me"', string.format("%q", key))
-    if not replaced then
-      print("Couldn't find the API_KEY placeholder; set it in " .. cfg.dst .. " yourself.")
+  if type(checkUrl) == "string" and checkUrl ~= "" and type(checkKey) == "string" and checkKey ~= "" then
+    check_server(checkUrl, checkKey)
+  end
+  for _, setting in ipairs({ { "SERVER_URL", url }, { "API_KEY", key } }) do
+    local name, value = setting[1], setting[2]
+    if value and value ~= "" then
+      local found
+      text, found = set_value(text, name, value)
+      if not found then
+        print("Couldn't find " .. name .. " to set; add it to " .. cfg.dst .. " yourself.")
+      end
     end
   end
   local dir = filesystem.path(cfg.dst)
@@ -418,9 +449,9 @@ local function write_config(ref, cfg, opts)
     filesystem.makeDirectory(dir)
   end
   local file = assert(io.open(cfg.dst, "w"))
-  file:write(template)
+  file:write(text)
   file:close()
-  if url == "" or key == "" then
+  if not existing and (url == "" or key == "") then
     print("Edit " .. cfg.dst .. " to set the missing values before starting the scripts.")
   end
 end
