@@ -13,8 +13,33 @@ covers the usual install from the web page.
 
 ## Requirements
 
-An OpenComputers computer with an **Internet Card**, and Adapters for what
-each script reads:
+### The computer
+
+Each computer that runs the scripts needs:
+
+| Part | Requirement |
+|---|---|
+| Computer Case | Tier 2 or better, so it takes Tier 2 memory |
+| EEPROM | **Lua BIOS** |
+| CPU | Any tier, or an **APU** in its place (an APU has graphics built in, so no Graphics Card is needed) |
+| Graphics Card | Any tier; not needed with an APU |
+| Memory | At least **2× Tier 2**; more or higher tiers are better, see below |
+| Internet Card | Required: it's how the scripts reach the server |
+| Hard Disk Drive | Any tier, with OpenOS installed on it |
+| Screen and Keyboard | To install and watch the scripts |
+
+To install OpenOS, put the **OpenOS floppy disk** in a Disk Drive next to
+the computer (a Tier 3 case has one built in), boot from it and run
+`install`, choosing the hard disk. The floppy is read-only, so the scripts
+can't be installed onto it.
+
+Memory is shared by every script on the computer. `network_browser.lua`
+uses the most, and grows with the size of your ME network: on a large
+network give it Tier 3 or 3.5 memory, or a computer of its own.
+
+### Adapters
+
+Adapters for what each script reads:
 
 | Script | Needs an Adapter on | For |
 |---|---|---|
