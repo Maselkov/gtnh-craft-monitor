@@ -109,7 +109,7 @@ test("update to the latest release, report, reboot", function()
   env:run({ seconds = 1 })
   t.eq(env:read_file("/tmp/gcm-args"), "update --no-reboot")
   t.eq(results(env), { { path = "/api/agent/commands/7/result", body = {
-    ok = true, message = "Updated v1.0.0 -> v1.1.0, rebooting.", version = "v1.1.0",
+    ok = true, message = "Updated v1.0.0 -> v1.1.0, rebooting.", version = "v1.1.0", rebooting = true,
   } } })
   t.eq(env.shutdown.reboot, true)
   t.eq(env:alive(), 0)
@@ -147,7 +147,7 @@ test("reboot", function()
   local env = agent_env({ { id = 4, action = "reboot" } })
   env:start_service("gcm_agent")
   env:run({ seconds = 1 })
-  t.eq(results(env)[1].body, { ok = true, message = "Rebooting.", version = "v1.0.0" })
+  t.eq(results(env)[1].body, { ok = true, message = "Rebooting.", version = "v1.0.0", rebooting = true })
   t.eq(env.shutdown.reboot, true)
 end)
 

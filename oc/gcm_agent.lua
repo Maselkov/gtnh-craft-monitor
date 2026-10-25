@@ -13,6 +13,9 @@
     { id = n, action = "reboot" }
         reports, then reboots
 
+  A result about to reboot says rebooting = true, and the server shows
+  the command as under way until a heartbeat from after the reboot.
+
   Anything else is reported back as refused. The server never sends a
   URL or code: gcm.lua downloads from its own fixed GitHub repository,
   so the most a server can ask for is a real release, main, or a
@@ -114,9 +117,10 @@ local function post(path, payload)
   return decoded
 end
 
-local function report(command, ok, message, version)
+-- rebooting tells the server to watch for the computer coming back.
+local function report(command, ok, message, version, rebooting)
   post("/commands/" .. tostring(command.id) .. "/result", {
-    ok = ok, message = message, version = version,
+    ok = ok, message = message, version = version, rebooting = rebooting,
   })
 end
 
@@ -134,7 +138,7 @@ end
 -- Returns true when the computer is about to reboot.
 local function carry_out(command)
   if command.action == "reboot" then
-    report(command, true, "Rebooting.", (read_state() or {}).version)
+    report(command, true, "Rebooting.", (read_state() or {}).version, true)
     computer.shutdown(true)
     return true
   end
@@ -153,7 +157,7 @@ local function carry_out(command)
       report(command, true, "Already up to date.", after)
       return false
     end
-    report(command, true, "Updated " .. tostring(before) .. " -> " .. tostring(after) .. ", rebooting.", after)
+    report(command, true, "Updated " .. tostring(before) .. " -> " .. tostring(after) .. ", rebooting.", after, true)
     computer.shutdown(true)
     return true
   end

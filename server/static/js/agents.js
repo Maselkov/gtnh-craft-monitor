@@ -31,7 +31,12 @@ function commandLine(cmd) {
   let text;
   if (cmd.status === 'queued') text = 'waiting for the computer to pick it up…';
   else if (cmd.status === 'sent') text = 'running…';
-  else text = cmd.message || (cmd.ok ? 'done' : 'failed');
+  else if (cmd.awaiting_boot) text = 'rebooting, waiting for it to come back…';
+  else if (cmd.back_at) {
+    // "Updated v1 -> v2, rebooting." becomes "Updated v1 -> v2, back up 2m ago".
+    const before = (cmd.message || '').replace(/,? *rebooting\.$/i, '');
+    text = `${before ? `${before}, b` : 'B'}ack up ${formatRelativeTime(cmd.back_at)}`;
+  } else text = cmd.message || (cmd.ok ? 'done' : 'failed');
   const failed = cmd.status === 'done' && !cmd.ok;
   return `<div class="agent-line agent-command${failed ? ' failed' : ''}">${escapeHtml(commandLabel(cmd))}: ${escapeHtml(text)}</div>`;
 }
@@ -49,7 +54,7 @@ export function renderComputer(c, latest) {
   const services = c.services.length
     ? c.services.map(s => `<span><span class="agent-dot${s.running ? ' running' : ''}"></span>${escapeHtml(s.name)}${s.running ? '' : ' (stopped)'}</span>`).join('')
     : '<span class="agent-line">No scripts installed</span>';
-  const busy = c.command && c.command.status !== 'done';
+  const busy = c.command && (c.command.status !== 'done' || c.command.awaiting_boot);
   const address = escapeHtml(c.address);
   const button = (cmd, label) => `<button class="range-btn" data-action="agent-command" data-address="${address}"
     data-cmd="${cmd}"${busy || c.offline ? ' disabled' : ''}>${escapeHtml(label)}</button>`;

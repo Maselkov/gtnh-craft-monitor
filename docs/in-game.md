@@ -126,7 +126,10 @@ the computer to the web page every minute. Admins see each computer under
 **Settings (⚙) → Status**: its version and whether a newer release
 is out, which scripts are running, free memory and uptime. Buttons there
 update it (to the latest release, or to `main`) or reboot it. The agent
-runs `gcm update`, says how it went, and reboots.
+runs `gcm update`, says how it went, and reboots. The card says it's
+rebooting until the computer reports in again (usually within a few
+seconds), then shows "back up" for 10 minutes. If the computer doesn't
+report in within 3 minutes, the card says so.
 
 The server can only ask for those three things. `gcm` downloads from its
 own fixed GitHub repository, so nothing on the server can make a computer

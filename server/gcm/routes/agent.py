@@ -33,7 +33,8 @@ def agent_ping():
 @auth.api_key_required
 def agent_command_result(cmd_id):
     payload = request.get_json(silent=True) or {}
-    if not agents.result(cmd_id, payload.get("ok"), payload.get("message"), payload.get("version")):
+    if not agents.result(cmd_id, payload.get("ok"), payload.get("message"), payload.get("version"),
+                         payload.get("rebooting")):
         return jsonify({"error": "unknown command"}), 404
     return jsonify({"ok": True})
 

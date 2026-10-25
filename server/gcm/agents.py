@@ -22,6 +22,12 @@ OFFLINE_AFTER_SECONDS = 3 * POLL_SECONDS
 PICKUP_TIMEOUT_SECONDS = 3 * POLL_SECONDS
 # Downloading every script can take a while on a slow card.
 RESULT_TIMEOUT_SECONDS = 600
+# gcm_agent heartbeats as soon as rc starts it after a reboot.
+BOOT_TIMEOUT_SECONDS = 3 * POLL_SECONDS
+# How long a command that went fine stays on the computer's card once
+# it's over (back from its reboot, if it rebooted). Failures stay until
+# RETENTION_SECONDS, so they aren't missed.
+COMMAND_SHOWN_SECONDS = 600
 RETENTION_SECONDS = 86400
 LATEST_TTL_SECONDS = 3600
 LATEST_ERROR_TTL_SECONDS = 300
@@ -73,12 +79,25 @@ def _expire_locked(now):
             _finish_locked(cmd, False, "The computer didn't pick it up - is gcm_agent running?", now)
         elif cmd["status"] == "sent" and now - cmd["sent_at"] > RESULT_TIMEOUT_SECONDS:
             _finish_locked(cmd, False, "No result from the computer - check in game.", now)
+        elif cmd.get("awaiting_boot") and now - cmd["finished_at"] > BOOT_TIMEOUT_SECONDS:
+            cmd["awaiting_boot"] = False
+            _finish_locked(cmd, False, "Didn't come back after the reboot - check in game.", now)
         elif cmd["status"] == "done" and now - cmd["finished_at"] > RETENTION_SECONDS:
             del _commands[cmd_id]
 
 
 def _finish_locked(cmd, ok, message, now):
     cmd.update(status="done", ok=ok, message=message, finished_at=now)
+
+
+def _came_back(cmd, uptime, now):
+    """Whether a heartbeat's uptime says the computer rebooted since it
+    reported cmd's result."""
+    if uptime is None:
+        return False
+    if cmd.get("uptime_before") is not None:
+        return uptime < cmd["uptime_before"]
+    return uptime <= now - cmd["finished_at"]
 
 
 def heartbeat(address, report):
@@ -89,6 +108,9 @@ def heartbeat(address, report):
     with _lock:
         _expire_locked(now)
         _agents[address] = {**_clean_report(report), "address": address, "last_seen": now}
+        for cmd in _commands.values():
+            if cmd["address"] == address and cmd.get("awaiting_boot") and _came_back(cmd, _agents[address]["uptime"], now):
+                cmd.update(awaiting_boot=False, back_at=now)
         for cmd in sorted(_commands.values(), key=lambda c: c["id"]):
             if cmd["address"] == address and cmd["status"] == "queued":
                 cmd.update(status="sent", sent_at=now)
@@ -107,7 +129,8 @@ def queue(address, action, ref, user_id):
         _expire_locked(now)
         if address not in _agents:
             return None, "unknown computer"
-        if any(c["address"] == address and c["status"] != "done" for c in _commands.values()):
+        if any(c["address"] == address and (c["status"] != "done" or c.get("awaiting_boot"))
+               for c in _commands.values()):
             return None, "this computer already has a command waiting"
         cmd_id = _next_id
         _next_id += 1
@@ -118,22 +141,42 @@ def queue(address, action, ref, user_id):
     return cmd_id, None
 
 
-def result(cmd_id, ok, message, version):
+def _rebooting(cmd, ok, message, rebooting):
+    if rebooting is not None:
+        return rebooting is True
+    # gcm_agent from before it said so: it reboots after a reboot command
+    # and after an update that changed something, and says so.
+    return ok is True and (cmd["action"] == "reboot" or (isinstance(message, str) and message.endswith("rebooting.")))
+
+
+def result(cmd_id, ok, message, version, rebooting=None):
     """The computer's report on a command. False for an unknown or
-    already finished one."""
+    already finished one. A computer about to reboot is watched for
+    coming back (heartbeat())."""
     now = time.time()
     with _lock:
         cmd = _commands.get(cmd_id)
         if cmd is None or cmd["status"] == "done":
             return False
         _finish_locked(cmd, ok is True, message[:300] if isinstance(message, str) else None, now)
+        if _rebooting(cmd, ok, message, rebooting):
+            agent = _agents.get(cmd["address"])
+            cmd.update(awaiting_boot=True, uptime_before=agent and agent["uptime"])
         if isinstance(version, str) and cmd["address"] in _agents:
             _agents[cmd["address"]]["version"] = version[:64]
         return True
 
 
 def _public_command(cmd):
-    return {k: cmd.get(k) for k in ("id", "action", "ref", "status", "ok", "message", "created_at", "finished_at")}
+    return {k: cmd.get(k) for k in (
+        "id", "action", "ref", "status", "ok", "message", "created_at", "finished_at", "awaiting_boot", "back_at",
+    )}
+
+
+def _still_shown(cmd, now):
+    if cmd["status"] != "done" or not cmd["ok"] or cmd.get("awaiting_boot"):
+        return True
+    return now - (cmd.get("back_at") or cmd["finished_at"]) <= COMMAND_SHOWN_SECONDS
 
 
 def snapshot():
@@ -147,7 +190,7 @@ def snapshot():
             out.append({
                 **agent,
                 "offline": now - agent["last_seen"] > OFFLINE_AFTER_SECONDS,
-                "command": _public_command(mine[0]) if mine else None,
+                "command": _public_command(mine[0]) if mine and _still_shown(mine[0], now) else None,
             })
     return out
 

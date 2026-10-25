@@ -100,6 +100,68 @@ class TestCommands:
         assert c["command"]["message"] == "Updated v1.0.0 -> v1.2.0, rebooting."
         assert (c["version"], c["behind"]) == ("v1.2.0", False)
 
+    def test_reboot_is_followed_until_the_computer_is_back(self, client, api_headers, monkeypatch):
+        beat(client, api_headers, uptime=5000)
+        login_as(client, "root", role="admin")
+        command(client, "reboot")
+        cmd_id = beat(client, api_headers, uptime=5060)["id"]
+        client.post(f"/api/agent/commands/{cmd_id}/result",
+                    json={"ok": True, "message": "Rebooting.", "rebooting": True}, headers=api_headers)
+        cmd = computers(client)["computers"][0]["command"]
+        assert (cmd["status"], cmd["awaiting_boot"], cmd["back_at"]) == ("done", True, None)
+        assert command(client, "update", "main").get_json()["error"] == "this computer already has a command waiting"
+        beat(client, api_headers, uptime=5070)  # a heartbeat sent before the reboot
+        assert computers(client)["computers"][0]["command"]["awaiting_boot"] is True
+        beat(client, api_headers, uptime=4)
+        cmd = computers(client)["computers"][0]["command"]
+        assert cmd["awaiting_boot"] is False and cmd["back_at"] and cmd["ok"] is True
+        monkeypatch.setattr(agents, "COMMAND_SHOWN_SECONDS", -1)
+        assert computers(client)["computers"][0]["command"] is None
+        assert command(client, "reboot").status_code == 200
+
+    def test_old_agents_reboot_is_read_from_the_message(self, client, api_headers):
+        beat(client, api_headers)
+        login_as(client, "root", role="admin")
+        command(client, "update", "release")
+        cmd_id = beat(client, api_headers)["id"]
+        client.post(f"/api/agent/commands/{cmd_id}/result",
+                    json={"ok": True, "message": "Updated v1.0.0 -> v1.2.0, rebooting.", "version": "v1.2.0"},
+                    headers=api_headers)
+        assert computers(client)["computers"][0]["command"]["awaiting_boot"] is True
+
+    def test_no_reboot_no_waiting_and_hidden_later(self, client, api_headers, monkeypatch):
+        beat(client, api_headers)
+        login_as(client, "root", role="admin")
+        command(client, "update", "release")
+        cmd_id = beat(client, api_headers)["id"]
+        client.post(f"/api/agent/commands/{cmd_id}/result",
+                    json={"ok": True, "message": "Already up to date.", "rebooting": False}, headers=api_headers)
+        assert computers(client)["computers"][0]["command"]["awaiting_boot"] is None
+        monkeypatch.setattr(agents, "COMMAND_SHOWN_SECONDS", -1)
+        assert computers(client)["computers"][0]["command"] is None
+
+    def test_failures_stay_shown(self, client, api_headers, monkeypatch):
+        beat(client, api_headers)
+        login_as(client, "root", role="admin")
+        command(client, "update", "release")
+        cmd_id = beat(client, api_headers)["id"]
+        client.post(f"/api/agent/commands/{cmd_id}/result", json={"ok": False, "message": "HTTP 404"},
+                    headers=api_headers)
+        monkeypatch.setattr(agents, "COMMAND_SHOWN_SECONDS", -1)
+        assert computers(client)["computers"][0]["command"]["message"] == "HTTP 404"
+
+    def test_not_coming_back_turns_failed(self, client, api_headers, monkeypatch):
+        beat(client, api_headers)
+        login_as(client, "root", role="admin")
+        command(client, "reboot")
+        cmd_id = beat(client, api_headers)["id"]
+        client.post(f"/api/agent/commands/{cmd_id}/result", json={"ok": True, "message": "Rebooting."},
+                    headers=api_headers)
+        monkeypatch.setattr(agents, "BOOT_TIMEOUT_SECONDS", -1)
+        cmd = computers(client)["computers"][0]["command"]
+        assert (cmd["ok"], cmd["awaiting_boot"]) == (False, False)
+        assert "come back" in cmd["message"]
+
     def test_only_for_its_own_computer(self, client, api_headers):
         beat(client, api_headers)
         beat(client, api_headers, address="comp-2")

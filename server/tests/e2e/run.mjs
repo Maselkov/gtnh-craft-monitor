@@ -1305,9 +1305,12 @@ async function main() {
     const { data } = await game(base, '/api/agent/heartbeat', heartbeat);
     if (data.command?.action !== 'update' || data.command?.ref !== 'release') throw new Error(JSON.stringify(data));
     await game(base, `/api/agent/commands/${data.command.id}/result`,
-      { ok: true, message: 'Updated v1.1.0 -> v1.2.0, rebooting.', version: 'v1.2.0' });
-    await waitFor('result shown', `$('#agentsList').textContent.includes('Updated v1.1.0 -> v1.2.0, rebooting.')
+      { ok: true, message: 'Updated v1.1.0 -> v1.2.0, rebooting.', version: 'v1.2.0', rebooting: true });
+    await waitFor('rebooting', `$('#agentsList').textContent.includes('rebooting, waiting for it to come back')
       && !$('#agentsList').textContent.includes('update available')`);
+    await game(base, '/api/agent/heartbeat', { ...heartbeat, version: 'v1.2.0', uptime: 3 });
+    await waitFor('back up', `$('#agentsList').textContent.includes('Updated v1.1.0 -> v1.2.0, back up')
+      && !$('#agentsList [data-action="agent-command"]').disabled`);
 
     // Connect a computer: this page's address, the key masked until shown.
     const install = '/tmp/gcm.lua install --server=';

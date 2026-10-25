@@ -629,7 +629,7 @@ class FakeComputer:
             else:
                 message = "Rebooting."
             game.call("POST", f"/api/agent/commands/{cmd['id']}/result",
-                      {"ok": True, "message": message, "version": self.version})
+                      {"ok": True, "message": message, "version": self.version, "rebooting": True})
             self.booted_at = time.time()
         reply = game.call("POST", "/api/agent/heartbeat", {
             "address": self.address, "version": self.version,

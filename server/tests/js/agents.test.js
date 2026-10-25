@@ -28,6 +28,18 @@ test('buttons wait while a command is under way, and offline', () => {
   assert.equal(renderComputer({ ...COMPUTER, offline: true }).match(/ disabled/g).length, 3);
 });
 
+test('a reboot: waiting for the computer, then back up', () => {
+  const done = { action: 'update', ref: 'release', status: 'done', ok: true, message: 'Updated v1.0.0 -> v1.2.0, rebooting.' };
+  const waiting = renderComputer({ ...COMPUTER, command: { ...done, awaiting_boot: true } }, 'v1.2.0');
+  assert.match(waiting, /rebooting, waiting for it to come back…/);
+  assert.equal(waiting.match(/ disabled/g).length, 3);
+  const back = renderComputer({ ...COMPUTER, command: { ...done, awaiting_boot: false, back_at: Date.now() / 1000 - 120 } }, 'v1.2.0');
+  assert.match(back, /agent-command">Update to the latest release: Updated v1\.0\.0 -&gt; v1\.2\.0, back up 2m ago/);
+  assert.doesNotMatch(back, /disabled/);
+  const reboot = { action: 'reboot', ref: null, status: 'done', ok: true, message: 'Rebooting.', back_at: Date.now() / 1000 };
+  assert.match(renderComputer({ ...COMPUTER, command: reboot }), /Reboot: Back up 0s ago/);
+});
+
 const HEALTH = {
   uptime_seconds: 90061, gamedata: '2.7.2',
   feeds: [
