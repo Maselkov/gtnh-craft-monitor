@@ -13,12 +13,29 @@ covers the usual install from the web page.
 
 ## Requirements
 
-- An OpenComputers computer with an **Internet Card**.
-- An **Adapter** touching the ME Controller (any face), or an ME Interface if
-  there is no controller. It can also reach it wirelessly; see
-  [Connecting the Adapter](#connecting-the-adapter).
-- For the power monitor, an Adapter touching the GregTech multiblock (any
-  casing block).
+An OpenComputers computer with an **Internet Card**, and Adapters for what
+each script reads:
+
+| Script | Needs an Adapter on | For |
+|---|---|---|
+| `craft_monitor.lua` | the ME Controller (any face), or an ME Interface if there is no controller | Crafts tab, crafting from the page |
+| `network_browser.lua` | the ME Controller, as above | Network tab, stock rules |
+| `network_browser.lua` (optional) | a block holding an **ME Interface Terminal** part | the crafting plan and the craft tree (see [Reading patterns](how-it-works.md#reading-patterns)) |
+| `power_monitor.lua` | any casing block of the GregTech multiblock, one per machine with [`MACHINES`](#power_monitorlua) | Power tab |
+
+The scripts are independent: they can run on one computer or on separate
+ones. They share a computer's memory, so on a large network a separate
+computer for `network_browser.lua` leaves it more room. Each computer
+needs an Internet Card and the Adapters for the scripts it runs, so if
+`craft_monitor` and `network_browser` run on different computers, both
+need one on the ME Controller. One Adapter can serve several rows if it
+touches several of the blocks, and an MFU in an Adapter stands in for
+touching a block (see [Connecting the Adapter](#connecting-the-adapter)).
+Connect the Adapters with OpenComputers cable, not AE2's OpenComputers P2P
+tunnels.
+
+The rest:
+
 - HTTP allowed in the Minecraft server's `OpenComputers.cfg` (`enableHttp`
   and `enableHttpHeaders`, on by default), and your monitor's address not
   blocked there. Local addresses are blocked by default; see
@@ -34,14 +51,6 @@ covers the usual install from the web page.
   name, GregTech tools (turbines, drills...) all show one icon whatever
   their material, and patterns lose their crafting-table output counts and
   substitution settings.
-- Optional, GTNH 2.9 or later: an Adapter touching (or MFU-linked to) a block
-  holding an **ME Interface Terminal** part, on the same computer as
-  `network_browser.lua`. With it, the scanner also reads every pattern on the
-  network, for the craft dialog's plan and the craft tree (see
-  [Reading patterns](how-it-works.md#reading-patterns)).
-
-The scripts are independent: they can run on one computer or on separate
-ones.
 
 ### Connecting the Adapter
 

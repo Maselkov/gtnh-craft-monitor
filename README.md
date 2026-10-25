@@ -34,9 +34,17 @@ Basically, it's web AE2 for your base.
 
 - A machine with Docker (amd64 or arm64) that the Minecraft server can
   reach over HTTP.
-- In game, an OpenComputers computer with an **Internet Card**, and an
-  **Adapter** touching the ME Controller or linked to it with an MFU. For
-  the Power tab, another Adapter on the GregTech multiblock.
+- In game, an OpenComputers computer with an **Internet Card**, and
+  Adapters connected to it (touching the block, or linked with an MFU):
+  - **Crafts and Network tabs:** an Adapter on the ME Controller.
+  - **Power tab:** an Adapter on any casing of the GregTech multiblock.
+  - **Crafting plan and craft tree** (optional): an Adapter on a block
+    holding an ME Interface Terminal part.
+
+  Connect the Adapters with OpenComputers cable, not AE2's OpenComputers
+  P2P tunnels: those make components go missing. One computer can run
+  everything, or the scripts can be spread over several, each with the
+  Adapters for its own scripts.
 - GTNH 2.9.0-beta-2 or later for crafting from the page.
 
 The full list, including the OpenComputers config settings, is under
@@ -53,35 +61,20 @@ The full list, including the OpenComputers config settings, is under
 2. Run `docker compose logs gtnh-craft-monitor` and open the setup link it
    printed, `http://<your-host>:8420/#setup=...`. Pick a name, and save the
    access token it shows (a password manager will offer to): that's how you
-   sign in from now on. You're the first admin. The link
-   works once, and a restart prints a new one. Then pick your GTNH version
-   under **Settings (⚙) → Game data**; until then there are no icons and
-   the Network tab stays empty.
-3. Open **Settings (⚙) → Status → Connect a computer**. Check the address
+   sign in from now on, as the first admin. The link works once, and a
+   restart prints a new one.
+3. Pick your GTNH version under **Settings (⚙) → Game data**. Until then
+   there are no item icons and the Network tab stays empty.
+4. Open **Settings (⚙) → Status → Connect a computer**. Check the address
    there is one the Minecraft server can reach, then paste its command into
-   the computer. It asks which scripts to install, checks that the computer
-   can reach the server, and can start the scripts on every boot. If it
-   can't reach it, see
+   that computer (each one, if you use several). It asks which scripts to
+   install, checks that the computer can reach the server, and can start
+   the scripts on every boot. If it can't reach it, see
    [Scripts can't reach the server](#scripts-cant-reach-the-server).
 
 The page shows "waiting for data" until the scripts report. For settings,
 HTTPS, backups and running without Docker, see the
 [server guide](docs/server.md).
-
-## How it fits together
-
-```
- Minecraft (OpenComputers)                       Server (Docker)
-┌───────────────────────────┐    HTTP POST    ┌──────────────────────┐
-│ craft_monitor.lua         │ ──────────────▶ │ server/ (Flask)      │ ◀── browser
-│ power_monitor.lua         │ ◀────────────── │ SQLite in data/      │
-│ network_browser.lua       │  polled requests└──────────────────────┘
-└───────────────────────────┘
-```
-
-The game always initiates the connection: scripts POST their readings and
-poll the server for pending craft requests and cancellations. The server
-never connects into the game.
 
 ## Updating
 
@@ -92,9 +85,8 @@ docker compose up -d
 
 Then update the in-game scripts to the same release: each computer's
 **Update** button under **Settings (⚙) → Status**, or `gcm update` in
-game. The server image and the scripts come from the same release, so keep
-them matched. To stay on one release, set `GCM_TAG` in `.env` to its
-version, e.g. `GCM_TAG=5.0.0`.
+game. To stay on one release, set `GCM_TAG` in `.env` to its version,
+e.g. `GCM_TAG=5.0.0`.
 
 ## Troubleshooting
 
@@ -161,8 +153,8 @@ docker compose exec gtnh-craft-monitor python app.py new-token "Your name"
   the scripts, their settings
 - [Using the web page](docs/using.md) — every tab, search syntax, crafting,
   stock rules, notifications, webhooks
-- [How it works](docs/how-it-works.md) — what the scripts read from AE2 and
-  GregTech, and why
+- [How it works](docs/how-it-works.md) — how the pieces connect, and what
+  the scripts read from AE2 and GregTech, and why
 - [Icon export](tools/icon-export/README.md) — building game data for
   another pack
 - [Contributing](CONTRIBUTING.md) — running it locally and the tests
