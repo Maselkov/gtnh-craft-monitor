@@ -109,6 +109,7 @@ Everything else:
 | `CHART_RATE_LIMIT_PER_MINUTE` | `30` | Chart PNG requests allowed per client per minute. |
 | `CHART_MAX_TRACKED_CLIENTS` | `4096` | Clients the chart rate limit keeps track of at once. |
 | `GAMEDATA_REPO` | `Maselkov/gtnh-craft-monitor-data` | Repo whose `gtnh-data-*` releases the Game data page offers. |
+| `GAMEDATA_SHARED_DIR` | empty | Bundles shared by several servers, read without downloading; see [Game data](#game-data). |
 | `GAMEDATA_API_URL` | `https://api.github.com` | GitHub API base for that list (for mirrors). |
 | `SCRIPTS_REPO` | `Maselkov/gtnh-craft-monitor` | Repo whose newest `vX.Y.Z` tag the Status dialog offers as an update. |
 
@@ -219,6 +220,15 @@ again downloads the new build.
 To pin the version without the page, set `GTNH_VERSION` (e.g.
 `2.9.0-beta-3`), and optionally `GTNH_TEXTURES=faithful32`; the server
 installs it at startup if it isn't already.
+
+Running several servers on one machine? Set `GAMEDATA_SHARED_DIR` on each to
+one directory of bundles, laid out like `DATA_DIR/gamedata` (a
+`<version>/` folder per version, e.g. copied from a server that downloaded
+it). A version found there is used without downloading, and the servers
+never write to or delete from it, so it can be mounted read-only. Picking
+textures the shared copy lacks downloads the whole version into that
+server's own `DATA_DIR/gamedata`. Shared versions are never marked **update
+available**: replace them there when a version is rebuilt.
 
 Icons come in two texture sets: the pack's own (**Default**), and
 **Faithful 32x**, rendered with the

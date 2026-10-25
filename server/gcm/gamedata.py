@@ -9,7 +9,8 @@ for each GTNH release as a GitHub Release tagged gtnh-data-<version>
 (gcm/routes/gamedata.py); it's downloaded into
 DATA_DIR/gamedata/<version>/ in the background and goes live without a
 restart. tools/icon-export/run.sh --install puts a locally built bundle in
-the same place.
+the same place. A bundle can also be read from GAMEDATA_SHARED_DIR, which
+this server never writes to or prunes.
 
 A bundle's icons come in more than one texture set (TEXTURES): the same
 paths rendered with the pack's own textures, and with the GTNH Faithful
@@ -83,14 +84,36 @@ def texture_sets():
     return [{"id": id_, **info} for id_, info in TEXTURES.items()]
 
 
-def _bundle_dir(version):
+def _own_dir(version):
+    """Where version is downloaded to."""
     return os.path.join(config.GAMEDATA_DIR, version)
 
 
+def _complete(path):
+    return all(os.path.isfile(os.path.join(path, name)) for name in BASE_FILES)
+
+
+def _bundle_dir(version):
+    """Where version is read from: this server's own download if it has
+    one, else GAMEDATA_SHARED_DIR's copy if that has one."""
+    own = _own_dir(version)
+    if config.GAMEDATA_SHARED_DIR and not _complete(own):
+        shared = os.path.join(config.GAMEDATA_SHARED_DIR, version)
+        if _complete(shared):
+            return shared
+    return own
+
+
+def _is_shared(version):
+    return _bundle_dir(version) != _own_dir(version)
+
+
 def _has_base(version):
-    return valid_version(version) and all(
-        os.path.isfile(os.path.join(_bundle_dir(version), name)) for name in BASE_FILES
-    )
+    return valid_version(version) and _complete(_bundle_dir(version))
+
+
+def _has_own_base(version):
+    return valid_version(version) and _complete(_own_dir(version))
 
 
 def _textures_on_disk(version):
@@ -156,10 +179,12 @@ def _installed_asset_id(version):
 def update_available(release):
     """Whether release is a newer build of a version that's on disk. Bundles
     that didn't come from a release (run.sh --install) record none, so they
-    never count as outdated."""
+    never count as outdated, and nor do shared ones: whoever put them there
+    keeps them up to date."""
     installed_id = _installed_asset_id(release["version"])
     return (
         installed_id is not None
+        and not _is_shared(release["version"])
         and _has_base(release["version"])
         and release.get("data_asset_id") != installed_id
     )
@@ -168,20 +193,23 @@ def update_available(release):
 def installed():
     """Bundles on disk, newest first, with their data.json details and the
     texture sets downloaded for them."""
+    names = set()
+    for directory in (config.GAMEDATA_DIR, config.GAMEDATA_SHARED_DIR):
+        if directory and os.path.isdir(directory):
+            names.update(os.listdir(directory))
     versions = []
-    if os.path.isdir(config.GAMEDATA_DIR):
-        for name in os.listdir(config.GAMEDATA_DIR):
-            textures = _textures_on_disk(name)
-            if not textures:
-                continue
-            try:
-                with open(os.path.join(_bundle_dir(name), "data.json"), encoding="utf-8") as f:
-                    meta = json.load(f)
-            except (OSError, ValueError):
-                continue
-            versions.append(
-                {"version": name, "generated_at": meta.get("generated_at"), "textures": textures}
-            )
+    for name in names:
+        textures = _textures_on_disk(name)
+        if not textures:
+            continue
+        try:
+            with open(os.path.join(_bundle_dir(name), "data.json"), encoding="utf-8") as f:
+                meta = json.load(f)
+        except (OSError, ValueError):
+            continue
+        versions.append(
+            {"version": name, "generated_at": meta.get("generated_at"), "textures": textures}
+        )
     versions.sort(key=lambda v: v["generated_at"] or "", reverse=True)
     return versions
 
@@ -304,7 +332,7 @@ def start_install(version, textures="default"):
     if textures not in release["textures"]:
         return f"GTNH {version} has no {TEXTURES[textures]['name']} icons."
     total = release["textures"][textures]
-    if not _has_base(version) or outdated:
+    if not _has_own_base(version) or outdated:
         total += release["base_size"]
     with _lock:
         if _status["state"] == "installing":
@@ -367,9 +395,10 @@ def _read_bytes(path):
 def _install(release, textures):
     """Downloads into <version>.part/, then moves it into place. If the
     version's lookup and catalog are already installed and the release
-    hasn't been rebuilt since, only the texture set's zip is fetched."""
+    hasn't been rebuilt since, only the texture set's zip is fetched. Always
+    into this server's own directory, even over a shared bundle."""
     version = release["version"]
-    final = _bundle_dir(version)
+    final = _own_dir(version)
     part = final + ".part"
     try:
         shutil.rmtree(part, ignore_errors=True)
@@ -377,7 +406,7 @@ def _install(release, textures):
         _download(release["assets"]["data.json"], os.path.join(part, "data.json"))
         with open(os.path.join(part, "data.json"), encoding="utf-8") as f:
             expected = json.load(f)["files"]
-        reuse_base = _has_base(version) and _read_bytes(
+        reuse_base = _has_own_base(version) and _read_bytes(
             os.path.join(part, "data.json")
         ) == _read_bytes(os.path.join(final, "data.json"))
         if not reuse_base:
