@@ -29,6 +29,7 @@ import {
 import { fetchPowerBadge, powerMachineFromUrl, setupPowerActions } from './power.js';
 import { fetchStockRules, setupStockActions } from './stock.js';
 import { focusNetworkSearch, pathToTab, refreshActiveTab, setupTabActions, switchTab } from './tabs.js';
+import { setupTheme } from './theme.js';
 import { removeLegacyStorageKeys, setupImageErrorRemoval } from './util.js';
 import { setupWebhooksActions } from './webhooks.js';
 
@@ -40,6 +41,7 @@ window.gcmStarted = true;
 removeLegacyStorageKeys();
 setupImageErrorRemoval();
 setupAuthControls();
+setupTheme();
 setupAdminActions();
 setupGameDataActions();
 setupCraftsActions();

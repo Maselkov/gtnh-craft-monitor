@@ -15,8 +15,10 @@
   --search-ore: #4fd8d8;
   --search-formula: #5be05b;
 }
+/* Light follows the system unless the settings menu's Theme picks one
+   (theme.js; boot.js sets data-theme before first paint). */
 @media (prefers-color-scheme: light) {
-  :root {
+  :root:not([data-theme="dark"]) {
     --bg: #f4f5f7;
     --card: #ffffff;
     --text: #1a1d24;
@@ -25,6 +27,19 @@
     --search-ore: #0b8585;
     --search-formula: #1e8a1e;
   }
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f4f5f7;
+  --card: #ffffff;
+  --text: #1a1d24;
+  --muted: #6b7280;
+  --search-tooltip: #9a7b00;
+  --search-ore: #0b8585;
+  --search-formula: #1e8a1e;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
 }
 * { box-sizing: border-box; }
 /* Item icons only (matched by /icons src prefix, not img in general -
@@ -362,6 +377,41 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.settings-menu-user:empty {
+  display: none;
+}
+.theme-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  padding: 4px 4px 4px 10px;
+}
+.theme-seg {
+  display: inline-flex;
+  border: 1px solid rgba(128,128,128,0.3);
+  border-radius: 6px;
+  padding: 2px;
+  gap: 2px;
+}
+.theme-seg button {
+  display: flex;
+  font-size: 14px;
+  padding: 4px 7px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.theme-seg button:hover {
+  color: var(--text);
+}
+.theme-seg button[aria-checked="true"] {
+  background: rgba(128,128,128,0.2);
+  color: var(--accent);
 }
 .settings-menu-item {
   display: block;

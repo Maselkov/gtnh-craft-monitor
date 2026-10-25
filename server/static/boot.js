@@ -26,3 +26,11 @@ window.addEventListener('error', (event) => {
     showLoadError('could not load ' + (event.target.src || 'a script'));
   }
 }, true);
+
+// The Theme picked in the settings menu (theme.js), applied before the
+// stylesheet paints so a forced light or dark theme doesn't flash the
+// system one first.
+try {
+  const theme = localStorage.getItem('gtnhCraftMonitor.theme');
+  if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+} catch (e) { /* follow the system */ }

@@ -43,8 +43,10 @@ function updateAuthenticationControl() {
   input.style.display = AUTH_USER ? 'none' : '';
   input.value = '';
   button.style.display = AUTH_USER ? 'none' : '';
-  document.getElementById('settingsWrap').style.display = AUTH_USER ? '' : 'none';
+  // Signed out, the settings menu holds just the Theme.
   document.getElementById('settingsUser').textContent = AUTH_USER ? `Signed in as ${AUTH_USER.display_name}` : '';
+  document.getElementById('notifToggle').style.display = AUTH_USER ? '' : 'none';
+  document.getElementById('signOutBtn').style.display = AUTH_USER ? '' : 'none';
   if (!AUTH_USER) closeSettingsMenu();
   const adminVisible = AUTH_USER && AUTH_USER.role === 'admin';
   adminButton.style.display = adminVisible ? '' : 'none';

@@ -53,6 +53,13 @@ crafted items with how long one usually takes, and how much of the range each
 CPU spent busy. A job counts once it ends, and its time only from when the
 server saw it start, so jobs already running at a restart add no busy time.
 
+## Theme
+
+The page follows your system's light or dark setting. To pick one for
+this browser instead, use **Theme** in the settings (⚙) menu: sun for
+light, moon for dark, the half circle to follow the system again. It's
+there signed out too.
+
 ## Pins and notifications
 
 Click the pin icon on a card to pin its job to the top of the page. When a
