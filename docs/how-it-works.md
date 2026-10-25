@@ -3,6 +3,7 @@
 These notes explain design choices in the scripts and the server, and were
 verified against the GTNH OpenComputers source and live testing.
 
+- [How it fits together](#how-it-fits-together)
 - [Crafting CPUs](#crafting-cpus)
 - [Craft request results](#craft-request-results)
 - [Scanning the network](#scanning-the-network)
@@ -11,6 +12,21 @@ verified against the GTNH OpenComputers source and live testing.
 - [The craft tree](#the-craft-tree)
 - [Fluid items](#fluid-items)
 - [Reading EU](#reading-eu)
+
+## How it fits together
+
+```
+ Minecraft (OpenComputers)                       Server (Docker)
+┌───────────────────────────┐    HTTP POST    ┌──────────────────────┐
+│ craft_monitor.lua         │ ──────────────▶ │ server/ (Flask)      │ ◀── browser
+│ power_monitor.lua         │ ◀────────────── │ SQLite in data/      │
+│ network_browser.lua       │  polled requests└──────────────────────┘
+└───────────────────────────┘
+```
+
+The game always initiates the connection: scripts POST their readings and
+poll the server for pending craft requests and cancellations. The server
+never connects into the game.
 
 ## Crafting CPUs
 
