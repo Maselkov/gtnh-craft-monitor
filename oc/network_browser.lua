@@ -113,7 +113,13 @@ local CONFIG = {
   CATALOG_PATH = "/home/item_catalog.txt",  -- absolute path - see the
                                              -- header comment on why this
                                              -- isn't relative anymore
-  BATCH_SIZE   = 300,     -- candidate IDs per getItemsInNetworkById() call
+  BATCH_SIZE   = 100,     -- candidate IDs per getItemsInNetworkById() call:
+                          -- the whole result sits in memory until it's
+                          -- sent, and a GT id can bring back hundreds of
+                          -- stacks, so this bounds the scan's peak
+  WATCH_BATCH_SIZE = 1,   -- the same, for the stock-rule checks (see
+                          -- run_watch): their ids are mostly GT
+                          -- materials, each one a big result on its own
   RESULT_CHUNK_SIZE = 100,  -- max ITEMS json_encode'd/POSTed at once,
                             -- independent of BATCH_SIZE - see the
                             -- comment above the sub-chunking loop below
@@ -547,6 +553,9 @@ local function run_scan(me)
       local subChunkNum = 0
       for j = 1, count do
         subChunk[#subChunk + 1] = simplify_item(result[j])
+        -- Sent stacks can go at the collect after each POST, rather
+        -- than the whole result staying until the last sub-chunk.
+        result[j] = nil
         if (#subChunk >= CONFIG.RESULT_CHUNK_SIZE or j == count) and not scanRejected then
           subChunkNum = subChunkNum + 1
           set_phase(string.format("Batch %d: POSTing result sub-chunk %d (%d items)...", batchNum, subChunkNum, #subChunk))
@@ -623,6 +632,7 @@ local function run_scan(me)
     local subChunkNum = 0
     for j = 1, count do
       subChunk[#subChunk + 1] = simplify(stacks[j])
+      stacks[j] = nil
       if (#subChunk >= CONFIG.RESULT_CHUNK_SIZE or j == count) and not scanRejected then
         subChunkNum = subChunkNum + 1
         set_phase(string.format("%s: POSTing sub-chunk %d (%d stacks)...", what, subChunkNum, #subChunk))
@@ -924,9 +934,11 @@ end
 --
 -- It's the same getItemsInNetworkById() call a full scan makes, on a
 -- short list. The call takes ids without damage, so one GT material
--- brings back every stack sharing its id (hundreds, for gt.metaitem.01)
--- - about one full-scan batch's worth, which a scan already survives.
--- Only the watched stacks are kept. Returns ok, items-found-or-error.
+-- brings back every stack sharing its id (hundreds, for gt.metaitem.01).
+-- Rules on materials under a few such ids, asked for in one call, would
+-- bring back several times what a full-scan batch does - so each call
+-- asks for WATCH_BATCH_SIZE ids, one by default. Only the watched
+-- stacks are kept. Returns ok, items-found-or-error.
 local function run_watch(me)
   local started = computer.uptime()
   local ok, body = http.request_with_timeout(CONFIG.URL .. "/watch", nil, {
@@ -961,9 +973,9 @@ local function run_watch(me)
   end
 
   local found = {}
-  for first = 1, #ids, CONFIG.BATCH_SIZE do
+  for first = 1, #ids, CONFIG.WATCH_BATCH_SIZE do
     local batch = {}
-    for i = first, math.min(first + CONFIG.BATCH_SIZE - 1, #ids) do batch[#batch + 1] = ids[i] end
+    for i = first, math.min(first + CONFIG.WATCH_BATCH_SIZE - 1, #ids) do batch[#batch + 1] = ids[i] end
     local callStart = computer.uptime()
     local callOk, result = pcall(me.getItemsInNetworkById, batch)
     if not callOk then
