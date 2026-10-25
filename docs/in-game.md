@@ -101,9 +101,11 @@ To install specific scripts without being asked, name them:
 gcm install craft power network
 ```
 
-Run `gcm install` again later to add scripts. `/home/config.lua` is only
-written if it doesn't exist yet; to change the address or key later, edit
-it.
+Run `gcm install` again later to add scripts. If `/home/config.lua`
+already exists, `--server` and `--api-key` replace the address and key in
+it and leave the rest alone, so to move a computer to a new address or key,
+paste the Connect a computer command again. Without them the file isn't
+touched.
 
 ## Update
 
