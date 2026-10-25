@@ -35,7 +35,10 @@ can't be installed onto it.
 
 Memory is shared by every script on the computer. `network_browser.lua`
 uses the most, and grows with the size of your ME network: on a large
-network give it Tier 3 or 3.5 memory, or a computer of its own.
+network give it Tier 3 or 3.5 memory, or a computer of its own. If two
+sticks still aren't enough on a big base, use a **Server** in a **Server
+Rack** instead of a case: a Tier 2 server holds 3 memory sticks and a
+Tier 3 server 4, where a case holds 2. It takes the same parts otherwise.
 
 ### Adapters
 
