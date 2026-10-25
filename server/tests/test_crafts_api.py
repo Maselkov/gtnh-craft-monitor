@@ -30,6 +30,14 @@ class TestCraftsEndpoint:
         data = res.get_json()
         assert data["stale"] is True
         assert data["age_seconds"] is None
+        assert data["ever_reported"] is False
+
+    def test_ever_reported_survives_a_restart(self, client, api_headers):
+        client.post("/api/crafts", json={"source": "me_controller", "jobs": []}, headers=api_headers)
+        assert client.get("/api/crafts").get_json()["ever_reported"] is True
+        state.reset()
+        data = client.get("/api/crafts").get_json()
+        assert data["source"] is None and data["ever_reported"] is True
 
     def test_unchanged_since_last_get_is_304(self, client, api_headers):
         client.post("/api/crafts", json={"source": "me_controller", "jobs": []}, headers=api_headers)
