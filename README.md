@@ -28,7 +28,9 @@ Basically, it's web AE2 for your base.
 - **[Webhooks](docs/using.md#webhooks)** — finished pinned crafts and failed
   auto-crafts posted to a Discord channel or any other webhook.
 - **[Accounts](docs/server.md#user-accounts)** — per-user tokens with
-  viewer, operator, and admin roles.
+  viewer, operator, and admin roles, and a
+  [private](docs/server.md#private-servers) setting so only signed-in
+  users see anything.
 
 ## What you need
 

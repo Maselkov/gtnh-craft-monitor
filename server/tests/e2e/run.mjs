@@ -1581,6 +1581,43 @@ async function main() {
     await waitFor('power tab', `visible($('#powerTab')) && $('#tabBtnPower').classList.contains('active')`);
   });
 
+  step('a private server: signed out shows only a notice and fetches nothing; signing in shows it all', async () => {
+    await evaluate(`typeInto('#accessTokenInput', ${JSON.stringify(adminToken)})`);
+    await click(`$('#authBtn')`);
+    await waitFor('signed in', `visible($('#settingsWrap'))`);
+    await click(`$('#settingsBtn')`);
+    await click(`$('#adminBtn')`);
+    await waitFor('admin dialog, still public', `visible($('#adminUsersModal')) && !$('#privateToggle').checked`);
+    await click(`$('#privateToggle')`);
+    await waitFor('saved', `$('#toastContainer').textContent.includes('Only signed-in users can see this base now.')`);
+    await click(`$('#adminUsersModal .history-close-btn')`);
+
+    await click(`$('#settingsBtn')`);
+    await click(`byText('#settingsMenu button', 'Sign out')`);
+    await waitFor('reloaded', `document.readyState === 'complete' && !window.byText`);
+    await evaluate(PAGE_LIB);
+    await waitFor('the notice instead of the tabs', `visible($('#privateNotice')) && !visible($('.tab-bar')) && !visible($('#powerTab')) && visible($('#authBtn'))`);
+    await sleep(1500);
+    const fetched = await evaluate(`performance.getEntriesByType('resource').map((e) => new URL(e.name).pathname)
+      .filter((p) => ['/api/crafts', '/api/power', '/api/stock/rules'].includes(p)).length`);
+    if (fetched) throw new Error(`fetched the base's data ${fetched} times while signed out`);
+    if ((await fetch(base + '/api/crafts')).status !== 401) throw new Error('/api/crafts answered signed out');
+
+    await evaluate(`typeInto('#accessTokenInput', ${JSON.stringify(adminToken)})`);
+    await evaluate(`$('#signInForm').requestSubmit(), true`);
+    await waitFor('the open tab, filled in', `!visible($('#privateNotice')) && visible($('#powerTab')) && $('#powerTab').textContent.includes('EU')`);
+    await click(`$('#tabBtnCrafts')`);
+    await waitFor('crafts too', `card('W01')`);
+
+    await click(`$('#settingsBtn')`);
+    await click(`$('#adminBtn')`);
+    await waitFor('ticked', `visible($('#adminUsersModal')) && $('#privateToggle').checked`);
+    await click(`$('#privateToggle')`);
+    await waitFor('public again', `$('#toastContainer').textContent.includes('Anyone with the link can see this base now.')`);
+    await click(`$('#adminUsersModal .history-close-btn')`);
+    if ((await fetch(base + '/api/crafts')).status !== 200) throw new Error('/api/crafts still refused');
+  });
+
   // Last, as its session cookie replaces the main server's (cookies
   // don't tell ports apart).
   step('first-time setup through the setup link on a server with no users', async () => {

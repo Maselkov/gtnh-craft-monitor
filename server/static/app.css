@@ -1143,6 +1143,26 @@ h1 {
   width: min(560px, 92vw);
 }
 
+/* Signed out of a private server (auth.js): the notice, not the tabs. */
+body.private-locked .tab-bar,
+body.private-locked #loadError,
+body.private-locked #craftsTab,
+body.private-locked #powerTab,
+body.private-locked #networkTab {
+  display: none !important;
+}
+.private-notice {
+  max-width: 32rem;
+  margin: 15vh auto 0;
+  padding: 0 16px;
+  text-align: center;
+  color: var(--muted);
+}
+.private-notice h2 {
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
 /* Scripts dialog (agents.js). */
 .status-body {
   max-height: 70vh;

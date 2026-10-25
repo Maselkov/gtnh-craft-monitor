@@ -2,7 +2,7 @@
 // only declares things - importing one has no side effects - and this
 // one runs them.
 
-import { loadAuthentication, setupAdminActions, setupAuthControls } from './auth.js';
+import { loadAuthentication, onceDataVisible, setupAdminActions, setupAuthControls } from './auth.js';
 import {
   setupAmountInputForDevice,
   setupCraftDialogActions,
@@ -58,7 +58,7 @@ setupCraftRequestActions();
 // Reflect whatever URL the page actually loaded on (/, /crafts,
 // /power, /network, or /network?item=...) rather than always
 // starting on the Crafts tab regardless of how it was linked to.
-(function initFromUrl() {
+function initFromUrl() {
   const initialTab = pathToTab(location.pathname);
   if (initialTab === 'power') powerMachineFromUrl();
   if (initialTab === 'network') {
@@ -68,7 +68,7 @@ setupCraftRequestActions();
   switchTab(initialTab, false);  // false: don't push a new history entry
                                   // over the URL we just loaded
   if (location.pathname === '/network') focusNetworkSearch();  // not under an item's popup
-})();
+}
 
 setupNotifications();
 setupNetworkTooltipEvents();
@@ -80,21 +80,27 @@ setupAmountInputForDevice();
 // piggyback on oninput.
 document.getElementById('networkSearch').addEventListener('scroll', updateNetworkSearchHighlight);
 updateNetworkSearchHighlight();
-loadAuthentication().catch(() => {}).finally(() => refresh());
-setInterval(refresh, 3000);
-setInterval(pollCrafts, 1000);
-setInterval(tickSourceLine, 1000);
-// For the tab badges (tab-badges.js), whichever tab is open. The
-// Network tab also fetches stock rules as it opens.
-fetchStockRules();
-fetchPowerBadge();
-setInterval(() => { fetchStockRules(); fetchPowerBadge(); }, 60000);
-// Hidden tabs keep polling (slowly, as the browser allows): the
-// completions poll is what shows a notification without Web Push.
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) return;
+// Signed out of a private server there's nothing to fetch until
+// signing in (auth.js), not even the tab the page opened on.
+function start() {
+  initFromUrl();
   refresh();
-  refreshActiveTab();
+  setInterval(refresh, 3000);
+  setInterval(pollCrafts, 1000);
+  setInterval(tickSourceLine, 1000);
+  // For the tab badges (tab-badges.js), whichever tab is open. The
+  // Network tab also fetches stock rules as it opens.
   fetchStockRules();
   fetchPowerBadge();
-});
+  setInterval(() => { fetchStockRules(); fetchPowerBadge(); }, 60000);
+  // Hidden tabs keep polling (slowly, as the browser allows): the
+  // completions poll is what shows a notification without Web Push.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    refresh();
+    refreshActiveTab();
+    fetchStockRules();
+    fetchPowerBadge();
+  });
+}
+loadAuthentication().catch(() => {}).finally(() => onceDataVisible(start));

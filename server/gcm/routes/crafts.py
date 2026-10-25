@@ -75,7 +75,7 @@ _PROCESS_TAG = secrets.token_hex(4)
 
 
 @bp.route("/api/crafts", methods=["GET"])
-@auth.public
+@auth.viewer_required
 def crafts_get():
     # Every open tab polls this each second, but the jobs only change
     # when craft_monitor.lua posts - so an ETag turns most polls into an
@@ -105,7 +105,7 @@ def crafts_get():
 
 
 @bp.route("/api/crafts/<cpu>/tree", methods=["GET"])
-@auth.public
+@auth.viewer_required
 def crafts_tree_get(cpu):
     """A busy CPU's job as a tree (gcm/job_tree.py), the first levels of
     it; ?path=0.3.1&version=... sends one step's steps, as the craft
@@ -141,7 +141,7 @@ def crafts_tree_get(cpu):
 
 
 @bp.route("/api/crafts/<cpu>/steps", methods=["GET"])
-@auth.public
+@auth.viewer_required
 def crafts_steps_get(cpu):
     """How far each step of a busy CPU's job has got, for the live tree:
     {steps: {item key: {total, left, crafting, moved_at, state}},
@@ -169,7 +169,7 @@ def _int_arg(name):
 
 
 @bp.route("/api/crafts/history", methods=["GET"])
-@auth.public
+@auth.viewer_required
 def crafts_history_get():
     """Finished and stopped jobs, newest first. ?before=<id> pages back
     through older ones, ?after=<id> fetches only newer ones. ?q= is
@@ -195,7 +195,7 @@ STATS_RANGE_SECONDS = {
 
 
 @bp.route("/api/crafts/stats", methods=["GET"])
-@auth.public
+@auth.viewer_required
 def crafts_stats_get():
     """Totals, most crafted items and CPU busy time over ?range=
     day|week|month|all (unknown: week), from the jobs that ended."""

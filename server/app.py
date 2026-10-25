@@ -16,6 +16,10 @@ Create an admin from the command line instead of the setup link:
 Recover a lost admin token (revokes the user's existing tokens/sessions):
     python app.py new-token <display name>
 
+Make the crafts, network and power visible only to signed-in users, or
+to anyone again (also in the page: Manage users):
+    python app.py visibility private|public
+
 Back up every database, consistently, while the server keeps running:
     python app.py backup <directory>
 
@@ -78,6 +82,11 @@ if __name__ == "__main__":
         sys.exit(0)
     if len(sys.argv) == 3 and sys.argv[1] == "new-token":
         _cli_new_token(sys.argv[2])
+        sys.exit(0)
+    if len(sys.argv) > 1 and sys.argv[1] == "visibility":
+        if sys.argv[2:] not in (["private"], ["public"]):
+            raise SystemExit("usage: app.py visibility private|public")
+        auth.set_private(sys.argv[2] == "private")
         sys.exit(0)
     if len(sys.argv) == 3 and sys.argv[1] == "backup":
         for path in db.backup_all(sys.argv[2]):

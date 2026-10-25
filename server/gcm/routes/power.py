@@ -79,7 +79,7 @@ def _machine_entry(name, t, latest=None):
 
 
 @bp.route("/api/power", methods=["GET"])
-@auth.public
+@auth.viewer_required
 def power_get():
     """One machine's readings (?machine=, see store.power.pick) over
     ?range=, and the list of machines."""
@@ -114,7 +114,7 @@ def power_get():
 
 
 @bp.route("/api/power/chart.png", methods=["GET"])
-@auth.public
+@auth.viewer_required
 def power_chart_png():
     rate_limited = charts.rate_limit_response()
     if rate_limited:

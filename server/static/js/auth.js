@@ -15,6 +15,21 @@ import { updateGameDataNote } from './network.js';
 import { delegateActions, escapeHtml, formatQty, onBackdropClick } from './util.js';
 
 export let AUTH_USER = null;
+// Only signed-in users may see the crafts, network and power
+// (server/gcm/auth.py is_private).
+let SERVER_PRIVATE = false;
+let dataVisibleListeners = [];
+
+function isLocked() {
+  return SERVER_PRIVATE && !AUTH_USER;
+}
+
+// Runs fn once the crafts, network and power can be fetched: at once, or
+// on a private server once signed in.
+export function onceDataVisible(fn) {
+  if (isLocked()) dataVisibleListeners.push(fn);
+  else fn();
+}
 
 // Mirrors auth.is_operator on the server: who may request or cancel crafts.
 export function isOperator() {
@@ -39,12 +54,23 @@ function updateAuthenticationControl() {
   document.getElementById('agentsBtn').style.display = adminVisible ? '' : 'none';
   if (AUTH_USER) syncPushSubscription();
   updateGameDataNote();
+  const locked = isLocked();
+  document.body.classList.toggle('private-locked', locked);
+  document.getElementById('privateNotice').style.display = locked ? '' : 'none';
+  if (locked) {
+    input.focus();
+  } else {
+    const listeners = dataVisibleListeners;
+    dataVisibleListeners = [];
+    for (const fn of listeners) fn();
+  }
 }
 
 export async function loadAuthentication() {
   const response = await fetch('/api/auth/session');
   const data = await response.json();
   AUTH_USER = data.authenticated ? data.user : null;
+  SERVER_PRIVATE = Boolean(data.private);
   updateAuthenticationControl();
   if (data.setup_required) showSetupModal();
 }
@@ -124,6 +150,7 @@ async function openAdminUsersModal() {
   document.getElementById('adminUsersModal').style.display = 'flex';
   document.getElementById('adminUsersError').style.display = 'none';
   document.getElementById('adminTokenResult').style.display = 'none';
+  document.getElementById('privateToggle').checked = SERVER_PRIVATE;
   await refreshAdminUsers();
   document.getElementById('adminUserName').focus();
 }
@@ -191,6 +218,8 @@ export function setupAuthControls() {
     'copy-token': () => copyAdminToken(),
     'close-user-history': () => closeUserHistoryModal(),
   });
+  const privateToggle = document.getElementById('privateToggle');
+  privateToggle.addEventListener('change', () => savePrivate(privateToggle));
   onBackdropClick('adminUsersModal', closeAdminUsersModal);
   onBackdropClick('userHistoryModal', closeUserHistoryModal);
 }
@@ -262,6 +291,28 @@ async function createAdminUser() {
   } finally {
     button.disabled = false;
   }
+}
+
+async function savePrivate(box) {
+  let error = 'Could not reach the server.';
+  try {
+    const response = await fetch('/api/admin/visibility', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ private: box.checked }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (response.ok) {
+      SERVER_PRIVATE = data.private;
+      showToast(SERVER_PRIVATE ? 'Only signed-in users can see this base now.' : 'Anyone with the link can see this base now.');
+      return;
+    }
+    error = data.error || 'Could not save the setting.';
+  } catch (e) {
+    // error stays "Could not reach the server."
+  }
+  box.checked = !box.checked;
+  showToast(error, true);
 }
 
 async function revokeAdminToken(tokenId) {
@@ -411,6 +462,11 @@ async function signOut() {
   // While still signed in - the server only lets its owner remove it.
   await dropPushSubscription();
   await fetch('/api/auth/logout', { method: 'POST' });
+  if (SERVER_PRIVATE) {
+    // Starts over signed out, with none of the data left in the page.
+    location.reload();
+    return;
+  }
   AUTH_USER = null;
   clearPins();
   updateAuthenticationControl();

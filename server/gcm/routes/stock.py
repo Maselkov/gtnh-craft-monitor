@@ -46,7 +46,7 @@ def _network_item(key):
 
 
 @bp.route("/api/stock/rules", methods=["GET"])
-@auth.public
+@auth.viewer_required
 def stock_rules_get():
     """Every keep-in-stock target, and the signed-in user's own alerts,
     each with the item's amount in the latest scan (null before any)."""
