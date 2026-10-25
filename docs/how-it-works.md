@@ -113,9 +113,10 @@ call on just their IDs, and posts what it found (`POST /api/network/levels`).
 The server replaces only those items in the snapshot, records the changes
 in their history, and checks the rules. The call takes IDs without damage
 values, so a GregTech material brings back every stack sharing its ID
-(hundreds, for `gt.metaitem.01`), roughly one full-scan batch, and the script
-keeps only the watched ones. Each call's size and duration go to the
-script's debug log, `network_browser_debug.log`, in the directory it runs from.
+(hundreds, for `gt.metaitem.01`), about a full-scan batch on its own. So
+the script asks for one ID per call (`WATCH_BATCH_SIZE`) and keeps only the
+watched stacks. Each call's size and duration go to the script's debug log,
+`network_browser_debug.log`, in the directory it runs from.
 
 ## Reading patterns
 

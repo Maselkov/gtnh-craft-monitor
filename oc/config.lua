@@ -51,5 +51,7 @@ return {
   -- network_browser = {
   --   SCAN_INTERVAL_SECONDS         = 600,
   --   PATTERN_SCAN_INTERVAL_SECONDS = 3600,
+  --   BATCH_SIZE                    = 100,  -- lower uses less memory
+  --   WATCH_BATCH_SIZE              = 1,
   -- },
 }

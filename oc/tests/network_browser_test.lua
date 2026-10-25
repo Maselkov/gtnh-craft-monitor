@@ -224,6 +224,30 @@ test("between full scans, checks just the watched items every WATCH_INTERVAL_SEC
   t.eq(#env:requests_to("^/api/network/scan/start$"), 1, "no full scan in between")
 end)
 
+test("watched items are looked up one id per call", function()
+  local watch = { items = {
+    { name = "gregtech:gt.metaitem.01", damage = 11028 },
+    { name = "gregtech:gt.metaitem.01", damage = 2032 },
+    { name = "testmod:item1", damage = 0 },
+  }, fluids = {} }
+  local env, me = setup({ config = { SCAN_INTERVAL_SECONDS = 1000 },
+    routes = { ["GET /api/network/watch"] = watch } })
+  fill_watch(me)
+  local asked = {}
+  env:start_service("network_browser")
+  env:run({ seconds = 30 })
+  local real = me.proxy.getItemsInNetworkById
+  me.proxy.getItemsInNetworkById = function(ids)
+    asked[#asked + 1] = ids
+    return real(ids)
+  end
+  env:run({ seconds = 40 })
+  t.eq(asked, { { "gregtech:gt.metaitem.01" }, { "testmod:item1" } })
+  local names = {}
+  for _, item in ipairs(levels(env)[1].items) do names[#names + 1] = item.name end
+  t.eq(names, { "Neutronium Ingot", "Iron Dust", "Item 1" })
+end)
+
 test("watched essentia is checked too", function()
   local watch = { items = {}, fluids = {}, essentia = { "ordo" } }
   local env, me = setup({ routes = { ["GET /api/network/watch"] = watch } })
@@ -259,7 +283,7 @@ test("with no rules, nothing is looked up or sent", function()
   env:run({ seconds = 200 })
   t.eq(#env:requests_to("^/api/network/watch$"), 3)
   t.eq(#levels(env), 0)
-  t.eq(me.calls.getItemsInNetworkById, 1, "only the full scan's")
+  t.eq(me.calls.getItemsInNetworkById, 3, "only the full scan's, 250 ids in batches of 100")
 end)
 
 test("WATCH_INTERVAL_SECONDS = 0 turns the checks off", function()
@@ -293,7 +317,7 @@ test("a failed check is skipped, and the next one and the next scan still run", 
     end,
   } })
   fill_watch(me)
-  me:fail("getItemsInNetworkById", "network busy", 2)  -- the full scan's call, then the first check's
+  me:fail("getItemsInNetworkById", "network busy", 4)  -- the full scan's 3 calls, then the first check's
   env:start_service("network_browser")
   env:run({ seconds = 250 })
   -- Checks at about 60, 120 and 180s: the first fails looking items
