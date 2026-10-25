@@ -98,6 +98,7 @@ ITEM_HISTORY_DB_PATH = None
 APP_DB_PATH = None
 VAPID_KEY_PATH = None
 API_KEY_PATH = None
+_FILE_API_KEY = None
 LEGACY_CRAFT_DB_PATH = None
 
 SERVER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -124,8 +125,10 @@ def configure(data_dir=None, api_key=None):
 def load_api_key():
     """Without API_KEY in the environment, uses the key in DATA_DIR/api_key,
     generating it on first startup - so a server runs with no .env."""
-    global API_KEY
-    if API_KEY:
+    global API_KEY, _FILE_API_KEY
+    # Read again when it came from the file, for a restored backup's key
+    # (gcm.reload_data()).
+    if API_KEY and API_KEY != _FILE_API_KEY:
         return
     if not os.path.exists(API_KEY_PATH):
         os.makedirs(DATA_DIR, exist_ok=True)
@@ -135,6 +138,7 @@ def load_api_key():
             f.write(secrets.token_hex(32) + "\n")
     with open(API_KEY_PATH, encoding="utf-8") as f:
         API_KEY = f.read().strip()
+    _FILE_API_KEY = API_KEY
 
 
 def require_runtime_secrets():

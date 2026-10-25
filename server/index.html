@@ -66,7 +66,7 @@
           <button class="settings-menu-item" id="webhookTestBtn" role="menuitem" style="display:none;"
             data-action="test-webhooks">Test webhooks</button>
           <button class="settings-menu-item" id="backupBtn" role="menuitem" style="display:none;"
-            data-action="download-backup">Download backup</button>
+            data-action="open-backups">Backups</button>
           <button class="settings-menu-item danger" role="menuitem"
             data-action="sign-out">Sign out</button>
         </div>
@@ -357,6 +357,27 @@
       <div class="modal-buttons" style="margin-top:12px;">
         <button class="modal-btn secondary" data-action="refresh-gamedata">Check for new versions</button>
         <button class="modal-btn primary" id="gamedataInstallBtn" data-action="install-gamedata">Use these icons</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="backupsModal" class="modal-overlay" style="display:none;">
+    <div class="modal-box admin-box">
+      <div class="modal-header">
+        <div class="modal-item-name">Backups</div>
+        <button class="history-close-btn" data-action="close-backups" title="Close">&times;</button>
+      </div>
+      <div class="status-heading">Download</div>
+      <div class="modal-note">A zip of every database (accounts, pins, craft, power and item history) and the server's keys, taken while it runs.</div>
+      <div class="modal-buttons">
+        <button class="modal-btn primary" id="backupDownloadBtn" data-action="download-backup">Download backup</button>
+      </div>
+      <div class="status-heading backups-restore-heading">Restore</div>
+      <div class="modal-note">Replaces everything with the backup's: every database, account, token and key. Anything since the backup was made is lost, and you're signed out if your session is newer than it.</div>
+      <input type="file" id="restoreFile" class="restore-file" accept=".zip,application/zip">
+      <div id="restoreError" class="modal-error" style="display:none;"></div>
+      <div class="modal-buttons">
+        <button class="modal-btn cancel-confirm-btn" id="restoreBtn" data-action="restore-backup" disabled>Restore</button>
       </div>
     </div>
   </div>

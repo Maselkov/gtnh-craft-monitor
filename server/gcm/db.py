@@ -717,3 +717,62 @@ def backup_all(target_dir):
             destination.close()
             source.close()
     return targets
+
+
+def _restorable():
+    """Each database by its file name, as backup_all() writes it:
+    (live path, open_db, init, migrations)."""
+    return {
+        os.path.basename(config.APP_DB_PATH): (config.APP_DB_PATH, app_db, init_app_db, APP_MIGRATIONS),
+        os.path.basename(config.POWER_DB_PATH): (config.POWER_DB_PATH, power_db, init_power_db, POWER_MIGRATIONS),
+        os.path.basename(config.ITEM_HISTORY_DB_PATH): (
+            config.ITEM_HISTORY_DB_PATH, item_history_db, init_item_history_db, ITEM_HISTORY_MIGRATIONS,
+        ),
+    }
+
+
+def database_names():
+    return set(_restorable())
+
+
+def _read_pragma(path, name):
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        return conn.execute(f"PRAGMA {name}").fetchone()[0]
+    finally:
+        conn.close()
+
+
+def why_not_restorable(name, path):
+    """None if the file at path, a copy of database `name` from
+    backup_all(), can be restored with restore_copy(); else why not."""
+    live_path, _, _, migrations = _restorable()[name]
+    try:
+        ok = _read_pragma(path, "quick_check")
+        version = _read_pragma(path, "user_version")
+        page_size = _read_pragma(path, "page_size")
+    except sqlite3.DatabaseError:
+        return "isn't a database"
+    if ok != "ok":
+        return "is damaged"
+    if version > len(migrations):
+        return "was made by a newer version of the server. Update this one first"
+    if page_size != _read_pragma(live_path, "page_size"):
+        # Copying into a WAL database can't change its page size.
+        return "can't be restored while the server runs. Restore it by hand (see Backups in docs/server.md)"
+    return None
+
+
+def restore_copy(name, path):
+    """Copies the file at path over the live database `name` with the
+    online backup API - the reverse of backup_all(), safe while the server
+    runs - then migrates it, for a copy made by an older version."""
+    _, open_db, init, _ = _restorable()[name]
+    source = sqlite3.connect(path)
+    destination = open_db()
+    try:
+        source.backup(destination)
+    finally:
+        destination.close()
+        source.close()
+    init()

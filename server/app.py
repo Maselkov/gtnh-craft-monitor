@@ -34,7 +34,7 @@ Or via Docker (see Dockerfile / docker-compose.yml in this project).
 import os
 import sys
 
-from gcm import auth, config, create_app, db, gamedata_index, retention, store
+from gcm import auth, backup, config, create_app, db, gamedata_index, retention, store
 
 
 def _cli_create_admin(display_name):
@@ -108,4 +108,9 @@ if __name__ == "__main__":
     # X-Forwarded-* header (its own trusted_proxy is unset), so ProxyFix
     # never sees them and TRUSTED_PROXIES has no effect. The app already
     # decides which peers to trust in gcm/security.py.
-    serve(app, host="0.0.0.0", port=port, threads=8, clear_untrusted_proxy_headers=False)
+    # max_request_body_size: waitress's own cap (1 GB) is below the biggest
+    # backup an admin can restore; every other route keeps Flask's 1 MB.
+    serve(
+        app, host="0.0.0.0", port=port, threads=8, clear_untrusted_proxy_headers=False,
+        max_request_body_size=backup.RESTORE_MAX_BYTES,
+    )

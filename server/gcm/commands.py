@@ -65,6 +65,12 @@ class CommandQueue:
             self.requests.clear()
             self._next_id = 1
 
+    def drop_pending(self):
+        """Forgets every request, keeping the ids moving on: after a restore
+        their history rows are gone."""
+        with self.lock:
+            self.requests.clear()
+
     def start_after(self, last_id):
         """Makes new ids start above last_id - the highest id any earlier
         process handed out."""
