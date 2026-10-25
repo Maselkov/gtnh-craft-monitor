@@ -380,6 +380,18 @@ remaining sub-chunks and fluids, never calling scan/finish at all) the
 moment the server signals a stale token mid-scan - no point continuing
 to send data nobody's listening for.
 
+**Scan size limits.** A scan whose buffer would pass `MAX_SCAN_ITEMS`
+(100k; every NBT variant counts) is ended on the spot: buffer cleared,
+token dropped, `last_rejected` set so the Status dialog says why. The
+batch gets the same `stale_scan_token` refusal, since that's the one
+code scripts already in the field stop on, and the abandoned token is
+remembered so its scan/finish, if one still comes, doesn't overwrite the
+reason. Ended, not truncated: a partial snapshot would record everything
+past the cut as gone. Pattern scans have `MAX_SCAN_PATTERNS` (25k) the
+same way. Both bound what a runaway or hostile script (anyone with the
+API key) can make the server hold in memory or write to history; a
+whole GTNH catalog is ~11k ids, and an item takes ~600 bytes buffered.
+
 Separately: `network_snapshot` (in `item_history.db`) is a full mirror
 of the live network state, rewritten wholesale on every real scan (not
 change-only, unlike `item_history`) - loaded back into memory once at

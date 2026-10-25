@@ -85,6 +85,9 @@ network = {
     # away ({at, reason}) - for the Status dialog (gcm/health.py).
     "last_scan_seconds": None,
     "last_rejected": None,
+    # The token of a scan ended for going past MAX_SCAN_ITEMS, so its
+    # scan/finish doesn't replace that reason with "stale scan token".
+    "abandoned_scan_token": None,
 }
 
 
@@ -152,6 +155,7 @@ def reset():
             crash=None,
             last_scan_seconds=None,
             last_rejected=None,
+            abandoned_scan_token=None,
         )
     with patterns_lock:
         pattern_buffer.clear()

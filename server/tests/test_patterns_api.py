@@ -231,3 +231,14 @@ class TestNormalize:
         p = patterns.normalize({"provider": "nope", "inputs": [5, {"name": "no internal"}], "outputs": "x"})
         assert p["inputs"] == [] and p["outputs"] == []
         assert p["provider"] == {"name": "?"}
+
+
+def test_a_pattern_scan_past_the_limit_is_abandoned(client, api_headers, monkeypatch):
+    from gcm import config
+
+    run_pattern_scan(client, api_headers, [[PLANKS_PATTERN]])
+    monkeypatch.setattr(config, "MAX_SCAN_PATTERNS", 1)
+    res = run_pattern_scan(client, api_headers, [[PLANKS_PATTERN, NEODYMIUM_PATTERN]])
+    assert res.get_json()["ok"] is False
+    assert state.pattern_buffer == []
+    assert [p["provider"]["name"] for p in scanned(client)["patterns"]] == ["Molecular Assembler"]

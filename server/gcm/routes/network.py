@@ -60,9 +60,12 @@ def network_scan_batch():
             {
                 "ok": False,
                 "error": "stale_scan_token",
+                # The code network_browser.lua stops a scan on, so it's
+                # also what a scan past MAX_SCAN_ITEMS gets.
                 "detail": "This batch doesn't belong to the currently active scan "
-                "(the server may have restarted, or a newer scan already "
-                "started) - discarding it rather than accumulating a partial result.",
+                "(the server may have restarted, a newer scan already started, "
+                "or this one went over the item limit) - discarding it rather "
+                "than accumulating a partial result.",
             }
         )
     buffered, chunks_received = accepted

@@ -9,7 +9,7 @@ import secrets
 import threading
 import time
 
-from gcm import charts, icons, nbt, rates, state, store
+from gcm import charts, config, icons, nbt, rates, state, store
 
 log = logging.getLogger(__name__)
 
@@ -104,7 +104,8 @@ def merge_variants(items):
 def add_batch(token, items):
     """Buffers one batch of scanned items. Returns (buffered item count,
     chunks received so far), or None if the batch belongs to a scan
-    that isn't the active one - see finish_scan() for why."""
+    that isn't the active one - see finish_scan() for why - or would take
+    the scan past MAX_SCAN_ITEMS, which ends it."""
     tags = {}
     for it in items:
         tag = assign_variant(it)
@@ -113,6 +114,21 @@ def add_batch(token, items):
     items = icons.attach_item_icons(items)
     with state.network_lock:
         if not _is_current_scan_locked(token):
+            return None
+        if len(state.network_buffer) + len(items) > config.MAX_SCAN_ITEMS:
+            # Ended rather than truncated: a partial scan would record
+            # everything it left out as gone.
+            state.network_buffer.clear()
+            state.network_tag_buffer.clear()
+            state.network["abandoned_scan_token"] = token
+            state.network["current_scan_token"] = None
+            state.network["in_progress"] = False
+            state.network["scan_started_at"] = None
+            state.network["last_rejected"] = {
+                "at": time.time(),
+                "reason": f"over {config.MAX_SCAN_ITEMS} items (MAX_SCAN_ITEMS)",
+            }
+            log.warning("Abandoned a network scan past MAX_SCAN_ITEMS=%s", config.MAX_SCAN_ITEMS)
             return None
         state.network_buffer.extend(items)
         state.network_tag_buffer.update(tags)
@@ -139,7 +155,8 @@ def finish_scan(token, chunks_sent, total_errors):
         if not _is_current_scan_locked(token):
             state.network["in_progress"] = False
             state.network["scan_started_at"] = None
-            state.network["last_rejected"] = {"at": time.time(), "reason": "stale scan token"}
+            if not token or token != state.network["abandoned_scan_token"]:
+                state.network["last_rejected"] = {"at": time.time(), "reason": "stale scan token"}
             log.warning(
                 "Rejected scan/finish: stale or missing scan_token - the server "
                 "likely restarted mid-scan, or a newer scan already started. "
