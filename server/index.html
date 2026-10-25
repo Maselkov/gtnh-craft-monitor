@@ -362,6 +362,14 @@
         <div id="serverHealth" class="server-health"></div>
         <div class="status-heading">Computers</div>
         <div id="agentsLatest" class="modal-note"></div>
+        <div class="agent-settings">
+          <label class="agent-setting"><input type="checkbox" id="autoRestartToggle" disabled>
+            <span>Restart scripts that stop
+              <span class="agent-line">Only scripts enabled on the computer, at most 3 times an hour each. A script stopped with <code>rc &lt;name&gt; stop</code> stays stopped.</span></span></label>
+          <label class="agent-setting"><input type="checkbox" id="autoUpdateToggle" disabled>
+            <span>Update computers when the server updates
+              <span class="agent-line" id="autoUpdateNote"></span></span></label>
+        </div>
         <div id="agentsList" class="agents-list"></div>
         <div class="status-heading connect-heading">Connect a computer</div>
         <div class="connect-computer">

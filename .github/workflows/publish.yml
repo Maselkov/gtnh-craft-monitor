@@ -52,6 +52,9 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # vX.Y.Z on a release; a manual dispatch's branch name never
+          # counts as one (gcm/config.py SERVER_VERSION).
+          build-args: GCM_VERSION=${{ github.ref_name }}
           # A registry cache rather than type=gha: the Actions cache a tag
           # run writes can't be read by the next tag's run, so every
           # release would start cold. Spelled out because image refs must

@@ -920,6 +920,7 @@ function start()
     return
   end
   running = true
+  stopped_on_purpose = false
   worker = thread.create(service_loop)
   worker:detach()
 end
@@ -930,8 +931,11 @@ end
 -- when stop() is called is unaffected either way (same limitation as
 -- before this conversion - craft_monitor restarting mid-request loses
 -- track of it, a known, accepted limitation).
+-- stopped_on_purpose (a global, so in rc.loaded[name]) tells gcm_agent
+-- not to restart it.
 function stop()
   running = false
+  stopped_on_purpose = true
 end
 
 function status()

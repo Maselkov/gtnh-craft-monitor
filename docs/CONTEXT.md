@@ -1210,7 +1210,12 @@ Commands are deliberately only `update` with ref `release` or `main`,
 and `reboot`. The agent runs `/usr/bin/gcm.lua update --no-reboot
 [--ref=main]` through loadfile() (so gcm's error message comes back as
 its second return value), reports the result, and reboots if the
-version changed. gcm downloads from its own hard-coded repository, so a
+version changed. A result about to reboot says `rebooting = true`
+(older agents: inferred from the message); the server keeps the command
+`awaiting_boot` until a heartbeat with a lower uptime than the one it
+was handed over at, then stamps `back_at`, and fails it after 3 polls
+without one. A successful command leaves the card 10 minutes after it's
+over; a failed one stays for the day. gcm downloads from its own hard-coded repository, so a
 compromised server can trigger a real release, main, or a reboot, and
 nothing else. Separate from craft_monitor on purpose: an update must
 still work when the script it would fix has crashed.
@@ -1226,6 +1231,24 @@ config.lua, `gcm install` POSTs `/api/agent/ping` with the key and says
 what went wrong (401: wrong key; no connection: the address must work
 from the Minecraft server, and a local one is in OC's default internet
 blacklist). It saves the settings either way.
+
+Auto-restart is the agent's own job, so it keeps working while the
+server is down: the heartbeat reply only carries the switch
+(`auto_restart`, app.db `settings`). A script's `stop()` sets the global
+`stopped_on_purpose`, readable through `rc.loaded[name]`, which is how a
+crash (thread dead, flag false) is told apart from `rc <name> stop`.
+Only services in /etc/rc.cfg's `enabled`, not in the first 2 minutes of
+uptime (rc is still starting them), at most 3 an hour each, counted on
+`computer.uptime()` and forgotten on reboot.
+
+Auto-update uses the plain `update:release` command, which every agent
+since the first understands; an exact `--ref=<tag>` would be refused by
+exactly the old agents that need updating. So it fires only while the
+server's own release (`GCM_VERSION`, a build arg in publish.yml) is also
+the latest tag, and never moves a computer past its server. The
+heartbeat reads the latest tag from the cache and refreshes it in a
+background thread rather than waiting on GitHub. One try per (computer,
+release) per server process.
 
 `is_running()` (each service, from its worker thread's status) exists
 because `running` stays true when a loop dies of an error; `start()`

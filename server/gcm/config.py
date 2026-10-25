@@ -44,6 +44,10 @@ GAMEDATA_API_URL = os.environ.get("GAMEDATA_API_URL", "https://api.github.com").
 # The in-game scripts' repository, for the Scripts dialog's "update
 # available" (gcm/agents.py). gcm.lua itself always uses its own.
 SCRIPTS_REPO = os.environ.get("SCRIPTS_REPO", "Maselkov/gtnh-craft-monitor")
+# This server's own release (vX.Y.Z), baked into the published image
+# (Dockerfile); unset when run from source. The Status dialog's
+# auto-update only works with one.
+SERVER_VERSION = os.environ.get("GCM_VERSION", "").strip() or None
 GTNH_VERSION = os.environ.get("GTNH_VERSION", "").strip()
 GTNH_TEXTURES = os.environ.get("GTNH_TEXTURES", "").strip()
 # A directory of bundles (<version>/ each, as in DATA_DIR/gamedata) that

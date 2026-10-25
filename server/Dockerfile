@@ -39,6 +39,10 @@ COPY app.py index.html ./
 COPY gcm ./gcm
 COPY static ./static
 
+# The release this image is, from publish.yml; the Status dialog shows it
+# and auto-update needs it. After the COPYs, so a new tag reuses their layers.
+ARG GCM_VERSION=
+ENV GCM_VERSION=$GCM_VERSION
 ENV PORT=8420
 ENV STALE_AFTER_SECONDS=30
 ENV SESSION_COOKIE_SECURE=1

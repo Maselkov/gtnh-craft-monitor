@@ -18,7 +18,8 @@ def agent_heartbeat():
     address = payload.get("address") if isinstance(payload, dict) else None
     if not isinstance(address, str) or not 0 < len(address) <= _MAX_ADDRESS_LENGTH:
         return jsonify({"error": "missing address"}), 400
-    return jsonify({"command": agents.heartbeat(address, payload)})
+    return jsonify({"command": agents.heartbeat(address, payload),
+                    "auto_restart": agents.settings()["auto_restart"]})
 
 
 @bp.route("/api/agent/ping", methods=["POST"])
@@ -33,7 +34,8 @@ def agent_ping():
 @auth.api_key_required
 def agent_command_result(cmd_id):
     payload = request.get_json(silent=True) or {}
-    if not agents.result(cmd_id, payload.get("ok"), payload.get("message"), payload.get("version")):
+    if not agents.result(cmd_id, payload.get("ok"), payload.get("message"), payload.get("version"),
+                         payload.get("rebooting")):
         return jsonify({"error": "unknown command"}), 404
     return jsonify({"ok": True})
 
@@ -46,6 +48,24 @@ def admin_agents_get():
     for computer in computers:
         computer["behind"] = agents.is_behind(computer["version"], latest)
     return jsonify({"computers": computers, "latest_release": latest, "latest_error": error})
+
+
+@bp.route("/api/admin/agent-settings", methods=["GET"])
+@auth.admin_required
+def admin_agent_settings_get():
+    """The Status dialog's checkboxes (gcm/agents.py), and the server's
+    own version: auto-update needs one."""
+    return jsonify({**agents.settings(), "server_version": config.SERVER_VERSION})
+
+
+@bp.route("/api/admin/agent-settings", methods=["PUT"])
+@auth.admin_required
+def admin_agent_settings_put():
+    """Body: any of {"auto_update": bool, "auto_restart": bool}."""
+    error = agents.save_settings(request.get_json(silent=True))
+    if error:
+        return jsonify({"error": error}), 400
+    return admin_agent_settings_get()
 
 
 @bp.route("/api/admin/connect", methods=["GET"])

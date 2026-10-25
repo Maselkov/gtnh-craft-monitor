@@ -629,12 +629,14 @@ class FakeComputer:
             else:
                 message = "Rebooting."
             game.call("POST", f"/api/agent/commands/{cmd['id']}/result",
-                      {"ok": True, "message": message, "version": self.version})
+                      {"ok": True, "message": message, "version": self.version, "rebooting": True})
             self.booted_at = time.time()
         reply = game.call("POST", "/api/agent/heartbeat", {
             "address": self.address, "version": self.version,
             "components": [name.split("_")[0] for name in self.services],
-            "services": [{"name": name, "running": name != "network_browser" or random.random() < 0.9}
+            # network_browser falls over now and then, and gcm_agent restarts it.
+            "services": [{"name": name, "running": name != "network_browser" or random.random() < 0.9,
+                          "restarts": int(name == "network_browser")}
                          for name in self.services],
             "free_memory": int(self.total_memory * random.uniform(0.2, 0.6)),
             "total_memory": self.total_memory, "uptime": time.time() - self.booted_at,

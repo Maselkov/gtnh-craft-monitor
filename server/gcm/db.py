@@ -594,6 +594,12 @@ def _app_craft_event_auto(conn):
     conn.execute("ALTER TABLE craft_events ADD COLUMN auto INTEGER NOT NULL DEFAULT 0")
 
 
+def _app_settings(conn):
+    # Server-wide switches set on the page (gcm/agents.py: the Status
+    # dialog's checkboxes), one JSON value per key.
+    conn.execute("CREATE TABLE settings (k TEXT PRIMARY KEY, v TEXT NOT NULL)")
+
+
 APP_MIGRATIONS = [
     _app_baseline,
     _app_drop_orphaned_user_rows,
@@ -603,6 +609,7 @@ APP_MIGRATIONS = [
     _app_craft_event_details,
     _app_stock_rules,
     _app_craft_event_auto,
+    _app_settings,
 ]
 POWER_MIGRATIONS = [_power_baseline, _power_machines, _power_drop_impossible_times]
 ITEM_HISTORY_MIGRATIONS = [

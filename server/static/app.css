@@ -1246,6 +1246,30 @@ h1 {
 .agent-command.failed {
   color: var(--stale);
 }
+.agent-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+.agent-setting {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+.agent-setting input {
+  margin: 2px 0 0;
+  accent-color: var(--idle);
+}
+.agent-setting .agent-line {
+  display: block;
+  margin-top: 2px;
+}
+.agent-setting .agent-line:empty {
+  display: none;
+}
 .agent-buttons {
   display: flex;
   flex-wrap: wrap;

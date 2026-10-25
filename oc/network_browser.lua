@@ -1195,6 +1195,7 @@ function start()
     return
   end
   running = true
+  stopped_on_purpose = false
   worker = thread.create(service_loop)
   worker:detach()
 end
@@ -1204,8 +1205,11 @@ end
 -- flips a flag the loop itself checks - not a thread kill, matching the
 -- lesson already learned elsewhere in this project about being cautious
 -- with anything thread-lifecycle-related.
+-- stopped_on_purpose (a global, so in rc.loaded[name]) tells gcm_agent
+-- not to restart it.
 function stop()
   running = false
+  stopped_on_purpose = true
 end
 
 function status()

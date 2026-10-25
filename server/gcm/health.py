@@ -116,6 +116,7 @@ def snapshot(now=None):
     thinned = retention.last_run
     return {
         "uptime_seconds": now - STARTED_AT,
+        "version": config.SERVER_VERSION,
         "gamedata": gamedata.selected_version(),
         "feeds": [_crafts(now), _network(now), _patterns(now), *_power(now)],
         "storage": _storage(),
