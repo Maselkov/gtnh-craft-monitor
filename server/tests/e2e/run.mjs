@@ -504,19 +504,19 @@ async function main() {
   step('sign in with the admin token', async () => {
     await evaluate(`typeInto('#accessTokenInput', ${JSON.stringify(adminToken)})`);
     await click(`$('#authBtn')`);
-    await waitFor('admin menu available', `visible($('#settingsWrap')) && !visible($('#authBtn'))`);
+    await waitFor('admin menu available', `$('#settingsUser').textContent !== '' && !visible($('#authBtn'))`);
   });
 
   step('sign out, then sign in again with the Enter key', async () => {
     await click(`$('#settingsBtn')`);
     await waitFor('menu open', `visible($('#settingsMenu'))`);
     await click(`byText('#settingsMenu button', 'Sign out')`);
-    await waitFor('signed out', `visible($('#authBtn')) && !visible($('#settingsWrap'))`);
+    await waitFor('signed out', `visible($('#authBtn')) && $('#settingsUser').textContent === ''`);
     await evaluate(`typeInto('#accessTokenInput', ${JSON.stringify(adminToken)})`);
     // A synthetic Enter keydown doesn't submit a form; requestSubmit() is
     // what pressing Enter in the field does.
     await evaluate(`$('#signInForm').requestSubmit(), true`);
-    await waitFor('signed in', `visible($('#settingsWrap')) && $('#settingsUser').textContent.includes('Administrator')`);
+    await waitFor('signed in', `$('#settingsUser').textContent !== '' && $('#settingsUser').textContent.includes('Administrator')`);
   });
 
   step('notifications switch in the settings menu', async () => {
@@ -532,6 +532,32 @@ async function main() {
     await click(`$('#notifToggle')`);
     await waitFor('back on', `$('#notifToggle').getAttribute('aria-checked') === 'true'`);
     await waitFor('service worker registered', `navigator.serviceWorker.getRegistration('/').then(r => Boolean(r && r.active))`);
+    await evaluate(`pressKey('Escape'), true`);
+    await waitFor('menu closed', `!visible($('#settingsMenu'))`);
+  });
+
+  step('theme: light, dark or the system\'s, remembered across a reload', async () => {
+    const bg = `getComputedStyle(document.body).backgroundColor`;
+    await click(`$('#settingsBtn')`);
+    await waitFor('menu open', `visible($('#settingsMenu'))`);
+    await waitFor('auto by default', `!document.documentElement.dataset.theme
+      && $('[data-theme-choice="auto"]').getAttribute('aria-checked') === 'true'`);
+    await click(`$('[data-theme-choice="dark"]')`);
+    await waitFor('dark', `document.documentElement.dataset.theme === 'dark' && ${bg} === 'rgb(15, 17, 21)'`);
+    await waitFor('menu stays open', `visible($('#settingsMenu'))`);
+    await click(`$('[data-theme-choice="light"]')`);
+    await waitFor('light', `document.documentElement.dataset.theme === 'light' && ${bg} === 'rgb(244, 245, 247)'
+      && $('[data-theme-choice="light"]').getAttribute('aria-checked') === 'true'
+      && $('[data-theme-choice="dark"]').getAttribute('aria-checked') === 'false'`);
+    await cdp.send('Page.reload');
+    await waitFor('reloaded', `document.readyState === 'complete' && !window.byText`);
+    await evaluate(PAGE_LIB);
+    await waitFor('still light', `document.documentElement.dataset.theme === 'light'
+      && $('[data-theme-choice="light"]').getAttribute('aria-checked') === 'true'`);
+    await click(`$('#settingsBtn')`);
+    await click(`$('[data-theme-choice="auto"]')`);
+    await waitFor('back to auto', `!document.documentElement.dataset.theme
+      && localStorage.getItem('gtnhCraftMonitor.theme') === null`);
     await evaluate(`pressKey('Escape'), true`);
     await waitFor('menu closed', `!visible($('#settingsMenu'))`);
   });
@@ -1437,7 +1463,7 @@ async function main() {
     await waitFor('reloaded', `document.readyState === 'complete' && !window.byText`);
     await evaluate(PAGE_LIB);
     // The session was in the backup, so still signed in as the admin.
-    await waitFor('still signed in', `visible($('#settingsWrap')) && $('#settingsUser').textContent === 'Signed in as Administrator'`);
+    await waitFor('still signed in', `$('#settingsUser').textContent !== '' && $('#settingsUser').textContent === 'Signed in as Administrator'`);
     await waitFor('crafts back', `card('W01')`);
   });
 
@@ -1593,7 +1619,12 @@ async function main() {
   step('sign out', async () => {
     await click(`$('#settingsBtn')`);
     await click(`byText('#settingsMenu button', 'Sign out')`);
-    await waitFor('signed out', `visible($('#authBtn')) && !visible($('#settingsWrap'))`);
+    await waitFor('signed out', `visible($('#authBtn')) && $('#settingsUser').textContent === ''`);
+    // The settings menu stays, with just the Theme.
+    await click(`$('#settingsBtn')`);
+    await waitFor('theme-only menu', `visible($('#settingsMenu')) && visible($('.theme-row'))
+      && !visible($('#settingsUser')) && !visible($('#notifToggle')) && !visible($('#signOutBtn'))`);
+    await evaluate(`pressKey('Escape'), true`);
     // Pinning and cancelling both need a user, so the cards drop them.
     await click(`$('#tabBtnCrafts')`);
     await waitFor('no pin or cancel buttons', `$$('#root .card').length > 0 && !$('#root .pin-btn') && !$('#root .cancel-btn')`);
@@ -1642,7 +1673,7 @@ async function main() {
   step('a private server: signed out shows only a notice and fetches nothing; signing in shows it all', async () => {
     await evaluate(`typeInto('#accessTokenInput', ${JSON.stringify(adminToken)})`);
     await click(`$('#authBtn')`);
-    await waitFor('signed in', `visible($('#settingsWrap'))`);
+    await waitFor('signed in', `$('#settingsUser').textContent !== ''`);
     await click(`$('#settingsBtn')`);
     await click(`$('#adminBtn')`);
     await waitFor('admin dialog, still public', `visible($('#adminUsersModal')) && !$('#privateToggle').checked`);
