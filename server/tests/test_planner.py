@@ -5,7 +5,7 @@ import json
 import pytest
 
 from gcm import oredict, patterns, planner, store
-from conftest import login_as
+from conftest import login_as, ore_dict_index
 from test_network_api import run_scan
 from test_patterns_api import run_pattern_scan
 
@@ -242,7 +242,7 @@ def ore_dict(tmp_path):
         path.write_text(json.dumps({
             name: [f"gregtech:gt.metaitem.01:{it(n)['damage']}" for n in members] for name, members in names.items()
         }))
-        oredict.load(str(path))
+        oredict.load(ore_dict_index(path))
     yield load
     oredict.load(None)
 

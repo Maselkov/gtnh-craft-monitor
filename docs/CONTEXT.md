@@ -109,6 +109,7 @@ gcm/commands.py     craft/cancel request queues + their history rows
 gcm/tracking.py     CPU job ends -> craft events + completions
 gcm/inventory.py    network scan protocol, snapshot reload, item history
 gcm/icons.py        icon lookup + images.zip access (versioned paths)
+gcm/gamedata_index.py  a bundle's lookups as one read-only SQLite file
 gcm/item_info.py    item descriptions, rarity, fluid details, mod names
                     (item_info.json) by the lookup's keys
 gcm/gamedata.py     per-GTNH-version game data bundles: list, download,
@@ -133,7 +134,9 @@ Four rules keep this layout honest:
   request and shape the response; store functions open their own
   connection, return plain tuples/dicts, and make each change that must
   be atomic a single function. `tests/test_store_boundary.py` fails on
-  a query or connection anywhere else.
+  a query or connection anywhere else. The one exception is
+  `gcm/gamedata_index.py`, whose file belongs to a game data bundle, not
+  to the app.
 - **Settings live in `config.py`, and other modules read them as
   `config.NAME` at call time**, never `from gcm.config import NAME` and
   never `os.environ` themselves - otherwise `configure()` (and tests'
@@ -1132,8 +1135,29 @@ Image paths inside the zip keep NESQL's scheme
 (`item/<mod>/<name>~<damage>[~<nbt>].png`, `fluid/<mod>/<name>.png`), so
 old and new zips can be diffed. `images.zip` is ~250 MB per version
 (`images-faithful32.zip` ~300 MB), so
-it's never in git; the server reads icons out of it on demand via
-`zipfile`, never unpacking it to disk.
+it's never in git; the server reads icons out of it on demand, never
+unpacking it to disk.
+
+**The bundle index.** Held in memory, a GTNH 2.9 bundle cost every
+server ~175 MB: `zipfile`'s directory of the 131k-icon zip ~90 MB, the
+icon lookup ~64 MB, the ore dictionary ~20 MB. So `gcm/gamedata_index.py`
+puts all three in one SQLite file, `index.sqlite` (~40 MB on disk),
+that's read in place: lookups are single-row queries (11k items' icons
+resolve in ~30 ms), and an icon is read straight from its offset in the
+zip with `os.pread` and `zlib` (~20 µs), its CRC checked. The file is
+memory-mapped, so its pages are the OS's file cache, shared by every
+server reading the same file (`GAMEDATA_SHARED_DIR`). `activate()`
+builds it on first use - next to the bundle, or in the server's own
+directory for one it can't write to - in a separate `python -I`
+process, so the ~175 MB building takes goes back to the OS. It's
+rebuilt when `data.json` or a texture zip's size changes, or its
+`FORMAT` is bumped; `app.py index-gamedata` builds one into a shared
+bundle. `item_info.json` (~5 MB loaded) stays in memory.
+
+With that, and matplotlib/numpy (charts) and pywebpush/cryptography
+(Web Push) imported on first use instead of at startup (~70 MB, which
+most servers never need), a server with GTNH 2.9 data, a full scan and
+icons served holds ~77 MB instead of ~287 MB.
 
 For debugging, `-Dgcm.iconexport.only=<regex>` and
 `-Dgcm.iconexport.limit=<n>` (passed via `JAVA_TOOL_OPTIONS` to the

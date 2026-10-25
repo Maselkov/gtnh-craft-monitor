@@ -7,50 +7,24 @@ for listing an item's names (the page's $ search and item dialog).
 ore_dict.json is {ore name: ["mod:internal:damage", ...]}, damage "*"
 for every damage of the item. Bundles from before it existed have none,
 and nothing substitutes; older ones only have names with more than one
-item, which is all substituting needs."""
+item, which is all substituting needs. It's read from the bundle's index
+(gcm/gamedata_index.py), not held in memory."""
 
-import json
-import logging
-import os
 import threading
 
-log = logging.getLogger(__name__)
-
 _lock = threading.Lock()
-_by_item = {}  # (mod, internal, damage) -> ore names, damage None for "*"
-_members = {}  # ore name -> [(mod, internal, damage or None)]
+_index = None  # the live bundle's gamedata_index.Index, or None
+_loaded = False
 _version = 0   # bumped on every load, for caches built from it
 
 
-def load(path):
-    """Makes the ore dictionary at path the live one; none if path is
-    None or missing."""
-    global _by_item, _members, _version
-    members, by_item = {}, {}
-    if path and os.path.exists(path):
-        try:
-            with open(path, encoding="utf-8") as f:
-                raw = json.load(f)
-        except (OSError, ValueError) as e:
-            log.warning("unreadable ore dictionary %s: %s", path, e)
-            raw = {}
-        for name, entries in raw.items() if isinstance(raw, dict) else ():
-            parsed = []
-            for entry in entries if isinstance(entries, list) else ():
-                mod, sep, rest = str(entry).partition(":")
-                internal, sep2, damage = rest.rpartition(":")
-                if not (sep and sep2 and mod and internal):
-                    continue
-                if damage == "*":
-                    parsed.append((mod, internal, None))
-                elif damage.lstrip("-").isdigit():
-                    parsed.append((mod, internal, int(damage)))
-            if parsed:
-                members[name] = parsed
-                for m in parsed:
-                    by_item.setdefault(m, []).append(name)
+def load(index):
+    """Makes the ore dictionary in index (a gamedata_index.Index) the live
+    one; none if index is None."""
+    global _index, _loaded, _version
+    loaded = bool(index and index.has_ore_dict())
     with _lock:
-        _members, _by_item = members, by_item
+        _index, _loaded = index, loaded
         _version += 1
 
 
@@ -59,7 +33,7 @@ def version():
 
 
 def loaded():
-    return bool(_members)
+    return _loaded
 
 
 def _split(key):
@@ -83,9 +57,10 @@ def names(mod, internal, damage):
         damage = int(damage) if damage is not None else 0
     except (TypeError, ValueError):
         return []
-    with _lock:
-        found = _by_item.get((mod, internal, damage), []) + _by_item.get((mod, internal, None), [])
-    return list(dict.fromkeys(found))
+    index = _index
+    if index is None:
+        return []
+    return list(dict.fromkeys(index.ore_names(mod, internal, damage)))
 
 
 class Known:
@@ -109,9 +84,10 @@ def equivalents(key, known):
     split = _split(key)
     if split is None:
         return []
-    with _lock:
-        names = _by_item.get(split, []) + _by_item.get((split[0], split[1], None), [])
-        members = [_members[n] for n in names]
+    index = _index
+    if index is None:
+        return []
+    members = [index.ore_members(name) for name in index.ore_names(*split)]
     out, seen = [], {key}
     for group in members:
         for mod, internal, damage in group:

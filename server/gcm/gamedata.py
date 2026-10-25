@@ -22,14 +22,19 @@ catalog to download."""
 
 import hashlib
 import json
+import logging
 import os
 import re
 import shutil
+import subprocess
+import sys
 import threading
 import time
 import urllib.request
 
-from gcm import config, icons, inventory, item_info, oredict, patterns
+from gcm import config, gamedata_index, icons, inventory, item_info, oredict, patterns
+
+log = logging.getLogger(__name__)
 
 TAG_PREFIX = "gtnh-data-"
 # data.json first: it holds the others' sizes and checksums.
@@ -59,6 +64,8 @@ _VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 _lock = threading.Lock()
 _status = {}
 _available = {}
+# The live bundle's index, open (gamedata_index.Index), or None.
+_index = None
 
 
 def reset():
@@ -214,25 +221,63 @@ def installed():
     return versions
 
 
+def index_path(version):
+    """version's index (gcm/gamedata_index.py), built first if it's missing
+    or out of date, or None if building it failed. One that came with the
+    bundle is used as it is; otherwise it's built in this server's own
+    directory for the version, which for a shared bundle (maybe
+    read-only) is a directory holding just that."""
+    bundle = _bundle_dir(version)
+    shipped = os.path.join(bundle, gamedata_index.FILE)
+    if gamedata_index.is_current(shipped, bundle):
+        return shipped
+    own_dir = os.path.join(config.GAMEDATA_DIR, version)
+    own = os.path.join(own_dir, gamedata_index.FILE)
+    if own != shipped and gamedata_index.is_current(own, bundle):
+        return own
+    os.makedirs(own_dir, exist_ok=True)
+    log.info("Indexing the %s game data...", version)
+    started = time.monotonic()
+    # A separate process, so the memory building takes (the whole lookup
+    # and zip directory, ~175 MB for GTNH 2.9) goes back to the OS. -I and
+    # run_path: the builder is standard library only, and nothing from
+    # gcm's directory may shadow it.
+    script = (
+        "import runpy, sys; sys.argv = sys.argv[1:]; "
+        "runpy.run_path(sys.argv[0], run_name='__main__')"
+    )
+    result = subprocess.run(
+        [sys.executable, "-I", "-c", script, gamedata_index.__file__, bundle, own],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        log.error("Indexing the %s game data failed:\n%s", version, result.stderr.strip())
+        return None
+    log.info("Indexed the %s game data in %.1fs", version, time.monotonic() - started)
+    return own
+
+
 def activate():
     """Makes the selected bundle live, or no icons if there's none. Called
     at startup and after an install."""
+    global _index
     version, textures = selected()
-    if version:
+    path = index_path(version) if version else None
+    old, _index = _index, (gamedata_index.Index(path) if path else None)
+    if _index:
         # The icon URL prefix busts browser caches when any of these changes.
         build = build_id(version)
         prefix = f"{version}~{build}" if textures == "default" else f"{version}~{textures}~{build}"
-        icons.load(
-            os.path.join(_bundle_dir(version), "icons_lookup.json"),
-            os.path.join(_bundle_dir(version), TEXTURES[textures]["file"]),
-            prefix,
-        )
-        oredict.load(os.path.join(_bundle_dir(version), "ore_dict.json"))
+        icons.load(_index, os.path.join(_bundle_dir(version), TEXTURES[textures]["file"]), prefix)
+        oredict.load(_index)
         item_info.load(os.path.join(_bundle_dir(version), "item_info.json"))
     else:
         icons.load(None, None)
         oredict.load(None)
         item_info.load(None)
+    if old is not None:
+        old.close()
 
 
 def catalog_version():

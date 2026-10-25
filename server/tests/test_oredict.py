@@ -2,6 +2,7 @@ import json
 
 import pytest
 
+from conftest import ore_dict_index
 from gcm import oredict, store
 
 
@@ -21,7 +22,7 @@ def load(tmp_path):
     def write(data):
         path = tmp_path / "ore_dict.json"
         path.write_text(json.dumps(data) if not isinstance(data, str) else data)
-        oredict.load(str(path))
+        oredict.load(ore_dict_index(path))
     yield write
     oredict.load(None)
 
@@ -58,7 +59,8 @@ def test_fluids_and_junk_are_ignored(load):
 def test_missing_or_unreadable_means_none(load, tmp_path):
     load("{not json")
     assert not oredict.loaded()
-    oredict.load(str(tmp_path / "nope.json"))
+    (tmp_path / "ore_dict.json").unlink()
+    oredict.load(ore_dict_index(tmp_path / "ore_dict.json"))
     assert not oredict.loaded()
     before = oredict.version()
     oredict.load(None)

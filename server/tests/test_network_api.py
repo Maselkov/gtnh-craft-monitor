@@ -5,7 +5,7 @@ import pytest
 
 from gcm import config, icons, item_info, oredict, state, store
 from gcm import inventory
-from conftest import login_as
+from conftest import login_as, ore_dict_index
 from nbt_fixtures import seed_tag
 
 
@@ -767,7 +767,7 @@ def game_info(tmp_path):
         if ore is not None:
             ore_path = tmp_path / "ore_dict.json"
             ore_path.write_text(json.dumps(ore))
-            oredict.load(str(ore_path))
+            oredict.load(ore_dict_index(ore_path))
     yield load
     item_info.load(None)
     oredict.load(None)

@@ -5,7 +5,9 @@ SERVER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # SQL belongs in gcm/db.py (schemas and migrations) and gcm/store/
 # (everything else). A connection or query anywhere else fails here.
-ALLOWED = {os.path.join("gcm", "db.py")}
+# gcm/gamedata_index.py is the exception: its file is part of a game data
+# bundle, read-only, not one of the app's databases.
+ALLOWED = {os.path.join("gcm", "db.py"), os.path.join("gcm", "gamedata_index.py")}
 ALLOWED_DIRS = (os.path.join("gcm", "store") + os.sep,)
 SQL_ACCESS = re.compile(
     r"\bsqlite3\b|\.execute(many|script)?\(|\bdb\.(app_db|power_db|item_history_db|transaction)\b"

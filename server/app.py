@@ -19,13 +19,18 @@ Recover a lost admin token (revokes the user's existing tokens/sessions):
 Back up every database, consistently, while the server keeps running:
     python app.py backup <directory>
 
+Build a game data bundle's index (gcm/gamedata_index.py) into it - for a
+host sharing bundles between servers (GAMEDATA_SHARED_DIR), so each
+doesn't build its own:
+    python app.py index-gamedata <bundle directory>
+
 Or via Docker (see Dockerfile / docker-compose.yml in this project).
 """
 
 import os
 import sys
 
-from gcm import auth, config, create_app, db, retention, store
+from gcm import auth, config, create_app, db, gamedata_index, retention, store
 
 
 def _cli_create_admin(display_name):
@@ -63,6 +68,10 @@ def _cli_new_token(display_name):
 
 
 if __name__ == "__main__":
+    if len(sys.argv) == 3 and sys.argv[1] == "index-gamedata":
+        # Before create_app(): it needs no data directory.
+        gamedata_index.build(sys.argv[2], os.path.join(sys.argv[2], gamedata_index.FILE))
+        sys.exit(0)
     app = create_app()
     if len(sys.argv) == 3 and sys.argv[1] == "create-admin":
         _cli_create_admin(sys.argv[2])
