@@ -427,6 +427,7 @@ function start()
     return
   end
   running = true
+  stopped_on_purpose = false
   worker = thread.create(service_loop)
   worker:detach()
 end
@@ -434,8 +435,11 @@ end
 -- Optional per OC's rc docs, but defined so `rc power_monitor restart`
 -- gets its default stop-then-start behavior. Just flips a flag the loop
 -- checks - not a thread kill.
+-- stopped_on_purpose (a global, so in rc.loaded[name]) tells gcm_agent
+-- not to restart it.
 function stop()
   running = false
+  stopped_on_purpose = true
 end
 
 function status()

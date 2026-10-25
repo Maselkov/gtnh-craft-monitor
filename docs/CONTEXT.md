@@ -1232,6 +1232,24 @@ what went wrong (401: wrong key; no connection: the address must work
 from the Minecraft server, and a local one is in OC's default internet
 blacklist). It saves the settings either way.
 
+Auto-restart is the agent's own job, so it keeps working while the
+server is down: the heartbeat reply only carries the switch
+(`auto_restart`, app.db `settings`). A script's `stop()` sets the global
+`stopped_on_purpose`, readable through `rc.loaded[name]`, which is how a
+crash (thread dead, flag false) is told apart from `rc <name> stop`.
+Only services in /etc/rc.cfg's `enabled`, not in the first 2 minutes of
+uptime (rc is still starting them), at most 3 an hour each, counted on
+`computer.uptime()` and forgotten on reboot.
+
+Auto-update uses the plain `update:release` command, which every agent
+since the first understands; an exact `--ref=<tag>` would be refused by
+exactly the old agents that need updating. So it fires only while the
+server's own release (`GCM_VERSION`, a build arg in publish.yml) is also
+the latest tag, and never moves a computer past its server. The
+heartbeat reads the latest tag from the cache and refreshes it in a
+background thread rather than waiting on GitHub. One try per (computer,
+release) per server process.
+
 `is_running()` (each service, from its worker thread's status) exists
 because `running` stays true when a loop dies of an error; `start()`
 uses it too, so `rc <name> start` works again after such a crash.

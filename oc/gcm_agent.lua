@@ -16,6 +16,16 @@
   A result about to reboot says rebooting = true, and the server shows
   the command as under way until a heartbeat from after the reboot.
 
+  The reply also says whether to restart scripts that stop
+  (auto_restart, the Status dialog's checkbox; the last answer is kept
+  while the server is unreachable). After each heartbeat, a script is
+  restarted if it's enabled in /etc/rc.cfg, rc has loaded it, it isn't
+  running, and its stop() didn't say it was stopped on purpose (the
+  stopped_on_purpose global). Not in the first RESTART_GRACE_SECONDS
+  after boot, while rc starts them itself, and at most MAX_RESTARTS
+  times an hour each: a script that keeps crashing is left stopped and
+  the heartbeat says so (restarts, gave_up).
+
   Anything else is reported back as refused. The server never sends a
   URL or code: gcm.lua downloads from its own fixed GitHub repository,
   so the most a server can ask for is a real release, main, or a
@@ -55,6 +65,9 @@ local CONFIG = {
   HTTP_TIMEOUT_SECONDS = 20,
   GCM_PATH = "/usr/bin/gcm.lua",
   STATE_PATH = "/etc/gcm.cfg",
+  RC_CFG_PATH = "/etc/rc.cfg",
+  RESTART_GRACE_SECONDS = 120,
+  MAX_RESTARTS = 3,
 }
 for key, value in pairs(config.gcm_agent or {}) do
   CONFIG[key] = value
@@ -64,36 +77,96 @@ end
 -- gcm's state from before services were recorded in it.
 local KNOWN_SERVICES = { craft = "craft_monitor", power = "power_monitor", network = "network_browser" }
 
-local function read_state()
-  local file = io.open(CONFIG.STATE_PATH, "r")
+-- Runs a Lua file in env, in a sandbox; returns what it returned, or nil.
+local function read_lua(path, env)
+  local file = io.open(path, "r")
   if not file then return nil end
   local body = file:read("*a")
   file:close()
-  local chunk = load(body, "=" .. CONFIG.STATE_PATH, "t", {})
-  local ok, state = pcall(chunk or error)
-  if ok and type(state) == "table" then return state end
+  local chunk = load(body, "=" .. path, "t", env or {})
+  local ok, result = pcall(chunk or error)
+  if ok then return result end
+  return nil
+end
+
+local function read_state()
+  local state = read_lua(CONFIG.STATE_PATH)
+  if type(state) == "table" then return state end
+  return nil
+end
+
+-- The services `rc <name> enable` starts on boot: /etc/rc.cfg sets
+-- `enabled = { ... }`, which OpenOS's rc loads the same way.
+local function enabled_services()
+  local env = {}
+  read_lua(CONFIG.RC_CFG_PATH, env)
+  local out = {}
+  for _, name in ipairs(type(env.enabled) == "table" and env.enabled or {}) do out[name] = true end
+  return out
+end
+
+local function loaded_service(name)
+  local ok, rc = pcall(require, "rc")
+  local svc = ok and type(rc) == "table" and rc.loaded and rc.loaded[name]
+  if type(svc) == "table" then return svc end
   return nil
 end
 
 local function service_running(name)
-  local ok, rc = pcall(require, "rc")
-  local svc = ok and type(rc) == "table" and rc.loaded and rc.loaded[name]
-  if type(svc) ~= "table" or type(svc.is_running) ~= "function" then return false end
+  local svc = loaded_service(name)
+  if not svc or type(svc.is_running) ~= "function" then return false end
   local called, running = pcall(svc.is_running)
   return called and running == true
+end
+
+local function service_names(state)
+  local names = state.services
+  if not names or #names == 0 then
+    names = {}
+    for _, c in ipairs(state.components or {}) do names[#names + 1] = KNOWN_SERVICES[c] or c end
+  end
+  return names
+end
+
+local auto_restart = true
+local restarted_at = {}  -- service name -> uptimes it was restarted at
+
+-- How often name was restarted in the last hour.
+local function recent_restarts(name)
+  local now, kept = computer.uptime(), {}
+  for _, at in ipairs(restarted_at[name] or {}) do
+    if now - at < 3600 then kept[#kept + 1] = at end
+  end
+  restarted_at[name] = kept
+  return #kept
+end
+
+local function restart_stopped()
+  if not auto_restart or computer.uptime() < CONFIG.RESTART_GRACE_SECONDS then return end
+  local enabled = enabled_services()
+  for _, name in ipairs(service_names(read_state() or {})) do
+    local svc = loaded_service(name)
+    if name ~= "gcm_agent" and enabled[name] and svc and type(svc.start) == "function"
+        and svc.stopped_on_purpose ~= true and not service_running(name)
+        and recent_restarts(name) < CONFIG.MAX_RESTARTS then
+      print("[gcm_agent] " .. name .. " stopped; restarting it.")
+      table.insert(restarted_at[name], computer.uptime())
+      local ok, err = pcall(svc.start)
+      if not ok then print("[gcm_agent] Couldn't restart " .. name .. ": " .. tostring(err)) end
+    end
+  end
 end
 
 local function heartbeat_body()
   local state = read_state() or {}
   local components = state.components or {}
-  local names = state.services
-  if not names or #names == 0 then
-    names = {}
-    for _, c in ipairs(components) do names[#names + 1] = KNOWN_SERVICES[c] or c end
-  end
   local services = {}
-  for _, name in ipairs(names) do
-    services[#services + 1] = { name = name, running = service_running(name) }
+  for _, name in ipairs(service_names(state)) do
+    local running, restarts = service_running(name), recent_restarts(name)
+    services[#services + 1] = {
+      name = name, running = running, restarts = restarts,
+      gave_up = auto_restart and not running and restarts >= CONFIG.MAX_RESTARTS,
+    }
   end
   return {
     address = computer.address(),
@@ -172,12 +245,14 @@ local function service_loop()
   print("[gcm_agent] Reporting every " .. CONFIG.POLL_SECONDS .. "s.")
   while running do
     local reply = post("/heartbeat", heartbeat_body())
+    if reply and type(reply.auto_restart) == "boolean" then auto_restart = reply.auto_restart end
     if reply and type(reply.command) == "table" and reply.command.id ~= nil then
       if carry_out(reply.command) then
         running = false
         return
       end
     end
+    restart_stopped()
     if not running then break end
     os.sleep(CONFIG.POLL_SECONDS)
   end

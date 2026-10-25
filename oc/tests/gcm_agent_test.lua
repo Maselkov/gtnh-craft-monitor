@@ -63,8 +63,8 @@ test("heartbeat reports version, services and memory", function()
   t.eq(hb.version, "v1.0.0")
   t.eq(hb.components, { "craft", "power" })
   t.eq(hb.services, {
-    { name = "craft_monitor", running = false },  -- never started
-    { name = "power_monitor", running = true },
+    { name = "craft_monitor", running = false, restarts = 0, gave_up = false },  -- never started
+    { name = "power_monitor", running = true, restarts = 0, gave_up = false },
   })
   t.eq(hb.free_memory, 2 * 1024 * 1024)
   t.eq(hb.total_memory, 4 * 1024 * 1024)
@@ -80,7 +80,7 @@ test("polls every POLL_SECONDS and sees a stopped service", function()
   env:run({ seconds = 125 })
   local hbs = heartbeats(env)
   t.eq(#hbs, 3)
-  t.eq(hbs[3].services[2], { name = "power_monitor", running = false })
+  t.eq(hbs[3].services[2], { name = "power_monitor", running = false, restarts = 0, gave_up = false })
 end)
 
 test("a service whose thread died counts as stopped", function()
@@ -99,7 +99,7 @@ test("state from before services were recorded maps components to services", fun
   env:write_file("/etc/gcm.cfg", 'return { version = "v0.9.0", components = { "network" } }')
   env:start_service("gcm_agent")
   env:run({ seconds = 1 })
-  t.eq(heartbeats(env)[1].services, { { name = "network_browser", running = false } })
+  t.eq(heartbeats(env)[1].services, { { name = "network_browser", running = false, restarts = 0, gave_up = false } })
 end)
 
 test("update to the latest release, report, reboot", function()
@@ -165,6 +165,82 @@ test("anything else is refused", function()
   t.eq(r[2].body, { ok = false, message = "Refused: unknown command." })
   t.eq(env:read_file("/tmp/gcm-args"), nil)
   t.eq(env.shutdown, nil)
+end)
+
+-- Auto-restart: power_monitor enabled in rc, started, then its thread
+-- dies as when an error ends it. `reply` is merged into every heartbeat
+-- reply.
+local function crashing_env(reply)
+  local env = t.env({ routes = {
+    ["POST /api/agent/heartbeat"] = function()
+      local out = { command = false }
+      for k, v in pairs(reply or {}) do out[k] = v end
+      return out
+    end,
+  } })
+  env:mkdir("/etc")
+  env:write_file("/etc/gcm.cfg", STATE_V1)
+  env:write_file("/etc/rc.cfg", 'enabled = {"power_monitor", "gcm_agent"}')
+  gt.new(env)
+  local power = env:start_service("power_monitor")
+  env:start_service("gcm_agent")
+  return env, power
+end
+
+-- Every thread but gcm_agent's (the second one started) dies.
+local function crash(env, power)
+  for i, th in ipairs(env.threads) do
+    if i ~= 2 then th.dead = true end
+  end
+  t.eq(power.is_running(), false)
+end
+
+test("auto-restart: a crashed enabled script is restarted after the boot grace", function()
+  local env, power = crashing_env()
+  env:run({ seconds = 1 })
+  crash(env, power)
+  env:run({ seconds = 65 })  -- still within RESTART_GRACE_SECONDS of boot
+  t.eq(power.is_running(), false)
+  env:run({ seconds = 65 })
+  t.eq(power.is_running(), true)
+  env:run({ seconds = 60 })
+  local hb = heartbeats(env)
+  t.eq(hb[#hb].services[2], { name = "power_monitor", running = true, restarts = 1, gave_up = false })
+end)
+
+test("auto-restart: gives up after MAX_RESTARTS in an hour, and says so", function()
+  local env, power = crashing_env()
+  for _ = 1, 4 do
+    env:run({ seconds = 125 })
+    crash(env, power)
+  end
+  env:run({ seconds = 125 })
+  t.eq(power.is_running(), false)
+  local hb = heartbeats(env)
+  t.eq(hb[#hb].services[2], { name = "power_monitor", running = false, restarts = 3, gave_up = true })
+end)
+
+test("auto-restart: not a script stopped on purpose, disabled in rc, or with the switch off", function()
+  local env, power = crashing_env()
+  env:run({ seconds = 1 })
+  power.stop()
+  env:run({ seconds = 200 })
+  t.eq(power.is_running(), false)
+
+  env, power = crashing_env()
+  env:write_file("/etc/rc.cfg", 'enabled = {"gcm_agent"}')
+  env:run({ seconds = 1 })
+  crash(env, power)
+  env:run({ seconds = 200 })
+  t.eq(power.is_running(), false)
+
+  env, power = crashing_env({ auto_restart = false })
+  env:run({ seconds = 1 })
+  crash(env, power)
+  env:run({ seconds = 200 })
+  t.eq(power.is_running(), false)
+  local hb = heartbeats(env)
+  t.eq(hb[#hb].services[2].gave_up, false)
 end)
 
 return suite

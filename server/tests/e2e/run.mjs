@@ -1299,6 +1299,22 @@ async function main() {
       && $('#agentsList').textContent.includes('Computer abcdef12')
       && $('#agentsList').textContent.includes('update available: v1.2.0')
       && $('#agentsList').textContent.includes('craft_monitor')`);
+    // The checkboxes: auto-restart on by default and saved on the server;
+    // auto-update needs a server that knows its release, which this one doesn't.
+    await waitFor('settings loaded', `$('#autoRestartToggle').checked && !$('#autoRestartToggle').disabled
+      && $('#autoUpdateToggle').disabled && $('#autoUpdateNote').textContent.includes('Needs a server')`);
+    const agentsAutoRestart = async (want) => {
+      for (let i = 0; i < 50; i++) {
+        if ((await game(base, '/api/agent/heartbeat', heartbeat)).data.auto_restart === want) return;
+        await new Promise(r => setTimeout(r, 100));
+      }
+      throw new Error(`heartbeats never said auto_restart: ${want}`);
+    };
+    await click(`$('#autoRestartToggle')`);
+    await agentsAutoRestart(false);
+    await click(`$('#autoRestartToggle')`);
+    await agentsAutoRestart(true);
+    await waitFor('auto-restart back on', `$('#autoRestartToggle').checked`);
     await click(`byText('#agentsList [data-action="agent-command"]', 'Update to v1.2.0')`);
     await waitFor('queued', `$('#agentsList').textContent.includes('waiting for the computer to pick it up')
       && $('#agentsList [data-action="agent-command"]').disabled`);

@@ -85,7 +85,8 @@ docker compose up -d
 
 Then update the in-game scripts to the same release: each computer's
 **Update** button under **Settings (⚙) → Status**, or `gcm update` in
-game. To stay on one release, set `GCM_TAG` in `.env` to its version,
+game. Ticking **Update computers when the server updates** there does
+this for you from then on. To stay on one release, set `GCM_TAG` in `.env` to its version,
 e.g. `GCM_TAG=5.0.0`.
 
 ## Troubleshooting

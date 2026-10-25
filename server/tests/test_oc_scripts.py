@@ -308,13 +308,36 @@ def test_agent_reports_and_reboots_on_command(game, client, monkeypatch):
     login_as(client, "root", role="admin")
     [computer] = client.get("/api/admin/agents").get_json()["computers"]
     assert (computer["address"], computer["version"]) == ("computer-0000", "v1.0.0")
-    assert computer["services"] == [{"name": "power_monitor", "running": False}]
+    assert computer["services"] == [{"name": "power_monitor", "running": False, "restarts": 0, "gave_up": False}]
 
     assert client.post("/api/admin/agents/computer-0000/command", json={"action": "reboot"}).status_code == 200
     game.run(61)
     assert game.lua("return env.shutdown and env.shutdown.reboot") is True
     cmd = client.get("/api/admin/agents").get_json()["computers"][0]["command"]
-    assert (cmd["status"], cmd["ok"], cmd["message"]) == ("done", True, "Rebooting.")
+    assert (cmd["status"], cmd["ok"], cmd["message"], cmd["awaiting_boot"]) == ("done", True, "Rebooting.", True)
+
+
+def test_agent_restarts_a_crashed_script_unless_turned_off(game, client, monkeypatch):
+    monkeypatch.setattr(agents, "latest_release", lambda: ("v1.0.0", None))
+    game.write_file("/etc/gcm.cfg", 'return { version = "v1.0.0", components = { "power" }, services = { "power_monitor" } }')
+    game.write_file("/etc/rc.cfg", 'enabled = {"power_monitor", "gcm_agent"}')
+    game.lua('gt.new(env); power = env:start_service("power_monitor"); env:start_service("gcm_agent")')
+
+    def crash():
+        game.lua('for i, th in ipairs(env.threads) do if i ~= 2 then th.dead = true end end')
+
+    game.run(1)
+    crash()
+    game.run(185)  # past the boot grace, then one more heartbeat
+    login_as(client, "root", role="admin")
+    [service] = client.get("/api/admin/agents").get_json()["computers"][0]["services"]
+    assert (service["running"], service["restarts"]) == (True, 1)
+
+    client.put("/api/admin/agent-settings", json={"auto_restart": False})
+    game.run(60)  # the agent hears about it
+    crash()
+    game.run(125)
+    assert game.lua("return power.is_running()") is False
 
 
 def test_install_checks_the_key_with_the_server(game, api_key):

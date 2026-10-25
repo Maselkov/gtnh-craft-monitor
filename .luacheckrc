@@ -14,8 +14,8 @@ ignore = {
 }
 
 -- rc runs these as services and calls their start/stop/status globals;
--- gcm_agent calls is_running.
-local rc = { globals = { "start", "stop", "status", "is_running" } }
+-- gcm_agent calls is_running and reads stopped_on_purpose.
+local rc = { globals = { "start", "stop", "status", "is_running", "stopped_on_purpose" } }
 files["oc/craft_monitor.lua"] = rc
 files["oc/gcm_agent.lua"] = rc
 files["oc/network_browser.lua"] = rc

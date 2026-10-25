@@ -1,8 +1,9 @@
 // Status admin dialog: how fresh each in-game feed is and how the server
 // is doing (server/gcm/health.py), then every in-game computer running
 // gcm_agent.lua, what it runs and how it's doing, with buttons to update
-// or reboot it (server/gcm/agents.py), and the commands that connect a
-// new computer. Refreshes while open.
+// or reboot it (server/gcm/agents.py), the checkboxes for restarting
+// stopped scripts and updating with the server, and the commands that
+// connect a new computer. Refreshes while open.
 
 import { AUTH_USER, closeSettingsMenu } from './auth.js';
 import { showToast } from './craft-actions.js';
@@ -23,7 +24,14 @@ const COMMAND_LABELS = {
 
 function commandLabel(cmd) {
   const label = COMMAND_LABELS[`${cmd.action}:${cmd.ref || ''}`];
-  return label ? label() : cmd.action;
+  const text = label ? label() : cmd.action;
+  return cmd.auto ? `Auto: ${text.charAt(0).toLowerCase()}${text.slice(1)}` : text;
+}
+
+function serviceLabel(s) {
+  if (s.gave_up) return ' (stopped, gave up restarting)';
+  const restarted = s.restarts ? ` (restarted ${s.restarts}× this hour)` : '';
+  return s.running ? restarted : ` (stopped)${restarted}`;
 }
 
 function commandLine(cmd) {
@@ -52,7 +60,7 @@ export function renderComputer(c, latest) {
   const version = c.version ? escapeHtml(c.version) : 'unknown version';
   const behind = c.behind ? ` &middot; update available: ${escapeHtml(latest)}` : '';
   const services = c.services.length
-    ? c.services.map(s => `<span><span class="agent-dot${s.running ? ' running' : ''}"></span>${escapeHtml(s.name)}${s.running ? '' : ' (stopped)'}</span>`).join('')
+    ? c.services.map(s => `<span${s.gave_up ? ' class="agent-command failed"' : ''}><span class="agent-dot${s.running ? ' running' : ''}"></span>${escapeHtml(s.name)}${serviceLabel(s)}</span>`).join('')
     : '<span class="agent-line">No scripts installed</span>';
   const busy = c.command && (c.command.status !== 'done' || c.command.awaiting_boot);
   const address = escapeHtml(c.address);
@@ -142,7 +150,8 @@ export function renderHealth(h) {
     <div class="agent-line">${escapeHtml(thinning)}</div>
     <div class="agent-line${webhookFailed ? ' agent-command failed' : ''}">Notifications: ${
       h.push_subscriptions} browser${h.push_subscriptions === 1 ? '' : 's'} with push &middot; ${escapeHtml(hooks)}</div>
-    <div class="agent-line">Up ${formatDuration(h.uptime_seconds)} &middot; game data ${escapeHtml(h.gamedata || 'none')}</div>`;
+    <div class="agent-line">Up ${formatDuration(h.uptime_seconds)} &middot; ${
+      h.version ? `version ${escapeHtml(h.version)}` : 'run from source'} &middot; game data ${escapeHtml(h.gamedata || 'none')}</div>`;
 }
 
 async function loadHealth() {
@@ -175,6 +184,54 @@ async function loadAgents() {
   } catch (e) {
     document.getElementById('agentsLatest').textContent = 'Could not reach the server.';
   }
+}
+
+// The Status dialog's checkboxes (server/gcm/agents.py SETTINGS_DEFAULTS).
+// Auto-update needs the server to know its own release.
+const SETTING_TOGGLES = { auto_restart: 'autoRestartToggle', auto_update: 'autoUpdateToggle' };
+const RELEASE = /^v\d+\.\d+\.\d+$/;
+
+function showSettings(data) {
+  const released = RELEASE.test(data.server_version || '');
+  for (const [key, id] of Object.entries(SETTING_TOGGLES)) {
+    const box = document.getElementById(id);
+    box.checked = data[key];
+    box.disabled = key === 'auto_update' && !released;
+  }
+  document.getElementById('autoUpdateNote').textContent = released
+    ? `Brings a computer on an older release to this server's, ${data.server_version}, and reboots it. Only once that's also the latest release.`
+    : 'Needs a server that knows its release, as the published Docker image does.';
+}
+
+async function loadSettings() {
+  try {
+    const res = await fetch('/api/admin/agent-settings');
+    if (!res.ok) throw new Error(`agent-settings: ${res.status}`);
+    showSettings(await res.json());
+  } catch (e) {
+    // The rest of the dialog says the server can't be reached.
+  }
+}
+
+async function saveSetting(key, box) {
+  let error = 'Could not reach the server.';
+  try {
+    const res = await fetch('/api/admin/agent-settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [key]: box.checked }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      showSettings(data);
+      return;
+    }
+    error = data.error || 'Could not save the setting.';
+  } catch (e) {
+    // error stays "Could not reach the server."
+  }
+  box.checked = !box.checked;
+  showToast(error, true);
 }
 
 // "Connect a computer": the command that installs the scripts on a new
@@ -283,6 +340,7 @@ function openAgentsModal() {
   document.getElementById('agentsModal').style.display = 'flex';
   loadHealth();
   loadAgents();
+  loadSettings();
   loadConnect();
   clearInterval(refreshTimer);
   refreshTimer = setInterval(() => { loadHealth(); loadAgents(); }, REFRESH_MS);
@@ -304,5 +362,9 @@ export function setupAgentsActions() {
     'toggle-connect-key': () => { connectKeyShown = !connectKeyShown; renderConnect(); },
   });
   document.getElementById('connectServerUrl').addEventListener('input', renderConnect);
+  for (const [key, id] of Object.entries(SETTING_TOGGLES)) {
+    const box = document.getElementById(id);
+    box.addEventListener('change', () => saveSetting(key, box));
+  }
   onBackdropClick('agentsModal', closeAgentsModal);
 }

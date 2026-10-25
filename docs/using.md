@@ -123,6 +123,7 @@ in-game computers are listed under it (see
 - when stock history was last thinned, and how many rows that removed.
 - how many browsers get push notifications, and how the last webhook post
   went.
+- how long the server has been up, its release, and the game data version.
 
 ## Power tab
 

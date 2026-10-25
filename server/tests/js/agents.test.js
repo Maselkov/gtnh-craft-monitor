@@ -40,6 +40,16 @@ test('a reboot: waiting for the computer, then back up', () => {
   assert.match(renderComputer({ ...COMPUTER, command: reboot }), /Reboot: Back up 0s ago/);
 });
 
+test('restarted and given-up scripts, and auto-update commands', () => {
+  const html = renderComputer({ ...COMPUTER, services: [
+    { name: 'craft_monitor', running: true, restarts: 2, gave_up: false },
+    { name: 'power_monitor', running: false, restarts: 3, gave_up: true },
+  ], command: { action: 'update', ref: 'release', status: 'queued', auto: true } });
+  assert.match(html, /craft_monitor \(restarted 2× this hour\)/);
+  assert.match(html, /<span class="agent-command failed"><span class="agent-dot"><\/span>power_monitor \(stopped, gave up restarting\)/);
+  assert.match(html, /Auto: update to the latest release: waiting/);
+});
+
 const HEALTH = {
   uptime_seconds: 90061, gamedata: '2.7.2',
   feeds: [
@@ -66,7 +76,8 @@ test('server health: each feed, storage, background jobs', () => {
   assert.match(html, /app\.db 2\.50MB/);
   assert.match(html, /hasn&#39;t run since the server started/);
   assert.match(html, /1 browser with push &middot; 2 webhooks, last post 2m 0s ago - failed: bad\.test \(refused\)/);
-  assert.match(html, /Up 1d 1h &middot; game data 2\.7\.2/);
+  assert.match(html, /Up 1d 1h &middot; run from source &middot; game data 2\.7\.2/);
+  assert.match(renderHealth({ ...HEALTH, version: 'v1.2.0' }), /Up 1d 1h &middot; version v1\.2\.0 &middot;/);
 });
 
 test('connect command: download, then install with the address (no trailing slash) and key', () => {
