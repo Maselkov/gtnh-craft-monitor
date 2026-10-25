@@ -124,6 +124,71 @@ async function downloadBackup() {
   }
 }
 
+function openBackupsModal() {
+  if (!AUTH_USER || AUTH_USER.role !== 'admin') return;
+  document.getElementById('restoreFile').value = '';
+  resetRestoreButton();
+  document.getElementById('backupsModal').style.display = 'flex';
+}
+
+export function closeBackupsModal() {
+  if (restoring) return;
+  document.getElementById('backupsModal').style.display = 'none';
+}
+
+function showRestoreError(message) {
+  const el = document.getElementById('restoreError');
+  el.textContent = message || '';
+  el.style.display = message ? '' : 'none';
+}
+
+let restoreArmed = false;
+function resetRestoreButton() {
+  restoreArmed = false;
+  const button = document.getElementById('restoreBtn');
+  button.textContent = 'Restore';
+  button.disabled = !document.getElementById('restoreFile').files.length;
+  showRestoreError('');
+}
+
+// The first click arms it, the second sends. On success everything the
+// page holds may be stale (and the session gone), so it reloads.
+let restoring = false;
+async function restoreBackup() {
+  const file = document.getElementById('restoreFile').files[0];
+  const button = document.getElementById('restoreBtn');
+  if (!file || restoring) return;
+  if (!restoreArmed) {
+    restoreArmed = true;
+    button.textContent = 'Click again to restore';
+    return;
+  }
+  restoring = true;
+  button.disabled = true;
+  button.textContent = 'Restoring…';
+  showRestoreError('');
+  try {
+    const response = await fetch('/api/admin/restore', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/zip' },
+      body: file,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      restoring = false;
+      resetRestoreButton();
+      showRestoreError(data.error || 'Could not restore that backup.');
+      return;
+    }
+    showToast(data.signed_in ? 'Backup restored. Reloading…' : 'Backup restored. Sign in again.');
+    setTimeout(() => location.reload(), 1000);
+  } catch (e) {
+    restoring = false;
+    resetRestoreButton();
+    showRestoreError('Could not reach the server.');
+  }
+}
+
 async function submitAccessToken() {
   const input = document.getElementById('accessTokenInput');
   const token = input.value.trim();
@@ -208,7 +273,10 @@ export function setupAuthControls() {
     'toggle-settings': () => toggleSettingsMenu(),
     'open-admin': () => { closeSettingsMenu(); openAdminUsersModal(); },
     'test-webhooks': () => { closeSettingsMenu(); testWebhooks(); },
-    'download-backup': () => { closeSettingsMenu(); downloadBackup(); },
+    'open-backups': () => { closeSettingsMenu(); openBackupsModal(); },
+    'close-backups': () => closeBackupsModal(),
+    'download-backup': () => downloadBackup(),
+    'restore-backup': () => restoreBackup(),
     'sign-out': () => { closeSettingsMenu(); signOut(); },
     'finish-setup': () => finishSetup(),
     'copy-setup-token': () => copySetupToken(),
@@ -222,6 +290,8 @@ export function setupAuthControls() {
   privateToggle.addEventListener('change', () => savePrivate(privateToggle));
   onBackdropClick('adminUsersModal', closeAdminUsersModal);
   onBackdropClick('userHistoryModal', closeUserHistoryModal);
+  onBackdropClick('backupsModal', closeBackupsModal);
+  document.getElementById('restoreFile').addEventListener('change', resetRestoreButton);
 }
 
 export function setupAdminActions() {

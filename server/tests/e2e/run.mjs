@@ -1364,6 +1364,7 @@ async function main() {
     if (!webhookPosts.some((p) => p.event === 'test')) throw new Error('no test post');
   });
 
+  let backupZip;
   step('admin: download a backup', async () => {
     const downloads = fs.mkdtempSync(path.join(os.tmpdir(), 'gcm-e2e-downloads-'));
     tempDirs.push(downloads);
@@ -1371,6 +1372,8 @@ async function main() {
     await click(`$('#settingsBtn')`);
     await waitFor('menu open', `visible($('#settingsMenu'))`);
     await click(`$('#backupBtn')`);
+    await waitFor('backups dialog', `visible($('#backupsModal')) && $('#restoreBtn').disabled`);
+    await click(`$('#backupDownloadBtn')`);
     await waitFor('started', `$('#toastContainer').textContent.includes('Downloading gcm-backup-')`);
     const deadline = Date.now() + 10000;
     let zip;
@@ -1381,6 +1384,33 @@ async function main() {
     if (!zip) throw new Error('no backup downloaded: ' + fs.readdirSync(downloads).join(', '));
     // A zip's local file header starts "PK\x03\x04".
     if (fs.readFileSync(path.join(downloads, zip)).subarray(0, 4).toString('hex') !== '504b0304') throw new Error('not a zip');
+    backupZip = path.join(downloads, zip);
+  });
+
+  step('admin: restore a backup; a file that isn\'t one is refused', async () => {
+    const pick = async (file) => {
+      const { result } = await cdp.send('Runtime.evaluate', { expression: `$('#restoreFile')` });
+      await cdp.send('DOM.setFileInputFiles', { objectId: result.objectId, files: [file] });
+    };
+    const junk = path.join(path.dirname(backupZip), 'not-a-backup.zip');
+    fs.writeFileSync(junk, 'hello');
+    await pick(junk);
+    await waitFor('restore enabled', `!$('#restoreBtn').disabled`);
+    await click(`$('#restoreBtn')`);
+    await waitFor('asks again', `$('#restoreBtn').textContent === 'Click again to restore'`);
+    await click(`$('#restoreBtn')`);
+    await waitFor('refused', `visible($('#restoreError')) && $('#restoreError').textContent === "That isn't a zip file."`);
+
+    await pick(backupZip);
+    await waitFor('error cleared', `!visible($('#restoreError')) && $('#restoreBtn').textContent === 'Restore'`);
+    await click(`$('#restoreBtn')`);
+    await click(`$('#restoreBtn')`);
+    await waitFor('restored', `$('#toastContainer').textContent.includes('Backup restored. Reloading')`);
+    await waitFor('reloaded', `document.readyState === 'complete' && !window.byText`);
+    await evaluate(PAGE_LIB);
+    // The session was in the backup, so still signed in as the admin.
+    await waitFor('still signed in', `visible($('#settingsWrap')) && $('#settingsUser').textContent === 'Signed in as Administrator'`);
+    await waitFor('crafts back', `card('W01')`);
   });
 
   step('admin: switch game data version and textures; the new icons show', async () => {

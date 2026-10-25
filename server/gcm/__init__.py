@@ -21,23 +21,13 @@ def create_app(data_dir=None, api_key=None):
     data_dir/api_key default to the DATA_DIR/API_KEY environment
     variables."""
     config.configure(data_dir, api_key)
-    config.load_api_key()
     gamedata.activate()
     db.adopt_legacy_app_db()
     db.init_app_db()
-    store.requests.close_orphaned()
-    store.users.prune_sessions()
-    last_craft_id, last_cancel_id = store.requests.last_ids()
-    commands.craft_requests.start_after(last_craft_id)
-    commands.cancel_requests.start_after(last_cancel_id)
-    auth.start_setup()
     db.init_power_db()
     db.init_item_history_db()
-    inventory.load_snapshot()
-    patterns.load_snapshot()
+    reload_data()
     pages.load_index_html()
-    # The key pair loads on first use, which may be never (gcm/push.py).
-    push.reset()
 
     app = Flask(__name__, root_path=config.SERVER_DIR)
     app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024
@@ -58,6 +48,24 @@ def create_app(data_dir=None, api_key=None):
         app.register_blueprint(blueprint)
     gamedata.install_configured_version()
     return app
+
+
+def reload_data():
+    """Reads what the server keeps in memory from the data directory: at
+    startup, and again after a backup is restored over it."""
+    config.load_api_key()
+    store.requests.close_orphaned()
+    store.users.prune_sessions()
+    last_craft_id, last_cancel_id = store.requests.last_ids()
+    commands.craft_requests.start_after(last_craft_id)
+    commands.cancel_requests.start_after(last_cancel_id)
+    auth.start_setup()
+    inventory.reset()
+    inventory.load_snapshot()
+    patterns.load_snapshot()
+    charts.reset()
+    # The key pair loads on first use, which may be never (gcm/push.py).
+    push.reset()
 
 
 def reset_runtime_state():

@@ -1,7 +1,7 @@
 // Craft request and cancel modals, pending craft requests.
 
 import { evaluateAmountExpression } from './amount.js';
-import { AUTH_USER, closeAdminUsersModal, closeSettingsMenu } from './auth.js';
+import { AUTH_USER, closeAdminUsersModal, closeBackupsModal, closeSettingsMenu } from './auth.js';
 import { closeCraftPlan, openCraftPlan, updateCraftPlanAmount } from './craft-plan.js';
 import { lastData, render } from './crafts.js';
 import { closeAgentsModal } from './agents.js';
@@ -343,6 +343,8 @@ export function setupCraftDialogActions() {
         closeIngredientsModal();
       } else if (document.getElementById('adminUsersModal').style.display !== 'none') {
         closeAdminUsersModal();
+      } else if (document.getElementById('backupsModal').style.display !== 'none') {
+        closeBackupsModal();
       } else if (document.getElementById('gamedataModal').style.display !== 'none') {
         closeGameDataModal();
       } else if (document.getElementById('agentsModal').style.display !== 'none') {

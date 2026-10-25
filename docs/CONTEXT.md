@@ -284,6 +284,11 @@ sets `synchronous = NORMAL`), so readers never wait on a writer. The
 catch is that a live `.db` file alone isn't a backup - recent commits
 sit in its `-wal` file - so `python app.py backup <dir>`
 (`db.backup_all()`) copies all three with SQLite's online backup API.
+Restoring from the page (`backup.restore()`) runs the same API the other
+way, from the uploaded copy into the live file (`db.restore_copy()`),
+so nothing on disk is swapped under open connections; then
+`gcm.reload_data()` re-reads what startup reads into memory, and pending
+craft/cancel requests are dropped since their history rows are gone.
 
 **Schema changes are numbered migration steps** (`db.py`,
 `APP_MIGRATIONS` and friends). Each file's `PRAGMA user_version`

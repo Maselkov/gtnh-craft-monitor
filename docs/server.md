@@ -208,11 +208,11 @@ recent changes can sit in the `*.db-wal` files for a while: copying the `.db`
 files from a running server can miss data. Instead, take a consistent copy
 while the server keeps running, in either of two ways:
 
-- **Settings (⚙) → Download backup** (admins) makes a zip of every
-  database, `vapid_private.pem`, the key that signs notifications, and
-  `api_key`, the generated API key, and downloads it. It's made beside the
-  databases first, so it needs about their size in free space there; it's
-  deleted once downloaded, or after 10 minutes.
+- **Settings (⚙) → Backups → Download backup** (admins) makes a zip of
+  every database, `vapid_private.pem`, the key that signs notifications,
+  and `api_key`, the generated API key, and downloads it. It's made beside
+  the databases first, so it needs about their size in free space there;
+  it's deleted once downloaded, or after 10 minutes.
 - The built-in command writes the databases to a directory:
 
   ```bash
@@ -222,7 +222,22 @@ while the server keeps running, in either of two ways:
   It doesn't include `data/vapid_private.pem` or `data/api_key`. They
   never change, so copy them once alongside.
 
-To restore, stop the container, replace the `.db` file in `data/`
+To restore a downloaded zip, use **Settings (⚙) → Backups → Restore**
+(admins): pick the zip and click **Restore** twice. It replaces everything
+with the backup's, while the server keeps running: every database
+(accounts, tokens and sessions included, so the users are the backup's
+users), the notification key and the generated API key. Anything since
+the backup was made is lost. If your own session is newer than the
+backup, you're signed out and sign in with a token that was valid then.
+The server checks the whole zip before changing anything, refuses a
+backup from a newer version of the server, and brings one from an older
+version up to date. It needs about three times the zip's size in free
+space beside the databases while it unpacks. Since the API key comes
+back too, a computer set up with another key has to be connected again;
+an `API_KEY` set in `.env` still takes precedence over the restored one.
+
+To restore by hand instead (a backup the page refuses, or when no admin
+can sign in), stop the container, replace the `.db` file in `data/`
 (unzipped, if from a download), delete that file's `-wal` and `-shm` files if
 present, and start it again. WAL mode needs `data/` on a local disk,
 not a network share.
