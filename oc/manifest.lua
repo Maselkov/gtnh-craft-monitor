@@ -13,11 +13,15 @@ return {
     { src = "gcm_agent.lua", dst = "/etc/rc.d/gcm_agent.lua" },
   },
 
+  -- needs: component types the script looks for; gcm install warns when
+  -- none of them is connected, with needs_hint saying what to place.
   components = {
     {
       name = "craft",
       service = "craft_monitor",
       description = "Crafts tab, remote crafting",
+      needs = { "me_controller", "me_interface" },
+      needs_hint = "an Adapter touching an ME controller or ME interface",
       files = {
         { src = "craft_monitor.lua", dst = "/etc/rc.d/craft_monitor.lua" },
       },
@@ -26,6 +30,8 @@ return {
       name = "power",
       service = "power_monitor",
       description = "Power tab",
+      needs = { "gt_machine" },
+      needs_hint = "an Adapter touching a GregTech machine (e.g. the LSC)",
       files = {
         { src = "power_monitor.lua", dst = "/etc/rc.d/power_monitor.lua" },
       },
@@ -34,6 +40,8 @@ return {
       name = "network",
       service = "network_browser",
       description = "Network tab",
+      needs = { "me_controller", "me_interface" },
+      needs_hint = "an Adapter touching an ME controller or ME interface",
       files = {
         { src = "network_browser.lua", dst = "/etc/rc.d/network_browser.lua" },
       },

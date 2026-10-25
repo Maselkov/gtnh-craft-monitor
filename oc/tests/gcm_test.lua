@@ -147,6 +147,34 @@ test("install keeps an existing config.lua, and says the options weren't used", 
   t.eq(#env:requests_to("^/api/agent/ping$"), 0)
 end)
 
+local OPTS = { "--server=https://gtnh.example.com", "--api-key=k3y" }
+
+test("install warns when a chosen script's block isn't connected, and installs it anyway", function()
+  local env = install_env({ ok = true })
+  -- craft yes, power yes, network no, then no to boot and reboot.
+  env.stdin = { "y", "y", "n", "n", "n" }
+  env:add_component("me_interface", {})
+  t.eq(gcm(env, "install", table.unpack(OPTS)), nil)
+  t.truthy(env:printed("Warning: no gt_machine found. power needs an Adapter touching a GregTech machine"))
+  t.eq(env:printed("no me_controller or me_interface found"), false)
+  t.eq(state(env).components, { "craft", "power" })
+  t.truthy(env:exists("/etc/rc.d/power_monitor.lua"))
+end)
+
+test("install doesn't warn when the block is connected", function()
+  local env = install_env({ ok = true })
+  env.stdin = { "n", "y", "n", "n", "n" }
+  env:add_component("gt_machine", {})
+  t.eq(gcm(env, "install", table.unpack(OPTS)), nil)
+  t.eq(env:printed("Warning:"), false)
+end)
+
+test("install warns for scripts named on the command line too", function()
+  local env = install_env({ ok = true })
+  t.eq(gcm(env, "install", "network", table.unpack(OPTS)), nil)
+  t.truthy(env:printed("Warning: no me_controller or me_interface found. network needs an Adapter"))
+end)
+
 test("an option without a value is an error", function()
   local env = install_env({ ok = true })
   local code, message = gcm(env, "install", "power", "--api-key")
