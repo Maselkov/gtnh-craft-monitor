@@ -443,6 +443,28 @@ local function require_internet()
   end
 end
 
+local function any_available(ctypes)
+  for _, ctype in ipairs(ctypes) do
+    if component.isAvailable(ctype) then return true end
+  end
+  return false
+end
+
+-- Warns when none of a component's `needs` types is connected, and notes
+-- a missing optional `wants` one. The script still installs: the Adapter
+-- can be placed later. Manifests from releases before `needs` existed
+-- skip the check.
+local function warn_if_missing(c)
+  if c.needs and not any_available(c.needs) then
+    print("  Warning: no " .. table.concat(c.needs, " or ") .. " found. " .. c.name
+      .. " needs " .. (c.needs_hint or "one") .. "; it won't run until one is connected.")
+  end
+  if c.wants and not any_available(c.wants) then
+    print("  Note: no " .. table.concat(c.wants, " or ") .. " found (optional). "
+      .. (c.wants_hint or "") .. ".")
+  end
+end
+
 local function cmd_install(args, opts)
   require_internet()
   local ref = opts.ref or latest_tag()
@@ -455,11 +477,13 @@ local function cmd_install(args, opts)
         error("unknown component '" .. name .. "'. Choose from: " .. component_names(manifest), 0)
       end
       chosen[#chosen + 1] = name
+      warn_if_missing(find_component(manifest, name))
     end
   else
     for _, c in ipairs(manifest.components) do
       if ask("Install " .. c.name .. " (" .. c.description .. ")?", true) then
         chosen[#chosen + 1] = c.name
+        warn_if_missing(c)
       end
     end
   end
