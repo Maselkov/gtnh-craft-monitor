@@ -62,10 +62,15 @@ VAPID_SUBJECT = os.environ.get("VAPID_SUBJECT", "").strip()
 
 # Webhooks (gcm/webhooks.py): where base-wide notifications are posted
 # (comma-separated; Discord webhooks get embeds), and which events.
+# Set, they replace what admins set on the page; unset, WEBHOOK_EVENTS
+# is only the page's default. WEBHOOK_HOSTS limits the URLs set on the
+# page to these hostnames (comma-separated, exact; empty: any), for a
+# server whose admins shouldn't make it post just anywhere.
 # PUBLIC_URL is the page's address as seen from outside, for icon and
 # item links in them; without it they're left out.
 WEBHOOK_URLS = [u.strip() for u in os.environ.get("WEBHOOK_URLS", "").split(",") if u.strip()]
 WEBHOOK_EVENTS = {e.strip() for e in os.environ.get("WEBHOOK_EVENTS", "crafts,autocraft").split(",") if e.strip()}
+WEBHOOK_HOSTS = {h.strip().lower() for h in os.environ.get("WEBHOOK_HOSTS", "").split(",") if h.strip()}
 PUBLIC_URL = os.environ.get("PUBLIC_URL", "").strip().rstrip("/")
 
 # Keep-in-stock targets (gcm/stock.py): auto-crafts only start while more

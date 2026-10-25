@@ -63,8 +63,8 @@
             data-action="open-gamedata">Game data</button>
           <button class="settings-menu-item" id="agentsBtn" role="menuitem" style="display:none;"
             data-action="open-agents">Status</button>
-          <button class="settings-menu-item" id="webhookTestBtn" role="menuitem" style="display:none;"
-            data-action="test-webhooks">Test webhooks</button>
+          <button class="settings-menu-item" id="webhooksBtn" role="menuitem" style="display:none;"
+            data-action="open-webhooks">Webhooks</button>
           <button class="settings-menu-item" id="backupBtn" role="menuitem" style="display:none;"
             data-action="open-backups">Backups</button>
           <button class="settings-menu-item danger" role="menuitem"
@@ -378,6 +378,32 @@
       <div id="restoreError" class="modal-error" style="display:none;"></div>
       <div class="modal-buttons">
         <button class="modal-btn cancel-confirm-btn" id="restoreBtn" data-action="restore-backup" disabled>Restore</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="webhooksModal" class="modal-overlay" style="display:none;">
+    <div class="modal-box admin-box">
+      <div class="modal-header">
+        <div class="modal-item-name">Webhooks</div>
+        <button class="history-close-btn" data-action="close-webhooks" title="Close">&times;</button>
+      </div>
+      <div class="modal-note" id="webhooksNote"></div>
+      <textarea id="webhookUrls" class="modal-amount-input webhook-urls" rows="3" spellcheck="false"
+        autocomplete="off" placeholder="https://discord.com/api/webhooks/&hellip;"></textarea>
+      <div class="agent-settings">
+        <label class="agent-setting"><input type="checkbox" id="webhookEventCrafts" data-event="crafts">
+          <span>A pinned craft finishes or stops</span></label>
+        <label class="agent-setting"><input type="checkbox" id="webhookEventAutocraft" data-event="autocraft">
+          <span>A keep-in-stock auto-craft fails</span></label>
+        <label class="agent-setting"><input type="checkbox" id="webhookEventStock" data-event="stock">
+          <span>A low-stock alert fires
+            <span class="agent-line">Alerts are each user's own; this posts once per item, without saying whose.</span></span></label>
+      </div>
+      <div id="webhooksError" class="modal-error" style="display:none;"></div>
+      <div class="modal-buttons">
+        <button class="modal-btn secondary" id="webhookTestBtn" data-action="test-webhooks">Send test</button>
+        <button class="modal-btn primary" id="webhooksSaveBtn" data-action="save-webhooks">Save</button>
       </div>
     </div>
   </div>

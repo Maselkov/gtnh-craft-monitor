@@ -1,8 +1,9 @@
 """Webhooks: base-wide notifications posted to a chat channel, next to
-each user's own Web Push (gcm/push.py). WEBHOOK_URLS lists where they
-go: a Discord webhook gets an embed, anything else a JSON body whose
-"text" Slack-style incoming webhooks show as is. WEBHOOK_EVENTS picks
-which events are sent:
+each user's own Web Push (gcm/push.py). Admins set where they go and
+which events on the page (stored in app.db's settings), unless the
+server's environment sets WEBHOOK_URLS (and WEBHOOK_EVENTS) instead. A
+Discord webhook gets an embed, anything else a JSON body whose "text"
+Slack-style incoming webhooks show as is. The events:
 
     crafts      a pinned craft finished or stopped
     autocraft   a keep-in-stock target's auto-craft failed
@@ -21,12 +22,14 @@ import urllib.error
 import urllib.request
 from urllib.parse import quote, urlsplit
 
-from gcm import config, icons
+from gcm import config, icons, store
 
 log = logging.getLogger(__name__)
 
 EVENTS = ("crafts", "autocraft", "stock")
 SEND_TIMEOUT_SECONDS = 10
+MAX_URLS = 10
+MAX_URL_LENGTH = 2048
 COLORS = {"good": 0x3FB950, "bad": 0xF85149, "warn": 0xD29922}
 
 _queue = queue.Queue()
@@ -37,8 +40,57 @@ _worker = None
 last_delivery = None
 
 
+def settings():
+    """{urls, events, environment}: where webhooks go and which events,
+    from the environment if it sets WEBHOOK_URLS, else as set on the
+    page (minus any URL WEBHOOK_HOSTS no longer allows)."""
+    if config.WEBHOOK_URLS:
+        return {"urls": config.WEBHOOK_URLS, "events": sorted(config.WEBHOOK_EVENTS), "environment": True}
+    stored = store.settings.load()
+    return {
+        "urls": [u for u in stored.get("webhook_urls", []) if host_allowed(u)],
+        "events": stored.get("webhook_events", sorted(config.WEBHOOK_EVENTS)),
+        "environment": False,
+    }
+
+
+def host_allowed(url):
+    return not config.WEBHOOK_HOSTS or (urlsplit(url).hostname or "").lower() in config.WEBHOOK_HOSTS
+
+
+def save_settings(changes):
+    """Saves the page's {urls, events} (either); returns None or an error."""
+    if config.WEBHOOK_URLS:
+        return "Webhooks are set in the server's environment (WEBHOOK_URLS)."
+    if not isinstance(changes, dict) or not changes.keys() & {"urls", "events"}:
+        return "nothing to save"
+    values = {}
+    if "urls" in changes:
+        urls = changes["urls"]
+        if not isinstance(urls, list) or not all(isinstance(u, str) for u in urls):
+            return "urls must be a list"
+        urls = list(dict.fromkeys(u.strip() for u in urls if u.strip()))
+        if len(urls) > MAX_URLS:
+            return f"At most {MAX_URLS} webhooks."
+        for url in urls:
+            parts = urlsplit(url)
+            if parts.scheme not in ("http", "https") or not parts.hostname or len(url) > MAX_URL_LENGTH:
+                return f"Not a web address: {url[:100]}"
+            if not host_allowed(url):
+                return f"This server only posts to {', '.join(sorted(config.WEBHOOK_HOSTS))}, not {parts.hostname}."
+        values["webhook_urls"] = urls
+    if "events" in changes:
+        events = changes["events"]
+        if not isinstance(events, list) or not set(events) <= set(EVENTS):
+            return f"events must be some of {', '.join(EVENTS)}"
+        values["webhook_events"] = sorted(set(events))
+    store.settings.save(values)
+    return None
+
+
 def enabled(event):
-    return bool(config.WEBHOOK_URLS) and event in config.WEBHOOK_EVENTS
+    current = settings()
+    return bool(current["urls"]) and event in current["events"]
 
 
 def is_discord(url):
@@ -150,7 +202,7 @@ def send(ev):
     """Posts ev to every webhook now. Returns [(host, error or None)]."""
     global last_delivery
     results = []
-    for url in config.WEBHOOK_URLS:
+    for url in settings()["urls"]:
         payload = discord_payload(ev) if is_discord(url) else generic_payload(ev)
         host = urlsplit(url).hostname
         try:

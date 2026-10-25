@@ -42,7 +42,7 @@ import zlib
 for _name in ("API_KEY", "DATA_DIR", "GTNH_VERSION", "GTNH_TEXTURES", "GAMEDATA_API_URL",
               "GAMEDATA_REPO", "TRUSTED_PROXIES", "VAPID_SUBJECT", "STALE_AFTER_SECONDS", "SESSION_LIFETIME_SECONDS",
               "AUTOCRAFT_KEEP_IDLE_CPUS", "AUTOCRAFT_RETRY_SECONDS", "CRAFT_STALL_SECONDS",
-              "WEBHOOK_URLS", "WEBHOOK_EVENTS", "PUBLIC_URL", "SCRIPTS_REPO",
+              "WEBHOOK_URLS", "WEBHOOK_EVENTS", "WEBHOOK_HOSTS", "PUBLIC_URL", "SCRIPTS_REPO",
               "HISTORY_HOURLY_AFTER_DAYS", "HISTORY_DAILY_AFTER_DAYS"):
     os.environ.pop(_name, None)
 # Read by gcm.config at import: session cookies over plain http.

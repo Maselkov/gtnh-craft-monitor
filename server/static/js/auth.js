@@ -49,7 +49,7 @@ function updateAuthenticationControl() {
   const adminVisible = AUTH_USER && AUTH_USER.role === 'admin';
   adminButton.style.display = adminVisible ? '' : 'none';
   document.getElementById('gamedataBtn').style.display = adminVisible ? '' : 'none';
-  document.getElementById('webhookTestBtn').style.display = adminVisible ? '' : 'none';
+  document.getElementById('webhooksBtn').style.display = adminVisible ? '' : 'none';
   document.getElementById('backupBtn').style.display = adminVisible ? '' : 'none';
   document.getElementById('agentsBtn').style.display = adminVisible ? '' : 'none';
   if (AUTH_USER) syncPushSubscription();
@@ -73,27 +73,6 @@ export async function loadAuthentication() {
   SERVER_PRIVATE = Boolean(data.private);
   updateAuthenticationControl();
   if (data.setup_required) showSetupModal();
-}
-
-// Posts a test message to every webhook the server has (WEBHOOK_URLS)
-// and says how each went.
-async function testWebhooks() {
-  try {
-    const response = await fetch('/api/admin/webhooks/test', { method: 'POST' });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      showToast(data.error || 'Could not test webhooks.', true);
-      return;
-    }
-    const failed = data.results.filter(r => r.error);
-    if (failed.length) {
-      showToast(failed.map(r => `${r.host}: ${r.error}`).join('; '), true);
-    } else {
-      showToast(`Test sent to ${data.results.length} ${data.results.length === 1 ? 'webhook' : 'webhooks'}.`);
-    }
-  } catch (e) {
-    showToast('Could not reach the server.', true);
-  }
 }
 
 // The server makes the zip first (a few seconds with a lot of history),
@@ -272,7 +251,6 @@ export function setupAuthControls() {
   delegateActions(document, {
     'toggle-settings': () => toggleSettingsMenu(),
     'open-admin': () => { closeSettingsMenu(); openAdminUsersModal(); },
-    'test-webhooks': () => { closeSettingsMenu(); testWebhooks(); },
     'open-backups': () => { closeSettingsMenu(); openBackupsModal(); },
     'close-backups': () => closeBackupsModal(),
     'download-backup': () => downloadBackup(),

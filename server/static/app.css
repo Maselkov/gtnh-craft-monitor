@@ -1327,6 +1327,7 @@ body.private-locked #networkTab {
 .gamedata-progress { margin-top: 12px; }
 /* Backups dialog (auth.js). */
 .backups-restore-heading { margin-top: 18px; }
+.webhook-urls { resize: vertical; font-family: monospace; font-size: 12px; }
 .restore-file { display: block; width: 100%; margin-bottom: 12px; font-size: 13px; color: var(--text); }
 .gamedata-label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
 .gamedata-credit { margin-top: 6px; color: var(--muted); font-size: 11px; }

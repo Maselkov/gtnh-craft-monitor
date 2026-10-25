@@ -432,8 +432,7 @@ const PAGE_LIB = `
 async function main() {
   const github = await startFakeGitHub();
   const { base, setupCode } = await startServer({
-    GAMEDATA_API_URL: github, GAMEDATA_REPO: 'e2e/repo', WEBHOOK_URLS: `${github}/webhook`,
-    SCRIPTS_REPO: 'e2e/scripts',
+    GAMEDATA_API_URL: github, GAMEDATA_REPO: 'e2e/repo', SCRIPTS_REPO: 'e2e/scripts',
   });
   // The first admin, made the way the setup dialog makes it; the dialog
   // itself is tried on a server of its own, last.
@@ -535,6 +534,23 @@ async function main() {
     await waitFor('service worker registered', `navigator.serviceWorker.getRegistration('/').then(r => Boolean(r && r.active))`);
     await evaluate(`pressKey('Escape'), true`);
     await waitFor('menu closed', `!visible($('#settingsMenu'))`);
+  });
+
+  step('admin: set a webhook on the page; one that isn\'t a web address is refused', async () => {
+    await click(`$('#settingsBtn')`);
+    await waitFor('menu open', `visible($('#settingsMenu'))`);
+    await click(`$('#webhooksBtn')`);
+    await waitFor('webhooks dialog', `visible($('#webhooksModal')) && $('#webhookUrls').value === ''
+      && $('#webhookEventCrafts').checked && !$('#webhookEventStock').checked`);
+    await evaluate(`typeInto('#webhookUrls', 'file:///etc/passwd'), true`);
+    await click(`$('#webhooksSaveBtn')`);
+    await waitFor('refused', `visible($('#webhooksError')) && $('#webhooksError').textContent.includes('Not a web address')`);
+    await evaluate(`typeInto('#webhookUrls', ${JSON.stringify(`${github}/webhook\n`)}), true`);
+    await click(`$('#webhooksSaveBtn')`);
+    await waitFor('saved', `$('#toastContainer').textContent.includes('Webhooks saved.') && !visible($('#webhooksError'))
+      && $('#webhookUrls').value === ${JSON.stringify(`${github}/webhook`)}`);
+    await evaluate(`pressKey('Escape'), true`);
+    await waitFor('closed', `!visible($('#webhooksModal'))`);
   });
 
   step('a CPU\'s live crafting tree: rebuilt from patterns, updated in place, stuck steps', async () => {
@@ -1359,9 +1375,16 @@ async function main() {
     }
     await click(`$('#settingsBtn')`);
     await waitFor('menu open', `visible($('#settingsMenu'))`);
+    await click(`$('#webhooksBtn')`);
+    await waitFor('webhooks dialog', `visible($('#webhooksModal')) && $('#webhookUrls').value !== ''`);
+    // Send test saves the dialog first: the stock box goes with it.
+    await click(`$('#webhookEventStock')`);
     await click(`$('#webhookTestBtn')`);
     await waitFor('reported', `$('#toastContainer').textContent.includes('Test sent to 1 webhook.')`);
-    if (!webhookPosts.some((p) => p.event === 'test')) throw new Error('no test post');
+    const test = webhookPosts.find((p) => p.event === 'test');
+    if (!test || !test.body.includes('autocraft, crafts, stock')) throw new Error('no test post: ' + JSON.stringify(test));
+    await click(`$('#webhooksModal .history-close-btn')`);
+    await waitFor('closed', `!visible($('#webhooksModal'))`);
   });
 
   let backupZip;
