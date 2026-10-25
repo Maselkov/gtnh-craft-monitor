@@ -1687,7 +1687,8 @@ async function main() {
     await waitFor('setup dialog, code filled in', `visible($('#setupModal')) && $('#setupCode').value === ${JSON.stringify(fresh.setupCode)}`);
     // Nothing has reported: signed out, the Crafts tab says to ask an admin.
     await waitFor('no script yet, ask an admin', `$('#root .connect-note')?.textContent.includes('craft_monitor.lua')
-      && visible($('#root .connect-note .non-admin-only')) && !visible($('#root [data-action="connect-computer"]'))`);
+      && visible($('#root .connect-note .non-admin-only')) && !visible($('#root [data-action="connect-computer"]'))
+      && !visible($('#staleBanner'))`);
     await waitFor('code taken out of the address bar', `location.hash === ''`);
     await evaluate(`typeInto('#setupName', 'Ann'), typeInto('#setupCode', 'wrong'), true`);
     await click(`$('#setupBtn')`);

@@ -1247,8 +1247,9 @@ overrides, so pasting the command again fixes a moved server or a new
 key; the missing one is read from the file for the check. The address field is
 hidden behind "Use a different address": most pages are opened at the
 address the game reaches too. Each tab's never-reported empty state
-(crafts: no `source`; power: no `latest`; network: no items and no scan
-running) carries a button that opens the dialog scrolled there; it and
+(crafts: `ever_reported` false, which app.db's settings remember from
+the first report so a restart shows the stale banner instead; power: no
+`latest`; network: no items and no scan running) carries a button that opens the dialog scrolled there; it and
 its non-admin "ask an admin" line are both in the markup, picked by
 `body.is-admin` so a sign-in needs no re-render.
 

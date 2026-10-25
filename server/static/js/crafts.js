@@ -427,7 +427,14 @@ function dataAge() {
   return lastData.age_seconds + (lastFetchAt != null ? (Date.now() - lastFetchAt) / 1000 : 0);
 }
 
+// No craft_monitor.lua has ever reported to this server: the page says
+// to connect one, rather than that the game has gone quiet.
+function neverReported(data) {
+  return !data.source && data.ever_reported === false;
+}
+
 function isStale() {
+  if (neverReported(lastData)) return false;
   const age = dataAge();
   if (age == null) return true;
   return age > (lastData.stale_after_seconds ?? 30);
@@ -587,9 +594,9 @@ export function render(data) {
   ` : '';
 
   if (jobs.length === 0) {
-    root.innerHTML = completedSection + (data.source
-      ? '<div class="empty">No crafting CPUs reported yet.</div>'
-      : connectNoteHtml('No crafting CPUs reported yet - is craft_monitor.lua running on a computer?'));
+    root.innerHTML = completedSection + (neverReported(data)
+      ? connectNoteHtml('No crafting CPUs reported yet - is craft_monitor.lua running on a computer?')
+      : '<div class="empty">No crafting CPUs reported yet.</div>');
     refreshIngredientsModal(data);
     return;
   }
