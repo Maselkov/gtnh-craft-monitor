@@ -6,7 +6,7 @@ import zipfile
 
 import dev
 import pytest
-from conftest import TEST_API_KEY, login_as, ore_dict_index
+from conftest import TEST_API_KEY, bundle_index, login_as, ore_dict_index
 from gcm import item_info, oredict
 
 
@@ -73,7 +73,7 @@ def test_icon_bundle_covers_every_item_but_essentia(tmp_path):
 
 def test_the_bundles_descriptions_reach_the_page(tmp_path, game, client):
     dev.install_icons(str(tmp_path))
-    item_info.load(str(tmp_path / "gamedata" / "dev" / "item_info.json"))
+    item_info.load(bundle_index(tmp_path / "gamedata" / "dev"))
     try:
         game.tick()
         info = client.get("/api/network/info").get_json()
