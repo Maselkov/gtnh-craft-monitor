@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { connectCommand, isLocalAddress, renderComputer, renderHealth } from '../../static/js/agents.js';
+import {
+  connectCommand, connectNoteHtml, isLocalAddress, renderComputer, renderHealth,
+} from '../../static/js/agents.js';
 
 const COMPUTER = {
   address: '1f3a9c20-5b1e-4d2a', version: 'v1.0.0', behind: true, offline: false,
@@ -94,4 +96,11 @@ test('local addresses are the ones OpenComputers blocks by default', () => {
   for (const url of ['https://gtnh.example.com', 'http://172.32.0.1', 'http://8.8.8.8', 'not a url']) {
     assert.equal(isLocalAddress(url), false, url);
   }
+});
+
+test('a tab\'s connect notice: its text, a button for admins, a line for everyone else', () => {
+  const html = connectNoteHtml('Nothing from <b>power_monitor.lua</b>');
+  assert.match(html, /Nothing from &lt;b&gt;power_monitor\.lua&lt;\/b&gt;/);
+  assert.match(html, /class="range-btn admin-only" data-action="connect-computer"/);
+  assert.match(html, /class="non-admin-only">An admin can connect one/);
 });

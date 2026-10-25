@@ -1,6 +1,7 @@
 // Crafts tab: CPU status polling and rendering, pins, completion
 // notifications.
 
+import { connectNoteHtml } from './agents.js';
 import { AUTH_USER, isOperator } from './auth.js';
 import { refreshCraftHistory } from './craft-history.js';
 import { refreshCraftStats } from './craft-stats.js';
@@ -586,7 +587,9 @@ export function render(data) {
   ` : '';
 
   if (jobs.length === 0) {
-    root.innerHTML = completedSection + '<div class="empty">No crafting CPUs reported yet.</div>';
+    root.innerHTML = completedSection + (data.source
+      ? '<div class="empty">No crafting CPUs reported yet.</div>'
+      : connectNoteHtml('No crafting CPUs reported yet - is craft_monitor.lua running on a computer?'));
     refreshIngredientsModal(data);
     return;
   }

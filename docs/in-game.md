@@ -81,8 +81,9 @@ wget -f https://raw.githubusercontent.com/Maselkov/gtnh-craft-monitor/main/oc/gc
 both as one command, joined with `&&`, with this server's address and API
 key filled in, ready to copy. Paste it into the computer with the middle
 mouse button or Insert.
-The address is the page's own unless `PUBLIC_URL` is set; change it there
-if the Minecraft server reaches the monitor some other way.
+The address is the page's own unless `PUBLIC_URL` is set; if the
+Minecraft server reaches the monitor some other way, press **Use a
+different address** there and type it in.
 
 `gcm install` asks which scripts to install. Then it checks that the
 computer reaches the server with the key, saying what's wrong if it

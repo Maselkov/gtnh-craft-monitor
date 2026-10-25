@@ -67,11 +67,12 @@ The full list, including the OpenComputers config settings, is under
    restart prints a new one.
 3. Pick your GTNH version under **Settings (⚙) → Game data**. Until then
    there are no item icons and the Network tab stays empty.
-4. Open **Settings (⚙) → Status → Connect a computer**. Check the address
-   there is one the Minecraft server can reach, then paste its command into
-   that computer (each one, if you use several). It asks which scripts to
-   install, checks that the computer can reach the server, and can start
-   the scripts on every boot. If it can't reach it, see
+4. Open **Settings (⚙) → Status → Connect a computer** (each tab links
+   there until its script reports). Check the address in the command is
+   one the Minecraft server can reach (**Use a different address** changes
+   it), then paste the command into that computer (each one, if you use
+   several). It asks which scripts to install, checks that the computer
+   can reach the server, and can start the scripts on every boot. If it can't reach it, see
    [Scripts can't reach the server](#scripts-cant-reach-the-server).
 
 The page shows "waiting for data" until the scripts report. For settings,

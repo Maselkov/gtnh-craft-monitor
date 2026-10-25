@@ -66,8 +66,9 @@ h1 {
   color: var(--stale);
   font-weight: 600;
 }
-/* Network tab, until an admin picks a GTNH version (network.js). */
-.gamedata-note {
+/* Network tab, until an admin picks a GTNH version (network.js); a tab
+   whose script hasn't reported yet (agents.js connectNoteHtml). */
+.gamedata-note, .connect-note {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -78,7 +79,11 @@ h1 {
   border-radius: 10px;
   font-size: 13px;
 }
-.gamedata-note[hidden] {
+.gamedata-note[hidden], .connect-note[hidden] {
+  display: none;
+}
+/* auth.js sets body.is-admin. */
+body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
   display: none;
 }
 .stale-banner {

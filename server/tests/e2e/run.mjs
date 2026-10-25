@@ -1344,14 +1344,19 @@ async function main() {
     await waitFor('back up', `$('#agentsList').textContent.includes('Updated v1.1.0 -> v1.2.0, back up')
       && !$('#agentsList [data-action="agent-command"]').disabled`);
 
-    // Connect a computer: this page's address, the key masked until shown.
+    // Connect a computer: this page's address, the key masked until shown,
+    // the address field hidden until asked for.
     const install = '/tmp/gcm.lua install --server=';
     await waitFor('connect command', `$('#connectServerUrl').value === location.origin
+      && !visible($('#connectServerUrl'))
       && $('#connectCommand').textContent.startsWith('wget -f ')
       && $('#connectCommand').textContent.endsWith('/oc/gcm.lua /tmp/gcm.lua && ${install}' + location.origin + ' --api-key=' + '•'.repeat(12))
       && visible($('#connectLocalNote'))`);
     await click(`$('#connectKeyBtn')`);
     await waitFor('key shown', `$('#connectCommand').textContent.endsWith('--api-key=${API_KEY}')`);
+    await click(`$('#connectAddressBtn')`);
+    await waitFor('address field', `visible($('#connectServerUrl')) && document.activeElement === $('#connectServerUrl')
+      && !visible($('#connectAddressBtn'))`);
     await evaluate(`typeInto('#connectServerUrl', 'https://gtnh.example.com/'), true`);
     await waitFor('address followed', `$('#connectCommand').textContent.includes('${install}https://gtnh.example.com --api-key=')
       && !visible($('#connectLocalNote'))`);
@@ -1680,6 +1685,9 @@ async function main() {
     await waitFor('reloaded', `document.readyState === 'complete' && !window.byText`);
     await evaluate(PAGE_LIB);
     await waitFor('setup dialog, code filled in', `visible($('#setupModal')) && $('#setupCode').value === ${JSON.stringify(fresh.setupCode)}`);
+    // Nothing has reported: signed out, the Crafts tab says to ask an admin.
+    await waitFor('no script yet, ask an admin', `$('#root .connect-note')?.textContent.includes('craft_monitor.lua')
+      && visible($('#root .connect-note .non-admin-only')) && !visible($('#root [data-action="connect-computer"]'))`);
     await waitFor('code taken out of the address bar', `location.hash === ''`);
     await evaluate(`typeInto('#setupName', 'Ann'), typeInto('#setupCode', 'wrong'), true`);
     await click(`$('#setupBtn')`);
@@ -1690,6 +1698,24 @@ async function main() {
     await click(`$('#setupDoneBtn')`);
     await waitFor('signed in as the new admin', `!visible($('#setupModal')) && $('#settingsUser').textContent === 'Signed in as Ann' && $('#adminBtn').style.display === ''`);
     await waitFor('then on to picking the GTNH version', `visible($('#gamedataModal'))`);
+    await click(`$('[data-action="close-gamedata"]')`);
+    // An admin gets the button, which opens Status at Connect a computer.
+    await waitFor('connect button', `visible($('#root [data-action="connect-computer"]'))
+      && !visible($('#root .connect-note .non-admin-only'))`);
+    await click(`$('#root [data-action="connect-computer"]')`);
+    await waitFor('Status at Connect a computer', `visible($('#agentsModal')) && (() => {
+      const heading = $('#agentsModal .connect-heading').getBoundingClientRect();
+      const body = $('#agentsModal .status-body').getBoundingClientRect();
+      return heading.top >= body.top - 1 && heading.bottom <= body.bottom + 1;
+    })()`);
+    await evaluate(`pressKey('Escape'), true`);
+    await waitFor('Status closed', `!visible($('#agentsModal'))`);
+    // Power and Network say the same, in place of an empty chart or grid.
+    await click(`$('#tabBtnPower')`);
+    await waitFor('power: no script yet', `visible($('#powerConnectNote [data-action="connect-computer"]'))
+      && !visible($('#powerChartWrap')) && !visible($('#powerEmpty'))`);
+    await click(`$('#tabBtnNetwork')`);
+    await waitFor('network: no script yet', `visible($('#networkEmpty [data-action="connect-computer"]'))`);
   });
 
   let failed = 0;

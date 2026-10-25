@@ -131,6 +131,11 @@ in-game computers are listed under it (see
   went.
 - how long the server has been up, its release, and the game data version.
 
+Until a tab's script first reports, the Crafts, Power and Network tabs
+say which script they're waiting for. Admins get a **Connect a computer**
+button there that opens this dialog at
+[Connect a computer](in-game.md#from-the-web-page).
+
 ## Power tab
 
 Stored EU over time. The Hour, Day, Week, Month, and Lifetime
