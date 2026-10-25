@@ -30,6 +30,7 @@ import { fetchPowerBadge, powerMachineFromUrl, setupPowerActions } from './power
 import { fetchStockRules, setupStockActions } from './stock.js';
 import { focusNetworkSearch, pathToTab, refreshActiveTab, setupTabActions, switchTab } from './tabs.js';
 import { removeLegacyStorageKeys, setupImageErrorRemoval } from './util.js';
+import { setupWebhooksActions } from './webhooks.js';
 
 // Tells static/boot.js the modules loaded and linked.
 window.gcmStarted = true;
@@ -45,6 +46,7 @@ setupCraftsActions();
 setupCraftHistory();
 setupCraftStats();
 setupAgentsActions();
+setupWebhooksActions();
 setupIngredientsActions();
 setupTabActions();
 setupPowerActions();

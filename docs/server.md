@@ -85,8 +85,9 @@ The ones you're most likely to set:
 | `PUBLIC_URL` | empty | The page's address from outside, e.g. `https://gtnh.example.com`, for the Connect a computer command, and icons and links in webhook posts. |
 | `GTNH_VERSION` | empty | Game data version to install at startup; see [Game data](#game-data). |
 | `GTNH_TEXTURES` | empty | Icon textures for `GTNH_VERSION`: `default` or `faithful32`. Empty keeps what was picked on the page. |
-| `WEBHOOK_URLS` | empty | Comma-separated webhook URLs for notifications; see [Webhooks](using.md#webhooks). |
-| `WEBHOOK_EVENTS` | `crafts,autocraft` | Which events go to them: `crafts`, `autocraft`, `stock`. |
+| `WEBHOOK_URLS` | empty | Comma-separated webhook URLs for notifications; see [Webhooks](using.md#webhooks). Set, they replace the ones set on the page. |
+| `WEBHOOK_EVENTS` | `crafts,autocraft` | Which events go to them: `crafts`, `autocraft`, `stock`. Without `WEBHOOK_URLS`, only the page's default. |
+| `WEBHOOK_HOSTS` | empty | Comma-separated hostnames webhooks set on the page may post to, e.g. `discord.com`; exact names, no subdomains. Empty: any. For a server whose admins you don't run yourself. |
 | `SESSION_COOKIE_SECURE` | `1` (`0` in Compose) | Mark the session cookie HTTPS-only. |
 | `TRUSTED_PROXIES` | empty | Comma-separated IPs/CIDRs allowed to send `X-Forwarded-*` headers. |
 | `PORT` | `8420` | Listening port. |

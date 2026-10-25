@@ -126,7 +126,7 @@ def snapshot(now=None):
         },
         "push_subscriptions": store.push.count(),
         "webhooks": {
-            "configured": len(config.WEBHOOK_URLS),
+            "configured": len(webhooks.settings()["urls"]),
             "last": delivery and {
                 "age_seconds": _age(delivery["at"], now),
                 "failed": [{"host": h, "error": e} for h, e in delivery["results"] if e],

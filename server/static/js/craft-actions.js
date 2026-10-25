@@ -8,6 +8,7 @@ import { closeAgentsModal } from './agents.js';
 import { closeGameDataModal } from './gamedata.js';
 import { closeItemHistory } from './history.js';
 import { closeIngredientsModal } from './ingredients.js';
+import { closeWebhooksModal } from './webhooks.js';
 import { delegateActions, escapeHtml, iconClass, iconUrl, onBackdropClick } from './util.js';
 
 // ---------- Craft request modal ----------
@@ -345,6 +346,8 @@ export function setupCraftDialogActions() {
         closeAdminUsersModal();
       } else if (document.getElementById('backupsModal').style.display !== 'none') {
         closeBackupsModal();
+      } else if (document.getElementById('webhooksModal').style.display !== 'none') {
+        closeWebhooksModal();
       } else if (document.getElementById('gamedataModal').style.display !== 'none') {
         closeGameDataModal();
       } else if (document.getElementById('agentsModal').style.display !== 'none') {

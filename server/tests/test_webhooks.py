@@ -120,12 +120,84 @@ class TestAdminTest:
         monkeypatch.setattr(config, "WEBHOOK_URLS", [])
         login_as(client, "root", role="admin")
         res = client.post("/api/admin/webhooks/test")
-        assert res.status_code == 400 and "WEBHOOK_URLS" in res.get_json()["error"]
+        assert res.status_code == 400 and res.get_json()["error"] == "No webhooks set."
 
     def test_admins_only(self, client, sink):
         login_as(client, "olive", role="operator")
         assert client.post("/api/admin/webhooks/test").status_code == 403
         assert sink.received == []
+
+
+class TestPageSettings:
+    @pytest.fixture(autouse=True)
+    def no_environment(self, monkeypatch):
+        monkeypatch.setattr(config, "WEBHOOK_URLS", [])
+        monkeypatch.setattr(config, "WEBHOOK_EVENTS", {"crafts", "autocraft"})
+        monkeypatch.setattr(config, "WEBHOOK_HOSTS", set())
+
+    def put(self, client, body):
+        login_as(client, "root", role="admin")
+        return client.put("/api/admin/webhooks", json=body)
+
+    def test_defaults(self, client):
+        login_as(client, "root", role="admin")
+        assert client.get("/api/admin/webhooks").get_json() == {
+            "urls": [], "events": ["autocraft", "crafts"], "environment": False, "hosts": []}
+
+    def test_saved_and_used(self, client, api_headers, monkeypatch):
+        res = self.put(client, {"urls": [" https://hooks.example.test/a ", "", "https://hooks.example.test/a"],
+                                "events": ["crafts"]})
+        assert res.get_json()["urls"] == ["https://hooks.example.test/a"]
+        assert res.get_json()["events"] == ["crafts"]
+        events = []
+        monkeypatch.setattr(webhooks, "_put", events.append)
+        end_pinned_job(client, api_headers)
+        assert [e["title"] for e in events] == ["Craft finished"]
+        assert webhooks.enabled("autocraft") is False
+
+    def test_test_post_goes_to_page_urls(self, client, sink, monkeypatch):
+        url = config.WEBHOOK_URLS[0]
+        monkeypatch.setattr(config, "WEBHOOK_URLS", [])
+        self.put(client, {"urls": [url]})
+        assert client.post("/api/admin/webhooks/test").get_json() == {
+            "results": [{"host": "127.0.0.1", "error": None}]}
+
+    @pytest.mark.parametrize("body,error", [
+        ({"urls": ["file:///etc/passwd"]}, "Not a web address"),
+        ({"urls": ["https://"]}, "Not a web address"),
+        ({"urls": "https://a.test/x"}, "urls must be a list"),
+        ({"urls": [f"https://a.test/{i}" for i in range(11)]}, "At most 10"),
+        ({"events": ["crafts", "everything"]}, "events must be"),
+        ({}, "nothing to save"),
+    ])
+    def test_refused(self, client, body, error):
+        res = self.put(client, body)
+        assert res.status_code == 400 and error in res.get_json()["error"]
+
+    def test_allowed_hosts(self, client, monkeypatch):
+        monkeypatch.setattr(config, "WEBHOOK_HOSTS", {"discord.com"})
+        res = self.put(client, {"urls": ["https://evil.test/x"]})
+        assert res.get_json()["error"] == "This server only posts to discord.com, not evil.test."
+        res = self.put(client, {"urls": ["https://Discord.com/api/webhooks/1/a"]})
+        assert res.status_code == 200 and res.get_json()["hosts"] == ["discord.com"]
+
+    def test_url_no_longer_allowed_is_dropped(self, client, monkeypatch):
+        self.put(client, {"urls": ["https://hooks.example.test/a", "https://discord.com/api/webhooks/1/a"]})
+        monkeypatch.setattr(config, "WEBHOOK_HOSTS", {"discord.com"})
+        assert webhooks.settings()["urls"] == ["https://discord.com/api/webhooks/1/a"]
+
+    def test_environment_wins_and_hides_urls(self, client, monkeypatch):
+        self.put(client, {"urls": ["https://hooks.example.test/page"]})
+        monkeypatch.setattr(config, "WEBHOOK_URLS", ["https://hooks.example.test/env-secret"])
+        data = client.get("/api/admin/webhooks").get_json()
+        assert data == {"urls": [], "count": 1, "events": ["autocraft", "crafts"], "environment": True, "hosts": []}
+        res = client.put("/api/admin/webhooks", json={"urls": []})
+        assert res.status_code == 400 and "WEBHOOK_URLS" in res.get_json()["error"]
+
+    def test_admins_only(self, client):
+        login_as(client, "olive", role="operator")
+        assert client.get("/api/admin/webhooks").status_code == 403
+        assert client.put("/api/admin/webhooks", json={"urls": []}).status_code == 403
 
 
 def test_background_delivery(sink, monkeypatch):

@@ -87,14 +87,15 @@ if it's lost, every browser has to turn the switch off and on again.
 ## Webhooks
 
 To also post notifications to a Discord channel (or Slack, or anything that
-takes a JSON POST), set `WEBHOOK_URLS` to one or more webhook URLs. A Discord
+takes a JSON POST), an admin adds one or more webhook URLs under
+**Settings (⚙) → Webhooks**, one per line, and picks the events. A Discord
 webhook (**Channel settings → Integrations → Webhooks**) gets an embed with
 the item's icon; any other URL gets a JSON body with `event`, `title`,
 `body`, `icon` and `url`, plus a `text` line that Slack-style incoming webhooks
 show as is.
 
-Unlike push notifications, webhook posts are for the whole base, so
-`WEBHOOK_EVENTS` picks what's sent:
+Unlike push notifications, webhook posts are for the whole base, so the
+dialog picks what's sent:
 
 | Event | Sent when |
 |---|---|
@@ -103,8 +104,13 @@ Unlike push notifications, webhook posts are for the whole base, so
 | `stock` | a low-stock alert fires. Off by default, since alerts are each user's own; on, it posts once per item, without saying whose alert it was. |
 
 Icons and the link to the item's page need `PUBLIC_URL`, the address the page
-is reached at from outside; without it, posts are text only. Admins can check
-the setup with **Test webhooks** in the settings (⚙) menu.
+is reached at from outside; without it, posts are text only. **Send test** in
+the dialog saves it and posts a test message to every URL.
+
+On the server, `WEBHOOK_URLS` (and `WEBHOOK_EVENTS`, with the event names
+above) set them in the environment instead: the dialog then only shows how
+many there are and can't change them. `WEBHOOK_HOSTS` limits the URLs set on
+the page to a list of hostnames; see [Configuration](server.md#configuration).
 
 ## Server status
 

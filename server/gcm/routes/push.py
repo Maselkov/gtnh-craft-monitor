@@ -47,14 +47,36 @@ def push_unsubscribe():
     return jsonify({"ok": True})
 
 
+@bp.route("/api/admin/webhooks", methods=["GET"])
+@auth.admin_required
+def admin_webhooks_get():
+    """{urls, events, environment, hosts}. Set in the environment, the
+    URLs aren't shown: only how many there are."""
+    current = webhooks.settings()
+    if current["environment"]:
+        current = {**current, "urls": [], "count": len(current["urls"])}
+    return jsonify({**current, "hosts": sorted(config.WEBHOOK_HOSTS)})
+
+
+@bp.route("/api/admin/webhooks", methods=["PUT"])
+@auth.admin_required
+def admin_webhooks_put():
+    """Body: {urls: [...], events: [...]}, either or both."""
+    error = webhooks.save_settings(request.get_json(silent=True))
+    if error:
+        return jsonify({"error": error}), 400
+    return admin_webhooks_get()
+
+
 @bp.route("/api/admin/webhooks/test", methods=["POST"])
 @auth.admin_required
 def admin_webhooks_test():
     """Posts a test message to every webhook now, and says how each went."""
-    if not config.WEBHOOK_URLS:
-        return jsonify({"error": "No webhooks set: add WEBHOOK_URLS to the server's environment."}), 400
+    current = webhooks.settings()
+    if not current["urls"]:
+        return jsonify({"error": "No webhooks set."}), 400
     ev = webhooks.event(
-        "test", "Test", f"Webhooks work. Events sent: {', '.join(sorted(config.WEBHOOK_EVENTS)) or 'none'}.", "good",
+        "test", "Test", f"Webhooks work. Events sent: {', '.join(current['events']) or 'none'}.", "good",
     )
     results = webhooks.send(ev)
     return jsonify({"results": [{"host": host, "error": error} for host, error in results]})
