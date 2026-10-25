@@ -9,6 +9,9 @@ Every route declares its policy with exactly one decorator below
     @auth.login_required     any signed-in user; g.user is the user
     @auth.operator_required  operator or admin role; g.user is the user
     @auth.admin_required     admin role; g.user is the user
+    @auth.viewer_required    the base's data: anyone, or on a private
+                             server (is_private()) any signed-in user;
+                             g.user is the user or None
     @auth.public             no check, deliberately
     @auth.custom_check       checked inside the view - say why there
 
@@ -42,6 +45,18 @@ def _lookup_session_user():
     if not session_token:
         return None
     return store.users.session_user(session_token)
+
+
+def is_private():
+    """Whether only signed-in users may see this server's crafts, network
+    and power - set by an admin (Manage users) or `app.py visibility`.
+    Off unless set: a self-hosted server is usually only reachable by
+    people its owner trusts."""
+    return store.settings.load().get("private") is True
+
+
+def set_private(private):
+    store.settings.save({"private": bool(private)})
 
 
 def is_admin(user):
@@ -127,6 +142,13 @@ def _check_login():
     return None
 
 
+def _check_viewer():
+    g.user = session_user()
+    if not g.user and is_private():
+        return jsonify({"error": "authentication required"}), 401
+    return None
+
+
 def _check_operator():
     g.user = session_user()
     if not is_operator(g.user):
@@ -143,6 +165,7 @@ def _check_admin():
 
 api_key_required = _policy("api_key", _check_api_key)
 login_required = _policy("login", _check_login)
+viewer_required = _policy("viewer", _check_viewer)
 operator_required = _policy("operator", _check_operator)
 admin_required = _policy("admin", _check_admin)
 public = _policy("public")

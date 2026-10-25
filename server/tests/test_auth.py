@@ -90,7 +90,7 @@ def test_disabling_a_user_invalidates_existing_sessions(client):
     finally:
         conn.close()
 
-    assert client.get("/api/auth/session").get_json() == {"authenticated": False, "setup_required": False}
+    assert client.get("/api/auth/session").get_json() == {"authenticated": False, "setup_required": False, "private": False}
 
 
 def test_only_admins_can_list_or_create_users(client):
@@ -154,6 +154,7 @@ def test_setup_code_exists_only_while_there_are_no_users(client):
     assert client.get("/api/auth/session").get_json() == {
         "authenticated": False,
         "setup_required": True,
+        "private": False,
     }
 
     store.users.create("Admin", "admin")
@@ -369,6 +370,7 @@ def test_admin_can_revoke_a_token_and_its_sessions(client, flask_app):
     assert operator_client.get("/api/auth/session").get_json() == {
         "authenticated": False,
         "setup_required": False,
+        "private": False,
     }
     assert (
         operator_client.post(
@@ -499,7 +501,7 @@ def test_admin_can_delete_a_user_and_their_credentials(client, flask_app):
 
     users = client.get("/api/admin/users").get_json()["users"]
     assert all(user["id"] != "usr_alice" for user in users)
-    assert alice_client.get("/api/auth/session").get_json() == {"authenticated": False, "setup_required": False}
+    assert alice_client.get("/api/auth/session").get_json() == {"authenticated": False, "setup_required": False, "private": False}
     assert (
         alice_client.post("/api/auth/login", json={"token": alice_token}).status_code
         == 401
@@ -569,7 +571,7 @@ def test_admin_can_regenerate_a_users_token(client, flask_app):
     assert new_token != old_token
 
     # Old token and its session are dead...
-    assert alice_client.get("/api/auth/session").get_json() == {"authenticated": False, "setup_required": False}
+    assert alice_client.get("/api/auth/session").get_json() == {"authenticated": False, "setup_required": False, "private": False}
     assert (
         alice_client.post("/api/auth/login", json={"token": old_token}).status_code
         == 401

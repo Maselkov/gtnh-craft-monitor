@@ -9,7 +9,7 @@ import base64
 import hashlib
 import ipaddress
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from gcm import auth, config
@@ -93,6 +93,11 @@ def add_browser_security_headers(response):
             response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
     if request.endpoint in NO_STORE_ENDPOINTS:
         response.headers["Cache-Control"] = "no-store"
+    view = current_app.view_functions.get(request.endpoint)
+    if "viewer" in getattr(view, "auth_policies", ()) and auth.is_private():
+        # Only the signed-in browser may keep it, not a cache in between.
+        response.cache_control.public = False
+        response.cache_control.private = True
     return response
 
 

@@ -91,7 +91,10 @@ def _build_og_tags(path, args):
     desc = "GTNH crafting, power, and network monitor"
     image = None
 
-    if path in ("/", "/crafts"):
+    if auth.is_private():
+        # Link previews are fetched signed out, by anyone the link reaches.
+        pass
+    elif path in ("/", "/crafts"):
         with state.crafts_lock:
             jobs = state.crafts.get("jobs", [])
         total = len(jobs)

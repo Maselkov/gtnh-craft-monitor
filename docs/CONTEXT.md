@@ -150,10 +150,15 @@ Four rules keep this layout honest:
 **Every route declares its auth policy with a decorator from
 `gcm/auth.py`** - `api_key_required` (the in-game scripts),
 `login_required`, `operator_required`, `admin_required` (these set
-`g.user`), `public`, or `custom_check` (checked in the view, with a
-comment saying why). `tests/test_route_auth.py` fails if any route has
-none, and pins the exact list of public routes, so making something
-public is always a visible, reviewed change. A view that reads
+`g.user`), `viewer_required` (the base's own data: anyone, or only
+signed-in users once an admin makes the server private - `g.user` may be
+None), `public`, or `custom_check` (checked in the view, with a comment
+saying why). `tests/test_route_auth.py` fails if any route has none, and
+pins the exact lists of public and viewer routes, so making something
+public is always a visible, reviewed change. On a private server the
+page's OpenGraph tags carry no data, viewer routes' responses are
+`Cache-Control: private`, and the page (`auth.js` `onceDataVisible()`)
+fetches nothing - not even its first tab - until someone signs in. A view that reads
 `g.user` without its decorator crashes rather than serving anonymously.
 
 Craft requests and cancellations share one `CommandQueue` class

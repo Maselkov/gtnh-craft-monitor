@@ -74,6 +74,11 @@
     </div>
   </div>
 
+  <!-- Signed out of a private server (auth.js): instead of the tabs. -->
+  <div id="privateNotice" class="private-notice" style="display:none;">
+    <h2>This base is private</h2>
+    <p>Sign in with the access token one of its admins gave you.</p>
+  </div>
   <div class="stale-banner" id="loadError" role="alert"></div>
 
   <div id="craftsTab">
@@ -301,6 +306,11 @@
       <div class="modal-header">
         <div class="modal-item-name">User management</div>
         <button class="history-close-btn" data-action="close-admin" title="Close">&times;</button>
+      </div>
+      <div class="agent-settings">
+        <label class="agent-setting"><input type="checkbox" id="privateToggle">
+          <span>Only signed-in users can see this base
+            <span class="agent-line">Signed out, the crafts, network and power are hidden, and links to this base show no preview.</span></span></label>
       </div>
       <div class="modal-note">Create a user and share the generated access token securely. It is shown only once.</div>
       <div class="admin-form-grid">

@@ -1,11 +1,13 @@
 from conftest import login_as
 
-# Changing this set should be a deliberate, reviewed decision - a route
+# Changing these sets should be a deliberate, reviewed decision - a route
 # that serves or changes anything user-specific must never end up here.
-PUBLIC_ENDPOINTS = {
+# The base's own data: anyone may read it, unless the server is private
+# (gcm.auth.is_private, test_private.py).
+VIEWER_ENDPOINTS = {
     "crafts.crafts_get",
     "crafts.crafts_history_get",
-    "crafts.crafts_stats_get",  # totals over the same public history
+    "crafts.crafts_stats_get",  # totals over the same history
     "crafts.crafts_tree_get",  # the job tree: what the crafts list shows, arranged
     "crafts.crafts_steps_get",
     "power.power_get",
@@ -13,11 +15,14 @@ PUBLIC_ENDPOINTS = {
     "power.power_chart_png",
     "network.network_get",
     "network.network_changes_get",
-    "network.network_info_get",  # game data about the public item list's items
+    "network.network_info_get",  # game data about the item list's items
     "network.network_history_get",
     "network.network_history_chart_png",
+}
+# Anyone, always: the page itself, game data icons, and signing in.
+PUBLIC_ENDPOINTS = {
     "pages.icon",
-    "pages.index",
+    "pages.index",  # its link preview says nothing on a private server
     "pages.js_module",
     "pages.service_worker",
     "users.auth_session_get",
@@ -44,6 +49,8 @@ def test_every_route_declares_an_auth_policy(flask_app):
 def test_public_routes_are_exactly_the_reviewed_list(flask_app):
     public = {e for e, p in policies(flask_app).items() if "public" in p}
     assert public == PUBLIC_ENDPOINTS
+    viewer = {e for e, p in policies(flask_app).items() if "viewer" in p}
+    assert viewer == VIEWER_ENDPOINTS
 
 
 def test_api_key_routes_reject_missing_and_wrong_keys(client, api_headers):

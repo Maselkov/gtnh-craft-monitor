@@ -13,11 +13,14 @@ bp = Blueprint("users", __name__)
 def auth_session_get():
     user = auth.session_user()
     if not user:
-        return jsonify({"authenticated": False, "setup_required": auth.setup_code() is not None})
+        return jsonify(
+            {"authenticated": False, "setup_required": auth.setup_code() is not None, "private": auth.is_private()}
+        )
     return jsonify(
         {
             "authenticated": True,
             "user": {key: user[key] for key in ("id", "display_name", "role")},
+            "private": auth.is_private(),
         }
     )
 
@@ -80,6 +83,19 @@ def auth_logout_post():
     response = jsonify({"ok": True})
     response.delete_cookie("gcm_session", path="/")
     return response
+
+
+@bp.route("/api/admin/visibility", methods=["PUT"])
+@auth.admin_required
+def admin_visibility_put():
+    """Body: {"private": bool} - whether only signed-in users may see the
+    crafts, network and power (gcm.auth.is_private)."""
+    payload = request.get_json(silent=True)
+    private = payload.get("private") if isinstance(payload, dict) else None
+    if not isinstance(private, bool):
+        return jsonify({"error": "private must be true or false"}), 400
+    auth.set_private(private)
+    return jsonify({"private": private})
 
 
 @bp.route("/api/admin/users", methods=["POST"])

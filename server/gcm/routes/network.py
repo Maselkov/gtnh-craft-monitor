@@ -158,7 +158,7 @@ def _network_etag():
 
 
 @bp.route("/api/network", methods=["GET"])
-@auth.public
+@auth.viewer_required
 def network_get():
     # Every open tab re-polls the whole item list (thousands of items),
     # but it only changes once per scan - so answer with an ETag and let
@@ -188,7 +188,7 @@ def network_get():
 
 
 @bp.route("/api/network/info", methods=["GET"])
-@auth.public
+@auth.viewer_required
 def network_info_get():
     """What the game data says about the items in the network snapshot
     (gcm/item_info.py): {items: {item key: {description,
@@ -213,7 +213,7 @@ def network_info_get():
 
 
 @bp.route("/api/network/history/chart.png", methods=["GET"])
-@auth.public
+@auth.viewer_required
 def network_history_chart_png():
     rate_limited = charts.rate_limit_response()
     if rate_limited:
@@ -247,7 +247,7 @@ def network_history_chart_png():
 
 
 @bp.route("/api/network/history", methods=["GET"])
-@auth.public
+@auth.viewer_required
 def network_history_get():
     mod = request.args.get("mod") or None
     internal = request.args.get("internal") or None
@@ -286,7 +286,7 @@ def network_history_get():
 
 
 @bp.route("/api/network/changes", methods=["GET"])
-@auth.public
+@auth.viewer_required
 def network_changes_get():
     """How each item's quantity changed over ?range=day|week, for the
     Network tab's Change sort: only items that did."""

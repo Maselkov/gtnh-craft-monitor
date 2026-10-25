@@ -170,6 +170,28 @@ Managing users:
 - **Delete** permanently removes a user with their tokens, sessions,
   pins and pending notifications. Their craft request history is kept.
 
+### Private servers
+
+By default anyone who can open the page sees the crafts, the network and
+the power; signing in only adds pins, requests and the admin tools. For a
+server reachable from the internet, an admin can tick **Only signed-in
+users can see this base** in **Manage users**. Then:
+
+- Signed out, the page shows only a sign-in box, and the server answers
+  every request for the crafts, network or power with 401. Give each
+  person who should see it a token; a viewer can see everything, as
+  before.
+- Links to the server show no preview when pasted into Discord or
+  elsewhere: the preview is fetched signed out, so it says only "GTNH
+  Monitor".
+- The in-game scripts report as before; they use the API key.
+
+The same from the command line:
+
+```bash
+docker compose exec gtnh-craft-monitor python app.py visibility private   # or public
+```
+
 If you lose a token and no admin can sign in, issue a new one from the
 server. This revokes the user's existing tokens and sessions and prints the
 new token:
