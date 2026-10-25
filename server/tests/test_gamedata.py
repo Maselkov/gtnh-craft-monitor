@@ -523,3 +523,63 @@ def test_a_bundle_with_descriptions_loads_them_and_one_without_has_none(admin, g
     admin.post("/api/admin/gamedata/install", json={"version": "2.8.4"})
     assert wait_for_install()["state"] == "done"
     assert not item_info.loaded() and item_info.describe(thing) == {}
+
+
+@pytest.fixture()
+def shared_dir(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "GAMEDATA_SHARED_DIR", str(tmp_path / "shared"))
+    return tmp_path / "shared"
+
+
+def put_bundle(directory, version, bundle, data_asset_id=None):
+    """A bundle on disk, as a host might lay it out for several servers."""
+    target = directory / version
+    target.mkdir(parents=True)
+    for name, data in bundle.items():
+        (target / name).write_bytes(data)
+    if data_asset_id is not None:
+        (target / gamedata.RELEASE_FILE).write_text(json.dumps({"data_asset_id": data_asset_id}))
+
+
+def files_under(directory):
+    return sorted(str(p.relative_to(directory)) for p in directory.rglob("*"))
+
+
+def test_a_shared_bundle_is_used_without_downloading(admin, github, shared_dir, api_headers):
+    put_bundle(shared_dir, "2.9.0-beta-3", make_bundle("2.9.0-beta-3"), data_asset_id=1)
+    before = files_under(shared_dir)
+    # A newer build is published, but the host keeps shared bundles current.
+    github.bundles["2.9.0-beta-3"] = make_bundle("2.9.0-beta-3", generated_at="2026-09-27T00:00:00Z")
+
+    listing = admin.get("/api/admin/gamedata").get_json()
+    assert [v["version"] for v in listing["installed"]] == ["2.9.0-beta-3"]
+    assert listing["available"][0]["update_available"] is False
+    response = admin.post("/api/admin/gamedata/install", json={"version": "2.9.0-beta-3"})
+
+    assert response.get_json()["selected"] == "2.9.0-beta-3"
+    assert github.downloads == []
+    assert admin.get(f"/icons?path={icons.resolve_icon('test', 'thing', 0, None)}").data == PNG
+    assert admin.get("/api/network/catalog", headers=api_headers).data == b"test:thing\n"
+    assert not os.path.exists(os.path.join(config.GAMEDATA_DIR, "2.9.0-beta-3"))
+    assert files_under(shared_dir) == before
+
+
+def test_downloads_over_a_shared_bundle_go_to_the_servers_own_directory(admin, github, shared_dir):
+    put_bundle(shared_dir, "2.9.0-beta-3", make_bundle("2.9.0-beta-3", faithful=False))
+    before = files_under(shared_dir)
+    github.bundles["2.9.0-beta-3"] = make_bundle("2.9.0-beta-3")
+    github.bundles["2.9.0-RC-1"] = make_bundle("2.9.0-RC-1")
+    github.bundles["2.9.0"] = make_bundle("2.9.0")
+
+    # Textures the shared copy lacks: the whole bundle is fetched, as the
+    # shared one can't be added to.
+    assert install(admin, "2.9.0-beta-3", "faithful32")["state"] == "done"
+    assert "icons_lookup.json" in github.downloads
+    own = os.path.join(config.GAMEDATA_DIR, "2.9.0-beta-3")
+    assert os.path.isfile(os.path.join(own, "images-faithful32.zip"))
+    # Moving on prunes this server's own copies, never the shared one.
+    install(admin, "2.9.0-RC-1")
+    install(admin, "2.9.0")
+    assert not os.path.exists(own)
+    assert files_under(shared_dir) == before
+    assert "2.9.0-beta-3" in [v["version"] for v in gamedata.installed()]

@@ -1088,7 +1088,12 @@ set's zip is downloaded. Adding another set to an installed version fetches
 `data.json` and that zip alone, unless `data.json` changed (a rebuilt
 release), in which case the whole bundle is fetched again. The selected and
 previously selected versions are kept, with whatever texture sets they
-have. The pack is credited in the data repo's README, each release's
+have. `GAMEDATA_SHARED_DIR` is a second place to read bundles from, for
+one host running a server per base: a version is read from the server's
+own directory if that copy is complete, else from the shared one. Installs
+and pruning only touch the server's own directory, so the shared one can
+be read-only, and a shared bundle never counts as outdated (whoever put
+it there replaces it). The pack is credited in the data repo's README, each release's
 notes, `CREDITS.txt` in the zip, `data.json` and the Game data dialog. With
 no bundle there are no icons.
 

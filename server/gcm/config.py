@@ -46,6 +46,11 @@ GAMEDATA_API_URL = os.environ.get("GAMEDATA_API_URL", "https://api.github.com").
 SCRIPTS_REPO = os.environ.get("SCRIPTS_REPO", "Maselkov/gtnh-craft-monitor")
 GTNH_VERSION = os.environ.get("GTNH_VERSION", "").strip()
 GTNH_TEXTURES = os.environ.get("GTNH_TEXTURES", "").strip()
+# A directory of bundles (<version>/ each, as in DATA_DIR/gamedata) that
+# several servers on one host read without copying - may be read-only.
+# A version found there needs no download; downloads still go to
+# DATA_DIR/gamedata.
+GAMEDATA_SHARED_DIR = os.environ.get("GAMEDATA_SHARED_DIR", "").strip()
 
 # Contact the push services are given with every Web Push (gcm/push.py):
 # a mailto: or https: URL. Empty means the page's own URL.
