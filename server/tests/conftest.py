@@ -127,16 +127,22 @@ def webhook_events(monkeypatch):
     return events
 
 
-def ore_dict_index(path):
-    """What oredict.load() takes, for an ore_dict.json at path: the index
-    (gcm/gamedata_index.py) of a bundle holding just that file."""
-    bundle = os.path.dirname(str(path))
+def bundle_index(bundle):
+    """What oredict.load() and item_info.load() take: the index
+    (gcm/gamedata_index.py) of the bundle files in directory `bundle`
+    (ore_dict.json, item_info.json, ...), whichever are there."""
+    bundle = str(bundle)
     data_json = os.path.join(bundle, "data.json")
     if not os.path.exists(data_json):
         with open(data_json, "w") as f:
             f.write("{}")
-    if os.path.abspath(str(path)) != os.path.join(bundle, "ore_dict.json"):
-        raise ValueError("the bundle's ore dictionary is ore_dict.json")
     index_path = os.path.join(bundle, gamedata_index.FILE)
     gamedata_index.build(bundle, index_path)
     return gamedata_index.Index(index_path)
+
+
+def ore_dict_index(path):
+    """bundle_index() for an ore_dict.json at path."""
+    if os.path.basename(str(path)) != "ore_dict.json":
+        raise ValueError("the bundle's ore dictionary is ore_dict.json")
+    return bundle_index(os.path.dirname(str(path)))

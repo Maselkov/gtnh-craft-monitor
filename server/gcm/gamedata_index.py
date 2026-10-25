@@ -1,8 +1,9 @@
 """A game data bundle's lookups as one SQLite file, index.sqlite, read in
 place instead of loaded into memory: the icon lookup, where each icon is
-in each images*.zip, and the ore dictionary. As Python dicts those took
-~175 MB in every server (zipfile's index of a 131k-icon zip alone ~90
-MB); read from the file they take next to nothing, and servers on one
+in each images*.zip, the ore dictionary, and the item info (descriptions,
+rarity, formulas, fluids, mod names). As Python dicts those took ~200 MB
+in every server (zipfile's index of a 131k-icon zip alone ~90 MB, the
+item info ~24 MB); read from the file they take next to nothing, and servers on one
 host reading a shared bundle (GAMEDATA_SHARED_DIR) share one copy of it
 in the OS's page cache.
 
@@ -15,7 +16,8 @@ import the rest of gcm. A host can build it into a shared bundle once
 
     python app.py index-gamedata <bundle directory>
 
-Readers: icons.py (Index.icon(), Index.zip_entry()) and oredict.py."""
+Readers: icons.py (Index.icon(), Index.zip_entry()), oredict.py and
+item_info.py."""
 
 import hashlib
 import json
@@ -30,7 +32,7 @@ from urllib.parse import quote
 FILE = "index.sqlite"
 # Bumped when the schema or what goes in it changes: an index of another
 # format is built again.
-FORMAT = 1
+FORMAT = 2
 # The icon lookup's tables (icons_lookup.json's keys), numbered for the
 # icon table's ns column.
 ICON_TABLES = ("by_key", "by_key_label", "by_key_material", "by_label", "fluids_by_key", "aspects_by_key", "bleed")
@@ -48,7 +50,20 @@ CREATE TABLE zip_entry (
 CREATE TABLE ore (seq INTEGER PRIMARY KEY, name TEXT NOT NULL, mod TEXT NOT NULL, internal TEXT NOT NULL, damage INTEGER);
 CREATE INDEX ore_item ON ore (mod, internal, damage);
 CREATE INDEX ore_name ON ore (name, seq);
+-- item_info.json's item sections, keyed by the item key first so one
+-- query finds an item's text in every section and table at once.
+CREATE TABLE item_text (
+    k TEXT NOT NULL, ns INTEGER NOT NULL, section INTEGER NOT NULL, v TEXT NOT NULL,
+    PRIMARY KEY (k, ns, section)
+) WITHOUT ROWID;
+-- v: the fluid's JSON object.
+CREATE TABLE fluid (name TEXT PRIMARY KEY, v TEXT NOT NULL) WITHOUT ROWID;
+CREATE TABLE mod (id TEXT PRIMARY KEY, name TEXT NOT NULL) WITHOUT ROWID;
 """
+# item_info.json's item sections, and the icon lookup's tables they're
+# keyed like, numbered for item_text's section and ns columns.
+ITEM_SECTIONS = ("tooltips", "shift_tooltips", "rarity", "formulas")
+ITEM_TABLES = ("by_key", "by_key_label", "by_key_material")
 
 
 def _zip_names(bundle_dir):
@@ -93,6 +108,32 @@ def _ore_rows(path):
                 yield name, mod, internal, int(damage)
 
 
+def _load_item_info(conn, path):
+    """item_info.json's contents into item_text, fluid and mod. Anything
+    of the wrong shape is left out, as item_info.py always has."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return
+    if not isinstance(data, dict):
+        return
+    for section_n, section in enumerate(ITEM_SECTIONS):
+        tables = data.get(section) if isinstance(data.get(section), dict) else {}
+        for ns, table in enumerate(ITEM_TABLES):
+            rows = tables.get(table) if isinstance(tables.get(table), dict) else {}
+            conn.executemany(
+                "INSERT INTO item_text VALUES (?, ?, ?, ?)",
+                ((k, ns, section_n, v) for k, v in rows.items() if isinstance(v, str) and v),
+            )
+    fluids = data.get("fluids") if isinstance(data.get("fluids"), dict) else {}
+    conn.executemany(
+        "INSERT INTO fluid VALUES (?, ?)", ((k, json.dumps(v)) for k, v in fluids.items() if isinstance(v, dict))
+    )
+    mods = data.get("mods") if isinstance(data.get("mods"), dict) else {}
+    conn.executemany("INSERT INTO mod VALUES (?, ?)", ((k, v) for k, v in mods.items() if isinstance(v, str)))
+
+
 def build(bundle_dir, out_path):
     """Writes bundle_dir's index to out_path, replacing it in one step."""
     tmp = out_path + ".tmp"
@@ -122,6 +163,7 @@ def build(bundle_dir, out_path):
             "INSERT INTO ore (name, mod, internal, damage) VALUES (?, ?, ?, ?)",
             _ore_rows(os.path.join(bundle_dir, "ore_dict.json")),
         )
+        _load_item_info(conn, os.path.join(bundle_dir, "item_info.json"))
         conn.execute("INSERT INTO meta VALUES ('fingerprint', ?)", (fingerprint(bundle_dir),))
         conn.commit()
     finally:
@@ -180,6 +222,24 @@ class Index:
     def ore_members(self, name):
         """(mod, internal, damage or None) of each item under an ore name."""
         return self.all("SELECT mod, internal, damage FROM ore WHERE name = ? ORDER BY seq", (name,))
+
+    def item_texts(self, keys):
+        """(k, table, section, text) for each of keys (item_text's k) that
+        has text, tables and sections by name."""
+        if not keys:
+            return []
+        rows = self.all(f"SELECT k, ns, section, v FROM item_text WHERE k IN ({','.join('?' * len(keys))})", keys)
+        return [(k, ITEM_TABLES[ns], ITEM_SECTIONS[section], v) for k, ns, section, v in rows]
+
+    def has_item_text(self):
+        return self.one("SELECT 1 FROM item_text WHERE ns = 0 AND section = 0 LIMIT 1") is not None
+
+    def fluid(self, name):
+        row = self.one("SELECT v FROM fluid WHERE name = ?", (name,))
+        return json.loads(row[0]) if row else None
+
+    def mods(self):
+        return dict(self.all("SELECT id, name FROM mod"))
 
     def zip_entry(self, zip_name, name):
         """(offset, size, method, crc) of name in zip_name, or None."""

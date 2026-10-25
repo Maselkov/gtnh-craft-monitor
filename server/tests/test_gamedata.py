@@ -10,7 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from gcm import config, gamedata, icons, item_info, oredict, state
+from gcm import config, gamedata, gamedata_index, icons, item_info, oredict, state
 from conftest import login_as
 
 PNG = b"\x89PNG\r\n\x1a\nnot really, but the server doesn't care"
@@ -560,7 +560,10 @@ def test_a_shared_bundle_is_used_without_downloading(admin, github, shared_dir, 
     assert github.downloads == []
     assert admin.get(f"/icons?path={icons.resolve_icon('test', 'thing', 0, None)}").data == PNG
     assert admin.get("/api/network/catalog", headers=api_headers).data == b"test:thing\n"
-    assert not os.path.exists(os.path.join(config.GAMEDATA_DIR, "2.9.0-beta-3"))
+    # Nothing downloaded: the server's own directory for it holds just the
+    # index it built, as the shared bundle has none.
+    own = os.path.join(config.GAMEDATA_DIR, "2.9.0-beta-3")
+    assert os.listdir(own) == [gamedata_index.FILE]
     assert files_under(shared_dir) == before
 
 

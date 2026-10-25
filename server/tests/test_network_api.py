@@ -5,7 +5,7 @@ import pytest
 
 from gcm import config, icons, item_info, oredict, state, store
 from gcm import inventory
-from conftest import login_as, ore_dict_index
+from conftest import bundle_index, login_as
 from nbt_fixtures import seed_tag
 
 
@@ -761,13 +761,13 @@ class TestCrashReports:
 def game_info(tmp_path):
     """Makes the given item_info.json (and ore_dict.json) the live ones."""
     def load(info, ore=None):
-        path = tmp_path / "item_info.json"
-        path.write_text(json.dumps(info))
-        item_info.load(str(path))
+        (tmp_path / "item_info.json").write_text(json.dumps(info))
         if ore is not None:
-            ore_path = tmp_path / "ore_dict.json"
-            ore_path.write_text(json.dumps(ore))
-            oredict.load(ore_dict_index(ore_path))
+            (tmp_path / "ore_dict.json").write_text(json.dumps(ore))
+        index = bundle_index(tmp_path)
+        item_info.load(index)
+        if ore is not None:
+            oredict.load(index)
     yield load
     item_info.load(None)
     oredict.load(None)

@@ -17,65 +17,60 @@ item_info.json has:
 - fluids: {fluid name: {temperature: kelvin, gaseous: bool, formula}},
   which describe() words the way GregTech's fluid tooltips do.
 - mods: {mod id: name}.
-Bundles from before it existed have none of it."""
+Bundles from before it existed have none of it. It's read from the
+bundle's index (gcm/gamedata_index.py), not held in memory (it was ~24
+MB), except the mod names: a few hundred, and the page wants them all."""
 
-import json
-import logging
-import os
 import re
 
 from gcm import oredict
 from gcm.icons import damage_str
 
-log = logging.getLogger(__name__)
-
-_sections = {}
-_fluids = {}
+_index = None  # the live bundle's gamedata_index.Index, or None
+_loaded = False
 _mods = {}
 _mods_by_lower = {}
 
 
-def load(path):
-    """Makes the item info at path the live one; none if path is None or
-    missing."""
-    global _sections, _fluids, _mods, _mods_by_lower
-    data = {}
-    if path and os.path.exists(path):
-        try:
-            with open(path, encoding="utf-8") as f:
-                data = json.load(f)
-        except (OSError, ValueError) as e:
-            log.warning("unreadable item info %s: %s", path, e)
-        if not isinstance(data, dict):
-            data = {}
-    _sections = {
-        name: data.get(name) if isinstance(data.get(name), dict) else {}
-        for name in ("tooltips", "shift_tooltips", "rarity", "formulas")
-    }
-    _fluids = data.get("fluids") if isinstance(data.get("fluids"), dict) else {}
-    _mods = data.get("mods") if isinstance(data.get("mods"), dict) else {}
-    _mods_by_lower = {mod.lower(): name for mod, name in _mods.items()}
+def load(index):
+    """Makes the item info in index (a gamedata_index.Index) the live one;
+    none if index is None."""
+    global _index, _loaded, _mods, _mods_by_lower
+    mods = index.mods() if index else {}
+    _index = index
+    _mods = mods
+    _mods_by_lower = {mod.lower(): name for mod, name in mods.items()}
+    _loaded = bool(mods or (index and index.has_item_text()))
 
 
 def loaded():
-    return bool(_sections.get("tooltips", {}).get("by_key") or _mods)
+    return _loaded
 
 
-def _find(section, key, item):
-    """An item's entry in one of the item sections: an NBT variant's own
-    (a GregTech tool's material, or its label), else its item id's."""
-    tables = _sections.get(section) or {}
+def _texts(key, item):
+    """{section: text} for an item in each item section: an NBT variant's
+    own (a GregTech tool's material, else its label), else its item id's."""
+    index = _index
+    if index is None:
+        return {}
+    # The keys to look under, in order of preference.
+    wanted = []
     if item.get("variant"):
         if item.get("variant_name"):
             # merge_variants()'s " #1a2b" isn't part of the material.
             material = re.sub(r" #[0-9A-Za-z]{4}$", "", item["variant_name"])
-            found = (tables.get("by_key_material") or {}).get(f"{key}|{material}")
-            if found:
-                return found
-        found = item.get("name") and (tables.get("by_key_label") or {}).get(f"{key}|{item['name']}")
-        if found:
-            return found
-    return (tables.get("by_key") or {}).get(key)
+            wanted.append(("by_key_material", f"{key}|{material}"))
+        if item.get("name"):
+            wanted.append(("by_key_label", f"{key}|{item['name']}"))
+    wanted.append(("by_key", key))
+    by_place = {}
+    for k, table, section, text in index.item_texts([k for _, k in wanted]):
+        by_place.setdefault((table, k), {})[section] = text
+    texts = {}
+    for place in wanted:
+        for section, text in by_place.get(place, {}).items():
+            texts.setdefault(section, text)
+    return texts
 
 
 def _fluid_description(fluid, name):
@@ -109,7 +104,8 @@ def describe(item):
     kind = item.get("kind") or "item"
     info = {}
     if kind == "fluid":
-        fluid = item.get("internal") and _fluids.get(item["internal"])
+        index = _index
+        fluid = item.get("internal") and index and index.fluid(item["internal"])
         if isinstance(fluid, dict):
             formula = fluid.get("formula") if isinstance(fluid.get("formula"), str) else None
             description = _with_formula(_fluid_description(fluid, item["internal"]), formula)
@@ -123,12 +119,11 @@ def describe(item):
     mod, internal, damage = item.get("mod"), item.get("internal"), damage_str(item.get("damage"))
     if not (mod and internal and damage is not None):
         return info
-    key = f"{mod}:{internal}:{damage}"
+    texts = _texts(f"{mod}:{internal}:{damage}", item)
     for section, field in (("tooltips", "description"), ("shift_tooltips", "shift_description"),
                            ("rarity", "rarity"), ("formulas", "formula")):
-        found = _find(section, key, item)
-        if found:
-            info[field] = found
+        if texts.get(section):
+            info[field] = texts[section]
     if info.get("formula"):
         info["description"] = _with_formula(info.get("description"), info["formula"])
     ore = oredict.names(mod, internal, item.get("damage"))

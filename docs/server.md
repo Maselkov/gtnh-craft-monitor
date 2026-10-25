@@ -221,9 +221,9 @@ again downloads the new build.
 
 The first time a version goes live (and once after updating to a server
 that does this), the server spends a few seconds indexing its game data,
-so it can read icons and the ore dictionary from disk instead of holding
+so it can read icons, item descriptions and the ore dictionary from disk instead of holding
 them in memory. A server with a GTNH 2.9 bundle and a big network uses
-about 80 MB of RAM.
+about 55 MB of RAM.
 
 To pin the version without the page, set `GTNH_VERSION` (e.g.
 `2.9.0-beta-3`), and optionally `GTNH_TEXTURES=faithful32`; the server
@@ -236,7 +236,10 @@ it). A version found there is used without downloading, and the servers
 never write to or delete from it, so it can be mounted read-only. Picking
 textures the shared copy lacks downloads the whole version into that
 server's own `DATA_DIR/gamedata`. Shared versions are never marked **update
-available**: replace them there when a version is rebuilt.
+available**: replace them there when a version is rebuilt. Then index each
+one there (`python app.py index-gamedata <bundle directory>`, a couple of
+seconds), or every server builds its own copy of the index the first time
+it uses that version.
 
 Icons come in two texture sets: the pack's own (**Default**), and
 **Faithful 32x**, rendered with the

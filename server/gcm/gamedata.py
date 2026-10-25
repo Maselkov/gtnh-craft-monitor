@@ -271,7 +271,7 @@ def activate():
         prefix = f"{version}~{build}" if textures == "default" else f"{version}~{textures}~{build}"
         icons.load(_index, os.path.join(_bundle_dir(version), TEXTURES[textures]["file"]), prefix)
         oredict.load(_index)
-        item_info.load(os.path.join(_bundle_dir(version), "item_info.json"))
+        item_info.load(_index)
     else:
         icons.load(None, None)
         oredict.load(None)

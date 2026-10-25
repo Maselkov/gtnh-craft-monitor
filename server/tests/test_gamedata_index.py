@@ -9,7 +9,7 @@ import subprocess
 import sys
 import zipfile
 
-from gcm import config, gamedata, gamedata_index, icons
+from gcm import config, gamedata, gamedata_index, icons, item_info
 from test_gamedata import PNG, admin, github, install, make_bundle  # noqa: F401 (fixtures)
 
 SERVER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -30,6 +30,19 @@ def test_the_index_is_built_once_and_again_when_textures_are_added(admin, github
     install(admin, "2.9.0", "faithful32")
     assert os.stat(index_file("2.9.0")).st_mtime_ns != built
     assert icons.read_image(icons.resolve_icon("test", "thing", 0, None)) is not None
+
+
+def test_an_index_of_an_older_format_is_built_again(admin, github, monkeypatch):
+    # As servers that built one before item info moved into it do.
+    github.bundles["2.9.0"] = make_bundle("2.9.0", descriptions={"test:thing:0": "A thing"})
+    install(admin, "2.9.0")
+    built = os.stat(index_file("2.9.0")).st_mtime_ns
+    monkeypatch.setattr(gamedata_index, "FORMAT", gamedata_index.FORMAT + 1)
+
+    gamedata.activate()
+
+    assert os.stat(index_file("2.9.0")).st_mtime_ns != built
+    assert item_info.describe({"mod": "test", "internal": "thing", "damage": 0}) == {"description": "A thing"}
 
 
 def test_icons_read_from_the_zip_match_zipfiles_own(admin, github):
