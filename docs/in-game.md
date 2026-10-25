@@ -87,7 +87,8 @@ different address** there and type it in.
 
 `gcm install` asks which scripts to install, and warns when a chosen
 script's block isn't connected: an Adapter touching an ME controller or
-interface for craft and network, or a GregTech machine for power. The
+interface for craft and network, or a GregTech machine for power. For
+network it also notes when there's no optional ME Interface Terminal. The
 script is installed anyway, so the Adapter can go in later. Then it checks that the
 computer reaches the server with the key, saying what's wrong if it
 doesn't, and writes both to `/home/config.lua`. Without `--server` and

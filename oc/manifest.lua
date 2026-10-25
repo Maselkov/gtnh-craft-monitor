@@ -15,6 +15,7 @@ return {
 
   -- needs: component types the script looks for; gcm install warns when
   -- none of them is connected, with needs_hint saying what to place.
+  -- wants: the same for an optional block; wants_hint says what it adds.
   components = {
     {
       name = "craft",
@@ -42,6 +43,9 @@ return {
       description = "Network tab",
       needs = { "me_controller", "me_interface" },
       needs_hint = "an Adapter touching an ME controller or ME interface",
+      wants = { "me_interface_terminal" },
+      wants_hint = "an Adapter touching a block with an ME Interface Terminal part"
+        .. " reads patterns for the crafting plan and craft tree",
       files = {
         { src = "network_browser.lua", dst = "/etc/rc.d/network_browser.lua" },
       },
