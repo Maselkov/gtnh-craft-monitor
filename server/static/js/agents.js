@@ -3,7 +3,8 @@
 // gcm_agent.lua, what it runs and how it's doing, with buttons to update
 // or reboot it (server/gcm/agents.py), the checkboxes for restarting
 // stopped scripts and updating with the server, and the commands that
-// connect a new computer. Refreshes while open.
+// connect a new computer. Refreshes while open. Also the notice a tab
+// shows until its script first reports, which opens the dialog there.
 
 import { AUTH_USER, closeSettingsMenu } from './auth.js';
 import { showToast } from './craft-actions.js';
@@ -335,20 +336,44 @@ async function sendCommand(el) {
   loadAgents();
 }
 
-function openAgentsModal() {
+// A tab's empty state until its script first reports: admins get a
+// button to Connect a computer, everyone else is told to ask one
+// (app.css hides one of the two by body.is-admin). index.html has the
+// same markup for the Power and Network tabs.
+export function connectNoteHtml(text) {
+  return `<div class="connect-note">
+    <span>${escapeHtml(text)}</span>
+    <button class="range-btn admin-only" data-action="connect-computer">Connect a computer</button>
+    <span class="non-admin-only">An admin can connect one under Settings &rarr; Status.</span>
+  </div>`;
+}
+
+// toConnect scrolls to Connect a computer once the sections above it
+// have loaded, so it doesn't move off screen as they fill in.
+async function openAgentsModal({ toConnect = false } = {}) {
   if (!AUTH_USER || AUTH_USER.role !== 'admin') return;
   document.getElementById('agentsModal').style.display = 'flex';
-  loadHealth();
-  loadAgents();
   loadSettings();
   loadConnect();
   clearInterval(refreshTimer);
   refreshTimer = setInterval(() => { loadHealth(); loadAgents(); }, REFRESH_MS);
+  await Promise.all([loadHealth(), loadAgents()]);
+  if (toConnect) document.querySelector('#agentsModal .connect-heading').scrollIntoView({ block: 'start' });
+}
+
+function editConnectAddress() {
+  document.getElementById('connectAddress').hidden = false;
+  document.getElementById('connectAddressBtn').hidden = true;
+  const input = document.getElementById('connectServerUrl');
+  input.focus();
+  input.select();
 }
 
 export function closeAgentsModal() {
   document.getElementById('agentsModal').style.display = 'none';
   connectKeyShown = false;
+  document.getElementById('connectAddress').hidden = true;
+  document.getElementById('connectAddressBtn').hidden = false;
   clearInterval(refreshTimer);
   refreshTimer = null;
 }
@@ -356,9 +381,11 @@ export function closeAgentsModal() {
 export function setupAgentsActions() {
   delegateActions(document, {
     'open-agents': () => { closeSettingsMenu(); openAgentsModal(); },
+    'connect-computer': () => openAgentsModal({ toConnect: true }),
     'close-agents': () => closeAgentsModal(),
     'agent-command': (el) => sendCommand(el),
     'copy-connect': () => copyConnect(),
+    'edit-connect-address': () => editConnectAddress(),
     'toggle-connect-key': () => { connectKeyShown = !connectKeyShown; renderConnect(); },
   });
   document.getElementById('connectServerUrl').addEventListener('input', renderConnect);

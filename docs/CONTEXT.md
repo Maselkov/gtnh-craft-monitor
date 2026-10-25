@@ -1240,7 +1240,13 @@ clipboard API needs HTTPS or localhost, so it falls back to
 config.lua, `gcm install` POSTs `/api/agent/ping` with the key and says
 what went wrong (401: wrong key; no connection: the address must work
 from the Minecraft server, and a local one is in OC's default internet
-blacklist). It saves the settings either way.
+blacklist). It saves the settings either way. The address field is
+hidden behind "Use a different address": most pages are opened at the
+address the game reaches too. Each tab's never-reported empty state
+(crafts: no `source`; power: no `latest`; network: no items and no scan
+running) carries a button that opens the dialog scrolled there; it and
+its non-admin "ask an admin" line are both in the markup, picked by
+`body.is-admin` so a sign-in needs no re-render.
 
 Auto-restart is the agent's own job, so it keeps working while the
 server is down: the heartbeat reply only carries the switch

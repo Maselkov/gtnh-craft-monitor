@@ -125,10 +125,15 @@
         <button class="range-btn" data-range="lifetime" data-action="power-range">Lifetime</button>
       </div>
     </div>
-    <div class="chart-wrap">
+    <div class="connect-note" id="powerConnectNote" hidden>
+      <span>No power readings yet - is power_monitor.lua running on a computer?</span>
+      <button class="range-btn admin-only" data-action="connect-computer">Connect a computer</button>
+      <span class="non-admin-only">An admin can connect one under Settings &rarr; Status.</span>
+    </div>
+    <div class="chart-wrap" id="powerChartWrap">
       <canvas id="powerChart"></canvas>
     </div>
-    <div class="empty" id="powerEmpty" style="display:none;">No power readings yet - is power_monitor.lua running?</div>
+    <div class="empty" id="powerEmpty" style="display:none;">No power readings in this range.</div>
   </div>
 
   <div id="networkTab" style="display:none;">
@@ -165,7 +170,13 @@
       </div>
     </div>
     <div id="networkList" class="network-grid" aria-label="Items - arrow keys move, Enter opens, C crafts, P pins"></div>
-    <div class="empty" id="networkEmpty" style="display:none;">No network scan yet - is network_browser.lua running?</div>
+    <div id="networkEmpty" style="display:none;">
+      <div class="connect-note">
+        <span>No network scan yet - is network_browser.lua running on a computer?</span>
+        <button class="range-btn admin-only" data-action="connect-computer">Connect a computer</button>
+        <span class="non-admin-only">An admin can connect one under Settings &rarr; Status.</span>
+      </div>
+    </div>
   </div>
 
   <div id="toastContainer" class="toast-container"></div>
@@ -405,13 +416,16 @@
         <div class="status-heading connect-heading">Connect a computer</div>
         <div class="connect-computer">
           <div class="modal-note">On an OpenComputers computer with an Internet Card, run this command: copy it and paste it into the computer with the middle mouse button or Insert.</div>
-          <label class="modal-label" for="connectServerUrl">This server's address, as the Minecraft server reaches it</label>
-          <input id="connectServerUrl" class="modal-amount-input" spellcheck="false" autocomplete="off">
+          <div id="connectAddress" hidden>
+            <label class="modal-label" for="connectServerUrl">This server's address, as the Minecraft server reaches it</label>
+            <input id="connectServerUrl" class="modal-amount-input" spellcheck="false" autocomplete="off">
+          </div>
           <div id="connectLocalNote" class="agent-line agent-command failed" style="display:none;">OpenComputers blocks local addresses like this one unless the Minecraft server's config allows them: see <a href="https://github.com/Maselkov/gtnh-craft-monitor#scripts-cant-reach-the-server" target="_blank" rel="noopener">Scripts can't reach the server</a>.</div>
           <div class="connect-command"><code id="connectCommand"></code><button class="range-btn" data-action="copy-connect">Copy</button></div>
           <div class="agent-line">It downloads the installer, which asks which scripts to install, checks that the computer reaches this server with the API key, and saves both.</div>
           <div class="agent-buttons">
             <button class="range-btn" id="connectKeyBtn" data-action="toggle-connect-key">Show API key</button>
+            <button class="range-btn" id="connectAddressBtn" data-action="edit-connect-address" title="If the Minecraft server reaches this server at another address than the one in the command">Use a different address</button>
           </div>
         </div>
       </div>

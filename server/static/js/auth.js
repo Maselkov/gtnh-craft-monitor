@@ -48,6 +48,7 @@ function updateAuthenticationControl() {
   if (!AUTH_USER) closeSettingsMenu();
   const adminVisible = AUTH_USER && AUTH_USER.role === 'admin';
   adminButton.style.display = adminVisible ? '' : 'none';
+  document.body.classList.toggle('is-admin', Boolean(adminVisible));
   document.getElementById('gamedataBtn').style.display = adminVisible ? '' : 'none';
   document.getElementById('webhookTestBtn').style.display = adminVisible ? '' : 'none';
   document.getElementById('backupBtn').style.display = adminVisible ? '' : 'none';

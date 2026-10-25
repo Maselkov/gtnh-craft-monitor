@@ -199,7 +199,9 @@ function renderPower(data) {
   setPowerTabFill(data.machines);
   if (powerMachine == null) setTabBadge('power', powerBadge(data.latest, data.trend));
   const empty = document.getElementById('powerEmpty');
+  const chartWrap = document.getElementById('powerChartWrap');
   const canvas = document.getElementById('powerChart');
+  document.getElementById('powerConnectNote').hidden = Boolean(data.latest);
 
   if (data.latest) {
     const pct = data.latest.capacity > 0 ? (data.latest.stored / data.latest.capacity * 100) : 0;
@@ -216,12 +218,12 @@ function renderPower(data) {
   }
 
   if (points.length === 0) {
-    empty.style.display = 'block';
-    canvas.style.display = 'none';
+    empty.style.display = data.latest ? 'block' : 'none';
+    chartWrap.style.display = 'none';
     return;
   }
   empty.style.display = 'none';
-  canvas.style.display = '';
+  chartWrap.style.display = '';
 
   // {x, y} point objects, not a separate labels array - matches the
   // item-history chart's own time-scale approach (see that chart's
