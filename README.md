@@ -36,7 +36,11 @@ Basically, it's web AE2 for your base.
 
 - A machine with Docker (amd64 or arm64) that the Minecraft server can
   reach over HTTP.
-- In game, an OpenComputers computer with an **Internet Card**, and
+- In game, an OpenComputers computer (Tier 2 case or better) with a Lua
+  BIOS EEPROM, a CPU and Graphics Card or an APU, at least 2× Tier 2
+  memory (more is better), an **Internet Card**, and a hard disk with
+  OpenOS installed from the OpenOS floppy. See
+  [The computer](docs/in-game.md#the-computer) for details. It also needs
   Adapters connected to it (touching the block, or linked with an MFU):
   - **Crafts and Network tabs:** an Adapter on the ME Controller.
   - **Power tab:** an Adapter on any casing of the GregTech multiblock.
