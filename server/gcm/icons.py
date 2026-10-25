@@ -1,16 +1,19 @@
 """Item/fluid/essentia icon lookup and on-demand reads out of images.zip (never
 unpacked to disk). Which lookup and zip are live is decided by
-gcm/gamedata.py: an installed game data bundle, or the files that shipped
-before bundles existed."""
+gcm/gamedata.py. Both are read through the bundle's index
+(gcm/gamedata_index.py), not loaded into memory: the lookup's tables are
+looked up in it, and it says where in the zip each icon is."""
 
 import functools
 import io
-import json
+import logging
 import os
 import re
 import threading
-import zipfile
+import zlib
 from urllib.parse import quote
+
+log = logging.getLogger(__name__)
 
 
 # Written by tools/icon-export/. Two separate keyspaces:
@@ -35,6 +38,8 @@ from urllib.parse import quote
 # aspects_by_key: Thaumcraft aspect tag ("ordo") -> image path, for
 # essentia. Only that: an aspect's label would find namesake items
 # ("Ordo" -> some block of it), so essentia never falls back to by_label.
+# Each is a _Table over the live index, or {} with none: anything with
+# .get().
 _icons_by_key = {}
 _icons_by_key_label = {}
 _icons_by_key_material = {}
@@ -54,7 +59,9 @@ _images_zip_path = None
 # them by.
 _bleed = {}
 
-_images_zip = None
+_index = None
+_images_zip_name = None
+_images_zip_fd = None
 _images_zip_missing_logged = False
 _zip_lock = threading.Lock()
 
@@ -63,48 +70,77 @@ _zip_lock = threading.Lock()
 _ZIP_ROOTS = ("item", "fluid", "aspect")
 
 
-def load(lookup_path, images_zip_path, version=None):
-    """Makes the given lookup and zip the live ones."""
+class _Table:
+    """One of the lookup's tables, read from the index."""
+
+    def __init__(self, index, name):
+        self._index = index
+        self._name = name
+
+    def get(self, key, default=None):
+        value = self._index.icon(self._name, key)
+        return default if value is None else value
+
+
+def load(index, images_zip_path, version=None):
+    """Makes the given index (a gamedata_index.Index, or None for no
+    icons) and the zip it describes the live ones."""
     global _icons_by_key, _icons_by_key_label, _icons_by_key_material, _icons_by_label, _fluids_by_key, _aspects_by_key
-    global _images_zip, _images_zip_missing_logged, _images_zip_path, _version, _bleed
-    icon_data = {}
-    if lookup_path and os.path.exists(lookup_path):
-        with open(lookup_path, "r", encoding="utf-8") as f:
-            icon_data = json.load(f)
+    global _index, _images_zip_fd, _images_zip_missing_logged, _images_zip_path, _images_zip_name, _version, _bleed
+
+    def table(name):
+        return _Table(index, name) if index else {}
+
     with _zip_lock:
-        if _images_zip is not None:
-            _images_zip.close()
-        _images_zip = None
+        if _images_zip_fd is not None:
+            os.close(_images_zip_fd)
+        _images_zip_fd = None
         _images_zip_missing_logged = False
         _images_zip_path = images_zip_path
-        _icons_by_key = icon_data.get("by_key", {})
-        _icons_by_key_label = icon_data.get("by_key_label", {})
-        _icons_by_key_material = icon_data.get("by_key_material", {})
-        _icons_by_label = icon_data.get("by_label", {})
-        _fluids_by_key = icon_data.get("fluids_by_key", {})
-        _aspects_by_key = icon_data.get("aspects_by_key", {})
-        _bleed = icon_data.get("bleed", {})
+        _images_zip_name = os.path.basename(images_zip_path) if images_zip_path else None
+        _icons_by_key = table("by_key")
+        _icons_by_key_label = table("by_key_label")
+        _icons_by_key_material = table("by_key_material")
+        _icons_by_label = table("by_label")
+        _fluids_by_key = table("fluids_by_key")
+        _aspects_by_key = table("aspects_by_key")
+        _bleed = table("bleed")
         _version = version
+        _index = index
 
 
 def data_version():
     return _version
 
 
-def get_images_zip():
-    global _images_zip, _images_zip_missing_logged
-    if _images_zip is not None:
-        return _images_zip
+def _zip_fd():
+    global _images_zip_fd, _images_zip_missing_logged
     with _zip_lock:
-        if _images_zip is None and _images_zip_path:
-            if os.path.exists(_images_zip_path):
-                _images_zip = zipfile.ZipFile(_images_zip_path, "r")
-            elif not _images_zip_missing_logged:
-                print(
-                    f"[icons] {_images_zip_path} not found - icons will be blank until it's added."
-                )
-                _images_zip_missing_logged = True
-    return _images_zip
+        if _images_zip_fd is None and _images_zip_path:
+            try:
+                _images_zip_fd = os.open(_images_zip_path, os.O_RDONLY)
+            except OSError:
+                if not _images_zip_missing_logged:
+                    log.warning("%s can't be read - icons will be blank until it can.", _images_zip_path)
+                    _images_zip_missing_logged = True
+        return _images_zip_fd, _index, _images_zip_name
+
+
+def _read_entry(fd, entry):
+    """An icon's bytes, from its place in the zip as the index records it:
+    a local file header (30 bytes, then its name and extra field), then
+    the data, stored or deflated."""
+    offset, size, method, crc = entry
+    header = os.pread(fd, 30, offset)
+    if len(header) != 30 or header[:4] != b"PK\x03\x04":
+        return None
+    start = offset + 30 + int.from_bytes(header[26:28], "little") + int.from_bytes(header[28:30], "little")
+    data = os.pread(fd, size, start)
+    if method == 8:
+        data = zlib.decompress(data, -15)
+    elif method != 0:
+        return None
+    return data if zlib.crc32(data) == crc else None
 
 
 def read_image(path):
@@ -114,19 +150,17 @@ def read_image(path):
     head, sep, rest = path.partition("/")
     if sep and head not in _ZIP_ROOTS:
         path = rest
-    zf = get_images_zip()
-    if zf is None:
+    fd, index, zip_name = _zip_fd()
+    if fd is None or index is None:
         return None
-    # ZipFile reads share one file handle, so they're serialized.
-    with _zip_lock:
-        try:
-            return zf.read(path)
-        except KeyError:
-            return None
-        except ValueError:
-            # load() closed this zip for a new version between
-            # get_images_zip() and here.
-            return None
+    entry = index.zip_entry(zip_name, path)
+    if entry is None:
+        return None
+    try:
+        return _read_entry(fd, entry)
+    except (OSError, zlib.error):
+        # load() closed this zip for a new version since _zip_fd().
+        return None
 
 
 def is_animated(png):

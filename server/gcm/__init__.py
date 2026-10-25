@@ -36,7 +36,8 @@ def create_app(data_dir=None, api_key=None):
     inventory.load_snapshot()
     patterns.load_snapshot()
     pages.load_index_html()
-    push.load_keys()
+    # The key pair loads on first use, which may be never (gcm/push.py).
+    push.reset()
 
     app = Flask(__name__, root_path=config.SERVER_DIR)
     app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024

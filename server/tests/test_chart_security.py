@@ -49,19 +49,24 @@ def test_chart_rate_limiter_caps_tracked_clients(client, monkeypatch):
 
 def x_of(ts):
     """Where render_png plots a unix timestamp on the x axis."""
-    return charts.mdates.date2num(charts.datetime.fromtimestamp(ts))
+    import matplotlib.dates
+
+    return matplotlib.dates.date2num(charts.datetime.fromtimestamp(ts))
 
 
 def render_axes(monkeypatch, *args, **kwargs):
     """Render a chart and return its Axes."""
+    import matplotlib.figure
+
     figures = []
 
-    class CapturingFigure(charts.Figure):
+    class CapturingFigure(matplotlib.figure.Figure):
         def __init__(self, *a, **kw):
             super().__init__(*a, **kw)
             figures.append(self)
 
-    monkeypatch.setattr(charts, "Figure", CapturingFigure)
+    # render_png() imports Figure when it runs.
+    monkeypatch.setattr(matplotlib.figure, "Figure", CapturingFigure)
     charts.render_png(*args, **kwargs)
     return figures[0].axes[0]
 
@@ -82,7 +87,9 @@ def test_stepped_chart_holds_the_last_value_until_now(monkeypatch):
     )
 
     xs, ys = ax.lines[0].get_data()
-    assert charts.mdates.date2num(xs[-1]) == pytest.approx(x_of(now))
+    import matplotlib.dates
+
+    assert matplotlib.dates.date2num(xs[-1]) == pytest.approx(x_of(now))
     assert ys[-1] == 9
 
 

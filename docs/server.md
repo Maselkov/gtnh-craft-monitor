@@ -216,6 +216,12 @@ before can be switched back to instantly. When a version is rebuilt (say,
 with better icons), the page marks it **update available**; picking it
 again downloads the new build.
 
+The first time a version goes live (and once after updating to a server
+that does this), the server spends a few seconds indexing its game data,
+so it can read icons and the ore dictionary from disk instead of holding
+them in memory. A server with a GTNH 2.9 bundle and a big network uses
+about 80 MB of RAM.
+
 To pin the version without the page, set `GTNH_VERSION` (e.g.
 `2.9.0-beta-3`), and optionally `GTNH_TEXTURES=faithful32`; the server
 installs it at startup if it isn't already.

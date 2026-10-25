@@ -12,13 +12,6 @@ from collections import OrderedDict, deque
 from datetime import datetime
 from io import BytesIO
 
-# The Figure API directly, never pyplot: pyplot keeps global figure
-# state that isn't safe across waitress's request threads. A bare
-# Figure needs no backend selection either - savefig() renders with Agg.
-import matplotlib.dates as mdates
-from matplotlib.figure import Figure
-from matplotlib.ticker import FuncFormatter
-
 from flask import jsonify, request
 
 from gcm import config
@@ -124,6 +117,15 @@ def render_png(
     first row) to now, whatever the rows cover. Left to autoscale, one
     row - an item that hasn't changed all day - is a zero-width range
     that matplotlib's date locator widens to +-2 years."""
+    # Imported here, not at the top: matplotlib and numpy are ~45 MB, and
+    # most servers draw a chart only when a link to one is shared. The
+    # Figure API directly, never pyplot: pyplot keeps global figure state
+    # that isn't safe across waitress's request threads. A bare Figure
+    # needs no backend selection either - savefig() renders with Agg.
+    import matplotlib.dates as mdates
+    from matplotlib.figure import Figure
+    from matplotlib.ticker import FuncFormatter
+
     if now is None:
         now = time.time()
     dpi = 100

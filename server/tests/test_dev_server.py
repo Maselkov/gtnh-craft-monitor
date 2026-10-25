@@ -6,7 +6,7 @@ import zipfile
 
 import dev
 import pytest
-from conftest import TEST_API_KEY, login_as
+from conftest import TEST_API_KEY, login_as, ore_dict_index
 from gcm import item_info, oredict
 
 
@@ -144,7 +144,7 @@ def test_patterns_give_plans_that_show_each_case(game, client, tmp_path):
     # stock, and makes some with the implosion compressor.
     path = tmp_path / "ore_dict.json"
     path.write_text(json.dumps(dev.ore_dict()))
-    oredict.load(str(path))
+    oredict.load(ore_dict_index(path))
     try:
         diamond = plan("Block of Diamond", 100000)["root"]["children"][0]
     finally:

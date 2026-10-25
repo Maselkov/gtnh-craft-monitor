@@ -6,7 +6,11 @@ The server signs each push with its own VAPID key pair, generated once
 and kept in the data directory - replacing it invalidates every saved
 subscription, so it must survive restarts. Sending happens on one
 background thread: a slow or unreachable push service must never hold
-up the game's status POST that noticed the craft ending."""
+up the game's status POST that noticed the craft ending.
+
+pywebpush and cryptography (~25 MB) are only imported once something
+needs them - the key, or a push to send - so a server nobody turns
+notifications on in never loads them."""
 
 import base64
 import json
@@ -15,10 +19,6 @@ import os
 import queue
 import threading
 from urllib.parse import urlsplit
-
-from cryptography.hazmat.primitives import serialization
-from py_vapid import Vapid
-from pywebpush import WebPushException, webpush
 
 from gcm import config, icons, store
 
@@ -41,14 +41,31 @@ TTL_SECONDS = 24 * 3600
 SEND_TIMEOUT_SECONDS = 10
 
 _vapid = None
+_vapid_lock = threading.Lock()
 _queue = queue.Queue()
 _worker_lock = threading.Lock()
 _worker = None
 
 
-def load_keys():
-    """Loads the VAPID key pair, generating it on first startup."""
+def reset():
+    """Forgets the loaded key pair, for the next data directory. For tests."""
     global _vapid
+    _vapid = None
+
+
+def _keys():
+    """The VAPID key pair, loaded (or generated) on first use."""
+    with _vapid_lock:
+        if _vapid is None:
+            load_keys()
+        return _vapid
+
+
+def load_keys():
+    """Loads the VAPID key pair, generating it the first time."""
+    global _vapid
+    from py_vapid import Vapid
+
     path = config.VAPID_KEY_PATH
     if not os.path.exists(path):
         vapid = Vapid()
@@ -63,7 +80,9 @@ def load_keys():
 def public_key():
     """The applicationServerKey browsers subscribe with: the raw public
     key, base64url without padding."""
-    raw = _vapid.public_key.public_bytes(
+    from cryptography.hazmat.primitives import serialization
+
+    raw = _keys().public_key.public_bytes(
         serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint
     )
     return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
@@ -154,7 +173,12 @@ def deliver(completions, label, icon, status):
 def send_to(payload_by_user):
     """Sends each user's payload to every device they turned
     notifications on in."""
-    for subscription in store.push.subscriptions_for(list(payload_by_user)):
+    subscriptions = store.push.subscriptions_for(list(payload_by_user))
+    if not subscriptions:
+        return
+    from pywebpush import WebPushException
+
+    for subscription in subscriptions:
         payload = payload_by_user[subscription["user_id"]]
         try:
             _send(subscription, json.dumps(payload))
@@ -170,13 +194,15 @@ def send_to(payload_by_user):
 
 
 def _send(subscription, data):
+    from pywebpush import webpush
+
     webpush(
         subscription_info={
             "endpoint": subscription["endpoint"],
             "keys": {"p256dh": subscription["p256dh"], "auth": subscription["auth"]},
         },
         data=data,
-        vapid_private_key=_vapid,
+        vapid_private_key=_keys(),
         # A fresh dict each time - webpush() adds aud/exp to it in place.
         vapid_claims={"sub": config.VAPID_SUBJECT or subscription["origin"]},
         ttl=TTL_SECONDS,

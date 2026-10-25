@@ -31,6 +31,7 @@ def post_job(client, api_headers, busy, cpu_name="W01", label="Iron Ingot"):
 
 
 def test_key_file_is_private_and_public_key_is_a_raw_p256_point():
+    push.public_key()  # made on first use
     mode = stat.S_IMODE(os.stat(config.VAPID_KEY_PATH).st_mode)
     assert mode == 0o600
     key = push.public_key()

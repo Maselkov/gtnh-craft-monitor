@@ -38,7 +38,7 @@ _test_data_dir = tempfile.mkdtemp(prefix="gtnh_test_data_")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import gcm  # noqa: E402  (must come after the path setup above)
-from gcm import config, db, store  # noqa: E402
+from gcm import config, db, gamedata_index, store  # noqa: E402
 
 _app = gcm.create_app(data_dir=_test_data_dir, api_key=TEST_API_KEY)
 
@@ -125,3 +125,18 @@ def webhook_events(monkeypatch):
     monkeypatch.setattr(config, "PUBLIC_URL", "https://gtnh.example.test")
     monkeypatch.setattr(webhooks, "_put", events.append)
     return events
+
+
+def ore_dict_index(path):
+    """What oredict.load() takes, for an ore_dict.json at path: the index
+    (gcm/gamedata_index.py) of a bundle holding just that file."""
+    bundle = os.path.dirname(str(path))
+    data_json = os.path.join(bundle, "data.json")
+    if not os.path.exists(data_json):
+        with open(data_json, "w") as f:
+            f.write("{}")
+    if os.path.abspath(str(path)) != os.path.join(bundle, "ore_dict.json"):
+        raise ValueError("the bundle's ore dictionary is ore_dict.json")
+    index_path = os.path.join(bundle, gamedata_index.FILE)
+    gamedata_index.build(bundle, index_path)
+    return gamedata_index.Index(index_path)
