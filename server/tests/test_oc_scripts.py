@@ -6,7 +6,7 @@ can't read. Script logic on its own is tested in oc/tests/*_test.lua."""
 import pytest
 
 from conftest import login_as
-from gcm import agents, nbt
+from gcm import agents, config, nbt, state
 from nbt_fixtures import tag_hex
 from oc_game import OcGame, lua_string, find_lua
 
@@ -148,6 +148,29 @@ def test_network_scan_lands(game, client):
     assert data["in_progress"] is False
     sizes = {i["name"]: i["size"] for i in data["items"]}
     assert sizes == {"Thing A": 5, "Thing B": 7, "Molten Neutronium": 144000}
+
+
+def test_a_scan_past_the_item_limit_stops_without_finishing(game, client, monkeypatch):
+    monkeypatch.setattr(config, "MAX_SCAN_ITEMS", 2)
+    game.write_file("/home/item_catalog.txt", "testmod:a\ntestmod:b\ntestmod:c\n")
+    game.lua(
+        """
+        me = ae2.new(env)
+        me.items = {
+          ae2.stack("testmod:a", "Thing A", 5),
+          ae2.stack("testmod:b", "Thing B", 7),
+          ae2.stack("testmod:c", "Thing C", 9),
+        }
+        env:start_service("network_browser")
+        """
+    )
+    game.run(30)
+    paths = [url for _, url, _ in game.requests]
+    assert sum(p.endswith("/api/network/scan/batch") for p in paths) == 1
+    assert not any(p.endswith("/api/network/scan/finish") for p in paths)
+    data = client.get("/api/network").get_json()
+    assert data["items"] == [] and data["in_progress"] is False and data["crash"] is None
+    assert "MAX_SCAN_ITEMS" in state.network["last_rejected"]["reason"]
 
 
 def test_watched_items_are_checked_between_scans(game, client):

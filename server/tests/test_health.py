@@ -84,3 +84,11 @@ class TestHealth:
         assert health(client)["push_subscriptions"] == 0  # signs root in
         store.push.save_subscription("root", "https://push.example.test/1", "k", "a", "https://x")
         assert health(client)["push_subscriptions"] == 1
+
+
+def test_a_scan_past_the_item_limit_shows_why(client, api_headers, monkeypatch):
+    monkeypatch.setattr(config, "MAX_SCAN_ITEMS", 0)
+    run_scan(client, api_headers, [dict(IRON, name="Iron Ingot", size=5)])
+    network = feed(health(client), "network")
+    assert network["ok"] is False
+    assert "MAX_SCAN_ITEMS" in network["rejected"]["reason"]

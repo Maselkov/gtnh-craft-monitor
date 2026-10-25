@@ -70,6 +70,13 @@ AUTOCRAFT_RETRY_SECONDS = int(os.environ.get("AUTOCRAFT_RETRY_SECONDS", "1800"))
 # hasn't moved for this long is shown as stuck.
 CRAFT_STALL_SECONDS = int(os.environ.get("CRAFT_STALL_SECONDS", "600"))
 
+# The most items (each NBT variant counts) and patterns one scan may send
+# (gcm/inventory.py, gcm/patterns.py). A scan past either is abandoned, so
+# a runaway or hostile script can't fill memory or the item history. A
+# whole GTNH item catalog is ~11k ids; an item takes ~600 bytes in memory.
+MAX_SCAN_ITEMS = int(os.environ.get("MAX_SCAN_ITEMS", "100000"))
+MAX_SCAN_PATTERNS = int(os.environ.get("MAX_SCAN_PATTERNS", "25000"))
+
 # Item history thinning (gcm/retention.py): older than this many days,
 # one row per item per hour, then per day. 0 turns a tier off.
 HISTORY_HOURLY_AFTER_DAYS = int(os.environ.get("HISTORY_HOURLY_AFTER_DAYS", "30"))

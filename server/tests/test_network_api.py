@@ -860,3 +860,35 @@ class TestItemInfo:
     def test_none_without_game_data(self, client, api_headers):
         run_scan(client, api_headers, [[ITEM]])
         assert client.get("/api/network/info").get_json() == {"items": {}, "mods": {}}
+
+
+class TestScanSizeLimit:
+    def items(self, n, start=0):
+        return [dict(ITEM, internal=f"thing_{i}", name=f"Thing {i}") for i in range(start, start + n)]
+
+    def test_a_scan_up_to_the_limit_is_kept(self, client, api_headers, monkeypatch):
+        monkeypatch.setattr(config, "MAX_SCAN_ITEMS", 4)
+        run_scan(client, api_headers, [self.items(2), self.items(2, start=2)])
+        assert client.get("/api/network").get_json()["item_count"] == 4
+
+    def test_a_scan_past_the_limit_is_abandoned_and_says_why(self, client, api_headers, monkeypatch):
+        run_scan(client, api_headers, [[ITEM]])
+        monkeypatch.setattr(config, "MAX_SCAN_ITEMS", 3)
+        token = client.post("/api/network/scan/start", headers=api_headers).get_json()["scan_token"]
+        first = client.post("/api/network/scan/batch", json={"items": self.items(2), "scan_token": token},
+                            headers=api_headers)
+        assert first.get_json()["ok"] is True
+        over = client.post("/api/network/scan/batch", json={"items": self.items(2, start=2), "scan_token": token},
+                           headers=api_headers)
+        # The code network_browser.lua stops a scan on.
+        assert over.get_json()["error"] == "stale_scan_token"
+        finish = client.post("/api/network/scan/finish",
+                             json={"scan_token": token, "chunks_sent": 2, "total_errors": 0}, headers=api_headers)
+        assert finish.get_json()["ok"] is False
+
+        network = client.get("/api/network").get_json()
+        assert network["item_count"] == 1 and network["in_progress"] is False
+        assert state.network_buffer == []
+        assert "MAX_SCAN_ITEMS" in state.network["last_rejected"]["reason"]
+        # Nothing from it reached the history.
+        assert store.items.history(store.items.key_of(self.items(1)[0]), 0) == []

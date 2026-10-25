@@ -25,7 +25,7 @@ import re
 import secrets
 import time
 
-from gcm import icons, inventory, nbt, state, store
+from gcm import config, icons, inventory, nbt, state, store
 
 log = logging.getLogger(__name__)
 
@@ -51,12 +51,19 @@ def _is_current_scan_locked(token):
 
 def add_batch(token, raw_patterns):
     """Buffers one batch. Returns (buffered pattern count, chunks
-    received), or None if the batch isn't from the active scan."""
+    received), or None if the batch isn't from the active scan or would
+    take it past MAX_SCAN_PATTERNS, which ends it."""
     patterns = [normalize(raw) for raw in raw_patterns if isinstance(raw, dict)]
     for p in patterns:
         _attach_icons(p)
     with state.patterns_lock:
         if not _is_current_scan_locked(token):
+            return None
+        if len(state.pattern_buffer) + len(patterns) > config.MAX_SCAN_PATTERNS:
+            state.pattern_buffer.clear()
+            state.patterns["current_scan_token"] = None
+            state.patterns["in_progress"] = False
+            log.warning("Abandoned a pattern scan past MAX_SCAN_PATTERNS=%s", config.MAX_SCAN_PATTERNS)
             return None
         state.pattern_buffer.extend(patterns)
         state.patterns["chunks_received"] += 1
