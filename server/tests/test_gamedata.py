@@ -27,11 +27,11 @@ def images_zip(png):
 
 def make_bundle(
     version, catalog="test:thing\n", faithful=True, generated_at="2026-09-25T00:00:00Z", bleed=None, ore_dict=None,
-    descriptions=None,
+    descriptions=None, icons=None,
 ):
     """The files CI publishes for one GTNH version, as {name: bytes}."""
     lookup = {
-        "by_key": {"test:thing:0": "item/test/thing~0.png"},
+        "by_key": {"test:thing:0": "item/test/thing~0.png", **(icons or {})},
         "fluids_by_key": {"goo": "fluid/test/goo.png"},
         "by_label": {"Thing": "item/test/thing~0.png"},
     }
@@ -140,6 +140,10 @@ def prefix(version, textures=None):
     return "~".join(parts)
 
 
+def catalog_version(version):
+    return f"{prefix(version)}~{gamedata.CATALOG_FORMAT}"
+
+
 def wait_for_install():
     deadline = time.time() + 10
     while gamedata.status()["state"] == "installing":
@@ -199,9 +203,22 @@ def test_install_makes_the_bundle_live(admin, github, api_headers):
 
     catalog = admin.get("/api/network/catalog", headers=api_headers)
     assert catalog.data == b"test:thing\n"
-    assert catalog.headers["X-Catalog-Version"] == prefix("2.9.0-beta-3")
+    assert catalog.headers["X-Catalog-Version"] == catalog_version("2.9.0-beta-3")
     start = admin.post("/api/network/scan/start", headers=api_headers, json={})
-    assert start.get_json()["catalog_version"] == prefix("2.9.0-beta-3")
+    assert start.get_json()["catalog_version"] == catalog_version("2.9.0-beta-3")
+
+
+def test_the_catalog_ends_a_call_before_it_asks_for_too_many_variants(admin, github, api_headers, monkeypatch):
+    monkeypatch.setattr(gamedata, "CATALOG_CALL_VARIANTS", 3)
+    icons = {f"gregtech:big:{damage}": "item/test/thing~0.png" for damage in range(5)}
+    icons.update({"test:a:0": "item/test/thing~0.png", "test:a:1": "item/test/thing~0.png"})
+    github.bundles["2.9.0"] = make_bundle("2.9.0", catalog="gregtech:big\ntest:a\ntest:b\ntest:c\ntest:d\n", icons=icons)
+    admin.post("/api/admin/gamedata/install", json={"version": "2.9.0"})
+    assert wait_for_install()["state"] == "done"
+
+    # big (5 variants) alone, then a (2) and b (no icons: 1), then c and d.
+    catalog = admin.get("/api/network/catalog", headers=api_headers)
+    assert catalog.data == b"gregtech:big\n\ntest:a\ntest:b\n\ntest:c\ntest:d\n"
 
 
 def test_a_bundle_with_an_ore_dictionary_loads_it_and_one_without_still_installs(admin, github):
@@ -490,7 +507,7 @@ def test_a_rebuilt_release_is_offered_as_an_update_and_reinstalled(admin, github
     assert prefix("2.9.0-beta-3") != old_prefix
     assert icons.resolve_icon("test", "thing", 0, None).startswith(prefix("2.9.0-beta-3") + "/")
     start = admin.post("/api/network/scan/start", headers=api_headers, json={})
-    assert start.get_json()["catalog_version"] == prefix("2.9.0-beta-3")
+    assert start.get_json()["catalog_version"] == catalog_version("2.9.0-beta-3")
     assert admin.get("/api/network/catalog", headers=api_headers).data == b"test:thing\ntest:new\n"
 
 

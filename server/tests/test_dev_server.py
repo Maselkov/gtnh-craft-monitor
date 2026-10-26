@@ -13,7 +13,9 @@ from gcm import item_info, oredict
 @pytest.fixture()
 def game(flask_app, monkeypatch):
     monkeypatch.setattr(dev, "API_KEY", TEST_API_KEY)
-    return dev.FakeGame(flask_app)
+    # Some of everything: a random stock that runs out of one of the items
+    # a plan below reads changes what that plan shows.
+    return dev.FakeGame(flask_app, stock={it["name"]: 1000 for it in dev.CATALOG})
 
 
 def test_tick_reports_crafts_power_and_a_scan(game, client):

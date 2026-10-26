@@ -83,6 +83,18 @@ The candidate IDs are streamed from `item_catalog.txt` in batches rather than
 loaded all at once, which roughly doubles free memory during a scan compared
 with loading the full list.
 
+Each call returns every stored stack under the IDs it asks for, and the
+script holds all of them until they're sent. The catalog is sorted, so
+GregTech's biggest IDs sit next to each other: `gt.metaitem.01` (about 6,800
+variants), `gt.blockmachines`, `gt.blockores2` to `7` and so on. With 100 IDs
+per call they all landed in one, and that call ran a computer with two Tier
+3.5 memory sticks out of memory. So the server puts a blank line in the
+catalog it sends wherever a call would ask for more than 500 variants, counted
+from the game data, and the script ends its batch there. An ID that big gets
+a call of its own. One ID can't be split further, so its stacks are the floor
+of what a scan needs. The debug log records how many stacks each call
+returned.
+
 Fluids are read with a single `getFluidsInNetwork()` call, since networks
 hold far fewer fluid types than item types. Essentia likewise, with one
 `getEssentiaInNetwork()` call: Thaumic Energistics adds it to the same

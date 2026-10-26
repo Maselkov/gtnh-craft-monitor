@@ -39,9 +39,12 @@ network give it Tier 3 or 3.5 memory, or a computer of its own. If two
 sticks still aren't enough on a big base, use a **Server** in a **Server
 Rack** instead of a case: a Tier 2 server holds 3 memory sticks and a
 Tier 3 server 4, where a case holds 2. It takes the same parts otherwise.
-Lowering [`BATCH_SIZE`](#network_browserlua) also helps, at the cost of a
-slightly longer scan. `network_browser_debug.log` records free memory
-(`mem=`) at each step, so the lowest number there shows how close it gets.
+The most a scan holds at once is usually every stored stack of one big
+GregTech ID, such as `gt.metaitem.01` (see
+[Scanning the network](how-it-works.md#scanning-the-network)).
+`network_browser_debug.log` records free memory (`mem=`) at each step and
+how many stacks each call returned, so the lowest numbers there show how
+close it gets and which call it was.
 
 ### Adapters
 
@@ -308,7 +311,7 @@ prints, or that the script lists when it finds several.
 | `PATTERN_CHUNK_SIZE` | `20` | Patterns sent to the server per POST |
 | `CRASH_RESTART_SECONDS` | `30` | After an error stops scanning, how long to wait before starting over |
 | `CATALOG_PATH` | `/home/item_catalog.txt` | Item catalog to use when the server has no game data |
-| `BATCH_SIZE` | `100` | Item IDs queried per call. Each call's result is held in memory until it's sent, so lower uses less |
+| `BATCH_SIZE` | `100` | Most item IDs queried per call; the server's catalog ends calls sooner around [big IDs](how-it-works.md#scanning-the-network). Each call's result is held in memory until it's sent, so lower uses less |
 | `WATCH_BATCH_SIZE` | `1` | Item IDs queried per call when checking stock rules |
 | `RESULT_CHUNK_SIZE` | `100` | Items sent to the server per POST |
 | `DELAY_BETWEEN_BATCHES_SECONDS` | `0.1` | Pause between batches |
@@ -316,7 +319,7 @@ prints, or that the script lists when it finds several.
 | `HTTP_TIMEOUT_SECONDS` | `20` | Give up on a request to the server that stalls this long |
 | `SHOW_STATUS` | `false` | Draw a status screen |
 
-A full scan takes about 110 batches with the GTNH catalog and runs every
+A full scan takes about 165 batches with the GTNH catalog and runs every
 10 minutes by default.
 
 `item_catalog.txt` lists about 11,000 item IDs (`modid:internalname`, damage

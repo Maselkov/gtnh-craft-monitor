@@ -261,7 +261,7 @@ def index_path(version):
 def activate():
     """Makes the selected bundle live, or no icons if there's none. Called
     at startup and after an install."""
-    global _index
+    global _index, _catalog
     version, textures = selected()
     path = index_path(version) if version else None
     old, _index = _index, (gamedata_index.Index(path) if path else None)
@@ -276,15 +276,65 @@ def activate():
         icons.load(None, None)
         oredict.load(None)
         item_info.load(None)
+    _catalog = (None, None)
     if old is not None:
         old.close()
 
 
+# How many item variants (damage values in the game data) one of
+# network_browser.lua's getItemsInNetworkById() calls may ask for. The
+# call takes ids without damage, so it returns every stored stack under
+# each id, and holds them all in the computer's memory at once. The
+# catalog is sorted, so GregTech's biggest ids (gt.metaitem.01 has ~6,800
+# variants, gt.blockmachines ~3,400, gt.blockores2-7 ~2,000 each) sit
+# next to each other: 100 lines at a time put them in one call, which ran
+# a computer with 2x Tier 3.5 memory out. At 500, an id that big gets a
+# call of its own, and a 2.9 scan takes ~150 calls instead of ~115.
+CATALOG_CALL_VARIANTS = 500
+# Bumped when catalog_text()'s output changes, so scanners fetch it again.
+CATALOG_FORMAT = 2
+
+# (catalog_version(), catalog_text()) of the last catalog built, until
+# activate() makes another bundle live.
+_catalog = (None, None)
+
+
 def catalog_version():
     # Same catalog whatever the textures, so the scanner only refetches it
-    # when the GTNH version or its build changes.
+    # when the GTNH version, its build or the format changes.
     version = selected_version()
-    return f"{version}~{build_id(version)}" if version else None
+    return f"{version}~{build_id(version)}~{CATALOG_FORMAT}" if version else None
+
+
+def catalog_text():
+    """The selected bundle's item_catalog.txt with a blank line wherever
+    network_browser.lua should end a call (see CATALOG_CALL_VARIANTS), or
+    None without one. Scripts older than the blank lines skip them."""
+    global _catalog
+    version = catalog_version()
+    if version is None:
+        return None
+    cached_version, text = _catalog
+    if cached_version == version:
+        return text
+    try:
+        with open(catalog_path(), encoding="utf-8") as f:
+            ids = [line.strip() for line in f if line.strip()]
+    except OSError:
+        return None
+    index = _index
+    variants = index.variant_counts() if index else {}
+    lines, weight = [], 0
+    for item_id in ids:
+        item_weight = max(variants.get(item_id, 1), 1)
+        if lines and weight + item_weight > CATALOG_CALL_VARIANTS:
+            lines.append("")
+            weight = 0
+        lines.append(item_id)
+        weight += item_weight
+    text = "\n".join(lines) + "\n" if lines else ""
+    _catalog = (version, text)
+    return text
 
 
 def catalog_path():

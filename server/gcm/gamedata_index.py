@@ -205,6 +205,15 @@ class Index:
         row = self.one("SELECT v FROM icon WHERE ns = ? AND k = ?", (ICON_TABLES.index(table), key))
         return row[0] if row else None
 
+    def variant_counts(self):
+        """{"mod:internal": how many damage values it has an icon for},
+        from the icon lookup's by_key."""
+        counts = {}
+        for (k,) in self.all("SELECT k FROM icon WHERE ns = 0"):
+            item_id = k.rpartition(":")[0]
+            counts[item_id] = counts.get(item_id, 0) + 1
+        return counts
+
     def has_ore_dict(self):
         return self.one("SELECT 1 FROM ore LIMIT 1") is not None
 

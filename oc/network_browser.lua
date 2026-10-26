@@ -518,11 +518,16 @@ local function run_scan(me)
 
   while not scanRejected do
     -- Stream the candidate list from disk, same reasoning as the results
-    -- below - never hold more than one batch's worth in memory.
+    -- below - never hold more than one batch's worth in memory. A blank
+    -- line in the server's catalog ends a batch early: it puts one
+    -- before and after each id with thousands of variants (GT's
+    -- gt.metaitem.01, gt.blockmachines, ...), which the sorted catalog
+    -- otherwise lines up in one call - see CATALOG_CALL_VARIANTS in
+    -- gcm/gamedata.py.
     local batch = {}
-    for _ = 1, CONFIG.BATCH_SIZE do
+    while #batch < CONFIG.BATCH_SIZE do
       local line = f:read("*l")
-      if line == nil then break end
+      if line == nil or (line == "" and #batch > 0) then break end
       if line ~= "" then batch[#batch + 1] = line end
     end
     if #batch == 0 then break end
@@ -531,7 +536,8 @@ local function run_scan(me)
     set_phase(string.format("Batch %d: calling getItemsInNetworkById() with %d candidate ids...", batchNum, #batch))
     local ok, result = pcall(me.getItemsInNetworkById, batch)
     batch = nil
-    set_phase(string.format("Batch %d: getItemsInNetworkById() returned (ok=%s)", batchNum, tostring(ok)))
+    set_phase(string.format("Batch %d: getItemsInNetworkById() returned (ok=%s, %s stacks)", batchNum,
+      tostring(ok), ok and type(result) == "table" and tostring(#result) or "?"))
 
     if ok then
       consecutiveErrors = 0
