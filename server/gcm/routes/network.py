@@ -7,7 +7,7 @@ import logging
 import secrets
 import time
 
-from flask import abort, Blueprint, g, jsonify, request, Response, send_file
+from flask import abort, Blueprint, g, jsonify, request, Response
 
 from gcm import auth, charts, gamedata, icons, inventory, item_info, patterns, planner, state, stock, store
 
@@ -34,10 +34,10 @@ def network_scan_start():
 @bp.route("/api/network/catalog", methods=["GET"])
 @auth.api_key_required
 def network_catalog_get():
-    path = gamedata.catalog_path()
-    if not path:
+    text = gamedata.catalog_text()
+    if text is None:
         abort(404)
-    response = send_file(path, mimetype="text/plain")
+    response = Response(text, mimetype="text/plain")
     response.headers["X-Catalog-Version"] = gamedata.catalog_version()
     return response
 

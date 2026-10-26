@@ -175,6 +175,40 @@ test("with no catalog at all the scan fails before scanning", function()
   t.eq(#env:requests_to("^/api/network/scan/finish$"), 0)
 end)
 
+-- Records the ids of each getItemsInNetworkById() call.
+local function record_calls(me)
+  local calls = {}
+  local real = me.proxy.getItemsInNetworkById
+  me.proxy.getItemsInNetworkById = function(ids)
+    calls[#calls + 1] = ids
+    return real(ids)
+  end
+  return calls
+end
+
+test("a blank line in the catalog ends a batch", function()
+  local env, me = setup({ routes = { ["GET /api/network/catalog"] = { status = 200,
+    body = "testmod:item1\n\ntestmod:item2\ntestmod:item3\n\n\ntestmod:item4\n" } } })
+  fill(me, 4)
+  local calls = record_calls(me)
+  env:start_service("network_browser")
+  env:run({ seconds = 60 })
+  t.eq(calls, { { "testmod:item1" }, { "testmod:item2", "testmod:item3" }, { "testmod:item4" } })
+  local sent = 0
+  for _, b in ipairs(batches(env)) do sent = sent + #b.items end
+  t.eq(sent, 4)
+end)
+
+test("BATCH_SIZE still caps a batch between blank lines", function()
+  local env, me = setup({ config = { BATCH_SIZE = 1 }, routes = { ["GET /api/network/catalog"] = { status = 200,
+    body = "testmod:item1\n\ntestmod:item2\ntestmod:item3\n" } } })
+  fill(me, 3)
+  local calls = record_calls(me)
+  env:start_service("network_browser")
+  env:run({ seconds = 60 })
+  t.eq(calls, { { "testmod:item1" }, { "testmod:item2" }, { "testmod:item3" } })
+end)
+
 test("stop() takes effect within a few seconds of the wait", function()
   local env, me = setup()
   fill(me, 5)
@@ -354,7 +388,7 @@ test("an error that kills the scan is logged, reported, and scanning starts over
   local reports = env:requests_to("^/api/network/crashed$", "POST")
   t.eq(#reports, 1)
   t.truthy(reports[1].json.error:find("attempt to index", 1, true), reports[1].json.error)
-  t.eq(reports[1].json.phase, "Batch 1: getItemsInNetworkById() returned (ok=true)")
+  t.eq(reports[1].json.phase, "Batch 1: getItemsInNetworkById() returned (ok=true, ? stacks)")
   t.eq(type(reports[1].json.free_memory), "number")
   local log = env:read_file("network_browser_debug.log")
   t.truthy(log:find("CRASHED during", 1, true), "logged")
