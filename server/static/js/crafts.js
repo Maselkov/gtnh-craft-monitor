@@ -556,8 +556,8 @@ function renderCompletedCard(entry) {
     <div class="card completed-card">
       <div class="card-head">
         <div class="card-head-main">
-          <div class="craft-title">${icon}<span>${title}</span>${statusBadge}</div>
-          <div class="cpu-id">Finished ${formatRelativeTime(entry.finishedAt)}</div>
+          <div class="craft-title">${icon}<span>${title}</span></div>
+          <div class="cpu-id">Finished ${formatRelativeTime(entry.finishedAt)}${statusBadge}</div>
         </div>
         <button class="ack-btn" data-action="acknowledge" data-completion-id="${escapeHtml(entry.id)}" title="Acknowledge">&#10003;</button>
       </div>
