@@ -9,7 +9,7 @@ import { closeGameDataModal } from './gamedata.js';
 import { closeItemHistory } from './history.js';
 import { closeIngredientsModal } from './ingredients.js';
 import { closeWebhooksModal } from './webhooks.js';
-import { delegateActions, escapeHtml, iconClass, iconUrl, onBackdropClick } from './util.js';
+import { delegateActions, escapeHtml, iconClass, iconUrl, onBackdropClick, setHtmlKeepingIcons } from './util.js';
 
 // ---------- Craft request modal ----------
 let craftRequestTarget = null;
@@ -290,7 +290,7 @@ function renderCraftRequests() {
     el.innerHTML = '';
     return;
   }
-  el.innerHTML = craftRequests.map(r => {
+  setHtmlKeepingIcons(el, craftRequests.map(r => {
     const icon = r.icon
       ? `<img class="${iconClass('craft-request-icon', r.icon)}" src="${iconUrl(r.icon)}" alt="" loading="lazy" data-remove-on-error>`
       : '';
@@ -311,7 +311,7 @@ function renderCraftRequests() {
         ${dismissBtn}
       </div>
     `;
-  }).join('');
+  }).join(''));
 }
 
 export function setupCraftDialogActions() {
