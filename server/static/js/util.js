@@ -110,7 +110,9 @@ export function bindFilterInput(input, onChange) {
 // el.innerHTML = html, but each icon <img> already in el is kept and moved
 // into the new markup in place of a new one with the same src. A new <img>
 // starts an animated icon (APNG) over from its first frame, so redrawing
-// every second or so made them stutter; a moved one keeps going.
+// every second or so made them stutter; a moved one keeps going. Only
+// within this document, though: a template's content is a document of its
+// own, and an <img> moved through one restarts too - hence importNode.
 export function setHtmlKeepingIcons(el, html) {
   const old = new Map();
   for (const img of el.querySelectorAll('img[src^="/icons?"]')) {
@@ -120,13 +122,14 @@ export function setHtmlKeepingIcons(el, html) {
   }
   const tpl = document.createElement('template');
   tpl.innerHTML = html;
-  for (const img of tpl.content.querySelectorAll('img[src^="/icons?"]')) {
+  const content = document.importNode(tpl.content, true);
+  for (const img of content.querySelectorAll('img[src^="/icons?"]')) {
     const kept = old.get(img.getAttribute('src'))?.shift();
     if (!kept) continue;
     kept.className = img.className;
     img.replaceWith(kept);
   }
-  el.replaceChildren(tpl.content);
+  el.replaceChildren(content);
 }
 
 // <img data-remove-on-error> removes itself when it fails to load (an

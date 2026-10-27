@@ -685,17 +685,26 @@ async function main() {
   });
 
   step('a redraw keeps icon <img>s, so animated ones carry on', async () => {
+    // Kept isn't enough: an <img> moved through another document (a
+    // template's content) restarts all the same. adoptedCallback counts
+    // those trips.
     const kept = await evaluate(`(async () => {
       const { setHtmlKeepingIcons } = await import('/static/js/util.js');
-      const el = document.createElement('div');
-      const html = (cls) => '<img class="' + cls + '" src="/icons?path=a.png"><img src="/icons?path=b.png">'
-        + '<img src="/icons?path=a.png"><span>x</span>';
+      customElements.define('adopt-count-img', class extends HTMLImageElement {
+        adoptedCallback() { window.__adopted++; }
+      }, { extends: 'img' });
+      // In the page: a custom element is only upgraded once connected.
+      const el = document.body.appendChild(document.createElement('div'));
+      const img = (cls, src) => '<img is="adopt-count-img" class="' + cls + '" src="/icons?path=' + src + '">';
+      const html = (cls) => img(cls, 'a.png') + img('', 'b.png') + img('', 'a.png') + '<span>x</span>';
       setHtmlKeepingIcons(el, html('one'));
       const [a1, b, a2] = el.querySelectorAll('img');
+      window.__adopted = 0;
       setHtmlKeepingIcons(el, '<i>y</i>' + html('two'));
       const now = el.querySelectorAll('img');
+      el.remove();
       return now[0] === a1 && now[1] === b && now[2] === a2 && a1.className === 'two'
-        && el.firstChild.tagName === 'I' && el.textContent === 'yx';
+        && el.firstChild.tagName === 'I' && el.textContent === 'yx' && window.__adopted === 0;
     })()`);
     if (!kept) throw new Error('icon <img>s were not kept across setHtmlKeepingIcons');
   });
