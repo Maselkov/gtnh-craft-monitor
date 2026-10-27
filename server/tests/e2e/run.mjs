@@ -684,6 +684,22 @@ async function main() {
     await waitFor('closed', `!visible($('#ingredientsModal'))`);
   });
 
+  step('a redraw keeps icon <img>s, so animated ones carry on', async () => {
+    const kept = await evaluate(`(async () => {
+      const { setHtmlKeepingIcons } = await import('/static/js/util.js');
+      const el = document.createElement('div');
+      const html = (cls) => '<img class="' + cls + '" src="/icons?path=a.png"><img src="/icons?path=b.png">'
+        + '<img src="/icons?path=a.png"><span>x</span>';
+      setHtmlKeepingIcons(el, html('one'));
+      const [a1, b, a2] = el.querySelectorAll('img');
+      setHtmlKeepingIcons(el, '<i>y</i>' + html('two'));
+      const now = el.querySelectorAll('img');
+      return now[0] === a1 && now[1] === b && now[2] === a2 && a1.className === 'two'
+        && el.firstChild.tagName === 'I' && el.textContent === 'yx';
+    })()`);
+    if (!kept) throw new Error('icon <img>s were not kept across setHtmlKeepingIcons');
+  });
+
   step('expand idle CPUs; stays open across a refresh', async () => {
     await click(`$('details.idle-group summary')`);
     await waitFor('open', `$('details.idle-group').open`);

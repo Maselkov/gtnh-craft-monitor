@@ -10,6 +10,7 @@ import { ingredientCount, openIngredientsModal, refreshIngredientsModal } from '
 import { craftsBadge, setTabBadge } from './tab-badges.js';
 import {
   delegateActions, escapeHtml, formatDuration, formatRelativeTime, iconClass, iconUrl, PIN_ICON,
+  setHtmlKeepingIcons,
 } from './util.js';
 
 // Toggle-open state of the idle-CPU section, which has to survive the
@@ -594,9 +595,9 @@ export function render(data) {
   ` : '';
 
   if (jobs.length === 0) {
-    root.innerHTML = completedSection + (neverReported(data)
+    setHtmlKeepingIcons(root, completedSection + (neverReported(data)
       ? connectNoteHtml('No crafting CPUs reported yet - is craft_monitor.lua running on a computer?')
-      : '<div class="empty">No crafting CPUs reported yet.</div>');
+      : '<div class="empty">No crafting CPUs reported yet.</div>'));
     refreshIngredientsModal(data);
     return;
   }
@@ -627,7 +628,7 @@ export function render(data) {
     </details>
   ` : '';
 
-  root.innerHTML = completedSection + pinnedSection + activeSection + idleSection;
+  setHtmlKeepingIcons(root, completedSection + pinnedSection + activeSection + idleSection);
   // Widths are set through the DOM rather than an inline style attribute in
   // the markup, which the Content-Security-Policy blocks. Done in the
   // same task as the innerHTML, so the new bars' first computed width

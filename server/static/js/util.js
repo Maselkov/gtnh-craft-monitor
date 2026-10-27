@@ -107,6 +107,28 @@ export function bindFilterInput(input, onChange) {
   });
 }
 
+// el.innerHTML = html, but each icon <img> already in el is kept and moved
+// into the new markup in place of a new one with the same src. A new <img>
+// starts an animated icon (APNG) over from its first frame, so redrawing
+// every second or so made them stutter; a moved one keeps going.
+export function setHtmlKeepingIcons(el, html) {
+  const old = new Map();
+  for (const img of el.querySelectorAll('img[src^="/icons?"]')) {
+    const src = img.getAttribute('src');
+    if (!old.has(src)) old.set(src, []);
+    old.get(src).push(img);
+  }
+  const tpl = document.createElement('template');
+  tpl.innerHTML = html;
+  for (const img of tpl.content.querySelectorAll('img[src^="/icons?"]')) {
+    const kept = old.get(img.getAttribute('src'))?.shift();
+    if (!kept) continue;
+    kept.className = img.className;
+    img.replaceWith(kept);
+  }
+  el.replaceChildren(tpl.content);
+}
+
 // <img data-remove-on-error> removes itself when it fails to load (an
 // icon missing from images.zip) rather than showing a broken-image
 // glyph. error events don't bubble, hence the capture-phase listener.

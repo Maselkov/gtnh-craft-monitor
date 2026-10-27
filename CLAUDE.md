@@ -62,6 +62,8 @@ matching edits in `server/tests/e2e/run.mjs`.
   page-wide.
 - The crafts tab re-renders `#root` from scratch every 3s, and on each
   new game report; UI state that must survive (open sections, scroll)
-  lives outside it or is restored.
+  lives outside it or is restored. Markup with icons that's redrawn on a
+  timer goes through `setHtmlKeepingIcons()` (`util.js`), not
+  `innerHTML`: a new `<img>` restarts an animated icon.
 - New `static/js` modules are only imported, never run on import;
   `main.js` calls their setup functions.

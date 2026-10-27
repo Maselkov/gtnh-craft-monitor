@@ -9,7 +9,10 @@
 import { hideJobTree, refreshJobTree, setJobTreeFilter, setupJobTreeActions, showJobTree } from './job-tree.js';
 import { bindCellTooltip, hideTooltip, showTooltip, tooltipVisible } from './tooltip.js';
 import { itemMatchesSearch, parseSearchQuery } from './search.js';
-import { bindFilterInput, delegateActions, escapeHtml, formatQty, iconClass, iconUrl, onBackdropClick } from './util.js';
+import {
+  bindFilterInput, delegateActions, escapeHtml, formatQty, iconClass, iconUrl, onBackdropClick,
+  setHtmlKeepingIcons,
+} from './util.js';
 
 let openCpu = null;       // CPU name the modal is showing, null when closed
 let shownItems = new Map(); // item key -> merged item, from the last render
@@ -118,8 +121,8 @@ function renderHead(job) {
   const icon = job.final_output_icon
     ? `<img class="${iconClass('craft-icon', job.final_output_icon)}" src="${iconUrl(job.final_output_icon)}" alt="" loading="lazy" data-remove-on-error>`
     : '';
-  document.getElementById('ingredientsTitle').innerHTML =
-    `${icon}<span>${escapeHtml(job.final_output || 'Crafting job')}</span>`;
+  setHtmlKeepingIcons(document.getElementById('ingredientsTitle'),
+    `${icon}<span>${escapeHtml(job.final_output || 'Crafting job')}</span>`);
   document.getElementById('ingredientsCpu').textContent =
     `CPU ${job.name || '?'} · storage ${job.storage ?? '?'} · coprocessors ${job.coprocessors ?? '?'}`;
   const progress = document.getElementById('ingredientsProgress');
@@ -148,9 +151,9 @@ function renderGrid(job) {
 
   const grid = document.getElementById('ingredientsGrid');
   const scrollTop = grid.scrollTop;
-  grid.innerHTML = items.length
+  setHtmlKeepingIcons(grid, items.length
     ? items.map(cellHtml).join('')
-    : `<div class="network-note">${shownItems.size ? 'Nothing matches the filter.' : 'No ingredients reported.'}</div>`;
+    : `<div class="network-note">${shownItems.size ? 'Nothing matches the filter.' : 'No ingredients reported.'}</div>`);
   grid.scrollTop = scrollTop;
 
   // The cell under a still cursor was just replaced, and no mouseout
