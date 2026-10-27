@@ -274,6 +274,10 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
   border-radius: 999px;
   margin-left: 8px;
   vertical-align: middle;
+  /* Beside a long name in a flex row it would otherwise shrink and,
+     with the title's overflow-wrap, split mid-word. */
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .status-badge.auto {
   background: color-mix(in srgb, var(--accent) 20%, transparent);
