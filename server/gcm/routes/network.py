@@ -22,9 +22,12 @@ bp = Blueprint("network", __name__)
 def network_scan_start():
     # catalog_version tells network_browser.lua to fetch
     # /api/network/catalog when it doesn't have that version's catalog yet.
+    # heavy_ids: see inventory.HEAVY_ID_STACKS. Read before start_scan(),
+    # which leaves the live snapshot alone anyway.
     return jsonify(
         {
             "ok": True,
+            "heavy_ids": inventory.heavy_ids(),
             "scan_token": inventory.start_scan(),
             "catalog_version": gamedata.catalog_version(),
         }

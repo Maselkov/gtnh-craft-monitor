@@ -204,9 +204,9 @@ end
 --
 -- The pattern scan's batches (post_scan_chunk("/patterns/batch", ...))
 -- work the same way.
-local function post_scan_chunk(path, payloadTable)
+local function post_scan_chunk(path, payload)
   local sendOk, transportOk, body = pcall(function()
-    return post_json(path, json_encode(payloadTable))
+    return post_json(path, type(payload) == "string" and payload or json_encode(payload))
   end)
   if not sendOk then
     -- pcall itself failed (e.g. json_encode threw - see the comment on
@@ -225,8 +225,14 @@ local function post_scan_chunk(path, payloadTable)
   return true, body, false
 end
 
-local function post_result_subchunk(subChunk, scanToken)
-  return post_scan_chunk("/scan/batch", { items = subChunk, scan_token = scanToken })
+-- items: a list of tables, or of items already JSON (then first..last
+-- of them are sent).
+local function post_result_subchunk(items, scanToken, first, last)
+  if type(items[first or 1]) ~= "string" then
+    return post_scan_chunk("/scan/batch", { items = items, scan_token = scanToken })
+  end
+  return post_scan_chunk("/scan/batch", '{"items":[' .. table.concat(items, ",", first, last)
+    .. '],"scan_token":' .. json_encode(scanToken) .. "}")
 end
 
 local function safe_free_memory()
@@ -483,6 +489,13 @@ local function run_scan(me)
   end
   debug_log("scan/start OK, token=" .. scanToken)
   sync_catalog(decoded1.catalog_version)
+  -- Ids that had hundreds of stacks in the last scan (gcm/inventory.py's
+  -- HEAVY_ID_STACKS) each get a call of their own, like the catalog's
+  -- blank lines give GT's big ids: bees, seeds and enchanted books
+  -- differ only in NBT, so the catalog can't tell they're big.
+  local heavy = {}
+  for _, id in ipairs(type(decoded1.heavy_ids) == "table" and decoded1.heavy_ids or {}) do heavy[id] = true end
+  decoded1 = nil
 
   set_phase("Opening item catalog...")
   local catalogPath = filesystem.exists(SERVER_CATALOG_PATH) and SERVER_CATALOG_PATH
@@ -516,6 +529,7 @@ local function run_scan(me)
   -- network - confirmed as a real reported bug from that exact symptom.
   local scanRejected = false
 
+  local carried  -- a heavy id read while a batch was filling: it starts the next
   while not scanRejected do
     -- Stream the candidate list from disk, same reasoning as the results
     -- below - never hold more than one batch's worth in memory. A blank
@@ -526,8 +540,13 @@ local function run_scan(me)
     -- gcm/gamedata.py.
     local batch = {}
     while #batch < CONFIG.BATCH_SIZE do
-      local line = f:read("*l")
+      local line = carried or f:read("*l")
+      carried = nil
       if line == nil or (line == "" and #batch > 0) then break end
+      if heavy[line] then
+        if #batch > 0 then carried = line else batch[1] = line end
+        break
+      end
       if line ~= "" then batch[#batch + 1] = line end
     end
     if #batch == 0 then break end
@@ -555,32 +574,48 @@ local function run_scan(me)
       -- exactly what caused "not enough memory for buffer allocation",
       -- which is why post_result_subchunk() above wraps the whole
       -- encode+post in a pcall rather than calling json_encode bare.
-      local subChunk = {}
-      local subChunkNum = 0
-      for j = 1, count do
-        subChunk[#subChunk + 1] = simplify_item(result[j])
-        -- Sent stacks can go at the collect after each POST, rather
-        -- than the whole result staying until the last sub-chunk.
-        result[j] = nil
-        if (#subChunk >= CONFIG.RESULT_CHUNK_SIZE or j == count) and not scanRejected then
-          subChunkNum = subChunkNum + 1
-          set_phase(string.format("Batch %d: POSTing result sub-chunk %d (%d items)...", batchNum, subChunkNum, #subChunk))
-          chunksSent = chunksSent + 1
-          local postOk, postErr, rejected = post_result_subchunk(subChunk, scanToken)
-          set_phase(string.format("Batch %d: sub-chunk %d POST returned (ok=%s)", batchNum, subChunkNum, tostring(postOk)))
-          if rejected then
-            scanRejected = true
-            debug_log(string.format("scan rejected by server mid-scan (batch %d, sub-chunk %d) - aborting", batchNum, subChunkNum))
-          elseif not postOk then
-            totalErrors = totalErrors + 1
-            if CONFIG.SHOW_STATUS then print("[network_browser] batch POST failed: " .. tostring(postErr)) end
-            debug_log("batch POST failed: " .. tostring(postErr))
-          end
-          subChunk = {}
-          pcall(collectgarbage, "collect")
+      --
+      -- Every stack is encoded before the first POST, each raw one let go
+      -- as it's done: the raw tables take about three times the JSON's
+      -- memory (~450 bytes a stack), and a POST waits on the network,
+      -- which is when the other scripts run and allocate. A GT id's
+      -- thousand stacks held through a dozen POSTs, while craft_monitor
+      -- reported some big crafts, ran a computer out.
+      local encoded = {}
+      local encOk, encErr = pcall(function()
+        for j = 1, count do
+          encoded[j] = json_encode(simplify_item(result[j]))
+          result[j] = nil
         end
-      end
+      end)
       result = nil
+      if not encOk then
+        encoded = {}
+        totalErrors = totalErrors + 1
+        debug_log(string.format("Batch %d: encoding %d stacks failed: %s", batchNum, count, tostring(encErr)))
+      end
+      pcall(collectgarbage, "collect")
+      local subChunkNum = 0
+      local n = #encoded  -- sent entries are cleared below, so # won't do after
+      for first = 1, n, CONFIG.RESULT_CHUNK_SIZE do
+        if scanRejected then break end
+        local last = math.min(first + CONFIG.RESULT_CHUNK_SIZE - 1, n)
+        subChunkNum = subChunkNum + 1
+        set_phase(string.format("Batch %d: POSTing result sub-chunk %d (%d items)...", batchNum, subChunkNum, last - first + 1))
+        chunksSent = chunksSent + 1
+        local postOk, postErr, rejected = post_result_subchunk(encoded, scanToken, first, last)
+        set_phase(string.format("Batch %d: sub-chunk %d POST returned (ok=%s)", batchNum, subChunkNum, tostring(postOk)))
+        if rejected then
+          scanRejected = true
+          debug_log(string.format("scan rejected by server mid-scan (batch %d, sub-chunk %d) - aborting", batchNum, subChunkNum))
+        elseif not postOk then
+          totalErrors = totalErrors + 1
+          if CONFIG.SHOW_STATUS then print("[network_browser] batch POST failed: " .. tostring(postErr)) end
+          debug_log("batch POST failed: " .. tostring(postErr))
+        end
+        for j = first, last do encoded[j] = nil end
+        pcall(collectgarbage, "collect")
+      end
     else
       totalErrors = totalErrors + 1
       consecutiveErrors = consecutiveErrors + 1
@@ -797,20 +832,26 @@ local function run_pattern_scan(terminal)
     return false, "patterns/start response missing a scan_token: " .. tostring(body)
   end
 
+  -- chunk holds patterns as JSON, as the item scan's batches do: a
+  -- pattern's tables and hex NBT take far more memory than its JSON,
+  -- and each POST waits on the network while the other scripts run.
   local chunk, chunksSent, errors, total, providers = {}, 0, 0, 0, 0
   local rejected = false
-  local function flush()
-    if #chunk == 0 or rejected then return end
+  -- Sends chunk's first n patterns (all of them without n).
+  local function flush(n)
+    n = math.min(n or #chunk, #chunk)
+    if n == 0 or rejected then return end
     chunksSent = chunksSent + 1
-    set_phase(string.format("Patterns: POSTing chunk %d (%d patterns)...", chunksSent, #chunk))
-    local postOk, err, wasRejected = post_scan_chunk("/patterns/batch", { patterns = chunk, scan_token = token })
+    set_phase(string.format("Patterns: POSTing chunk %d (%d patterns)...", chunksSent, n))
+    local postOk, err, wasRejected = post_scan_chunk("/patterns/batch",
+      '{"patterns":[' .. table.concat(chunk, ",", 1, n) .. '],"scan_token":' .. json_encode(token) .. "}")
     if wasRejected then
       rejected = true
     elseif not postOk then
       errors = errors + 1
       debug_log("pattern batch POST failed: " .. tostring(err))
     end
-    chunk = {}
+    table.move(chunk, n + 1, #chunk + n, 1)
     pcall(collectgarbage, "collect")
   end
 
@@ -833,13 +874,22 @@ local function run_pattern_scan(terminal)
         local provider = { name = info.name, x = loc.x, y = loc.y, z = loc.z, dim = loc.dimId }
         local slots = sorted_keys(info.patterns)
         if #slots > 0 then providers = providers + 1 end
+        -- The whole interface is encoded before any of it is sent, so
+        -- its raw patterns aren't held through a POST.
         for _, slot in ipairs(slots) do
-          chunk[#chunk + 1] = simplify_pattern(info.patterns[slot], slot, provider)
-          total = total + 1
-          if #chunk >= CONFIG.PATTERN_CHUNK_SIZE then flush() end
+          local encOk, encoded = pcall(json_encode, simplify_pattern(info.patterns[slot], slot, provider))
+          if encOk then
+            chunk[#chunk + 1] = encoded
+            total = total + 1
+          else
+            errors = errors + 1
+            debug_log("pattern in slot " .. tostring(slot) .. " of " .. tostring(info.name)
+              .. " couldn't be encoded: " .. tostring(encoded))
+          end
         end
       end
       info = nil
+      while #chunk >= CONFIG.PATTERN_CHUNK_SIZE and not rejected do flush(CONFIG.PATTERN_CHUNK_SIZE) end
       -- Long runs of empty interfaces never reach a POST, the usual
       -- place this thread lets the others run.
       if i % 50 == 0 then os.sleep(0) end

@@ -45,6 +45,16 @@ FLUID = {
 }
 
 
+def test_scan_start_names_the_ids_that_had_many_stacks(client, api_headers, monkeypatch):
+    monkeypatch.setattr(inventory, "HEAVY_ID_STACKS", 3)
+    bees = [{**ITEM, "name": "Drone", "mod": "Forestry", "internal": "beeDroneGE", "damage": 0,
+             "hasTag": True, "tag": seed_tag("wheat", i, 1, 1)} for i in range(3)]
+    run_scan(client, api_headers, [bees + [ITEM, FLUID]])
+    assert len([i for i in client.get("/api/network").get_json()["items"] if i["internal"] == "beeDroneGE"]) == 3
+    start = client.post("/api/network/scan/start", headers=api_headers).get_json()
+    assert start["heavy_ids"] == ["Forestry:beeDroneGE"]
+
+
 class TestScanLifecycle:
     def test_unauthenticated_scan_start_rejected(self, client):
         res = client.post("/api/network/scan/start")

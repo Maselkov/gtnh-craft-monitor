@@ -42,6 +42,8 @@ Tier 3 server 4, where a case holds 2. It takes the same parts otherwise.
 The most a scan holds at once is usually every stored stack of one big
 GregTech ID, such as `gt.metaitem.01` (see
 [Scanning the network](how-it-works.md#scanning-the-network)).
+`craft_monitor.lua` grows with the crafts running: each report carries
+every busy CPU's lists, so several big crafts at once take room too.
 `network_browser_debug.log` records free memory (`mem=`) at each step and
 how many stacks each call returned, so the lowest numbers there show how
 close it gets and which call it was.

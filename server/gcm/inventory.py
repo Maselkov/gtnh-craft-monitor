@@ -28,6 +28,28 @@ def start_scan():
     return token
 
 
+# An item id with at least this many stacks in the last scan gets a
+# getItemsInNetworkById() call of its own (scan/start's heavy_ids):
+# network_browser.lua holds a call's whole result in memory, and ids
+# whose stacks differ only in NBT (bees, seeds, enchanted books, tools)
+# have one variant in the game data, so the catalog's breaks (see
+# gamedata.CATALOG_CALL_VARIANTS) group them with 99 other ids.
+HEAVY_ID_STACKS = 200
+
+
+def heavy_ids():
+    """"mod:internal" of each item id with HEAVY_ID_STACKS or more stacks
+    in the live snapshot, sorted."""
+    with state.network_lock:
+        items = state.network["items"]
+    counts = {}
+    for item in items:
+        if item.get("kind") == "item" and item.get("mod"):
+            item_id = f"{item['mod']}:{item.get('internal')}"
+            counts[item_id] = counts.get(item_id, 0) + 1
+    return sorted(item_id for item_id, n in counts.items() if n >= HEAVY_ID_STACKS)
+
+
 def _is_current_scan_locked(token):
     """True if token belongs to the currently active scan. Caller holds
     state.network_lock."""

@@ -95,6 +95,21 @@ test("without Thaumic Energistics the scan is items and fluids, as before", func
   t.eq(env:requests_to("^/api/network/scan/finish$")[1].json, { scan_token = "tok-1", chunks_sent = 3, total_errors = 0 })
 end)
 
+test("a batch that can't be encoded is an error, and the scan goes on", function()
+  local env, me = setup()
+  fill(me, 250)
+  -- Encoding it runs out of memory.
+  me.items[150].label = setmetatable({}, { __pairs = function() error("not enough memory") end })
+  env:start_service("network_browser")
+  env:run({ seconds = 60 })
+  local finish = env:requests_to("^/api/network/scan/finish$")
+  t.eq(#finish, 1)
+  t.eq(finish[1].json.total_errors, 1)
+  local sent = 0
+  for _, b in ipairs(batches(env)) do sent = sent + #b.items end
+  t.eq(sent, 150, "batches 1 and 3: 100 and 50 items")
+end)
+
 test("a failing getEssentiaInNetwork() fails the scan, as a failing fluid list does", function()
   local env, me = setup()
   fill(me, 250)
@@ -197,6 +212,19 @@ test("a blank line in the catalog ends a batch", function()
   local sent = 0
   for _, b in ipairs(batches(env)) do sent = sent + #b.items end
   t.eq(sent, 4)
+end)
+
+test("an id the server says had many stacks gets a call of its own", function()
+  local env, me = setup({ routes = {
+    ["POST /api/network/scan/start"] = { ok = true, scan_token = "tok-1", catalog_version = "2.8.0",
+      heavy_ids = { "testmod:item2", "testmod:item3" } },
+    ["GET /api/network/catalog"] = { status = 200,
+      body = "testmod:item1\ntestmod:item2\ntestmod:item3\ntestmod:item4\ntestmod:item5\n" } } })
+  fill(me, 5)
+  local calls = record_calls(me)
+  env:start_service("network_browser")
+  env:run({ seconds = 60 })
+  t.eq(calls, { { "testmod:item1" }, { "testmod:item2" }, { "testmod:item3" }, { "testmod:item4", "testmod:item5" } })
 end)
 
 test("BATCH_SIZE still caps a batch between blank lines", function()
@@ -372,7 +400,7 @@ local function crash_once(me)
   me.proxy.getItemsInNetworkById = function(ids)
     if not crashed then
       crashed = true
-      return "junk"
+      return 42
     end
     return real(ids)
   end
@@ -387,7 +415,7 @@ test("an error that kills the scan is logged, reported, and scanning starts over
 
   local reports = env:requests_to("^/api/network/crashed$", "POST")
   t.eq(#reports, 1)
-  t.truthy(reports[1].json.error:find("attempt to index", 1, true), reports[1].json.error)
+  t.truthy(reports[1].json.error:find("attempt to get length", 1, true), reports[1].json.error)
   t.eq(reports[1].json.phase, "Batch 1: getItemsInNetworkById() returned (ok=true, ? stacks)")
   t.eq(type(reports[1].json.free_memory), "number")
   local log = env:read_file("network_browser_debug.log")
@@ -497,6 +525,25 @@ test("without an interface terminal there are no pattern scans", function()
   env:run({ seconds = 60 })
   t.eq(#env:requests_to("^/api/network/patterns"), 0)
   t.eq(#batches(env), 1)
+end)
+
+test("a pattern that can't be encoded is an error, and the others are sent", function()
+  local env, me = setup({ config = { PATTERN_CHUNK_SIZE = 2 } })
+  fill(me, 3)
+  local broken = neodymium_pattern()
+  -- Encoding it runs out of memory.
+  broken.inputs[1].label = setmetatable({}, { __pairs = function() error("not enough memory") end })
+  fake_terminal.new(env, {
+    fake_terminal.interface("Fluid Extractor p1", 1, 2, 3, { planks_pattern(), broken, neodymium_pattern() }),
+  })
+  env:start_service("network_browser")
+  env:run({ seconds = 60 })
+  local slots = {}
+  for _, b in ipairs(pattern_batches(env)) do
+    for _, pattern in ipairs(b.patterns) do slots[#slots + 1] = pattern.slot end
+  end
+  t.eq(slots, { 0, 2 })
+  t.eq(env:requests_to("^/api/network/patterns/finish$")[1].json.total_errors, 1)
 end)
 
 test("patterns are scanned every PATTERN_SCAN_INTERVAL_SECONDS, not every item scan", function()
