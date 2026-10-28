@@ -417,7 +417,7 @@ def refresh_icons():
 
 
 def item_display_info(mod, internal, damage, kind, variant=None):
-    """Returns (label, size) for OG-tag purposes. Tries the live network
+    """Returns (label, size, icon path) for link previews. Tries the live network
     snapshot first (freshest); falls back to item_history's most recent
     row if the item isn't currently in the snapshot (e.g. it dropped to
     genuinely zero stock and isn't craftable, so it's absent from the
@@ -433,9 +433,10 @@ def item_display_info(mod, internal, damage, kind, variant=None):
                 and (it.get("kind") or "item") == (kind or "item")
                 and (it.get("variant") or None) == (variant or None)
             ):
-                return it.get("name"), it.get("size")
+                return it.get("name"), it.get("size"), it.get("icon")
 
-    return store.items.last_recorded(store.items.item_key(mod, internal, damage, kind, variant))
+    label, size = store.items.last_recorded(store.items.item_key(mod, internal, damage, kind, variant))
+    return label, size, icons.resolve_icon(mod, internal, damage, label, variant, kind)
 
 
 def stock_levels():

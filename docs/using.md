@@ -53,6 +53,9 @@ crafted items with how long one usually takes, and how much of the range each
 CPU spent busy. A job counts once it ends, and its time only from when the
 server saw it start, so jobs already running at a restart add no busy time.
 
+Pasted into Discord, a link to the Crafts tab previews the busy CPUs, each
+with what it's crafting and that item's icon, and an **Open** button.
+
 ## Theme
 
 The page follows your system's light or dark setting. To pick one for
@@ -158,6 +161,8 @@ With several machines (`MACHINES` in
 [power_monitor.lua's settings](in-game.md#power_monitorlua)), buttons above
 the readout switch between them, and the page's URL
 (`/power?machine=Batteries`) keeps the choice for links and link previews.
+In Discord, a link to the tab previews the latest reading and the day's
+chart.
 The unnamed machine shows as **Main**, and the tab badge follows it.
 
 ## Network tab
@@ -169,9 +174,11 @@ minute, but its data changes only when a scan finishes.
 - Click an item to open its stock history chart. Each item has its own URL
   (`/network/item/<mod:internal:damage>`, `/network/item/@<aspect>` for
   essentia) that can be shared; link previews
-  include the current amount and a chart. Discord reuses its preview of a
-  link it has already seen for a while; to get a current one, post the
-  link with anything added (`?1`). Under the amount, the popup shows
+  include the item's icon, the current amount and a chart. Discord reuses
+  its preview of a link for about half an hour; to get a current one, post
+  the link with a query string added (`?v=2`). Discord's
+  [Embed Debugger](https://discord.com/developers/embeds) shows how it
+  reads a link. Under the amount, the popup shows
   how fast it changed over the chosen range and, if it's falling, when it
   runs out at that rate.
 - Pin items to keep them at the top of the list.
