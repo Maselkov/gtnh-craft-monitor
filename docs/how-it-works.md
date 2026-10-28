@@ -91,9 +91,13 @@ per call they all landed in one, and that call ran a computer with two Tier
 3.5 memory sticks out of memory. So the server puts a blank line in the
 catalog it sends wherever a call would ask for more than 500 variants, counted
 from the game data, and the script ends its batch there. An ID that big gets
-a call of its own. One ID can't be split further, so its stacks are the floor
-of what a scan needs. The debug log records how many stacks each call
-returned.
+a call of its own. So does any ID that had 200 or more stacks in the last
+scan, which `scan/start` names: bees, crop seeds and enchanted books differ
+only in NBT, so the game data counts each as one variant. One ID can't be
+split further, so its stacks are the floor of what a scan needs. The script
+turns each call's stacks into JSON before it sends any of them, so it
+doesn't hold the bigger raw tables while it waits on the server. The debug
+log records how many stacks each call returned.
 
 Fluids are read with a single `getFluidsInNetwork()` call, since networks
 hold far fewer fluid types than item types. Essentia likewise, with one

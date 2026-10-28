@@ -213,6 +213,9 @@ end
 -- CPU's idle report as last_busy - the server judges whether the job
 -- finished from how much it had left, and a snapshot from up to
 -- POLL_SECONDS earlier makes a quick job that finished look cut short.
+-- Each look's pending and active lists are kept as JSON, about a third
+-- the size of the tables: on a big craft they're thousands of stacks,
+-- held the whole time it runs, in memory the other scripts share.
 local watched, ended = {}, {}
 
 -- Returns true when a watched job has ended, so the caller can report
@@ -231,7 +234,12 @@ local function watch_cpus(me)
         local okP, pending = pcall(row.cpu.pendingItems)
         local okA, active = pcall(row.cpu.activeItems)
         if okP and okA then
-          watched[name] = { pending = simplify_items(pending), active = simplify_items(active), at = now }
+          local encOk, pendingJson, activeJson = pcall(function()
+            return json_encode(simplify_items(pending)), json_encode(simplify_items(active))
+          end)
+          if encOk then
+            watched[name] = { pending = pendingJson, active = activeJson, at = now }
+          end
         end
       end
     elseif watched[name] then
@@ -243,8 +251,10 @@ local function watch_cpus(me)
   return anyEnded
 end
 
+-- Returns each CPU's job as JSON, the read errors, an error if a job
+-- couldn't be encoded (then no jobs), and how many CPUs are busy.
 local function extract_jobs(raw_cpus)
-  local jobs = {}
+  local jobs, busy = {}, 0
   local now = computer.uptime()
   local errors = {}  -- collected, not printed immediately - see VERBOSE below
   for idx, row in ipairs(raw_cpus or {}) do
@@ -278,20 +288,26 @@ local function extract_jobs(raw_cpus)
     end
 
     local name = row.name or "(unnamed CPU)"
-    local lastBusy
+    local seen
     if row.busy then
+      busy = busy + 1
       ended[name] = nil
     else
       -- A job that ended since the last watch tick is still in watched.
       ended[name] = ended[name] or watched[name]
       watched[name] = nil
-      local seen = ended[name]
-      if seen then
-        lastBusy = { pending = seen.pending, active = seen.active, age = now - seen.at }
-      end
+      seen = ended[name]
     end
 
-    jobs[#jobs + 1] = {
+    if CONFIG.VERBOSE then
+      print(string.format("[craft_monitor] CPU %d '%s': busy=%s active=%d pending=%d stored=%d",
+        idx, tostring(row.name), tostring(row.busy), #active, #pending, #stored))
+    end
+
+    -- Each CPU's job goes to JSON as soon as it's read, and its lists
+    -- are let go before the next CPU's are read: the whole report as
+    -- tables, on a few big crafts, was megabytes.
+    local encOk, job = pcall(json_encode, {
       name             = name,
       busy             = row.busy and true or false,
       storage          = row.storage,
@@ -303,18 +319,25 @@ local function extract_jobs(raw_cpus)
       active  = simplify_items(active),
       pending = simplify_items(pending),
       stored  = simplify_items(stored),
-      last_busy = lastBusy,
-    }
-
-    if CONFIG.VERBOSE then
-      print(string.format("[craft_monitor] CPU %d '%s': busy=%s active=%d pending=%d stored=%d",
-        idx, tostring(row.name), tostring(row.busy), #active, #pending, #stored))
+    })
+    active, pending, stored = nil, nil, nil
+    if not encOk then
+      return nil, errors, "json_encode failed: " .. tostring(job)
     end
+    if seen then
+      -- last_busy's lists are JSON already (see watched): spliced in
+      -- before the object's closing brace.
+      job = job:sub(1, -2) .. ',"last_busy":{"pending":' .. seen.pending .. ',"active":' .. seen.active
+        .. ',"age":' .. json_encode(now - seen.at) .. "}}"
+    end
+    jobs[#jobs + 1] = job
   end
-  return jobs, errors
+  return jobs, errors, nil, busy
 end
 
-local function post_json(payload)
+-- source: the ME component's type; jobs: extract_jobs()'s JSON strings,
+-- emptied once they're in the body.
+local function post_report(source, jobs)
   -- CONFIRMED root cause of every "stuck" service this whole
   -- investigation chased: json_encode() was called completely
   -- unprotected - no pcall - anywhere it was used to build a POST body.
@@ -327,7 +350,13 @@ local function post_json(payload)
   -- report that, so the service just stopped dead with zero
   -- explanation. rc happening to log uncaught exceptions to
   -- /tmp/event.log is what actually surfaced this.
-  local encodeOk, body = pcall(json_encode, payload)
+  local encodeOk, body = pcall(function()
+    return '{"source":' .. json_encode(source) .. ',"jobs":[' .. table.concat(jobs, ",") .. "]}"
+  end)
+  -- Emptied rather than left to the caller: it's the body's size again,
+  -- and the request below waits on the network, which is when the other
+  -- scripts run and allocate.
+  for i = #jobs, 1, -1 do jobs[i] = nil end
   if not encodeOk then
     return false, "json_encode failed: " .. tostring(body)
   end
@@ -716,18 +745,14 @@ end
 -- print loop, which was the actual source of the slowness - a real
 -- terminal redraw/scroll for every one of 30+ lines, every cycle, adds
 -- up fast even though the AE2 calls themselves are cheap.
-local function draw_status(kind, jobs, post_ok, post_err, errors)
+local function draw_status(kind, cpus, busy, post_ok, post_err, errors)
   term.clear()
   term.setCursor(1, 1)
   print("=== GTNH Craft Monitor ===")
   print("Component:    " .. kind)
   print("Last poll:    " .. os.date("%H:%M:%S"))
 
-  local busy = 0
-  for _, j in ipairs(jobs) do
-    if j.busy then busy = busy + 1 end
-  end
-  print(string.format("CPUs:         %d total (%d busy, %d idle)", #jobs, busy, #jobs - busy))
+  print(string.format("CPUs:         %d total (%d busy, %d idle)", cpus, busy, cpus - busy))
   print("Last POST:    " .. (post_ok and "OK" or ("FAILED - " .. tostring(post_err))))
 
   if #errors > 0 then
@@ -839,11 +864,14 @@ local function service_loop()
   end
   while running do
     local ok, raw = pcall(me.getCpus)
-    local jobs, errors = {}, {}
+    local errors, cpus, busy = {}, 0, 0
     local post_ok, post_err = false, "getCpus() failed"
 
     if ok then
-      jobs, errors = extract_jobs(raw)
+      local jobs, encodeErr
+      cpus = #raw
+      jobs, errors, encodeErr, busy = extract_jobs(raw)
+      raw = nil
       -- No timestamp field sent here - OC's os.time() is in-game clock
       -- time, not a Unix timestamp (see oc/power_monitor.lua's comment
       -- on this for the full explanation). The server already stamps
@@ -851,15 +879,18 @@ local function service_loop()
       -- age_seconds is actually built from - the game_timestamp field
       -- this used to send was stored server-side but never used for
       -- anything, so removed rather than left as a misleading value.
-      post_ok, post_err = post_json({
-        source = kind,
-        jobs = jobs,
-      })
+      if jobs then
+        post_ok, post_err = post_report(kind, jobs)
+      else
+        post_err = encodeErr
+      end
       -- Kept until a report carrying them gets through.
       if post_ok then ended = {} end
     else
       post_err = tostring(raw)
     end
+    -- Nothing from this report is held through the wait below.
+    raw = nil
 
     if not CONFIG.SHOW_STATUS then
       -- Stay fully quiet - this terminal belongs to another script
@@ -869,7 +900,7 @@ local function service_loop()
       -- scrolling log, skip the redraw entirely.
       print("[craft_monitor] Last POST: " .. (post_ok and "OK" or ("FAILED - " .. tostring(post_err))))
     else
-      draw_status(kind, jobs, post_ok, post_err, errors)
+      draw_status(kind, cpus, busy, post_ok, post_err, errors)
     end
 
     if not running then break end
