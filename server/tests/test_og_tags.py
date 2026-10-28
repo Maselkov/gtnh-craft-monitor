@@ -1,8 +1,9 @@
+import json
 import re
 import time
 import urllib.parse
 
-from gcm import store
+from gcm import embeds, store
 
 
 def image_version(html):
@@ -190,3 +191,100 @@ class TestNetworkItemOgTags:
         path = self._item_path("minecraft", "iron_ingot", 0, "item")
         html = client.get(path).get_data(as_text=True)
         assert f'og:url" content="http://localhost{path}"' in html
+
+
+def component_embed(html):
+    """The page's Discord component embed payload, or None."""
+    found = re.findall(r'<script id="discord:component-embed" type="application/json">(.*?)</script>', html)
+    assert len(found) <= 1
+    return json.loads(found[0]) if found else None
+
+
+def components(payload):
+    """Every component in a payload, the container first."""
+    out, todo = [], [payload["component"]]
+    while todo:
+        c = todo.pop(0)
+        out.append(c)
+        todo += c.get("components", [])
+        if "accessory" in c:
+            todo.append(c["accessory"])
+    return out
+
+
+class TestComponentEmbeds:
+    def test_accent_is_the_dark_theme_color(self, client):
+        # Discord takes the last theme-color, whatever its media query.
+        html = client.get("/crafts").get_data(as_text=True)
+        assert re.findall(r'name="theme-color" content="([^"]+)"', html)[-1] == "#0f1115"
+
+    def test_crafts_lists_busy_cpus_with_their_output_icon(self, client, api_headers):
+        client.post("/api/crafts", json={"source": "me_controller", "jobs": [
+            {"name": "W01", "busy": True, "final_output": "Iron Ingot",
+             "final_output_mod": "minecraft", "final_output_internal": "iron_ingot", "final_output_damage": 0},
+            {"name": "W02", "busy": False}]}, headers=api_headers)
+        html = client.get("/crafts").get_data(as_text=True)
+        assert 'og:title" content="Crafts"' in html  # the fallback stays
+        payload = component_embed(html)
+        text = json.dumps(payload)
+        assert "W01" in text and "Iron Ingot" in text and "W02" not in text
+        button = next(c for c in components(payload) if c["type"] == embeds.BUTTON)
+        assert button == {"type": 2, "style": 5, "url": "http://localhost/crafts", "label": "Open"}
+
+    def test_power_and_item_pages_show_their_chart(self, client, api_headers):
+        client.post("/api/power", json={"stored": 1, "capacity": 4}, headers=api_headers)
+        run_scan(client, api_headers, [
+            {"name": "Iron Ingot", "size": 500, "mod": "minecraft", "internal": "iron_ingot", "damage": 0, "kind": "item"},
+        ])
+        for path, chart in (("/power", "/api/power/chart.png"),
+                            ("/network/item/minecraft:iron_ingot:0", "/api/network/history/chart.png")):
+            gallery = next(c for c in components(component_embed(client.get(path).get_data(as_text=True)))
+                           if c["type"] == embeds.GALLERY)
+            assert chart in gallery["items"][0]["media"]["url"], path
+
+    def test_network_page_keeps_the_plain_card(self, client):
+        assert component_embed(client.get("/network").get_data(as_text=True)) is None
+
+    def test_names_cant_close_the_tag_or_add_markdown(self, client, api_headers):
+        client.post("/api/crafts", json={"source": "me_controller", "jobs": [
+            {"name": "</script><b>[x](https://evil)", "busy": True}]}, headers=api_headers)
+        html = client.get("/crafts").get_data(as_text=True)
+        assert "</script><b>" not in html
+        cpu = next(c for c in components(component_embed(html)) if c["type"] == embeds.TEXT and "evil" in c["content"])
+        assert cpu["content"] == r"**\</script\>\<b\>\[x\](https\://evil)**"
+
+
+class TestComponentEmbedLimits:
+    def jobs(self, count, name="CPU"):
+        return [{"name": f"{name} {i}", "busy": True, "final_output": "Iron Ingot"} for i in range(count)]
+
+    def test_many_cpus_are_capped_with_a_more_line(self):
+        payload = embeds.crafts(self.jobs(30), "30 of 30", lambda j: "http://x/i.png", "http://x/crafts")
+        listed = [c for c in components(payload) if c["type"] == embeds.SECTION]
+        assert len(listed) == embeds.MAX_CPUS
+        assert any("+22 more" in c.get("content", "") for c in components(payload))
+        assert len(components(payload)) <= 40
+        assert embeds.script_tag(payload)
+
+    def test_one_container_and_link_buttons_only(self):
+        payload = embeds.item("Iron Ingot", "500", "http://x/i.png", "http://x/c.png", "http://x/p")
+        found = components(payload)
+        assert [c["type"] for c in found].count(embeds.CONTAINER) == 1
+        for button in (c for c in found if c["type"] == embeds.BUTTON):
+            assert button["style"] == 5
+            assert set(button) <= {"id", "type", "url", "style", "label", "emoji", "disabled"}
+
+    def test_long_cpu_names_list_fewer_cpus(self):
+        payload = embeds.crafts(self.jobs(8, "x" * 400), "8 of 8", lambda j: None, "http://x/crafts")
+        assert embeds.script_tag(payload)
+        assert any("more" in c.get("content", "") for c in components(payload))
+
+    def test_an_oversized_payload_falls_back_to_og(self):
+        payload = embeds.item("x" * 3000, "500", None, None, "http://x/p")
+        assert embeds.script_tag(payload) == ""
+
+    def test_size_is_counted_after_escaping(self):
+        # 2,900 bytes of "<", each sent as the 6-byte <.
+        payload = embeds.container([embeds.text("<" * 490)])
+        assert len(json.dumps(payload)) < embeds.MAX_BYTES
+        assert embeds.script_tag(payload) == ""

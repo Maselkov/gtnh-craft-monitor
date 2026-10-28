@@ -9,7 +9,7 @@ from urllib.parse import quote, unquote
 
 from flask import abort, Blueprint, request, Response, send_from_directory
 
-from gcm import auth, charts, config, icons, inventory, security, state, store
+from gcm import auth, charts, config, embeds, icons, inventory, security, state, store
 
 
 bp = Blueprint("pages", __name__)
@@ -90,6 +90,13 @@ def _build_og_tags(path, args):
     title = "GTNH Monitor"
     desc = "GTNH crafting, power, and network monitor"
     image = None
+    # A Discord component embed (gcm/embeds.py), for the pages it suits.
+    embed = None
+    page_url = base + full_path
+
+    def icon_url(path):
+        url = icons.notification_icon_url(path)
+        return base + url if url else None
 
     if auth.is_private():
         # Link previews are fetched signed out, by anyone the link reaches.
@@ -103,6 +110,7 @@ def _build_og_tags(path, args):
         desc = (
             f"{busy} of {total} crafting CPUs busy" if total else "No crafting data yet"
         )
+        embed = embeds.crafts(jobs, desc, lambda j: icon_url(j.get("final_output_icon")), page_url)
 
     elif path == "/power":
         # The latest raw reading, like the page's own readout - not the
@@ -121,6 +129,7 @@ def _build_og_tags(path, args):
             )
         else:
             desc = "No power data yet"
+        embed = embeds.power(title, desc, image, page_url)
 
     elif path.startswith(NETWORK_ITEM_PATH_PREFIX):
         identifier = path[len(NETWORK_ITEM_PATH_PREFIX) :]
@@ -131,7 +140,7 @@ def _build_og_tags(path, args):
         kind = parsed.get("kind") or "item"
         variant = parsed.get("variant")
         if internal:
-            label, size = inventory.item_display_info(mod, internal, damage, kind, variant)
+            label, size, icon = inventory.item_display_info(mod, internal, damage, kind, variant)
             title = label if label else "Item"
             unit = " mB" if kind == "fluid" else ""
             desc = (
@@ -144,6 +153,7 @@ def _build_og_tags(path, args):
                 q += f"&variant={variant}"
             v = inventory.day_chart_version(mod, internal, damage, kind, variant)
             image = f"{base}/api/network/history/chart.png?{q}&range=day&v={v}"
+            embed = embeds.item(title, desc, icon_url(icon), image, page_url)
         else:
             title = "Item"
 
@@ -167,13 +177,15 @@ def _build_og_tags(path, args):
         f'<meta property="og:title" content="{html_escape(title)}">\n'
         f'<meta property="og:description" content="{html_escape(desc)}">\n'
         f'<meta property="og:type" content="website">\n'
-        f'<meta property="og:url" content="{html_escape(base + full_path)}">\n'
+        f'<meta property="og:url" content="{html_escape(page_url)}">\n'
         # Tints the mobile browser chrome (address bar) to match the
         # page instead of showing a default color - two variants, one
         # per scheme, matching the same light/dark split the site's own
         # CSS already does (:root vs the prefers-color-scheme override).
-        f'<meta name="theme-color" content="#0f1115" media="(prefers-color-scheme: dark)">\n'
+        # Dark goes last: Discord ignores media and takes the last one as
+        # a preview's accent, where the light one is near-white.
         f'<meta name="theme-color" content="#f4f5f7" media="(prefers-color-scheme: light)">\n'
+        f'<meta name="theme-color" content="#0f1115" media="(prefers-color-scheme: dark)">\n'
     )
     if image:
         # Discord picks between a large (~400px, below the text) and a
@@ -191,7 +203,7 @@ def _build_og_tags(path, args):
             f'<meta property="og:image:height" content="{charts.HEIGHT_PX}">\n'
             f'<meta name="twitter:card" content="summary_large_image">\n'
         )
-    return tags
+    return tags + embeds.script_tag(embed)
 
 
 @bp.route("/", methods=["GET"])

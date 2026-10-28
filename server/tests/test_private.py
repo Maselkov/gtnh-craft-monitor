@@ -61,6 +61,7 @@ def test_link_previews_say_nothing_on_a_private_server(client, api_headers):
     page = client.get("/power").get_data(as_text=True)
     assert "EU stored" not in page
     assert "og:image" not in page
+    assert "discord:component-embed" not in page
     assert '<meta property="og:title" content="GTNH Monitor">' in page
 
 

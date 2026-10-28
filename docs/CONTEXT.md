@@ -834,6 +834,21 @@ to an allowlist of push-service hosts (the server POSTs to whatever
 endpoint a browser registers). The worker is served at /sw.js, not
 /static/sw.js, so its scope covers the page - iOS requires that.
 
+**Discord previews are component embeds, with OG as the fallback.**
+`/crafts`, `/power` and `/network/item/...` carry a
+`<script id="discord:component-embed" type="application/json">`
+(gcm/embeds.py, added to the OG tags by `pages._build_og_tags`).
+Discord renders it as a Components V2 card, and any other crawler, or
+Discord rejecting the payload, gets the OG tags. Discord shows nothing
+for a payload over 3,000 bytes (counted after `\u003c` escapes), so
+`script_tag` leaves out an oversized one, and the crafts embed lists
+fewer CPUs, down to none, until it fits. Names come from the game, so
+they're escaped as markdown (no links, headings or emoji). A JSON data
+block is never run, so the CSP doesn't apply to it. Discord takes the
+*last* `theme-color` tag as a plain preview's accent and ignores its
+`media`, so the dark one comes last. Unfurled `components` embeds are
+output only: webhooks still send a classic embed.
+
 ## Test suite (server/tests/)
 
 201 pytest tests across 17 files, covering every endpoint - crafts, CPU
