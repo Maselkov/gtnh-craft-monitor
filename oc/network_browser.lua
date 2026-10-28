@@ -616,7 +616,6 @@ local function run_scan(me)
         for j = first, last do encoded[j] = nil end
         pcall(collectgarbage, "collect")
       end
-      encoded = nil
     else
       totalErrors = totalErrors + 1
       consecutiveErrors = consecutiveErrors + 1
