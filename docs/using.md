@@ -28,11 +28,24 @@ game. A busy card shows:
   and is waiting on, laid out like AE2's crafting status screen. It stays
   live while open. Switch it to **Tree** to see the job step by step:
   each step shows how much of it is made, steps being crafted are green
-  as in the grid, finished branches fold away, and a step that's crafting
-  but hasn't moved for `CRAFT_STALL_SECONDS` (10 minutes by default) turns
-  amber as stuck. A folded branch says what's under it ("1 stuck · 2
-  active"). Stuck steps are also listed above the tree; click one to jump
-  to it.
+  as in the grid, and finished branches fold away. A step held up at its
+  machine turns amber as stuck, and says why and where the machine is:
+  - **can't be sent to its machine**: the CPU has the step's inputs, but
+    nothing has gone out for `CRAFT_BLOCK_GRACE_SECONDS` (1 minute by
+    default). The machine won't take it: its inventory is full, the
+    interface is in blocking mode, or a pattern hatch is full.
+  - **machine busy with ...**: what was sent there hasn't come back for
+    that long, while the same machine finished another step in that time,
+    of this job or another CPU's. Two interfaces with the same name that
+    touch one block count as one machine.
+  - **nothing back from its machine**: what was sent hasn't come back for
+    `CRAFT_STALL_SECONDS` (10 minutes by default), and nothing else there
+    is moving. The machine may be stopped (power, maintenance, its output
+    full, the output not reaching the network), or the recipe is just
+    long: the game doesn't say which.
+
+  A folded branch says what's under it ("1 stuck · 2 active"). Stuck steps
+  are also listed above the tree; click one to jump to it.
 
   The tree needs the network's patterns (see
   [The craft tree](how-it-works.md#the-craft-tree) for how it's rebuilt).
@@ -52,6 +65,12 @@ month or ever: how many, how many stopped early or were auto-crafts, the most
 crafted items with how long one usually takes, and how much of the range each
 CPU spent busy. A job counts once it ends, and its time only from when the
 server saw it start, so jobs already running at a restart add no busy time.
+**Held up at** lists the machines running jobs' steps were held up at, as
+in the live tree, with their coordinates. They're ranked by how long whole
+jobs waited on them, with nothing else in the job moving, and then by how
+long steps were held up there, split by why. A step that could have come from
+several interfaces gives each of them a share. Unlike the rest, this counts
+jobs still running.
 
 Pasted into Discord, a link to the Crafts tab previews the busy CPUs, each
 with what it's crafting and that item's icon, and an **Open** button.
@@ -343,6 +362,11 @@ draws each threshold as a dashed line.
 - Progress counts steps, not crafting time, since recipe durations aren't
   available. A job with one slow step and 63 quick ones shows as nearly done
   once the 63 are made, and its time left is as far off.
+- The game doesn't show OpenComputers inside a machine, so "nothing back
+  from its machine" can't tell a stopped machine from a long recipe, and
+  which interface holds a step's items is a guess when several have its
+  pattern. Two interfaces on one machine are only taken as one when they
+  share a name and touch a common block.
 - Stock rules react within `WATCH_INTERVAL_SECONDS` (1 minute by default).
   AE2 picks the CPU for each craft itself, so the idle-CPU limit is checked
   when a craft is requested, not enforced while it runs.

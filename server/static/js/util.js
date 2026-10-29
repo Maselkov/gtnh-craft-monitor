@@ -173,6 +173,14 @@ export function formatDuration(seconds) {
   return `${Math.floor(s / 86400)}d ${Math.floor(s % 86400 / 3600)}h`;
 }
 
+// Where a machine (a pattern's provider) is, to go and find it:
+// "12, 64, -30", with the dimension when it isn't the overworld. Null
+// when OC didn't say.
+export function machinePlace(m) {
+  if (m.x == null) return null;
+  return `${m.x}, ${m.y}, ${m.z}${m.dim ? ` in dim ${m.dim}` : ''}`;
+}
+
 // A rate of change given per second, as a signed amount per hour
 // ("+1.20M/h"), or per day when under one an hour. unit goes between
 // the amount and the "/": ' EU' gives "+1.20G EU/h". Null for a rate

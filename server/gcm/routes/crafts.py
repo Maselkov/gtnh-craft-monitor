@@ -6,7 +6,7 @@ import time
 
 from flask import Blueprint, g, jsonify, request, Response
 
-from gcm import auth, config, craft_stats, icons, job_tree, planner, state, store, tracking
+from gcm import auth, bottlenecks, config, craft_stats, icons, job_tree, planner, state, store, tracking
 
 
 bp = Blueprint("crafts", __name__)
@@ -152,10 +152,11 @@ def crafts_tree_get(cpu):
 @auth.viewer_required
 def crafts_steps_get(cpu):
     """How far each step of a busy CPU's job has got, for the live tree:
-    {steps: {item key: {total, left, crafting, moved_at, state}},
-    version, stall_seconds}. {steps: null} once the CPU is idle."""
+    {steps: {item key: {total, left, crafting, moved_at, state, and for a
+    held-up step since, machines, with}}, version, stall_seconds} - see
+    bottlenecks.steps(). {steps: null} once the CPU is idle."""
     return jsonify({
-        "steps": job_tree.steps(cpu),
+        "steps": bottlenecks.steps(cpu),
         "version": job_tree.version(cpu),
         "stall_seconds": config.CRAFT_STALL_SECONDS,
         "now": time.time(),
@@ -206,14 +207,16 @@ STATS_RANGE_SECONDS = {
 @auth.viewer_required
 def crafts_stats_get():
     """Totals, most crafted items and CPU busy time over ?range=
-    day|week|month|all (unknown: week), from the jobs that ended."""
+    day|week|month|all (unknown: week), from the jobs that ended; and the
+    machines that held running jobs up the longest (bottlenecks)."""
     range_key = request.args.get("range", "week")
     if range_key not in STATS_RANGE_SECONDS:
         range_key = "week"
     now = time.time()
     seconds = STATS_RANGE_SECONDS[range_key]
-    stats = craft_stats.summarize(None if seconds is None else now - seconds, now)
-    return jsonify({"range": range_key, **stats})
+    since = None if seconds is None else now - seconds
+    stats = craft_stats.summarize(since, now)
+    return jsonify({"range": range_key, **stats, "bottlenecks": bottlenecks.summary(since)})
 
 
 @bp.route("/api/pins", methods=["GET"])

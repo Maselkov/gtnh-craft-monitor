@@ -600,6 +600,29 @@ def _app_settings(conn):
     conn.execute("CREATE TABLE settings (k TEXT PRIMARY KEY, v TEXT NOT NULL)")
 
 
+def _app_provider_stalls(conn):
+    # Seconds running jobs were held up at each provider (an interface,
+    # machine or pattern hatch, by gcm/patterns.provider_key), per hour
+    # (gcm/bottlenecks.py). jobs: how many jobs it held up in that hour.
+    conn.execute("""
+        CREATE TABLE provider_stalls (
+            hour REAL NOT NULL,
+            provider TEXT NOT NULL,
+            name TEXT,
+            x INTEGER,
+            y INTEGER,
+            z INTEGER,
+            dim INTEGER,
+            blocked_s REAL NOT NULL DEFAULT 0,
+            busy_s REAL NOT NULL DEFAULT 0,
+            stalled_s REAL NOT NULL DEFAULT 0,
+            critical_s REAL NOT NULL DEFAULT 0,
+            jobs INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (hour, provider)
+        )
+    """)
+
+
 APP_MIGRATIONS = [
     _app_baseline,
     _app_drop_orphaned_user_rows,
@@ -610,6 +633,7 @@ APP_MIGRATIONS = [
     _app_stock_rules,
     _app_craft_event_auto,
     _app_settings,
+    _app_provider_stalls,
 ]
 POWER_MIGRATIONS = [_power_baseline, _power_machines, _power_drop_impossible_times]
 ITEM_HISTORY_MIGRATIONS = [

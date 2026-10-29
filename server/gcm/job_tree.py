@@ -23,10 +23,9 @@ Live numbers (steps()) come from the job's tracking entry
 changed."""
 
 import threading
-import time
 from collections import OrderedDict
 
-from gcm import config, patterns, planner, progress, state, store
+from gcm import patterns, planner, progress, state, store
 
 # Positions listed per step for the dialog to jump to, at most.
 MAX_JUMPS = planner.MAX_JUMPS
@@ -111,24 +110,33 @@ def _annotate(root):
     return at
 
 
+def job_items(entry):
+    """(crafted, every item) of the job, as item base keys: its steps, and
+    those plus the raw inputs it pulled at the start."""
+    crafted = {step_item_key(s) for s in entry["peaks"]}
+    return crafted, crafted | {step_item_key(s) for s in entry["first_stored"]}
+
+
+def used_by_job(p, items):
+    """Whether the job could be using planner pattern p: all its inputs
+    are among the job's items."""
+    return all(base_key(k) in items for k, _, _ in p.inputs) and all(base_key(k) in items for k, _, _ in p.once)
+
+
 def build(entry, pattern_list):
     """The job's tree, or None if no pattern makes its output."""
     index = planner.index(pattern_list)
     key = _output_key(entry, index)
     if key is None:
         return None
-    crafted = {step_item_key(s) for s in entry["peaks"]}
-    items = crafted | {step_item_key(s) for s in entry["first_stored"]}
+    crafted, items = job_items(entry)
     output_steps = [p for s, p in entry["peaks"].items() if step_item_key(s) == base_key(key)]
     amount = max(output_steps) if output_steps else 1
 
     def from_storage(k):
         return base_key(k) not in crafted
 
-    def used_by_job(p):
-        return all(base_key(k) in items for k, _, _ in p.inputs) and all(base_key(k) in items for k, _, _ in p.once)
-
-    built = planner.reconstruct(pattern_list, key, amount, from_storage, used_by_job)
+    built = planner.reconstruct(pattern_list, key, amount, from_storage, lambda p: used_by_job(p, items))
     if built is None:
         return None
     root, steps, truncated = built
@@ -164,27 +172,15 @@ def tree(cpu):
     return result, None
 
 
-def step_state(left, crafting, moved_at, now):
-    """done, stuck (crafting, but not moved for CRAFT_STALL_SECONDS),
-    active (crafting), or waiting (still to come)."""
-    if left <= 0:
-        return "done"
-    if crafting > 0:
-        if moved_at is not None and now - moved_at >= config.CRAFT_STALL_SECONDS:
-            return "stuck"
-        return "active"
-    return "waiting"
-
-
-def steps(cpu, now=None):
-    """{item base key: {name, total, left, crafting, moved_at, state}} for the
+def steps(cpu):
+    """{item base key: {name, total, left, crafting, moved_at}} for the
     CPU's job, or None if it's idle. left is from the freshest look at
     the job (tracking also folds in craft_monitor.lua's quick checks);
-    crafting from the last full report's active list."""
+    crafting from the last full report's active list. Each step's state
+    is gcm/bottlenecks.py's (bottlenecks.steps())."""
     entry = _entry(cpu)
     if entry is None:
         return None
-    now = time.time() if now is None else now
     with state.crafts_lock:
         job = next((j for j in state.crafts["jobs"] if j.get("name") == cpu), None)
     active = progress.amounts((job or {}).get("active"))
@@ -198,8 +194,6 @@ def steps(cpu, now=None):
         moved = entry["moved_at"].get(step)
         if moved is not None and (s["moved_at"] is None or moved > s["moved_at"]):
             s["moved_at"] = moved
-    for s in out.values():
-        s["state"] = step_state(s["left"], s["crafting"], s["moved_at"], now)
     return out
 
 

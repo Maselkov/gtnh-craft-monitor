@@ -10,6 +10,7 @@ verified against the GTNH OpenComputers source and live testing.
 - [Reading patterns](#reading-patterns)
 - [The crafting plan](#the-crafting-plan)
 - [The craft tree](#the-craft-tree)
+- [Held-up steps](#held-up-steps)
 - [Fluid items](#fluid-items)
 - [Reading EU](#reading-eu)
 
@@ -207,6 +208,37 @@ reports crafting or waiting to craft is a crafted step, anything else came
 from storage, and where several patterns make an item, the one whose inputs
 the job holds is used. An item used in two places shares one count, as the
 CPU reports it.
+
+## Held-up steps
+
+The CPU's lists say a bit more than how much is left. Going by AE2's
+`CraftingCPUCluster`, `pendingItems()` is the output of pattern runs not yet
+sent to a machine, and `activeItems()` is output sent out and not back yet.
+Sending a run moves its amount from pending to active, so the two together
+only fall when a machine gives something back. The server
+(`server/gcm/bottlenecks.py`) keeps, for each step, when it was last sent
+and when something last came back, and calls it held up:
+
+- **blocked**: runs are pending, `storedItems()` has one run's inputs, and
+  nothing has been sent for `CRAFT_BLOCK_GRACE_SECONDS`. AE2 sends a run as
+  soon as it has the inputs, so the machine side is refusing it.
+- **busy**: output is out, none has come back for that long, and the same
+  machine has given another step something back in that time.
+- **stalled**: output is out, none back for `CRAFT_STALL_SECONDS`, and
+  nothing else on the machine is moving.
+
+The machine is the provider of the step's pattern, chosen as the tree
+chooses it. Providers are told apart by the coordinates and name the
+Interface Terminal reports. Those are the interface's own coordinates, so
+for "busy", interfaces with the same name one block apart diagonally or two
+apart in a line (both touching one block) count as one machine. After each
+status report, the time since the last one goes to each held-up step's
+provider. When nothing in the whole job has moved for the grace period, it
+also goes to "jobs waited" for every provider holding the job's items. The
+totals are kept per hour in `data/app.db`.
+
+OpenComputers can't see inside a machine, so a stalled step may only have a
+long recipe; that's why it waits longer than the others.
 
 ## Fluid items
 

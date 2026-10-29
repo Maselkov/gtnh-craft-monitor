@@ -25,7 +25,7 @@ The per-CPU memory it compares against lives in gcm/state.py
 
 import time
 
-from gcm import commands, progress, push, state, store, webhooks
+from gcm import bottlenecks, commands, progress, push, state, store, webhooks
 
 
 # How much faster than its observed pace a job may have gone in the gap
@@ -101,6 +101,16 @@ def _new_job_entry(started_at, seen_from_start=True):
         # that hasn't moved in a while is stuck.
         "last_left": {},
         "moved_at": {},
+        # For gcm/bottlenecks.py, per step: {pending, active} in the last
+        # report; pushed_at, when pending last fell (a run sent to a
+        # machine); out_since, since when what's out has waited (active
+        # rose from nothing, or a machine gave some back); gave_at, when a
+        # machine last gave some back (None until one has).
+        "flow": {},
+        # The CPU's stored items in the latest full report, and since when
+        # each step has had a run's inputs there (bottlenecks.account()).
+        "stored": {},
+        "ready_since": {},
         # The CPU's stored items in the first report with steps: the raw
         # inputs it pulled at the start, which tell its patterns apart.
         "first_stored": None,
@@ -299,6 +309,7 @@ def process_jobs(jobs):
                 job["running_seconds"] = job["eta_seconds"] = None
 
             state.cpu_last_busy[name] = busy
+    bottlenecks.account(now)
 
 
 def _fold_last_busy(entry, last_busy, now):
@@ -326,6 +337,9 @@ def _update_progress(entry, job, sampled_at):
         if entry["last_left"].get(key) != now_left:
             entry["last_left"][key] = now_left
             entry["moved_at"][key] = sampled_at
+    _update_flow(entry, job, sampled_at)
+    if isinstance(job.get("stored"), list):
+        entry["stored"] = progress.amounts(job["stored"])
     if entry["first_stored"] is None and percent is not None and isinstance(job.get("stored"), list):
         entry["first_stored"] = progress.amounts(job["stored"])
     if percent is not None:
@@ -348,6 +362,27 @@ def _update_progress(entry, job, sampled_at):
     job["eta_seconds"] = job_eta(entry)
     if entry.get("auto"):
         job["auto"] = True
+
+
+def _update_flow(entry, job, sampled_at):
+    """Each step's pushes and returns (entry["flow"]). A push moves an
+    amount from pending to active, so only pending + active falling means
+    a machine gave something back."""
+    pending, active = progress.amounts(job.get("pending")), progress.amounts(job.get("active"))
+    for key in entry["peaks"]:
+        p, a = pending.get(key, 0), active.get(key, 0)
+        f = entry["flow"].get(key)
+        if f is None:
+            entry["flow"][key] = {"pending": p, "active": a, "pushed_at": sampled_at,
+                                  "out_since": sampled_at, "gave_at": None}
+            continue
+        if p < f["pending"]:
+            f["pushed_at"] = sampled_at
+        if p + a < f["pending"] + f["active"]:
+            f["out_since"] = f["gave_at"] = sampled_at
+        elif a > 0 and f["active"] == 0:
+            f["out_since"] = sampled_at
+        f["pending"], f["active"] = p, a
 
 
 # The pace has to have been watched this long, over this much progress,
