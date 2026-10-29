@@ -9,7 +9,7 @@ from urllib.parse import quote, unquote
 
 from flask import abort, Blueprint, request, Response, send_from_directory
 
-from gcm import auth, charts, config, embeds, icons, inventory, security, state, store
+from gcm import auth, charts, config, embeds, icons, inventory, mctext, security, state, store
 
 
 bp = Blueprint("pages", __name__)
@@ -141,7 +141,7 @@ def _build_og_tags(path, args):
         variant = parsed.get("variant")
         if internal:
             label, size, icon = inventory.item_display_info(mod, internal, damage, kind, variant)
-            title = label if label else "Item"
+            title = mctext.plain(label) if label else "Item"
             unit = " mB" if kind == "fluid" else ""
             desc = (
                 f"Currently stored: {size:,.0f}{unit}"

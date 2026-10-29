@@ -8,6 +8,7 @@
 
 import { hideJobTree, refreshJobTree, setJobTreeFilter, setupJobTreeActions, showJobTree } from './job-tree.js';
 import { bindCellTooltip, hideTooltip, showTooltip, tooltipVisible } from './tooltip.js';
+import { nameHtml, nameText } from './description.js';
 import { itemMatchesSearch, parseSearchQuery } from './search.js';
 import {
   bindFilterInput, delegateActions, escapeHtml, formatQty, iconClass, iconUrl, onBackdropClick,
@@ -89,7 +90,7 @@ function countLines(m) {
 function cellHtml(m) {
   // Without an icon (no game data installed, or none for this item) a
   // cell of bare counts says nothing about what it is.
-  const name = m.icon ? '' : `<div class="ingredient-cell-name">${escapeHtml(m.name || '?')}</div>`;
+  const name = m.icon ? '' : `<div class="ingredient-cell-name">${escapeHtml(nameText(m.name || '?'))}</div>`;
   const lines = countLines(m)
     .map(([label, n]) => `<div>${label}: <b>${formatQty(n)}</b></div>`)
     .join('');
@@ -111,7 +112,7 @@ function tooltipHtml(m) {
   // A bare name with no mod is how a fluid comes through here (see
   // openItemHistoryFromCraft in history.js).
   return `
-    <div class="network-tooltip-name">${escapeHtml(m.name || '?')}</div>
+    <div class="network-tooltip-name">${nameHtml(m.name || '?')}</div>
     ${stats}
     ${m.mod ? `<div class="network-tooltip-mod">${escapeHtml(m.mod)}</div>` : `<div class="network-tooltip-fluid">Fluid</div>`}
   `;
@@ -122,7 +123,7 @@ function renderHead(job) {
     ? `<img class="${iconClass('craft-icon', job.final_output_icon)}" src="${iconUrl(job.final_output_icon)}" alt="" loading="lazy" data-remove-on-error>`
     : '';
   setHtmlKeepingIcons(document.getElementById('ingredientsTitle'),
-    `${icon}<span>${escapeHtml(job.final_output || 'Crafting job')}</span>`);
+    `${icon}<span>${escapeHtml(nameText(job.final_output || 'Crafting job'))}</span>`);
   document.getElementById('ingredientsCpu').textContent =
     `CPU ${job.name || '?'} · storage ${job.storage ?? '?'} · coprocessors ${job.coprocessors ?? '?'}`;
   const progress = document.getElementById('ingredientsProgress');
@@ -147,7 +148,7 @@ function renderGrid(job) {
   const query = parseSearchQuery(document.getElementById('ingredientsFilter').value);
   const items = Array.from(shownItems.values())
     .filter(m => itemMatchesSearch(m, query))
-    .sort((a, b) => sortRank(a) - sortRank(b) || String(a.name || '').localeCompare(String(b.name || '')));
+    .sort((a, b) => sortRank(a) - sortRank(b) || nameText(a.name || '').localeCompare(nameText(b.name || '')));
 
   const grid = document.getElementById('ingredientsGrid');
   const scrollTop = grid.scrollTop;

@@ -2,7 +2,7 @@
 
 import { AUTH_USER, isOperator } from './auth.js';
 import { openCraftRequestModal } from './craft-actions.js';
-import { descriptionHtml, descriptionPlainText, formulaSearchText } from './description.js';
+import { descriptionHtml, descriptionPlainText, formulaSearchText, nameHtml, nameText } from './description.js';
 import { openItemHistory, tryOpenItemFromUrl, updateItemHistoryPinButton } from './history.js';
 import { buildSearchHighlightHtml, itemMatchesSearch, parseSearchQuery, searchNeedsItemInfo } from './search.js';
 import { stockBadgeFor } from './stock.js';
@@ -190,8 +190,8 @@ function networkTooltipHtml(cell) {
   const nameClass = 'network-tooltip-name' + (info.rarity ? ' mc-' + info.rarity : '');
 
   return `
-    <div class="${nameClass}">${escapeHtml(it.name || '?')}</div>
-    ${it.variant_name ? `<div class="network-tooltip-variant">${escapeHtml(it.variant_name)}</div>` : ''}
+    <div class="${nameClass}">${nameHtml(it.name || '?')}</div>
+    ${it.variant_name ? `<div class="network-tooltip-variant">${escapeHtml(nameText(it.variant_name))}</div>` : ''}
     ${info.shift_description && !shiftHeld ? '<div class="network-tooltip-hint">[shift]</div>' : ''}
     <div class="network-tooltip-stat">${statLine}</div>
     ${changeLine}
@@ -598,8 +598,8 @@ function buildNetworkCellHtml(it, idx) {
     ? `<span class="network-cell-change ${fraction < 0 ? 'falling' : 'rising'}">${escapeHtml(formatChangePercent(fraction))}</span>`
     : '';
   // Hidden in the grid view by CSS - both views share this one cell.
-  const name = `<span class="network-cell-name">${escapeHtml(it.name || '?')}${
-    it.variant_name ? ` <span class="network-cell-variant">${escapeHtml(it.variant_name)}</span>` : ''}</span>`;
+  const name = `<span class="network-cell-name">${escapeHtml(nameText(it.name || '?'))}${
+    it.variant_name ? ` <span class="network-cell-variant">${escapeHtml(nameText(it.variant_name))}</span>` : ''}</span>`;
   // Blank Pattern icon (appliedenergistics2:item.ItemMultiMaterial
   // damage 52, confirmed against the real NESQL export) - shown for
   // ANY craftable item regardless of current stock, matching how the
@@ -613,7 +613,7 @@ function buildNetworkCellHtml(it, idx) {
   const stockBadge = stock ? `<span class="network-cell-stock-badge${stock.low ? ' low' : ''}">${stock.icon}</span>` : '';
   const classes = 'network-cell' + (it.isCraftable ? ' craftable' : '') + (stock && stock.low ? ' stock-low' : '')
     + (changeLabel ? ' has-change' : '');
-  const label = `${it.name || '?'}${it.variant_name ? ' ' + it.variant_name : ''}, ${formatQty(it.size)}`;
+  const label = `${nameText(it.name || '?')}${it.variant_name ? ' ' + nameText(it.variant_name) : ''}, ${formatQty(it.size)}`;
   return `<div class="${classes}" data-idx="${idx}" tabindex="-1" aria-label="${escapeHtml(label)}">${icon}${name}${changeLabel}${qty}${patternBadge}${pinBadge}${stockBadge}</div>`;
 }
 
@@ -694,7 +694,7 @@ function renderNetworkList() {
     if (aPinned !== bPinned) return aPinned ? -1 : 1;
     if (networkSort === 'size') return (b.size || 0) - (a.size || 0);
     if (networkSort === 'change') return compareByChange(changeSortKey(a), changeSortKey(b));
-    return (a.name || '').localeCompare(b.name || '');
+    return nameText(a.name || '').localeCompare(nameText(b.name || ''));
   });
   networkFilteredSorted = filtered;
 

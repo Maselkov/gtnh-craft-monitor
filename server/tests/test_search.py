@@ -30,6 +30,11 @@ def test_matches_like_the_page(query, expected):
     assert [name for name, mod in ITEMS if search.matches(name, mod, terms)] == expected
 
 
+def test_formatting_codes_in_names_are_ignored():
+    # tests/js/search.test.js's case of the same.
+    assert search.matches("§a16k§r ME Storage Component", "appliedenergistics2", search.parse('"16k me"'))
+
+
 def test_lone_dash_is_a_plain_term():
     assert search.parse("-") == [("text", False, "-")]
 

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { descriptionHtml, descriptionPlainText, formulaSearchText } from '../../static/js/description.js';
+import { descriptionHtml, descriptionPlainText, formulaSearchText, nameHtml, nameText } from '../../static/js/description.js';
 
 test('colour codes become classes, and plain text stays plain', () => {
   assert.equal(descriptionHtml('Machine Type: §ePlasma Forge'), 'Machine Type: <span class="mc-e">Plasma Forge</span>');
@@ -47,4 +47,10 @@ test('formulas search with plain digits, as GregTech\'s = search does', () => {
   assert.equal(formulaSearchText('\u00A7eSiO\u2082'), 'SiO2');
   assert.equal(formulaSearchText('\uE012\uE013\uE018Pu(Fe\u2085\uE01AC)'), '238Pu(Fe50C)');
   assert.equal(formulaSearchText('C\u2071'), 'C\u2071');  // not a digit
+});
+
+test('names drop their codes, or colour them for the tooltip', () => {
+  assert.equal(nameText('§a16k§r ME Storage Component'), '16k ME Storage Component');
+  assert.equal(nameHtml('§a16k§r <ME>'), '<span class="mc-a">16k</span> &lt;ME&gt;');
+  assert.equal(nameText('Plain'), 'Plain');
 });

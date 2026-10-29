@@ -2,7 +2,7 @@
 
 import { AUTH_USER, isOperator } from './auth.js';
 import { openCraftRequestModal } from './craft-actions.js';
-import { descriptionHtml, descriptionPlainText } from './description.js';
+import { descriptionHtml, descriptionPlainText, nameText } from './description.js';
 import {
   lastNetworkData,
   networkItemKey,
@@ -200,7 +200,7 @@ export function openItemHistory(it, pushUrl) {
   });
 
   document.getElementById('itemHistoryName').textContent =
-    (it.name || '?') + (it.variant_name ? ' (' + it.variant_name + ')' : '');
+    nameText(it.name || '?') + (it.variant_name ? ' (' + nameText(it.variant_name) + ')' : '');
   const iconEl = document.getElementById('itemHistoryIcon');
   if (it.icon) {
     iconEl.src = iconUrl(it.icon);

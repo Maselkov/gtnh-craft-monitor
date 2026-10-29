@@ -8,6 +8,7 @@
 // place, so the bars' CSS transitions carry them smoothly from one
 // report to the next instead of jumping.
 
+import { nameText } from './description.js';
 import { itemMatchesSearch, parseSearchQuery } from './search.js';
 import { ensureLoaded, flashRow, graft, matchingEntries, matchTree, nodeAt, openAbove, searchNoteText } from './tree-nav.js';
 import { delegateActions, escapeHtml, formatDuration, formatQty, iconClass, iconUrl, machinePlace } from './util.js';
@@ -48,7 +49,8 @@ export function heldNote(s, now, cpuName) {
   if (s.state === 'blocked') return `can't be sent to its machine${since}`;
   if (s.state === 'busy') {
     const w = s.with || {};
-    const whose = w.cpu === cpuName ? `this job's ${w.name}` : `CPU ${w.cpu}'s ${w.name}`;
+    const what = nameText(w.name);
+    const whose = w.cpu === cpuName ? `this job's ${what}` : `CPU ${w.cpu}'s ${what}`;
     return `machine busy with ${whose}${since}`;
   }
   return `nothing back from its machine${since}`;
@@ -139,7 +141,7 @@ function nodeHtml(node, parentPath, depth, positions, filtering) {
     <div class="plan-row">
       ${caret}${icon}
       <div class="plan-text">
-        <div><span class="plan-name">${escapeHtml(node.name || '?')}</span> <span class="plan-qty job-step-text"></span></div>
+        <div><span class="plan-name">${escapeHtml(nameText(node.name || '?'))}</span> <span class="plan-qty job-step-text"></span></div>
         <div class="plan-details"><span class="job-provider">${details.join(' · ')}</span><span class="job-step-note"></span></div>
         ${storage ? '' : '<div class="job-bar"><div class="job-bar-fill"></div></div>'}
       </div>
@@ -229,7 +231,7 @@ function renderStuck() {
       ? ` <span class="plan-jump-count">${jump.index + 1}/${places.length}</span>` : '';
     const title = `${heldNote(s, now, cpu)}. Show it in the tree`;
     return `<button class="plan-chip job-stuck-chip" data-action="job-tree-jump" data-key="${escapeHtml(key)}"${places.length ? '' : ' disabled'} title="${escapeHtml(title)}"><b>${
-      formatQty(s.left)}</b> ${escapeHtml(s.name || '?')}${counter}</button>`;
+      formatQty(s.left)}</b> ${escapeHtml(nameText(s.name || '?'))}${counter}</button>`;
   }).join('');
 }
 

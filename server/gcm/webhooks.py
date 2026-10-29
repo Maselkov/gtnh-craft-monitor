@@ -22,7 +22,7 @@ import urllib.error
 import urllib.request
 from urllib.parse import quote, urlsplit
 
-from gcm import config, icons, store
+from gcm import config, icons, mctext, store
 
 log = logging.getLogger(__name__)
 
@@ -128,11 +128,12 @@ def item_link(item):
 
 
 def event(kind, title, body, tone, icon=None, item=None):
-    """A webhook event: what every format below is built from."""
+    """A webhook event: what every format below is built from. Its text
+    has item names in it, without their formatting codes."""
     return {
         "event": kind,
-        "title": title,
-        "body": body,
+        "title": mctext.plain(title),
+        "body": mctext.plain(body),
         "tone": tone,
         "icon": _absolute(icons.notification_icon_url(icon)),
         "url": item_link(item),

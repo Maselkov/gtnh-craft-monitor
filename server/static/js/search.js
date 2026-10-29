@@ -2,6 +2,7 @@
 // syntax-highlight overlay markup. Pure functions (tested under
 // server/tests/js/).
 
+import { nameText } from './description.js';
 import { escapeHtml } from './util.js';
 
 // Advanced search, matching NEI's own syntax (confirmed against the
@@ -158,7 +159,7 @@ function searchTermMatches(name, mod, info, term) {
 // description as plain text (descriptionPlainText()), its ore names,
 // its mod's name and its formula with plain digits (formulaSearchText()).
 export function itemMatchesSearch(it, parsedTerms, info = {}) {
-  const name = (it.name || '').toLowerCase();
+  const name = nameText(it.name || '').toLowerCase();
   const mod = (it.mod || '').toLowerCase();
   const lowered = {
     description: (info.description || '').toLowerCase(),

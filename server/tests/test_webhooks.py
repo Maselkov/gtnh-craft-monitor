@@ -71,6 +71,11 @@ def test_discord_detection(url, discord):
     assert webhooks.is_discord(url) is discord
 
 
+def test_event_text_drops_formatting_codes():
+    ev = webhooks.event("crafts", "Craft finished", "§a16k§r ME Storage Component is done crafting.", "good")
+    assert ev["body"] == "16k ME Storage Component is done crafting."
+
+
 def test_discord_embed_never_pings():
     ev = webhooks.event("crafts", "Craft finished", "@everyone is done", "good")
     payload = webhooks.discord_payload(ev)

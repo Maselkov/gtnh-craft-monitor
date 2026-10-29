@@ -3,6 +3,8 @@ can't hold all of (Recent crafts). A port of static/js/search.js's
 tokenizer and matcher: the same query must match the same items in
 both, which tests/test_search.py checks against the JS tests' cases."""
 
+from gcm import mctext
+
 
 # NEI's prefixes for searching something other than the name, and
 # GregTech's for formulas.
@@ -71,7 +73,7 @@ def matches(name, mod, terms, description=None, ore=(), mod_name=None, formula=N
     ore-dictionary names ($ terms), its mod's name (@ terms) and its
     formula with plain digits (= terms; the page's formulaSearchText()).
     Plain terms match the name, description or ore names."""
-    name = (name or "").lower()
+    name = mctext.plain(name or "").lower()
     mod = (mod or "").lower()
     description = (description or "").lower()
     ore = [o.lower() for o in ore]

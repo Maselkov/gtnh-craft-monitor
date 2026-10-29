@@ -7,6 +7,7 @@ import { refreshCraftHistory } from './craft-history.js';
 import { refreshCraftStats } from './craft-stats.js';
 import { openCancelConfirmModal, pendingCancelCpus } from './craft-actions.js';
 import { ingredientCount, openIngredientsModal, refreshIngredientsModal } from './ingredients.js';
+import { nameText } from './description.js';
 import { craftsBadge, setTabBadge } from './tab-badges.js';
 import {
   delegateActions, escapeHtml, formatDuration, formatRelativeTime, iconClass, iconUrl, PIN_ICON,
@@ -343,7 +344,7 @@ async function toggleNotifications() {
 
 async function notifyCraftDone(id, itemName, icon, status) {
   if (!notificationsOn()) return;
-  const what = itemName || 'A pinned craft';
+  const what = itemName ? nameText(itemName) : 'A pinned craft';
   const [title, body] = status === 'incomplete'
     ? ['Craft stopped', what + ' stopped before finishing (cancelled or interrupted).']
     : ['Craft finished', what + ' is done crafting.'];
@@ -496,7 +497,7 @@ function renderCard(job) {
 
   const title = job.busy
     ? (job.final_output
-        ? `${job.final_output_icon ? `<img class="${iconClass('craft-icon', job.final_output_icon)}" src="${iconUrl(job.final_output_icon)}" alt="" loading="lazy" data-remove-on-error>` : ''}<span class="item-history-link" data-mod="${escapeHtml(job.final_output_mod || '')}" data-internal="${escapeHtml(job.final_output_internal || '')}" data-damage="${job.final_output_damage != null ? job.final_output_damage : ''}" data-name="${escapeHtml(job.final_output)}" data-icon="${escapeHtml(job.final_output_icon || '')}">${escapeHtml(job.final_output)}</span>`
+        ? `${job.final_output_icon ? `<img class="${iconClass('craft-icon', job.final_output_icon)}" src="${iconUrl(job.final_output_icon)}" alt="" loading="lazy" data-remove-on-error>` : ''}<span class="item-history-link" data-mod="${escapeHtml(job.final_output_mod || '')}" data-internal="${escapeHtml(job.final_output_internal || '')}" data-damage="${job.final_output_damage != null ? job.final_output_damage : ''}" data-name="${escapeHtml(job.final_output)}" data-icon="${escapeHtml(job.final_output_icon || '')}">${escapeHtml(nameText(job.final_output))}</span>`
         : `<span class="craft-title-muted">Crafting job (no monitor tile)</span>`)
     : `<span class="craft-title-muted">Idle</span>`;
   // Busy or idle shows by which section the card is in; a job a
@@ -548,7 +549,7 @@ function renderCompletedCard(entry) {
     : '';
   // Deliberately item-first, no CPU reference - which CPU happened to
   // run this is irrelevant to what you're acknowledging.
-  const title = entry.itemName ? escapeHtml(entry.itemName) : 'Unknown item';
+  const title = entry.itemName ? escapeHtml(nameText(entry.itemName)) : 'Unknown item';
   const statusBadge = entry.status === 'incomplete'
     ? '<span class="status-badge incomplete">Incomplete</span>'
     : '';

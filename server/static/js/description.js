@@ -102,6 +102,18 @@ export function descriptionPlainText(text) {
   return withUnicodeGlyphs(withoutKeyHints(text)).replace(/§./gs, '');
 }
 
+// A name from the game (an item's label, a machine's), which can carry
+// formatting codes too ("§a16k§r ME Storage Component"). The page shows
+// names in its own colours, so as plain text; the game-style tooltip
+// box, always dark as in the game, in the game's (nameHtml()).
+export function nameText(name) {
+  return withUnicodeGlyphs(String(name)).replace(/§./gs, '');
+}
+
+export function nameHtml(name) {
+  return lineHtml(withUnicodeGlyphs(String(name)));
+}
+
 // GTNH's "§!shift" and "§!ctrl" lines: markers its tooltip renderer
 // draws as "[shift]" under the name. The exporter leaves them out (the
 // tooltip shows its own "[shift]" where it has the Shift text); this

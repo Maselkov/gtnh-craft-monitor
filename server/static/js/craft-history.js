@@ -6,6 +6,7 @@
 // buttons are applied by the server, so they cover every page, not
 // just the ones loaded.
 
+import { nameText } from './description.js';
 import { activeTab } from './tabs.js';
 import {
   bindFilterInput, delegateActions, escapeHtml, formatDuration, formatRelativeTime, iconClass, iconUrl,
@@ -134,10 +135,10 @@ function renderRow(e) {
   const icon = e.icon
     ? `<img class="${iconClass('craft-icon', e.icon)}" src="${iconUrl(e.icon)}" alt="" loading="lazy" data-remove-on-error>`
     : '<span class="craft-icon"></span>';
-  const name = escapeHtml(e.itemName || 'Unknown item');
+  const name = escapeHtml(nameText(e.itemName || 'Unknown item'));
   // Rows saved before items were recorded with them can't open a chart.
   const title = e.internal
-    ? `<span class="item-history-link" data-mod="${escapeHtml(e.mod || '')}" data-internal="${escapeHtml(e.internal)}" data-damage="${e.damage != null ? escapeHtml(e.damage) : ''}" data-name="${name}" data-icon="${escapeHtml(e.icon || '')}">${name}</span>`
+    ? `<span class="item-history-link" data-mod="${escapeHtml(e.mod || '')}" data-internal="${escapeHtml(e.internal)}" data-damage="${e.damage != null ? escapeHtml(e.damage) : ''}" data-name="${escapeHtml(e.itemName || 'Unknown item')}" data-icon="${escapeHtml(e.icon || '')}">${name}</span>`
     : `<span>${name}</span>`;
   const badge = (e.auto ? '<span class="status-badge auto" title="Started to keep this item in stock">Auto</span>' : '')
     + (e.status === 'incomplete'

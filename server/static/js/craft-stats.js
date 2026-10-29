@@ -4,6 +4,7 @@
 // Recent crafts it lives outside #root and only fetches while open:
 // when it opens, when the range changes, and every REFRESH_MS after.
 
+import { nameText } from './description.js';
 import { delegateActions, escapeHtml, formatDuration, iconClass, iconUrl, machinePlace } from './util.js';
 
 const REFRESH_MS = 30000;
@@ -63,9 +64,9 @@ function itemRow(item, maxCount) {
   const icon = item.icon
     ? `<img class="${iconClass('craft-icon', item.icon)}" src="${iconUrl(item.icon)}" alt="" loading="lazy" data-remove-on-error>`
     : '<span class="craft-icon"></span>';
-  const name = escapeHtml(item.itemName || 'Unknown item');
+  const name = escapeHtml(nameText(item.itemName || 'Unknown item'));
   const title = item.internal
-    ? `<span class="item-history-link" data-mod="${escapeHtml(item.mod || '')}" data-internal="${escapeHtml(item.internal)}" data-damage="${item.damage != null ? escapeHtml(item.damage) : ''}" data-name="${name}" data-icon="${escapeHtml(item.icon || '')}">${name}</span>`
+    ? `<span class="item-history-link" data-mod="${escapeHtml(item.mod || '')}" data-internal="${escapeHtml(item.internal)}" data-damage="${item.damage != null ? escapeHtml(item.damage) : ''}" data-name="${escapeHtml(item.itemName || 'Unknown item')}" data-icon="${escapeHtml(item.icon || '')}">${name}</span>`
     : `<span>${name}</span>`;
   const details = [`${item.count}&times;`];
   if (item.medianSeconds != null) details.push(`usually ${formatDuration(item.medianSeconds)}`);
@@ -109,7 +110,7 @@ function machineRow(m, cost, maxCost) {
   return `
     <div class="history-row stats-row">
       <div class="history-row-main">
-        <div class="history-row-name">${escapeHtml(m.name || '?')}${place ? ` <span class="cpu-id">${escapeHtml(place)}</span>` : ''}</div>
+        <div class="history-row-name">${escapeHtml(nameText(m.name || '?'))}${place ? ` <span class="cpu-id">${escapeHtml(place)}</span>` : ''}</div>
         <div class="cpu-id">${details.join(' &middot; ')}</div>
         ${bar(percent(cost(m), maxCost))}
       </div>
