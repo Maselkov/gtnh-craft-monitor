@@ -8,6 +8,7 @@
 // around; here it's an outline, readable without hovering and usable on
 // a phone, keeping the game's "Hide all available".
 
+import { nameHtml, nameText } from './description.js';
 import { itemMatchesSearch, parseSearchQuery } from './search.js';
 import { bindCellTooltip } from './tooltip.js';
 import { ensureLoaded, flashRow, graft, matchingEntries, matchTree, nodeAt, openAbove, searchNoteText } from './tree-nav.js';
@@ -113,7 +114,7 @@ export function sortListItems(items) {
   return [...items].sort((a, b) => rank(a) - rank(b)
     || (rank(a) === 0 ? b.missing - a.missing : 0)
     || (rank(a) === 1 ? usedPercent(b) - usedPercent(a) : 0)
-    || String(a.name || '').localeCompare(String(b.name || '')));
+    || nameText(a.name || '').localeCompare(nameText(b.name || '')));
 }
 
 function iconHtml(it, cls) {
@@ -142,7 +143,11 @@ export function warningText(warning, kind) {
 }
 
 function displayName(it) {
-  return (it.name || '?') + (it.variant_name ? ` (${it.variant_name})` : '');
+  return nameText(it.name || '?') + variantText(it);
+}
+
+function variantText(it) {
+  return it.variant_name ? ` (${nameText(it.variant_name)})` : '';
 }
 
 export function nameMatches(it, terms) {
@@ -185,7 +190,7 @@ function cellHtml(it) {
 function cellTooltipHtml(it) {
   const stat = (label, n) => `<div class="network-tooltip-stat">${label}: ${qty(n, it.kind)}</div>`;
   return `
-    <div class="network-tooltip-name">${escapeHtml(displayName(it))}</div>
+    <div class="network-tooltip-name">${nameHtml(it.name || '?')}${escapeHtml(variantText(it))}</div>
     ${stat('Needed', it.need)}
     ${it.from_leftovers > 0 ? stat('Left over from other steps', it.from_leftovers) : ''}
     ${it.from_stock > 0 ? stat('From stock', it.from_stock) + stat('In stock', it.available) : ''}
@@ -243,12 +248,12 @@ function nodeHtml(node, parentPath, depth, positions, filtering) {
   const details = [];
   // A split step's patterns are rows of their own, named by machine.
   const via = node.status === 'via';
-  if (node.pattern && !via) details.push(escapeHtml(node.pattern.provider || '?'));
+  if (node.pattern && !via) details.push(escapeHtml(nameText(node.pattern.provider || '?')));
   if (node.inexact) details.push('output count unknown, counted as 1');
-  for (const also of node.also_makes || []) details.push(`also makes ${qty(also.amount, also.kind)} ${escapeHtml(also.name || '?')}`);
+  for (const also of node.also_makes || []) details.push(`also makes ${qty(also.amount, also.kind)} ${escapeHtml(nameText(also.name || '?'))}`);
   for (const sub of node.substitutes || []) {
-    const from = sub.from_stock ? `${qty(sub.from_stock, sub.kind)} ${escapeHtml(sub.name || '?')} from stock`
-      : `${qty(sub.from_leftovers, sub.kind)} ${escapeHtml(sub.name || '?')} left over`;
+    const from = sub.from_stock ? `${qty(sub.from_stock, sub.kind)} ${escapeHtml(nameText(sub.name || '?'))} from stock`
+      : `${qty(sub.from_leftovers, sub.kind)} ${escapeHtml(nameText(sub.name || '?'))} left over`;
     details.push(`instead: ${from}`);
   }
   if (node.truncated) details.push('plan cut short here');
@@ -264,8 +269,11 @@ function nodeHtml(node, parentPath, depth, positions, filtering) {
 
   const alternatives = node.alternatives
     ? `<select class="plan-alt" data-key="${escapeHtml(node.key)}" title="Other patterns that make this">${
-      node.alternatives.map(a => `<option value="${escapeHtml(a.id)}"${a.id === node.pattern.id ? ' selected' : ''}>${
-        escapeHtml(a.provider || '?')}: ${escapeHtml(a.inputs.length > 70 ? a.inputs.slice(0, 69) + '…' : a.inputs)}</option>`).join('')
+      node.alternatives.map(a => {
+        const inputs = nameText(a.inputs);
+        return `<option value="${escapeHtml(a.id)}"${a.id === node.pattern.id ? ' selected' : ''}>${
+          escapeHtml(nameText(a.provider || '?'))}: ${escapeHtml(inputs.length > 70 ? inputs.slice(0, 69) + '…' : inputs)}</option>`;
+      }).join('')
     }</select>`
     : '';
 
@@ -275,7 +283,7 @@ function nodeHtml(node, parentPath, depth, positions, filtering) {
       ${caret}${iconHtml(node, 'plan-icon')}
       <div class="plan-text">
         <div><span class="plan-name">${escapeHtml(via
-          ? (node.substitute ? displayName(node) + ' ' : '') + 'via ' + (node.pattern.provider || '?')
+          ? (node.substitute ? displayName(node) + ' ' : '') + 'via ' + nameText(node.pattern.provider || '?')
           : displayName(node))}</span> <span class="plan-qty">${nodeQtyText(node, depth === 0)}</span></div>
         ${details.length ? `<div class="plan-details">${details.join(' · ')}</div>` : ''}
         ${alternatives}

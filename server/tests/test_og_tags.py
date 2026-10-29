@@ -253,6 +253,13 @@ class TestComponentEmbeds:
         cpu = next(c for c in components(component_embed(html)) if c["type"] == embeds.TEXT and "evil" in c["content"])
         assert cpu["content"] == r"**\</script\>\<b\>\[x\](https\://evil)**"
 
+    def test_names_lose_their_formatting_codes(self, client, api_headers):
+        client.post("/api/crafts", json={"source": "me_controller", "jobs": [
+            {"name": "CPU", "busy": True, "final_output": "§a16k§r ME Storage Component"}]}, headers=api_headers)
+        html = client.get("/crafts").get_data(as_text=True)
+        assert any(c["content"] == "**CPU**\n16k ME Storage Component"
+                   for c in components(component_embed(html)) if c["type"] == embeds.TEXT)
+
 
 class TestComponentEmbedLimits:
     def jobs(self, count, name="CPU"):

@@ -158,6 +158,11 @@ def test_stopped_craft_message():
     }
 
 
+def test_message_drops_formatting_codes():
+    assert push.message(7, "§a16k§r ME Storage Component", None, "finished")["body"] == (
+        "16k ME Storage Component is done crafting.")
+
+
 def test_message_carries_the_item_icon():
     payload = push.message(7, "Thing", "item/test/thing~0.png", "finished")
     assert payload["icon"] == "/icons?path=item%2Ftest%2Fthing~0.png&notification=1"

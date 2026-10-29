@@ -120,6 +120,8 @@ ITEMS = [
     ("Diamond Dust", "dust", (110, 230, 230)),
     ("Block of Diamond", "block", (110, 230, 230)),
     ("Dimensionally Transcendent Plasma Forge", "block", (90, 40, 140)),
+    # A real name with formatting codes in it, as AE2's storage parts have.
+    ("\u00a7a16k\u00a7r ME Storage Component", "circuit", (60, 140, 60)),
     ("Ordo", "essentia", None),
     ("Metallum", "essentia", None),
     ("Praecantatio", "essentia", None),
@@ -178,6 +180,8 @@ PATTERNS = [
     ("Industrial Sledgehammer", False, [("Diamond", 2)], [("Flawless Diamond", 1)]),
     ("Electric Implosion Compressor", False, [("Industrial Diamond", 3)], [("Diamond Dust", 4)],
      {"beSubstitute": True}),
+    ("Circuit Assembler", False, [("\u00a7a16k\u00a7r ME Storage Component", 1)],
+     [("SMD Capacitor", 4), ("Silicon Wafer", 1), ("Glass Dust", 2)]),
 ]
 # Some items' tooltips below their name, as the bundle's item_info.json
 # has them (gcm/item_info.py): formatting codes and all, so the page's
@@ -631,7 +635,8 @@ BOLT_JOB = ("Steel Bolt", [[("Steel Bolt", 96)]], [("Iron Ingot", 24)])
 FAILS = {"Inconel-625 Plate": "request failed (missing resources?)"}
 SMALL_JOBS = ["Radon Plasma", "Bacterial Sludge", "Glass Dust", "Lapotron Crystal",
               "Titanium Gear", "Ultimate Circuit",
-              "Exquisite Cerium-doped Lutetium Aluminium Garnet (Ce:LuAG)"]
+              "Exquisite Cerium-doped Lutetium Aluminium Garnet (Ce:LuAG)",
+              "\u00a7a16k\u00a7r ME Storage Component"]
 
 
 class FakeComputer:

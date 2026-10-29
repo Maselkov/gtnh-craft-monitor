@@ -826,6 +826,16 @@ for each where it has one, else (elements, magnet, brimstone...) to the
 nearest Unicode symbol. A glyph GregTech adds later shows as a box
 until the table is updated.
 
+**Some names carry formatting codes too.** AE2's storage parts are
+named `§a16k§r ME Storage Component` in its lang file, and the label
+comes through as that. It's stored as is, since the label is part of
+lookups (icons `by_key_label`, label-derived variants, craft history
+keys), and it's stripped only where shown: the page's lists and
+dialogs show names in the page's own colours (`nameText()`), the
+game-style tooltip box colours them as the game does (`nameHtml()`),
+and search, notifications, webhooks and link previews drop the codes
+(`gcm/mctext.py` on the server).
+
 **Item info is served apart from the item list, and fetched lazily.**
 Every GregTech material has a formula line and multiblocks have twenty,
 so on a big network descriptions are megabytes, which `/api/network`

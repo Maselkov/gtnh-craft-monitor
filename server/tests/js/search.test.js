@@ -26,6 +26,11 @@ test('plain terms are ANDed regardless of order', () => {
   assert.deepEqual(search('neutronium molten'), ['Molten Neutronium']);
 });
 
+test("a name's formatting codes don't get in the way", () => {
+  const terms = parseSearchQuery('"16k me"');
+  assert.ok(itemMatchesSearch({ name: '§a16k§r ME Storage Component', mod: 'appliedenergistics2' }, terms));
+});
+
 test('term1|term2 is an OR', () => {
   assert.deepEqual(search('copper|tin'), ['Copper Ingot', 'Tin Ingot']);
 });

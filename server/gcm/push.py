@@ -20,7 +20,7 @@ import queue
 import threading
 from urllib.parse import urlsplit
 
-from gcm import config, icons, store
+from gcm import config, icons, mctext, store
 
 log = logging.getLogger(__name__)
 
@@ -106,7 +106,7 @@ def message(completion_id, label, icon, status):
     """What the notification says, and the item's icon. The page shows
     the same when it notices the completion itself, under the same tag,
     so a device getting both shows it once."""
-    what = label or "A pinned craft"
+    what = mctext.plain(label) if label else "A pinned craft"
     if status == "incomplete":
         title, body = "Craft stopped", what + " stopped before finishing (cancelled or interrupted)."
     else:
@@ -121,7 +121,7 @@ def message(completion_id, label, icon, status):
 def stock_message(key, label, icon, text):
     """A stock alert's notification. Tagged by item, so a newer one about
     the same item replaces an older one still showing."""
-    payload = {"title": "Low stock", "body": text, "tag": f"stock-{key}"}
+    payload = {"title": "Low stock", "body": mctext.plain(text), "tag": f"stock-{key}"}
     icon_url = icons.notification_icon_url(icon)
     if icon_url:
         payload["icon"] = icon_url

@@ -4,6 +4,7 @@
 // in the item popup where they're edited.
 
 import { evaluateAmountExpression } from './amount.js';
+import { nameText } from './description.js';
 import { AUTH_USER, isOperator } from './auth.js';
 import { showToast } from './craft-actions.js';
 import { openItemHistory, redrawItemHistoryChart } from './history.js';
@@ -93,7 +94,7 @@ export async function fetchStockRules() {
   if (loaded) {
     for (const [key, a] of alerts) {
       if (a.low && before.has(key) && !before.get(key).low) {
-        showToast(`${a.label} is low: ${amountText(a.current, a.kind)} (below ${amountText(a.below, a.kind)})`, true);
+        showToast(`${nameText(a.label)} is low: ${amountText(a.current, a.kind)} (below ${amountText(a.below, a.kind)})`, true);
       }
     }
   }
@@ -115,7 +116,7 @@ function rowsByItem() {
   }
   const needsLook = (r) => (r.target && targetIsLow(r.target)) || (r.alert && r.alert.low);
   return Array.from(rows.values()).sort((a, b) =>
-    (needsLook(b) - needsLook(a)) || a.item.label.localeCompare(b.item.label));
+    (needsLook(b) - needsLook(a)) || nameText(a.item.label).localeCompare(nameText(b.item.label)));
 }
 
 function renderRow({ item, target, alert }) {
@@ -143,7 +144,7 @@ function renderRow({ item, target, alert }) {
     <div class="history-row stock-row" data-action="stock-open-item" data-key="${escapeHtml(item.key)}">
       ${icon}
       <div class="history-row-main">
-        <div class="history-row-name">${escapeHtml(item.label)}${chip}</div>
+        <div class="history-row-name">${escapeHtml(nameText(item.label))}${chip}</div>
         <div class="cpu-id">${parts.join(' &middot; ')}</div>
       </div>
       <div class="stock-row-amount">

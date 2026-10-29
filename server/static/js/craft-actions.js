@@ -3,6 +3,7 @@
 import { evaluateAmountExpression } from './amount.js';
 import { AUTH_USER, closeAdminUsersModal, closeBackupsModal, closeSettingsMenu } from './auth.js';
 import { closeCraftPlan, openCraftPlan, updateCraftPlanAmount } from './craft-plan.js';
+import { nameText } from './description.js';
 import { lastData, render } from './crafts.js';
 import { closeAgentsModal } from './agents.js';
 import { closeGameDataModal } from './gamedata.js';
@@ -17,7 +18,7 @@ let craftRequestTarget = null;
 export function openCraftRequestModal(it) {
   craftRequestTarget = it;
   document.getElementById('craftRequestName').textContent =
-    (it.name || '?') + (it.variant_name ? ' (' + it.variant_name + ')' : '');
+    nameText(it.name || '?') + (it.variant_name ? ' (' + nameText(it.variant_name) + ')' : '');
   const iconEl = document.getElementById('craftRequestIcon');
   if (it.icon) {
     iconEl.src = iconUrl(it.icon);
@@ -305,7 +306,7 @@ function renderCraftRequests() {
       <div class="craft-request-card${isFailed ? ' failed' : ''}">
         ${icon}
         <div class="craft-request-info">
-          <div class="craft-request-name">${escapeHtml(r.label)}${r.variant_name ? ' (' + escapeHtml(r.variant_name) + ')' : ''} ×${r.amount}</div>
+          <div class="craft-request-name">${escapeHtml(nameText(r.label))}${r.variant_name ? ' (' + escapeHtml(nameText(r.variant_name)) + ')' : ''} ×${r.amount}</div>
           <div class="craft-request-status${isFailed ? ' failed' : ''}">${statusText}</div>
         </div>
         ${dismissBtn}

@@ -14,6 +14,8 @@ buttons (style 5) only."""
 import json
 import re
 
+from gcm import mctext
+
 MAX_BYTES = 3000
 # The charts' line colour (gcm/charts.py), so the bar matches the image.
 ACCENT = 0x5FB3FF
@@ -28,8 +30,9 @@ _MARKDOWN = re.compile(r"([\\*_~`|>#\-\[\]<:])")
 
 def md_escape(text):
     """Game-supplied text (item and CPU names) as literal Discord
-    markdown: a name can't make a heading, a link or a mention."""
-    return _MARKDOWN.sub(r"\\\1", str(text))
+    markdown, without the game's formatting codes: a name can't make a
+    heading, a link or a mention."""
+    return _MARKDOWN.sub(r"\\\1", mctext.plain(text))
 
 
 def text(content):
