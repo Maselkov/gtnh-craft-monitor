@@ -161,13 +161,15 @@ def summarize(patterns):
         "processing": len(patterns) - len(crafting),
         # Patterns with a size nobody could tell (see the module docstring).
         "inexact": sum(1 for p in patterns if not p["exact"]),
-        "providers": len({_provider_key(p["provider"]) for p in patterns}),
+        "providers": len({provider_key(p["provider"]) for p in patterns}),
     }
 
 
-def _provider_key(provider):
-    # Several interfaces can share a block (parts on one cable), and OC
-    # doesn't report which side each is on - their names tell them apart.
+def provider_key(provider):
+    """Tells one interface (or machine, or pattern hatch) the terminal
+    lists from another: where it is, and its name. Several interfaces can
+    share a block (parts on one cable), and OC doesn't report which side
+    each is on - their names tell them apart."""
     return tuple(provider.get(k) for k in ("dim", "x", "y", "z", "name"))
 
 

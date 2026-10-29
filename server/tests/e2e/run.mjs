@@ -624,10 +624,14 @@ async function main() {
       return parseFloat(getComputedStyle(fill).width) / parseFloat(getComputedStyle(fill.parentElement).width);
     })()`);
     if (Math.abs(ratio - 0.6) > 0.02) throw new Error(`bar replayed from 0 on redraw: at ${ratio} of its track, not 0.6`);
-    // Unmoved past CRAFT_STALL_SECONDS: stuck, with a chip to jump to it.
+    // Nothing back past CRAFT_STALL_SECONDS: stalled, shown as stuck,
+    // saying why and where the machine is, with a chip to jump to it.
     await report(4);
     await waitFor('stuck', `$$('#ingredientsTree li.job-node')[1].classList.contains('job-stuck')
-      && !$('#ingredientsStuck').hidden && $('#ingredientsStuck').textContent.includes('Iron Dust')`);
+      && !$('#ingredientsStuck').hidden && $('#ingredientsStuck').textContent.includes('Iron Dust')
+      && $('#ingredientsStuck .plan-chip').title.startsWith('nothing back from its machine for')
+      && $$('#ingredientsTree li.job-node')[1].querySelector(':scope > .plan-row .job-step-note').textContent
+        .match(/^nothing back from its machine for \\d+s · -?\\d+, -?\\d+, -?\\d+/)`);
     const tint = await evaluate(`(() => {
       const bg = (li) => getComputedStyle(li.querySelector(':scope > .plan-row')).backgroundColor;
       const [root, stuck] = $$('#ingredientsTree li.job-node');
@@ -798,6 +802,11 @@ async function main() {
     await waitFor('stats shown', `$('#craftStatsBody .stats-summary')?.textContent.includes('crafts')
       && byText('#craftStatsBody .item-history-link', 'Iron Ingot')
       && $('#craftStatsBody').textContent.includes('CPU W01')`);
+    // J01's stalled dust (the live tree's step above), at its Macerator.
+    await waitFor('held up at', `(() => {
+      const list = $$('#craftStatsBody .craft-history-list').find((l) => l.textContent.includes('Held up at'));
+      return list && list.textContent.includes('Macerator') && list.textContent.includes('nothing back');
+    })()`);
     await click(`$('#craftStatsRange [data-range="day"]')`);
     await waitFor('day range', `$('#craftStatsRange [data-range="day"]').classList.contains('active')
       && byText('#craftStatsBody .item-history-link', 'Iron Ingot')`);

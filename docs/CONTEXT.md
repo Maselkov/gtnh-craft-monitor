@@ -694,6 +694,38 @@ goes idle) is `finished`, anything more is `incomplete`. That covers
 cancellation and interruption without claiming more certainty than the
 data supports.
 
+**Held-up steps read pushes and returns apart** (`gcm/bottlenecks.py`).
+In AE2's `CraftingCPUCluster`, pending is `tasks` (runs not yet pushed)
+and active is `waitingFor` (outputs pushed and not back), so a push moves
+an amount from one to the other, and only a fall in their sum is a
+machine giving something back. Progress's `moved_at` only sees that sum;
+tracking's per-step `flow` keeps pending and active apart, with when the
+step was last pushed (`pushed_at`), since when what's out has waited
+(`out_since`), and when a machine last gave it something (`gave_at`).
+This reading comes from AE2's source and hasn't been checked on a live
+network. If it's wrong, blocked and busy are what break.
+Choices worth knowing:
+- Blocked needs the inputs in `storedItems()` (`ready_since`, set on full
+  reports) as well as an unmoving pending. Without them it's waiting, and
+  the hold-up is further down the tree. Stalled waits
+  `CRAFT_STALL_SECONDS`, longer than the others' `CRAFT_BLOCK_GRACE_SECONDS`,
+  as it's the one a long recipe looks like.
+- A step's machine comes from the job's own pattern, chosen as the live
+  tree chooses it (`job_tree.used_by_job`), without building the tree,
+  because accounting runs after every report for every busy CPU. Several
+  candidate providers split the time between them.
+- Two interfaces on one machine: OC reports where an interface is, not
+  what it faces. Same name and Manhattan distance 2 (both touching one
+  block) counts as one machine, but only for "busy". The totals stay per
+  interface, which is the thing a player can find and fix. The check is
+  pairwise, not transitive, so a row of identical machines doesn't merge.
+- Time is counted only past a state's threshold (`held_for`): a report
+  that first finds a step blocked adds what's past the grace, not the
+  whole gap since the last report. Each report adds at most
+  `MAX_STEP_SECONDS`, so a gap in the reports isn't counted as waiting.
+- `provider_stalls` is per hour and unpruned, like `craft_events`: one
+  row per provider that held something up that hour.
+
 **Craft completion tracking is entirely server-side now**, not
 client/localStorage-based (an earlier version was - see git history /
 the long chat this came from if curious about that iteration). Two

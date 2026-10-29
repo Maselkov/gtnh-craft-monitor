@@ -1,7 +1,7 @@
 """The live crafting tree of a busy CPU's job (gcm/job_tree.py) and its
 routes."""
 
-from gcm import config, job_tree, tracking
+from gcm import bottlenecks, config, job_tree, tracking
 from test_patterns_api import run_pattern_scan
 
 
@@ -121,17 +121,19 @@ class TestSteps:
         assert (steps[key(PLATE)]["left"], steps[key(PLATE)]["crafting"], steps[key(PLATE)]["state"]) == (4, 1, "active")
         assert (steps[key(BOLT)]["left"], steps[key(BOLT)]["state"]) == (0, "done")
 
-    def test_a_crafting_step_that_stops_moving_is_stuck(self, client, api_headers, monkeypatch):
+    def test_a_crafting_step_that_stops_moving_is_stalled(self, client, api_headers, monkeypatch):
         start_job(client, api_headers)
         moved = job_tree.steps("A1")[key(BOLT)]["moved_at"]
         # The same numbers again: nothing moved.
         report(client, api_headers, pending=[stack("Gear", GEAR[1], 2), stack("Plate", PLATE[1], 8)],
                active=[stack("Bolt", BOLT[1], 4)])
-        steps = job_tree.steps("A1", now=moved + config.CRAFT_STALL_SECONDS - 1)
+        steps = bottlenecks.steps("A1", now=moved + config.CRAFT_STALL_SECONDS - 1)
         assert steps[key(BOLT)]["moved_at"] == moved and steps[key(BOLT)]["state"] == "active"
-        steps = job_tree.steps("A1", now=moved + config.CRAFT_STALL_SECONDS)
-        assert steps[key(BOLT)]["state"] == "stuck"
-        assert steps[key(PLATE)]["state"] == "waiting"  # not crafting: waiting, not stuck
+        steps = bottlenecks.steps("A1", now=moved + config.CRAFT_STALL_SECONDS)
+        assert steps[key(BOLT)]["state"] == "stalled"
+        assert steps[key(BOLT)]["since"] == moved
+        assert steps[key(BOLT)]["machines"] == [{"name": "Lathe", "x": 3, "y": 0, "z": 0, "dim": 0}]
+        assert steps[key(PLATE)]["state"] == "waiting"  # not crafting, and no ingots in the CPU
 
     def test_idle_cpu(self, client, api_headers):
         start_job(client, api_headers)

@@ -102,7 +102,8 @@ Everything else:
 | `VAPID_SUBJECT` | the page's URL | Contact given to push services with each notification: a `mailto:` or `https:` URL. |
 | `AUTOCRAFT_KEEP_IDLE_CPUS` | `1` | Keep-in-stock crafts only start while more crafting CPUs than this are idle; see [Stock rules](using.md#stock-rules). |
 | `AUTOCRAFT_RETRY_SECONDS` | `1800` | How long a keep-in-stock target waits after a failed craft before trying again. |
-| `CRAFT_STALL_SECONDS` | `600` | How long a step of a running job can be crafting without moving before its live tree calls it stuck. |
+| `CRAFT_STALL_SECONDS` | `600` | How long a step of a running job can wait for its machine to give anything back, with nothing else there moving, before it counts as held up ("nothing back from its machine"); see [Crafts tab](using.md#crafts-tab). |
+| `CRAFT_BLOCK_GRACE_SECONDS` | `60` | How long a step can go unsent with its inputs ready, or wait on a machine busy with another step, before it counts as held up. |
 | `HISTORY_HOURLY_AFTER_DAYS` | `30` | Stock history older than this keeps one value per item per hour. `0`: off. |
 | `HISTORY_DAILY_AFTER_DAYS` | `365` | ...and older than this, one per day. `0`: off. |
 | `MAX_SCAN_ITEMS` | `100000` | Most items (each NBT variant counts) one network scan may send; a bigger scan is refused, and the Status dialog says so. |

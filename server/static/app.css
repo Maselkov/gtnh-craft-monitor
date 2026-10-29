@@ -2292,6 +2292,9 @@ details.stock-rules {
 .job-provider:not(:empty) + .job-step-note:not(:empty)::before {
   content: " · ";
 }
+.job-machine-place {
+  white-space: nowrap;
+}
 .job-bar {
   height: 3px;
   margin-top: 3px;

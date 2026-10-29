@@ -80,9 +80,14 @@ PUBLIC_URL = os.environ.get("PUBLIC_URL", "").strip().rstrip("/")
 AUTOCRAFT_KEEP_IDLE_CPUS = int(os.environ.get("AUTOCRAFT_KEEP_IDLE_CPUS", "1"))
 AUTOCRAFT_RETRY_SECONDS = int(os.environ.get("AUTOCRAFT_RETRY_SECONDS", "1800"))
 
-# The live crafting tree (gcm/job_tree.py): a step that's crafting but
-# hasn't moved for this long is shown as stuck.
+# Held-up steps of a running job (gcm/bottlenecks.py), in its live tree
+# and the Crafts tab's statistics: a step with nothing back from its
+# machine for CRAFT_STALL_SECONDS, and nothing else there moving, is
+# stalled. One that can't be sent to its machine, or whose machine is
+# busy for another step, counts after CRAFT_BLOCK_GRACE_SECONDS - shorter,
+# as a long recipe looks like the first but not like the others.
 CRAFT_STALL_SECONDS = int(os.environ.get("CRAFT_STALL_SECONDS", "600"))
+CRAFT_BLOCK_GRACE_SECONDS = int(os.environ.get("CRAFT_BLOCK_GRACE_SECONDS", "60"))
 
 # The most items (each NBT variant counts) and patterns one scan may send
 # (gcm/inventory.py, gcm/patterns.py). A scan past either is abandoned, so

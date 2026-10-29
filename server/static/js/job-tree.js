@@ -10,11 +10,11 @@
 
 import { itemMatchesSearch, parseSearchQuery } from './search.js';
 import { ensureLoaded, flashRow, graft, matchingEntries, matchTree, nodeAt, openAbove, searchNoteText } from './tree-nav.js';
-import { delegateActions, escapeHtml, formatDuration, formatQty, iconClass, iconUrl } from './util.js';
+import { delegateActions, escapeHtml, formatDuration, formatQty, iconClass, iconUrl, machinePlace } from './util.js';
 
 let cpu = null;            // the CPU shown, null when the tree isn't
 let treeData = null;       // the last /api/crafts/<cpu>/tree answer
-let steps = {};            // item key -> {name, total, left, crafting, moved_at, state}
+let steps = {};            // item key -> {name, total, left, crafting, moved_at, state, ...}
 let clockSkew = 0;         // server's clock minus ours, for "no progress for"
 let openState = new Map(); // tree path -> open, where the user toggled it
 let branchesLoading = new Set();
@@ -31,6 +31,28 @@ const REVEAL_DELAY_MS = 250;
 const REVEAL_KEYS = 100;
 
 // ---------- pure helpers (tested under server/tests/js/) ----------
+
+// A step held up at its machine (gcm/bottlenecks.py): shown, and
+// counted, as stuck.
+const HELD = new Set(['blocked', 'busy', 'stalled']);
+
+export function shownState(state) {
+  return HELD.has(state) ? 'stuck' : state;
+}
+
+// Why a held-up step isn't moving, for its row and its stuck chip;
+// null for any other. `cpuName`: the CPU the tree is of.
+export function heldNote(s, now, cpuName) {
+  if (!HELD.has(s.state)) return null;
+  const since = s.since != null ? ` for ${formatDuration(now - s.since)}` : '';
+  if (s.state === 'blocked') return `can't be sent to its machine${since}`;
+  if (s.state === 'busy') {
+    const w = s.with || {};
+    const whose = w.cpu === cpuName ? `this job's ${w.name}` : `CPU ${w.cpu}'s ${w.name}`;
+    return `machine busy with ${whose}${since}`;
+  }
+  return `nothing back from its machine${since}`;
+}
 
 // "1.2k / 4k" made of the step's total.
 export function stepText(s) {
@@ -50,9 +72,9 @@ export function branchCounts(node, stepsByKey) {
   while (stack.length) {
     const n = stack.pop();
     const s = stepsByKey[n.step];
-    if (s && !seen.has(n.step) && s.state in counts) {
+    if (s && !seen.has(n.step) && shownState(s.state) in counts) {
       seen.add(n.step);
-      counts[s.state]++;
+      counts[shownState(s.state)]++;
     }
     stack.push(...(n.children || []));
   }
@@ -160,7 +182,7 @@ function patch() {
     const s = steps[li.dataset.step];
     const node = nodeAt(treeData.tree.root, li.dataset.pos);
     const storage = li.classList.contains('job-storage');
-    const state = storage ? 'storage' : (s ? s.state : 'unknown');
+    const state = storage ? 'storage' : (s ? shownState(s.state) : 'unknown');
     for (const name of ['done', 'active', 'stuck', 'waiting']) li.classList.toggle(`job-${name}`, state === name);
     const row = li.querySelector(':scope > .plan-row');
     const text = row.querySelector('.job-step-text');
@@ -171,7 +193,12 @@ function patch() {
     // Each part in its own span, so a shut branch's counts take the
     // colours of the rows they stand for (.job-count-stuck, ...).
     const notes = [];
-    if (state === 'stuck' && s.moved_at) notes.push(['', `no progress for ${formatDuration(now - s.moved_at)}`]);
+    const why = s && !storage ? heldNote(s, now, cpu) : null;
+    if (why) {
+      notes.push(['', why]);
+      const places = (s.machines || []).map(machinePlace).filter(Boolean);
+      if (places.length) notes.push(['job-machine-place', places.join(' or ')]);
+    }
     const shut = node && node.children && node.children.length && !li.querySelector(':scope > ul');
     if (shut) {
       for (const [k, n] of branchCounts(node, steps)) notes.push([`job-count-${k}`, `${n} ${k}`]);
@@ -188,7 +215,8 @@ function patch() {
 
 function renderStuck() {
   const strip = document.getElementById('ingredientsStuck');
-  const stuck = Object.entries(steps).filter(([, s]) => s.state === 'stuck');
+  const stuck = Object.entries(steps).filter(([, s]) => HELD.has(s.state));
+  const now = Date.now() / 1000 + clockSkew;
   strip.hidden = stuck.length === 0;
   if (!stuck.length) {
     strip.innerHTML = '';
@@ -199,7 +227,8 @@ function renderStuck() {
     const places = at[key] || [];
     const counter = jump && jump.key === key && places.length > 1
       ? ` <span class="plan-jump-count">${jump.index + 1}/${places.length}</span>` : '';
-    return `<button class="plan-chip job-stuck-chip" data-action="job-tree-jump" data-key="${escapeHtml(key)}"${places.length ? '' : ' disabled'} title="Show it in the tree"><b>${
+    const title = `${heldNote(s, now, cpu)}. Show it in the tree`;
+    return `<button class="plan-chip job-stuck-chip" data-action="job-tree-jump" data-key="${escapeHtml(key)}"${places.length ? '' : ' disabled'} title="${escapeHtml(title)}"><b>${
       formatQty(s.left)}</b> ${escapeHtml(s.name || '?')}${counter}</button>`;
   }).join('');
 }

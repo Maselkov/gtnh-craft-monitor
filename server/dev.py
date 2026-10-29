@@ -42,16 +42,19 @@ import zlib
 for _name in ("API_KEY", "DATA_DIR", "GTNH_VERSION", "GTNH_TEXTURES", "GAMEDATA_API_URL",
               "GAMEDATA_REPO", "TRUSTED_PROXIES", "VAPID_SUBJECT", "STALE_AFTER_SECONDS", "SESSION_LIFETIME_SECONDS",
               "AUTOCRAFT_KEEP_IDLE_CPUS", "AUTOCRAFT_RETRY_SECONDS", "CRAFT_STALL_SECONDS",
+              "CRAFT_BLOCK_GRACE_SECONDS",
               "WEBHOOK_URLS", "WEBHOOK_EVENTS", "WEBHOOK_HOSTS", "PUBLIC_URL", "SCRIPTS_REPO",
               "HISTORY_HOURLY_AFTER_DAYS", "HISTORY_DAILY_AFTER_DAYS"):
     os.environ.pop(_name, None)
 # Read by gcm.config at import: session cookies over plain http.
 os.environ["SESSION_COOKIE_SECURE"] = "0"
-# The crafting tree calls a step stuck after this long unmoved: well
-# within T00's stalled bolts (CHAIN_JOB), so the dev page shows one.
+# The crafting tree calls a step stalled after this long with nothing
+# back: well within T00's held bolts (CHAIN_JOB), so the dev page shows
+# one. Blocked and busy steps (gcm/bottlenecks.py) count after the grace.
 os.environ["CRAFT_STALL_SECONDS"] = "30"
+os.environ["CRAFT_BLOCK_GRACE_SECONDS"] = "10"
 
-from gcm import create_app, db, icons, store  # noqa: E402
+from gcm import bottlenecks, create_app, db, icons, patterns, store  # noqa: E402
 
 API_KEY = "dev-" + secrets.token_hex(24)
 TICK_SECONDS = 2
@@ -458,6 +461,27 @@ def backfill_history(days=7):
             "INSERT INTO craft_events (cpu_name, item_label, item_icon, status, progress_at_end, occurred_at, "
             "started_at, item_mod, item_internal, item_damage, auto) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", events
         )
+
+    # Time jobs were held up at some of the dev patterns' machines, for
+    # the statistics' Held up at list: the lathe most, as T00 and T01
+    # share it.
+    held = {"Lathe T3:HV": 0.5, "Bending Machine T4:EV": 0.2, "Fluid Solidifier {Plate}": 0.1,
+            "Circuit Assembler": 0.05}
+    providers = {p["provider"]["name"]: p["provider"] for p in pattern_scan()}
+    for hour in range(days * 24):
+        at = (now // 3600 - days * 24 + hour) * 3600
+        rows = []
+        for name, chance in held.items():
+            if random.random() < chance:
+                where = providers[name]
+                minutes = random.uniform(1, 25)
+                rows.append((bottlenecks.key_text(patterns.provider_key(where)), where, {
+                    "blocked": minutes * 60 * random.random() * (name != "Lathe T3:HV"),
+                    "busy": minutes * 60 * random.random() * (name == "Lathe T3:HV"),
+                    "stalled": minutes * 60 * random.random() * 0.5,
+                    "critical": minutes * 60 * random.random() * 0.6, "jobs": random.randint(1, 3)}))
+        if rows:
+            store.bottlenecks.add(at, rows)
     return stock
 
 
@@ -490,7 +514,7 @@ class Cpu:
         starts once the stage before is done); `raw` [(name, amount)] in
         the CPU's storage from the start, used up as the first stage
         goes; `stuck` (name, ticks) holds that step still a while,
-        crafting but not moving."""
+        crafting but not moving, once some of it has come back."""
         items = {name: [0, 0, amount] for name, amount in raw}
         for stage in stages:
             for name, amount in stage:
@@ -506,13 +530,17 @@ class Cpu:
         for name in stage:
             counts = items[name]
             stuck = self.job["stuck"]
-            if stuck and stuck[0] == name and counts[1]:
+            if stuck and stuck[0] == name and counts[1] and counts[2]:
                 stuck[1] -= 1
                 if stuck[1] > 0:
                     continue
                 self.job["stuck"] = None
             if counts[1]:
-                counts[1] = max(0, counts[1] - random.randint(1, max(1, counts[1] // 2 + 1)))
+                # Given back to the CPU, as a machine's output is: so a
+                # later stage's inputs show up in its storage.
+                back = min(counts[1], random.randint(1, max(1, counts[1] // 2 + 1)))
+                counts[1] -= back
+                counts[2] += back
             if counts[0] and random.random() < 0.6:
                 moved = random.randint(1, max(1, counts[0] // 3 + 1))
                 counts[0] -= moved
@@ -590,11 +618,14 @@ def random_ingredients(count, exclude):
 BIG_JOB = ("Dangote Distillus", 30)
 # The job that restarts on T00 forever: Inconel-625 Gears over the dev
 # PATTERNS chain, for the live crafting tree - plates and bolts first,
-# then the gears, from ingots in the CPU's storage. Its bolts stall for a
-# while, long enough for the low CRAFT_STALL_SECONDS set above to call
-# them stuck.
+# then the gears, from ingots in the CPU's storage. Its bolts are held a
+# while: busy while T01's bolts (BOLT_JOB) come off the same lathe,
+# stalled once those are done, and the gears blocked meanwhile, their
+# plates and bolts ready but not sent.
 CHAIN_JOB = ("Inconel-625 Gear", [[("Inconel-625 Plate", 64), ("Steel Bolt", 16)], [("Inconel-625 Gear", 16)]],
              [("Inconel-625 Ingot", 64), ("Iron Ingot", 4)], ("Steel Bolt", 40))
+# Restarts on T01 forever: bolts on the Lathe T3:HV, which T00 needs too.
+BOLT_JOB = ("Steel Bolt", [[("Steel Bolt", 96)]], [("Iron Ingot", 24)])
 # Requests the fake game turns down, and why - so a failed keep-in-stock
 # target has something to show.
 FAILS = {"Inconel-625 Plate": "request failed (missing resources?)"}
@@ -650,9 +681,10 @@ class FakeGame:
         self.client = app.test_client()
         self.cpus = [Cpu("M00", 131072, 256), Cpu("a00", 16384, 16), Cpu("a01", 16384, 16),
                      Cpu("a02", 16384, 16), Cpu("a03", 16384, 16), Cpu("B01", 65536, 64),
-                     Cpu("T00", 65536, 64)]
+                     Cpu("T00", 65536, 64), Cpu("T01", 65536, 64)]
         self.cpus[0].start(BIG_JOB[0], random_ingredients(BIG_JOB[1], BIG_JOB[0]))
-        self.cpus[-1].start_chain(*CHAIN_JOB)
+        self.cpus[-2].start_chain(*CHAIN_JOB)
+        self.cpus[-1].start_chain(*BOLT_JOB)
         for cpu in self.cpus[1:4]:
             out = random.choice(SMALL_JOBS)
             cpu.start(out, random_ingredients(random.randint(1, 6), out))
@@ -682,7 +714,9 @@ class FakeGame:
                 cpu.start(BIG_JOB[0], random_ingredients(BIG_JOB[1], BIG_JOB[0]))
             elif cpu.job is None and cpu.name == "T00" and cpu.idle_ticks >= 5:
                 cpu.start_chain(*CHAIN_JOB)
-            elif cpu.job is None and cpu.name not in ("B01", "T00") and cpu.idle_ticks >= 8 and random.random() < 0.1:
+            elif cpu.job is None and cpu.name == "T01" and cpu.idle_ticks >= 20:
+                cpu.start_chain(*BOLT_JOB)
+            elif cpu.job is None and cpu.name not in ("B01", "T00", "T01") and cpu.idle_ticks >= 8 and random.random() < 0.1:
                 out = random.choice(SMALL_JOBS)
                 cpu.start(out, random_ingredients(random.randint(1, 6), out))
         self.answer_requests()
