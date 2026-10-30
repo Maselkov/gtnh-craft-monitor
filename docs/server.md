@@ -134,6 +134,12 @@ which is only appropriate on a trusted LAN. To expose it to the internet:
 5. Use an `https://` `SERVER_URL` in `/home/config.lua` so the API key isn't sent
    in cleartext.
 
+The server accepts up to 500 open connections. A proxy keeps idle
+connections to it open for reuse, and opening a page full of icons can make
+it open many at once. If the server log says `total open connections reached
+the connection limit`, the proxy is holding more than that: cap its idle
+upstream connections (nginx `keepalive`, Caddy `keepalive_idle_conns_per_host`).
+
 HTTPS is also required for desktop notifications when the page is opened from
 another device (see [Pins and notifications](using.md#pins-and-notifications)).
 

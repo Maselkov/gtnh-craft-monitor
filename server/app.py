@@ -110,7 +110,12 @@ if __name__ == "__main__":
     # decides which peers to trust in gcm/security.py.
     # max_request_body_size: waitress's own cap (1 GB) is below the biggest
     # backup an admin can restore; every other route keeps Flask's 1 MB.
+    # connection_limit: waitress's default of 100 is too few behind a
+    # reverse proxy. A page full of icons arrives over HTTP/2 as a burst
+    # the proxy fans out into one upstream connection per request, then
+    # keeps them all open idle; at the limit waitress stops accepting and
+    # every new connection (the OC computer's too) waits for one to close.
     serve(
         app, host="0.0.0.0", port=port, threads=8, clear_untrusted_proxy_headers=False,
-        max_request_body_size=backup.RESTORE_MAX_BYTES,
+        max_request_body_size=backup.RESTORE_MAX_BYTES, connection_limit=500,
     )
