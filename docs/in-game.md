@@ -283,6 +283,7 @@ the output, then remove it again.
 | `POLL_SECONDS` | `60` | How often stored EU is read and posted |
 | `COMPONENT_ADDRESS` | `nil` | Pick a specific `gt_machine` if several are connected |
 | `MACHINES` | `nil` | Report several machines instead, each with its own chart: see below |
+| `WIRELESS_NAME` | `"Wireless"` | Name of the wireless EU network's chart; `false` leaves it out. See below |
 | `HTTP_TIMEOUT_SECONDS` | `20` | Give up on a request to the server that stalls this long |
 | `SHOW_STATUS` | `false` | Draw a status screen |
 
@@ -302,6 +303,12 @@ Each is read and posted every poll. A machine without a name keeps the
 history recorded before `MACHINES` was set, so leave the one you were
 already charting unnamed. The addresses are the ones `component.list("gt_machine")`
 prints, or that the script lists when it finds several.
+
+An LSC also reports your wireless EU network (your team's, if you're in
+one). Once the network holds any EU, it gets its own chart, named
+`WIRELESS_NAME`, with no Adapter or setting needed. That holds whether the
+LSC's own wireless mode is on or off. A base that doesn't use wireless
+never sees it.
 
 ### network_browser.lua
 

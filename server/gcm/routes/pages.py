@@ -120,8 +120,11 @@ def _build_og_tags(path, args):
         title = f"Power · {machine}" if machine else "Power"
         if latest:
             stored, capacity = latest[1], latest[2]
-            pct = round(stored / capacity * 100, 1) if capacity else 0
-            desc = f"{charts.format_qty(stored)} EU stored of {charts.format_qty(capacity)} EU ({pct}%)"
+            if capacity:
+                pct = round(stored / capacity * 100, 1)
+                desc = f"{charts.format_qty(stored)} EU stored of {charts.format_qty(capacity)} EU ({pct}%)"
+            else:  # no capacity: the wireless network
+                desc = f"{charts.format_qty(stored)} EU stored"
             _, rows = store.power.range_readings("day", machine)
             image = (
                 f"{base}/api/power/chart.png?range=day&machine={quote(machine, safe='')}"

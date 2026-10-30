@@ -145,6 +145,9 @@ export function setupImageErrorRemoval() {
 export function formatQty(n) {
   if (n == null) return '?';
   const abs = Math.abs(n);
+  if (abs >= 1e21) return n.toExponential(2);
+  if (abs >= 1e18) return (n / 1e18).toFixed(2) + 'E';
+  if (abs >= 1e15) return (n / 1e15).toFixed(2) + 'P';
   if (abs >= 1e12) return (n / 1e12).toFixed(2) + 'T';
   if (abs >= 1e9) return (n / 1e9).toFixed(2) + 'G';
   if (abs >= 1e6) return (n / 1e6).toFixed(2) + 'M';

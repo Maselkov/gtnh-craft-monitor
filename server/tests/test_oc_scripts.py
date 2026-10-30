@@ -129,6 +129,21 @@ def test_power_reading_lands(game, client):
     assert latest["avg_eu_in_5s"] == 1200
 
 
+def test_wireless_network_lands_as_its_own_machine(game, client):
+    game.lua(
+        """
+        gt.new(env, { stored = 4e9, capacity = 1e10, wireless_eu = '12345678901234567890123' })
+        env:start_service("power_monitor")
+        """
+    )
+    game.run(1)
+    data = client.get("/api/power").get_json()
+    assert [m["name"] for m in data["machines"]] == ["", "Wireless"]
+    wireless = client.get("/api/power?machine=Wireless").get_json()["latest"]
+    assert wireless["stored"] == pytest.approx(1.2345678901234568e22)
+    assert wireless["capacity"] == 0
+
+
 def test_network_scan_lands(game, client):
     game.write_file("/home/item_catalog.txt", "testmod:a\ntestmod:b\n")
     game.lua(

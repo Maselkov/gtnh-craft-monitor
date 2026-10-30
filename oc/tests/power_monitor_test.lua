@@ -24,6 +24,82 @@ test("posts stored, capacity and the sensor's trend fields", function()
   } })
 end)
 
+local function wireless(env)
+  local out = {}
+  for _, r in ipairs(readings(env)) do
+    if r.machine == "Wireless" then out[#out + 1] = r end
+  end
+  return out
+end
+
+test("posts the wireless network as its own machine, with no capacity", function()
+  local env = t.env()
+  gt.new(env, { stored = 4e9, capacity = 1e10, wireless_eu = "123456789012345678901234" })
+  env:start_service("power_monitor")
+  env:run({ seconds = 1 })
+  local r = readings(env)
+  t.eq(#r, 2)
+  t.eq(r[1].stored, 4000000000)
+  t.eq(r[2].machine, "Wireless")
+  t.eq(r[2].capacity, 0)
+  -- Past 2^63, so only as exact as a float.
+  t.truthy(math.abs(r[2].stored / 1.23456789012345678901234e23 - 1) < 1e-12)
+end)
+
+test("a wireless network with no EU isn't posted", function()
+  local env = t.env()
+  gt.new(env, { wireless_eu = "0" })
+  env:start_service("power_monitor")
+  env:run({ seconds = 1 })
+  t.eq(#readings(env), 1)
+  t.eq(#wireless(env), 0)
+end)
+
+test("once posted, the wireless network keeps being posted at 0 EU", function()
+  local env = t.env()
+  local machine = gt.new(env, { wireless_eu = "5000" })
+  env:start_service("power_monitor")
+  env:run({ seconds = 1 })
+  machine.wireless_eu = "0"
+  env:run({ seconds = 60 })
+  local w = wireless(env)
+  t.eq(#w, 2)
+  t.eq(w[1].stored, 5000)
+  t.eq(w[2].stored, 0)
+end)
+
+test("WIRELESS_NAME = false leaves the wireless network out", function()
+  local env = t.env({ config = { power_monitor = { WIRELESS_NAME = false } } })
+  gt.new(env, { wireless_eu = "5000" })
+  env:start_service("power_monitor")
+  env:run({ seconds = 1 })
+  t.eq(#readings(env), 1)
+end)
+
+test("the wireless network is posted once, under WIRELESS_NAME, with several LSCs", function()
+  local env = t.env({ config = { power_monitor = { WIRELESS_NAME = "Team grid", MACHINES = {
+    { address = "lsc-1", name = "A" }, { address = "lsc-2", name = "B" },
+  } } } })
+  gt.new(env, { address = "lsc-1" })
+  gt.new(env, { address = "lsc-2", wireless_eu = "7000" })
+  env:start_service("power_monitor")
+  env:run({ seconds = 1 })
+  local r = readings(env)
+  t.eq(#r, 3)
+  t.eq(r[3], { machine = "Team grid", stored = 7000, capacity = 0 })
+end)
+
+test("the status screen shows the wireless network without a capacity", function()
+  local env = t.env({ config = { power_monitor = { SHOW_STATUS = true } } })
+  gt.new(env, { stored = 4e9, capacity = 1e10, wireless_eu = "5000" })
+  env:start_service("power_monitor")
+  env:run({ seconds = 1 })
+  t.truthy(env:printed("--- Wireless ---"))
+  t.truthy(env:printed("Stored:       5000 EU"))
+  t.truthy(env:printed("Level:        40.0%"))
+  t.eq(env:alive(), 1)
+end)
+
 test("polls every POLL_SECONDS", function()
   local env = t.env({ config = { power_monitor = { POLL_SECONDS = 30 } } })
   gt.new(env)
