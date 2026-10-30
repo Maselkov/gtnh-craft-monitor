@@ -9,6 +9,9 @@ test('formatQty abbreviates like the in-game terminal', () => {
   assert.equal(formatQty(2500000), '2.50M');
   assert.equal(formatQty(-3e9), '-3.00G');
   assert.equal(formatQty(4e12), '4.00T');
+  assert.equal(formatQty(5e15), '5.00P');
+  assert.equal(formatQty(6e18), '6.00E');
+  assert.equal(formatQty(1.234e24), '1.23e+24');
 });
 
 test('escapeHtml covers everything that matters inside an attribute', () => {

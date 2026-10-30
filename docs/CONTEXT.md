@@ -642,6 +642,21 @@ that exact `kekztech...` prefix. Only the 5s window is currently
 surfaced in the UI (5m/1h are sent and stored server-side regardless,
 in case they're wanted later).
 
+**The LSC also reports the wireless EU network**, found by disassembling
+`MTELapotronicSuperCapacitor.getInfoData()` (the same in GT 5.09.50 through
+5.09.54, packs 2.7.3 to 2.9.0-RC-1). It always adds a
+`...lapotronic_super_capacitor.wireless_eu` line, regardless of the wireless mode
+switch (that only controls whether this LSC trades with the network), followed by
+a second line with the same key in standard form. The value is
+`WirelessNetworkManager.getUserEU(owner)`, which goes through
+`SpaceProjectManager.getLeader`, so it's the whole team's network. Its argument is
+built as `EnumChatFormatting.RED + NumberFormat.format(BigInteger)`, so it
+starts with `§c` and uses the server locale's grouping; `power_monitor.lua` keeps
+only the digits of the first match. It's posted as its own machine with
+capacity 0, but only once it has been above 0 in that run, so bases without
+wireless don't get an empty chart; after that it keeps posting at 0, so the
+health dot doesn't go stale. Not yet checked against a real in-game dump.
+
 **A downsampled chart series is not safe to reuse for a "live" readout.**
 The power tab's live stored/capacity/percentage line used to be derived
 from `rows[-1]` of the range-filtered, DOWNSAMPLED chart points - which

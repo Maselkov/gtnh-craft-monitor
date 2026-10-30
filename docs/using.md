@@ -184,6 +184,10 @@ In Discord, a link to the tab previews the latest reading and the day's
 chart.
 The unnamed machine shows as **Main**, and the tab badge follows it.
 
+With an LSC reporting and EU in your wireless network, there's also a
+**Wireless** entry. The network has no capacity, so it shows only stored EU and
+its rate, with no fill. It doesn't count toward the fill on the tab button.
+
 ## Network tab
 
 Every item and fluid in the ME network, with icon, name, and amount (fluids in

@@ -44,6 +44,13 @@
     { address = ..., name = ... }; each is read and POSTed every poll
     with its name, and gets its own chart on the Power tab.
 
+  WIRELESS:
+    A Lapotronic Supercapacitor's sensor information also carries the
+    owner's (or their team's) whole wireless EU network - whatever the
+    LSC's own wireless mode is set to. Once that holds any EU, it's
+    posted every poll too, as a machine named WIRELESS_NAME with no
+    capacity; a base that doesn't use wireless never gets the entry.
+
   SETUP:
     1. Edit the CONFIG block below.
     2. Copy this file to /etc/rc.d/power_monitor.lua.
@@ -111,6 +118,8 @@ local CONFIG = {
                                      -- { address = "...", name = "Turbines" } }. A
                                      -- machine without a name keeps the history
                                      -- reported before MACHINES was set.
+  WIRELESS_NAME = "Wireless",       -- the wireless EU network's chart, read through
+                                     -- an LSC (see WIRELESS above); false turns it off
   HTTP_TIMEOUT_SECONDS = 20,        -- see http.lua's
                                      -- read_response_with_timeout - bails
                                      -- out of a POST if a real, confirmed-
@@ -213,6 +222,24 @@ local function find_sensor_value(info, suffix)
   return nil
 end
 
+-- The wireless network's EU: a BigInteger with a colour code and the
+-- server locale's grouping in front of it ("\194\167c1,234,567" - the
+-- \194\167 is "§" in UTF-8), so everything but its digits is dropped.
+-- The first matching line is the full number; a second one with the
+-- same key repeats it in standard form ("1.23E18").
+local function find_sensor_digits(info, suffix)
+  for _, line in ipairs(info) do
+    if line:find(suffix, 1, true) then
+      local parts = sensor_line_parts(line)
+      if parts[2] then
+        local digits = parts[2]:gsub("\194\167.", ""):gsub("%D", "")
+        return tonumber(digits)
+      end
+    end
+  end
+  return nil
+end
+
 -- time_to.empty's value is free text ("10.06 minutes"), not a clean
 -- number - extract just the leading numeric portion.
 local function find_sensor_text_number(info, suffix)
@@ -245,6 +272,7 @@ local function read_power_trend(gt)
     avg_eu_in_1h = find_sensor_value(info, "avg_eu_in.hour1"),
     avg_eu_out_1h = find_sensor_value(info, "avg_eu_out.hour1"),
     time_to_empty_minutes = find_sensor_text_number(info, "time_to.empty"),
+    wireless_eu = find_sensor_digits(info, "wireless_eu"),
   }
 end
 
@@ -334,10 +362,11 @@ local function draw_machine_status(stored, capacity, post_ok, post_err, read_err
   if read_err then
     print("Read error:   " .. read_err)
   else
-    local pct = capacity > 0 and (stored / capacity * 100) or 0
     print(string.format("Stored:       %.0f EU", stored))
-    print(string.format("Capacity:     %.0f EU", capacity))
-    print(string.format("Level:        %.1f%%", pct))
+    if capacity > 0 then  -- none for the wireless network
+      print(string.format("Capacity:     %.0f EU", capacity))
+      print(string.format("Level:        %.1f%%", stored / capacity * 100))
+    end
   end
   print("Last POST:    " .. (post_ok and "OK" or ("FAILED - " .. tostring(post_err))))
 end
@@ -376,18 +405,32 @@ local function service_loop()
   if not CONFIG.SHOW_STATUS then
     print("[power_monitor] SHOW_STATUS = false - running quietly, no further screen output.")
   end
+  -- Once the wireless network has been posted, it keeps being posted
+  -- even at 0 EU, so its chart and health dot don't go stale.
+  local wireless_seen = false
   while running do
     local results = {}
+    local wireless_eu = nil
     for _, machine in ipairs(machines) do
       local stored, capacity, read_err = read_energy(machine.proxy)
       local post_ok, post_err = false, "read failed"
 
       if not read_err then
-        post_ok, post_err = post_reading(stored, capacity, read_power_trend(machine.proxy), machine.name)
+        local trend = read_power_trend(machine.proxy)
+        wireless_eu = wireless_eu or trend.wireless_eu
+        post_ok, post_err = post_reading(stored, capacity, trend, machine.name)
       end
       results[#results + 1] = {
         name = machine.name, stored = stored, capacity = capacity,
         post_ok = post_ok, post_err = post_err, read_err = read_err,
+      }
+    end
+    if CONFIG.WIRELESS_NAME and wireless_eu and (wireless_eu > 0 or wireless_seen) then
+      wireless_seen = true
+      local post_ok, post_err = post_reading(wireless_eu, 0, nil, CONFIG.WIRELESS_NAME)
+      results[#results + 1] = {
+        name = CONFIG.WIRELESS_NAME, stored = wireless_eu, capacity = 0,
+        post_ok = post_ok, post_err = post_err,
       }
     end
 

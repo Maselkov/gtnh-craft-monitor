@@ -84,6 +84,12 @@ class TestFormatQtyPy:
     def test_trillions(self):
         assert charts.format_qty(4_000_000_000_000) == "4.00T"
 
+    def test_past_trillions(self):
+        # A wireless EU network gets this big.
+        assert charts.format_qty(5e15) == "5.00P"
+        assert charts.format_qty(6e18) == "6.00E"
+        assert charts.format_qty(1.234e24) == "1.23e+24"
+
     def test_small_numbers_unabbreviated(self):
         assert charts.format_qty(42) == "42"
 

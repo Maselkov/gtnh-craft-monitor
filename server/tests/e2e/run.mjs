@@ -857,6 +857,17 @@ async function main() {
     await click(`$('#tabBtnPower')`);
     await waitFor('kept when coming back', `location.search === '?machine=Batteries'
       && $('#powerCurrent').textContent.includes('250 EU')`);
+    // The wireless network: no capacity, so no fill, "/ capacity" or line.
+    await game(base, '/api/power', { stored: 2e18, capacity: 0, machine: 'Wireless' });
+    await click(`$('#powerTab [data-range="day"]')`);
+    await waitFor('wireless button, without a fill', `$$('#powerMachines .range-btn').map((b) => b.textContent).join()
+      === 'Main 30%,Batteries 25%,Wireless'`);
+    await click(`$('#powerMachines [data-machine="Wireless"]')`);
+    await waitFor('wireless shown', `location.search === '?machine=Wireless'
+      && $('#powerCurrent .big').textContent === '2.00E EU'
+      && !$('#powerCurrent').textContent.includes('%')`);
+    await waitFor('no capacity line', `Chart.getChart($('#powerChart')).data.datasets[1].hidden === true`);
+    await waitFor('tab fill leaves it out', `$('#tabBtnPower .tab-fill')?.textContent === '30%'`);
     await click(`$('#powerMachines [data-machine=""]')`);
     await waitFor('main again', `location.pathname === '/power' && location.search === ''
       && $('#powerEta')`);

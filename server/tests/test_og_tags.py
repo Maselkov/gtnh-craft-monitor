@@ -67,6 +67,12 @@ class TestPowerOgTags:
         assert 'og:image" content="' in html
         assert "/api/power/chart.png" in html
 
+    def test_no_capacity_shows_just_stored(self, client, api_headers):
+        # The wireless network, which power_monitor.lua posts with capacity 0.
+        client.post("/api/power", json={"stored": 2e18, "capacity": 0, "machine": "Wireless"}, headers=api_headers)
+        html = client.get("/power?machine=Wireless").get_data(as_text=True)
+        assert '<meta property="og:description" content="2.00E EU stored">' in html
+
     def test_image_url_changes_with_the_chart(self, client, api_headers):
         # Discord's media proxy keeps an image by URL: a new reading must
         # give a new one, and no reading the same one.

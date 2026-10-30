@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fillText, powerEtaText, powerFill } from '../../static/js/power.js';
+import { fillText, formatEU, powerEtaText, powerFill } from '../../static/js/power.js';
 
 test('powerEtaText leads with the ETA, then the hourly rate', () => {
   assert.equal(powerEtaText(null), '');
@@ -32,8 +32,21 @@ test('powerFill weighs each machine by its capacity', () => {
     { t: now, stored: 500, capacity: 1000 },
     { t: now - 3600, stored: 0, capacity: 1e9 },
   ], now), 0.5);
+  // The wireless network has no capacity, so it doesn't count.
+  assert.equal(powerFill([
+    { t: now, stored: 500, capacity: 1000 },
+    { t: now, stored: 2e18, capacity: 0 },
+  ], now), 0.5);
   // ...unless none are reporting, when the last readings still say something.
   assert.equal(powerFill([{ t: now - 3600, stored: 250, capacity: 1000 }], now), 0.25);
+});
+
+test('formatEU reaches the wireless network\'s sizes', () => {
+  assert.equal(formatEU(1234), '1.23k');
+  assert.equal(formatEU(4e12), '4.00T');
+  assert.equal(formatEU(5e15), '5.00P');
+  assert.equal(formatEU(6e18), '6.00E');
+  assert.equal(formatEU(1.234e24), '1.23e+24');
 });
 
 test('fillText rounds, without calling a nearly empty one empty', () => {

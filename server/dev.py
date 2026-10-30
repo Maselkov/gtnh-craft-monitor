@@ -402,6 +402,15 @@ CAPACITY = 1e10
 # A second machine (power_monitor.lua's MACHINES): name, capacity, and
 # how far its daily cycle runs behind the main one's.
 BATTERIES = ("Batteries", 2e8, 6 * 3600)
+# The wireless EU network, read through the LSC: no capacity, and far
+# bigger than any machine.
+WIRELESS = "Wireless"
+
+
+def wireless_reading(ts):
+    """Wireless EU climbing slowly, swinging on a daily cycle."""
+    phase = (ts % 86400) / 86400 * 2 * math.pi
+    return 4e18 + (ts - 1.7e9) * 1e9 + 3e16 * math.sin(phase)
 
 
 def power_reading(ts, capacity=CAPACITY):
@@ -429,6 +438,7 @@ def backfill_history(days=7):
         name, capacity, lag = BATTERIES
         stored, trend = power_reading(ts - lag, capacity)
         store.power.add_reading(ts, stored, capacity, trend, name)
+        store.power.add_reading(ts, wireless_reading(ts), 0, {}, WIRELESS)
 
     rows, stock = [], {}
     for it in CATALOG:
@@ -732,6 +742,7 @@ class FakeGame:
         name, capacity, lag = BATTERIES
         stored, trend = power_reading(time.time() - lag, capacity)
         self.call("POST", "/api/power", {"stored": stored, "capacity": capacity, "machine": name, **trend})
+        self.call("POST", "/api/power", {"stored": wireless_reading(time.time()), "capacity": 0, "machine": WIRELESS})
         if self.ticks % PATTERN_SCAN_EVERY_TICKS == 0:
             self.scan_patterns()
         if self.ticks % SCAN_EVERY_TICKS == 0:

@@ -254,3 +254,10 @@ their icons come from the exported fluids (`fluids_by_key`), not the items.
 GTNewHorizons/OpenComputers#78). If the numeric call fails or reports more
 stored than the capacity, the script falls back to parsing
 `getSensorInformation()`.
+
+A Lapotronic Supercapacitor's `getSensorInformation()` also has a
+`wireless_eu` line: the EU in its owner's wireless network (their team's,
+when they're in one), whether or not the LSC's own wireless mode is on.
+Once that's above 0, the script posts it as one more machine with a
+capacity of 0, which the page reads as "no capacity". The value can be
+past 2⁶³, so it's sent as a float and loses its last digits.

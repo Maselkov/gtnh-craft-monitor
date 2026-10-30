@@ -94,6 +94,12 @@ def format_qty(n):
         return "0"
     n = float(n)
     a = abs(n)
+    if a >= 1e21:
+        return f"{n:.2e}"
+    if a >= 1e18:
+        return f"{n/1e18:.2f}E"
+    if a >= 1e15:
+        return f"{n/1e15:.2f}P"
     if a >= 1e12:
         return f"{n/1e12:.2f}T"
     if a >= 1e9:

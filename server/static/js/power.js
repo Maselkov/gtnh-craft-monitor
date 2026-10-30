@@ -39,9 +39,13 @@ export function tickPowerSourceLine() {
   el.textContent = `Updated ${age}s ago`;
 }
 
-function formatEU(n) {
+export function formatEU(n) {
   if (n == null) return '?';
   const abs = Math.abs(n);
+  // The wireless network's EU runs far past T.
+  if (abs >= 1e21) return n.toExponential(2);
+  if (abs >= 1e18) return (n / 1e18).toFixed(2) + 'E';
+  if (abs >= 1e15) return (n / 1e15).toFixed(2) + 'P';
   if (abs >= 1e12) return (n / 1e12).toFixed(2) + 'T';
   if (abs >= 1e9) return (n / 1e9).toFixed(2) + 'G';
   if (abs >= 1e6) return (n / 1e6).toFixed(2) + 'M';
@@ -204,10 +208,13 @@ function renderPower(data) {
   document.getElementById('powerConnectNote').hidden = Boolean(data.latest);
 
   if (data.latest) {
-    const pct = data.latest.capacity > 0 ? (data.latest.stored / data.latest.capacity * 100) : 0;
+    const { stored, capacity } = data.latest;
+    // No capacity: the wireless network, which holds any amount.
+    const ofCapacity = capacity > 0
+      ? ` / ${formatEU(capacity)} EU (${(stored / capacity * 100).toFixed(1)}%)` : '';
     const trendHtml = ' ' + buildPowerTrendHtml(data.latest);
     document.getElementById('powerCurrent').innerHTML =
-      `<span class="big">${formatEU(data.latest.stored)} EU</span> / ${formatEU(data.latest.capacity)} EU (${pct.toFixed(1)}%)${trendHtml}`;
+      `<span class="big">${formatEU(stored)} EU</span>${ofCapacity}${trendHtml}`;
     const eta = document.createElement('div');
     eta.className = 'power-eta';
     eta.id = 'powerEta';
@@ -233,6 +240,7 @@ function renderPower(data) {
   // tick spacing on a category axis.
   const storedData = points.map(p => ({ x: p.t * 1000, y: p.stored }));
   const capacityData = points.map(p => ({ x: p.t * 1000, y: p.capacity }));
+  const noCapacity = points.every(p => !(p.capacity > 0));
 
   const nowMs = Date.now();
   const rangeSeconds = CHART_RANGE_SECONDS_JS[data.range];
@@ -248,6 +256,7 @@ function renderPower(data) {
   if (powerChart) {
     powerChart.data.datasets[0].data = storedData;
     powerChart.data.datasets[1].data = capacityData;
+    powerChart.data.datasets[1].hidden = noCapacity;
     powerChart.options.scales.x.min = axisMin;
     powerChart.options.scales.x.max = axisMax;
     powerChart.update('none');
@@ -274,6 +283,7 @@ function renderPower(data) {
           data: capacityData,
           borderColor: 'rgba(140,140,140,0.5)',
           borderDash: [4, 4],
+          hidden: noCapacity,
           fill: false,
           pointRadius: 0,
           borderWidth: 1,
@@ -291,7 +301,10 @@ function renderPower(data) {
       // has no %), making the percentage seem like it never appears.
       interaction: { mode: 'index', axis: 'x', intersect: false },
       plugins: {
-        legend: { labels: { color: '#8a8f98' } },
+        // No Capacity entry for a machine without one (the wireless
+        // network). dataset.hidden is only ever set above; a legend
+        // click hides a line through the chart's own meta instead.
+        legend: { labels: { color: '#8a8f98', filter: (item, data) => !data.datasets[item.datasetIndex].hidden } },
         tooltip: {
           callbacks: {
             label: (item) => {
@@ -302,7 +315,8 @@ function renderPower(data) {
               // plain number, on a genuine time scale.
               if (item.datasetIndex === 0) {
                 const capacity = item.chart.data.datasets[1].data[item.dataIndex].y;
-                const pct = capacity > 0 ? (item.parsed.y / capacity * 100) : 0;
+                if (!(capacity > 0)) return `${item.dataset.label}: ${formatEU(item.parsed.y)} EU`;
+                const pct = item.parsed.y / capacity * 100;
                 return `${item.dataset.label}: ${formatEU(item.parsed.y)} EU (${pct.toFixed(1)}%)`;
               }
               return `${item.dataset.label}: ${formatEU(item.parsed.y)} EU`;
