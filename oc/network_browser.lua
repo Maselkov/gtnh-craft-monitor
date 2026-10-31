@@ -467,6 +467,15 @@ local function sync_catalog(version)
   debug_log("item catalog updated to " .. version)
 end
 
+-- The ME Interface Terminal patterns are read through (see Pattern
+-- scans below), or nil.
+local function find_interface_terminal()
+  for address in component.list("me_interface_terminal", true) do -- luacheck: ignore 512 (the first one)
+    return component.proxy(address)
+  end
+  return nil
+end
+
 -- Returns ok, result-or-error-message. On success, result is
 -- {total_items=, total_errors=}.
 local function run_scan(me)
@@ -708,7 +717,15 @@ local function run_scan(me)
   end
 
   set_phase("Calling scan/finish...")
-  local finishPayload = json_encode({ scan_token = scanToken, chunks_sent = chunksSent, total_errors = totalErrors })
+  -- Whether there's a terminal to read patterns with, so the page can
+  -- suggest one instead of waiting for a pattern scan. Left out with
+  -- pattern scans turned off.
+  local terminal
+  if (CONFIG.PATTERN_SCAN_INTERVAL_SECONDS or 0) > 0 then
+    terminal = find_interface_terminal() ~= nil
+  end
+  local finishPayload = json_encode({ scan_token = scanToken, chunks_sent = chunksSent,
+    total_errors = totalErrors, interface_terminal = terminal })
   local ok2, result2 = post_json("/scan/finish", finishPayload)
   if not ok2 then
     debug_log("scan/finish FAILED: " .. tostring(result2))
@@ -755,13 +772,6 @@ end
 -- crafting plan needs to plan the way AE2 does.
 
 local MAX_PATTERN_TAG_BYTES = 8192
-
-local function find_interface_terminal()
-  for address in component.list("me_interface_terminal", true) do -- luacheck: ignore 512 (the first one)
-    return component.proxy(address)
-  end
-  return nil
-end
 
 -- Fluids and essentia carry an amount, and essentia no item id. id is
 -- for the server to find an item in the pattern's NBT.

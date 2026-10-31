@@ -2,6 +2,7 @@
 routes."""
 
 from gcm import bottlenecks, config, job_tree, state, tracking
+from test_network_api import run_scan
 from test_patterns_api import run_pattern_scan
 
 
@@ -112,6 +113,12 @@ class TestTree:
         state.cpu_last_known["A1"]["started_at"] -= tracking.MONITOR_GRACE_SECONDS
         client.post("/api/crafts", headers=api_headers, json=no_output)
         assert "Crafting Monitor" in client.get("/api/crafts/A1/tree").get_json()["reason"]
+
+    def test_no_patterns_and_no_interface_terminal(self, client, api_headers):
+        report(client, api_headers, pending=[stack("Gear", GEAR[1], 2)])
+        run_scan(client, api_headers, [], interface_terminal=False)
+        data = client.get("/api/crafts/A1/tree").get_json()
+        assert "needs an ME Interface Terminal" in data["reason"] and data["needs_terminal"] is True
 
     def test_fluid_steps_match_fluid_nodes(self):
         assert job_tree.step_item_key((None, "molten.iron", None, "Molten Iron")) == "|molten.iron||fluid"

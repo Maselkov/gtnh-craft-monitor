@@ -696,8 +696,11 @@ class FakeComputer:
 
 
 class FakeGame:
-    def __init__(self, app, stock=None):
+    def __init__(self, app, stock=None, terminal=True):
         self.client = app.test_client()
+        # Without an ME Interface Terminal no patterns are read, and the
+        # network scan says so.
+        self.terminal = terminal
         self.cpus = [Cpu("M00", 131072, 256), Cpu("a00", 16384, 16), Cpu("a01", 16384, 16),
                      Cpu("a02", 16384, 16, monitor=False), Cpu("a03", 16384, 16), Cpu("B01", 65536, 64),
                      Cpu("T00", 65536, 64), Cpu("T01", 65536, 64)]
@@ -747,7 +750,7 @@ class FakeGame:
         stored, trend = power_reading(time.time() - lag, capacity)
         self.call("POST", "/api/power", {"stored": stored, "capacity": capacity, "machine": name, **trend})
         self.call("POST", "/api/power", {"stored": wireless_reading(time.time()), "capacity": 0, "machine": WIRELESS})
-        if self.ticks % PATTERN_SCAN_EVERY_TICKS == 0:
+        if self.terminal and self.ticks % PATTERN_SCAN_EVERY_TICKS == 0:
             self.scan_patterns()
         if self.ticks % SCAN_EVERY_TICKS == 0:
             self.scan()
@@ -810,7 +813,7 @@ class FakeGame:
         token = self.call("POST", "/api/network/scan/start").get("scan_token")
         self.call("POST", "/api/network/scan/batch", {"scan_token": token, "items": items})
         self.call("POST", "/api/network/scan/finish",
-                  {"scan_token": token, "chunks_sent": 1, "total_errors": 0})
+                  {"scan_token": token, "chunks_sent": 1, "total_errors": 0, "interface_terminal": self.terminal})
 
     def scan_patterns(self):
         token = self.call("POST", "/api/network/patterns/start").get("scan_token")
@@ -889,7 +892,7 @@ def run(args, data_dir):
     if fresh:
         seed_stock_rules(stock)
 
-    game = FakeGame(app, stock)
+    game = FakeGame(app, stock, terminal=not args.no_terminal)
     game.tick()  # data in place before the first page load
     threading.Thread(target=game.run_forever, daemon=True).start()
 
@@ -912,6 +915,8 @@ def main():
     parser.add_argument("--data-dir", help="keep data here between runs (default: a temp dir)")
     parser.add_argument("--no-icons", action="store_true", help="run without game data")
     parser.add_argument("--open", action="store_true", help="open the page in a browser")
+    parser.add_argument("--no-terminal", action="store_true",
+                        help="no ME Interface Terminal: no patterns, so no crafting plan or job tree")
     args = parser.parse_args()
 
     # A plain kill skips finally blocks - exit normally instead, so the

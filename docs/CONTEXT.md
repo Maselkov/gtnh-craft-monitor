@@ -721,6 +721,16 @@ once after a restart. Until then the card says "Starting job…". dev.py
 fakes both cases: every job's first report has no output, and a02 never
 has one.
 
+**network_browser.lua says whether it has an ME Interface Terminal.**
+Without patterns, the server couldn't tell "no terminal" from "terminal
+connected, first pattern scan not yet run", so the page could only say
+"no pattern scan yet". `scan/finish` now carries `interface_terminal`
+(left out with pattern scans off, so off isn't taken for missing; older
+scripts leave it out too). `patterns.terminal_missing()` (no patterns read
+and the last scan said `false`) words the plan and tree notes, the
+Network tab's admin note, and Status. It's in memory only: after a
+restart it's unknown until the next network scan.
+
 **Held-up steps read pushes and returns apart** (`gcm/bottlenecks.py`).
 In AE2's `CraftingCPUCluster`, pending is `tasks` (runs not yet pushed)
 and active is `waitingFor` (outputs pushed and not back), so a push moves

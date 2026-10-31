@@ -163,6 +163,8 @@ def test_network_scan_lands(game, client):
     assert data["in_progress"] is False
     sizes = {i["name"]: i["size"] for i in data["items"]}
     assert sizes == {"Thing A": 5, "Thing B": 7, "Molten Neutronium": 144000}
+    # No ME Interface Terminal in this game, so the page suggests one.
+    assert data["needs_terminal"] is True
 
 
 def test_a_scan_past_the_item_limit_stops_without_finishing(game, client, monkeypatch):
@@ -282,6 +284,7 @@ def test_pattern_scan_lands_with_crafting_counts(game, client):
     game.run(30)
     assert all(status == 200 for _, _, status in game.requests)
     login_as(client, "alice")
+    assert client.get("/api/network").get_json()["needs_terminal"] is False
     data = client.get("/api/network/patterns").get_json()
     assert data["summary"] == {"patterns": 2, "crafting": 1, "processing": 1, "inexact": 0, "providers": 2}
     made = {

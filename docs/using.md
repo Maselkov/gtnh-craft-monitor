@@ -29,7 +29,9 @@ game. A busy card shows:
   Since steps can take very different times, take it as a guess.
 - **Ingredients (N)** — opens a grid of everything the job holds, is crafting
   and is waiting on, laid out like AE2's crafting status screen. It stays
-  live while open. Switch it to **Tree** to see the job step by step:
+  live while open. With an
+  [ME Interface Terminal](in-game.md#me-interface-terminal) connected,
+  switch it to **Tree** to see the job step by step:
   each step shows how much of it is made, steps being crafted are green
   as in the grid, and finished branches fold away. A step held up at its
   machine turns amber as stuck, and says why and where the machine is:
@@ -156,7 +158,8 @@ in-game computers are listed under it (see
   means it's current; amber means it's late (crafts after
   `STALE_AFTER_SECONDS`, power after 5 minutes, the network after an hour
   or a scan running over 10 minutes), crashed, or had its last scan turned
-  away as incomplete.
+  away as incomplete. A grey dot on Patterns means there's no ME Interface
+  Terminal, which is optional.
 - the size of each database and the free space where they're kept.
 - when stock history was last thinned, and how many rows that removed.
 - how many browsers get push notifications, and how the last webhook post
@@ -280,9 +283,11 @@ The amount can be written as `10k`, `1.5M` or `2G`, or as arithmetic such as
 `4*64+10` or `(10k-2k)/2`; the dialog shows the result before you submit. The
 stock rule fields below take the same forms.
 
-When the network's patterns have been read (see
-[Reading patterns](how-it-works.md#reading-patterns)), the dialog also shows
-the **crafting plan** for the amount you've typed, before you submit. Like
+With an [ME Interface Terminal](in-game.md#me-interface-terminal)
+connected, the dialog also shows the **crafting plan** for the amount you've
+typed, before you submit, built from your patterns (see
+[Reading patterns](how-it-works.md#reading-patterns)). Without one, it says
+a terminal is needed and links to how to connect one. Like
 AE2's own Request Craft screen, it has two views:
 
 - **List**: every item the plan touches, missing ones first. As in the game,

@@ -12,7 +12,7 @@ import { nameHtml, nameText } from './description.js';
 import { itemMatchesSearch, parseSearchQuery } from './search.js';
 import { bindCellTooltip } from './tooltip.js';
 import { ensureLoaded, flashRow, graft, matchingEntries, matchTree, nodeAt, openAbove, searchNoteText } from './tree-nav.js';
-import { bindFilterInput, delegateActions, escapeHtml, essentiaBadgeHtml, formatQty, formatRelativeTime, iconClass, iconUrl, kindTooltipHtml } from './util.js';
+import { bindFilterInput, delegateActions, escapeHtml, essentiaBadgeHtml, formatQty, formatRelativeTime, iconClass, iconUrl, kindTooltipHtml, TERMINAL_DOCS_URL } from './util.js';
 
 const VIEW_KEY = 'gtnhCraftMonitor.planView';
 const HIDE_KEY = 'gtnhCraftMonitor.planHideAvailable';
@@ -361,9 +361,16 @@ function setModalWide(wide) {
   document.querySelector('#craftRequestModal .modal-box').classList.toggle('with-plan', wide);
 }
 
-function showNote(text) {
+// needsTerminal: there are no patterns for want of an ME Interface
+// Terminal, so the note says where to read how to connect one.
+function showNote(text, needsTerminal = false) {
   const note = document.getElementById('craftPlanNote');
   note.textContent = text || '';
+  if (text && needsTerminal) {
+    const link = Object.assign(document.createElement('a'),
+      { href: TERMINAL_DOCS_URL, target: '_blank', rel: 'noopener', textContent: 'How to connect one' });
+    note.append(' ', link);
+  }
   note.hidden = !text;
 }
 
@@ -518,7 +525,7 @@ async function fetchPlan() {
     if (controller !== inFlight) return;  // a newer request took over
     if (!res.ok || !data.plan) {
       lastPlan = null;
-      showNote(res.ok ? data.reason : (data.error || 'Couldn\'t work out a plan.'));
+      showNote(res.ok ? data.reason : (data.error || 'Couldn\'t work out a plan.'), res.ok && data.needs_terminal);
     } else {
       lastPlan = data;
       jump = null;

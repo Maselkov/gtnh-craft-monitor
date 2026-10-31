@@ -153,7 +153,7 @@ def tree(cpu):
         return None, "This CPU isn't crafting anything."
     pattern_list, patterns_at = patterns.current()
     if patterns_at is None:
-        return None, "No pattern scan yet: the tree is rebuilt from the network's patterns."
+        return None, patterns.missing_reason("tree")
     if not entry["output"]:
         if entry["monitor_missing"]:
             return None, "The CPU can't say what it's making: add an AE2 Crafting Monitor to it."

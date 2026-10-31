@@ -85,6 +85,7 @@ def network_scan_finish():
         payload.get("scan_token"), payload.get("chunks_sent"), payload.get("total_errors")
     )
     if result.get("ok") and not result.get("rejected"):
+        patterns.note_terminal(payload.get("interface_terminal"))
         # Like finish_scan()'s own extras: a failure here is logged, and
         # never makes network_browser.lua think the scan failed.
         try:
@@ -166,8 +167,11 @@ def network_get():
     # Every open tab re-polls the whole item list (thousands of items),
     # but it only changes once per scan - so answer with an ETag and let
     # the browser cache turn most polls into an empty 304.
+    # Read first: patterns has its own lock, and the banner it drives
+    # can change between item scans, when a pattern scan lands.
+    needs_terminal = patterns.terminal_missing()
     with state.network_lock:
-        etag = _network_etag()
+        etag = f"{_network_etag()}-{needs_terminal}"
         if request.if_none_match.contains(etag):
             response = Response(status=304)
         else:
@@ -183,6 +187,9 @@ def network_get():
                     # None until an admin picks a GTNH version: the
                     # page then says so, as nothing else would.
                     "game_data": gamedata.selected_version(),
+                    # No patterns, and no ME Interface Terminal to read
+                    # them with: the tab suggests connecting one.
+                    "needs_terminal": needs_terminal,
                 }
             )
     response.set_etag(etag)
@@ -441,8 +448,8 @@ def network_plan_get():
     )
     pattern_list, patterns_at = patterns.current()
     if patterns_at is None:
-        return jsonify({"plan": None, "reason": "No pattern scan yet: connect an ME Interface Terminal "
-                        "to the computer running network_browser.lua."})
+        return jsonify({"plan": None, "reason": patterns.missing_reason("crafting plan"),
+                        "needs_terminal": patterns.terminal_missing()})
     path_raw = request.args.get("path")
     path = None
     if path_raw is not None:

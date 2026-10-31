@@ -11,7 +11,7 @@ import {
   updateNotifToggle,
 } from './crafts.js';
 import { openGameDataModal } from './gamedata.js';
-import { updateGameDataNote } from './network.js';
+import { updateGameDataNote, updateTerminalNote } from './network.js';
 import { delegateActions, escapeHtml, formatQty, onBackdropClick } from './util.js';
 
 export let AUTH_USER = null;
@@ -57,6 +57,7 @@ function updateAuthenticationControl() {
   document.getElementById('agentsBtn').style.display = adminVisible ? '' : 'none';
   if (AUTH_USER) syncPushSubscription();
   updateGameDataNote();
+  updateTerminalNote();
   const locked = isLocked();
   document.body.classList.toggle('private-locked', locked);
   document.getElementById('privateNotice').style.display = locked ? '' : 'none';

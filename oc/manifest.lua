@@ -44,8 +44,8 @@ return {
       needs = { "me_controller", "me_interface" },
       needs_hint = "an Adapter touching an ME controller or ME interface",
       wants = { "me_interface_terminal" },
-      wants_hint = "an Adapter touching a block with an ME Interface Terminal part"
-        .. " reads patterns for the crafting plan and craft tree",
+      wants_hint = "The crafting plan and job tree need an Adapter touching a block"
+        .. " with an ME Interface Terminal part",
       files = {
         { src = "network_browser.lua", dst = "/etc/rc.d/network_browser.lua" },
       },
