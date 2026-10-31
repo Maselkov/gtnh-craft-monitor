@@ -87,6 +87,10 @@ HTTPS, backups and running without Docker, see the
 
 ## Updating
 
+What changed in each version is on the
+[releases page](https://github.com/Maselkov/gtnh-craft-monitor/releases);
+**Watch → Custom → Releases** on GitHub tells you when there's a new one.
+
 ```bash
 docker compose pull
 docker compose up -d
