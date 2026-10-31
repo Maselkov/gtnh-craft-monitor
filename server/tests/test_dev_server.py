@@ -19,6 +19,8 @@ def game(flask_app, monkeypatch):
 
 
 def test_tick_reports_crafts_power_and_a_scan(game, client):
+    # A job's first report has no output, as a real one's can.
+    game.tick()
     game.tick()
 
     jobs = {j["name"]: j for j in client.get("/api/crafts").get_json()["jobs"]}
@@ -47,8 +49,16 @@ def test_craft_request_is_accepted_on_a_free_cpu(game, client):
     assert res.status_code == 200
     free = next(cpu.name for cpu in game.cpus if cpu.job is None)
     game.tick()
+    game.tick()
     jobs = {j["name"]: j for j in client.get("/api/crafts").get_json()["jobs"]}
     assert jobs[free]["busy"] and jobs[free]["final_output"] == "Titanium Gear"
+
+
+def test_cpu_without_a_monitor_reports_no_output(game, client):
+    game.tick()
+    game.tick()
+    jobs = {j["name"]: j for j in client.get("/api/crafts").get_json()["jobs"]}
+    assert jobs["a02"]["busy"] and "final_output" not in jobs["a02"]
 
 
 def test_cancel_request_idles_the_cpu(game, client):

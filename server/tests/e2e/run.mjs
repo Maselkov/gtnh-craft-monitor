@@ -463,6 +463,27 @@ async function main() {
     await waitFor('tab badge counts the busy one', `$('#tabBtnCrafts .tab-badge')?.textContent === '1'`);
   });
 
+  step('a CPU without a Crafting Monitor: "Starting job…" at first, then a hint', async () => {
+    const crafts = (jobs) => game(base, '/api/crafts', { source: 'me_controller', jobs: [
+      { name: 'W01', busy: true, final_output: 'Iron Ingot', final_output_mod: 'minecraft',
+        final_output_internal: 'iron_ingot', final_output_damage: 0,
+        active: [{ name: 'Iron Ingot', size: 3 }], pending: [{ name: 'Iron Ore', size: 6 }], stored: [] },
+      { name: 'W02', busy: false },
+      ...jobs,
+    ] });
+    // M01 just started; M02 was already running when the server first saw
+    // it, so it's past the wait for an output.
+    await crafts([{ name: 'M01', busy: false }]);
+    await crafts([{ name: 'M01', busy: true, pending: [{ name: 'Iron Ore', size: 6 }] },
+                  { name: 'M02', busy: true, pending: [{ name: 'Iron Ore', size: 6 }] }]);
+    await waitFor('M01 starting', `card('M01')?.querySelector('.craft-title').textContent === 'Starting job…'
+      && !card('M01').querySelector('.monitor-hint')`);
+    await waitFor('M02 hint', `card('M02')?.querySelector('.craft-title').textContent === 'Unknown output'
+      && card('M02').querySelector('.monitor-hint a').href.endsWith('in-game.md#crafting-cpus')`);
+    await crafts([]);
+    await waitFor('gone', `!card('M01') && !card('M02')`);
+  });
+
   step('crafts poll each second, and an unchanged report answers 304', async () => {
     const polls = `performance.getEntriesByType('resource').filter((e) => new URL(e.name).pathname === '/api/crafts').length`;
     const before = await evaluate(polls);

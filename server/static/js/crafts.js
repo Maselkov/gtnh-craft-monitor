@@ -44,6 +44,8 @@ export function clearPins() {
 // "new scan" isn't a plausible second cause here.
 const LS_NOTIFIED_COMPLETION_IDS = 'gtnhCraftMonitor.notifiedCompletionIds';
 
+const MONITOR_DOCS_URL = 'https://github.com/Maselkov/gtnh-craft-monitor/blob/main/docs/in-game.md#crafting-cpus';
+
 function loadClaimedIds() {
   try {
     const raw = localStorage.getItem(LS_NOTIFIED_COMPLETION_IDS);
@@ -498,8 +500,13 @@ function renderCard(job) {
   const title = job.busy
     ? (job.final_output
         ? `${job.final_output_icon ? `<img class="${iconClass('craft-icon', job.final_output_icon)}" src="${iconUrl(job.final_output_icon)}" alt="" loading="lazy" data-remove-on-error>` : ''}<span class="item-history-link" data-mod="${escapeHtml(job.final_output_mod || '')}" data-internal="${escapeHtml(job.final_output_internal || '')}" data-damage="${job.final_output_damage != null ? job.final_output_damage : ''}" data-name="${escapeHtml(job.final_output)}" data-icon="${escapeHtml(job.final_output_icon || '')}">${escapeHtml(nameText(job.final_output))}</span>`
-        : `<span class="craft-title-muted">Crafting job (no monitor tile)</span>`)
+        : `<span class="craft-title-muted">${job.monitor_missing ? 'Unknown output' : 'Starting job…'}</span>`)
     : `<span class="craft-title-muted">Idle</span>`;
+  // Only once the server is sure: a new job can report no output for a
+  // poll or two even with a Crafting Monitor on its CPU.
+  const monitorHint = job.busy && !job.final_output && job.monitor_missing
+    ? `<div class="monitor-hint">No Crafting Monitor on this CPU: <a href="${MONITOR_DOCS_URL}" target="_blank" rel="noopener">add one</a> to see what it's making.</div>`
+    : '';
   // Busy or idle shows by which section the card is in; a job a
   // keep-in-stock target (stock.js) started says so next to the CPU.
   const autoBadge = job.busy && job.auto
@@ -535,6 +542,7 @@ function renderCard(job) {
         <div class="card-head-main">
           <div class="craft-title">${title}</div>
           <div class="cpu-id">storage ${job.storage ?? '?'} &middot; coprocessors ${job.coprocessors ?? '?'}</div>
+          ${monitorHint}
         </div>
       </div>
       ${progressBar}

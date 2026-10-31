@@ -1,7 +1,7 @@
 """The live crafting tree of a busy CPU's job (gcm/job_tree.py) and its
 routes."""
 
-from gcm import bottlenecks, config, job_tree, tracking
+from gcm import bottlenecks, config, job_tree, state, tracking
 from test_patterns_api import run_pattern_scan
 
 
@@ -102,6 +102,16 @@ class TestTree:
         assert "No pattern scan" in client.get("/api/crafts/A1/tree").get_json()["reason"]
         run_pattern_scan(client, api_headers, [PATTERNS[1:]])  # nothing makes gears
         assert "None of the network's patterns" in client.get("/api/crafts/A1/tree").get_json()["reason"]
+
+    def test_no_output_waits_then_asks_for_a_crafting_monitor(self, client, api_headers):
+        run_pattern_scan(client, api_headers, [PATTERNS])
+        no_output = {"source": "me_controller", "jobs": [{"name": "A1", "busy": True, "pending": []}]}
+        client.post("/api/crafts", headers=api_headers, json={"source": "me_controller", "jobs": [{"name": "A1", "busy": False}]})
+        client.post("/api/crafts", headers=api_headers, json=no_output)
+        assert "Waiting for the CPU" in client.get("/api/crafts/A1/tree").get_json()["reason"]
+        state.cpu_last_known["A1"]["started_at"] -= tracking.MONITOR_GRACE_SECONDS
+        client.post("/api/crafts", headers=api_headers, json=no_output)
+        assert "Crafting Monitor" in client.get("/api/crafts/A1/tree").get_json()["reason"]
 
     def test_fluid_steps_match_fluid_nodes(self):
         assert job_tree.step_item_key((None, "molten.iron", None, "Molten Iron")) == "|molten.iron||fluid"

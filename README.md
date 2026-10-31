@@ -51,6 +51,8 @@ Basically, it's web AE2 for your base.
   P2P tunnels: those make components go missing. One computer can run
   everything, or the scripts can be spread over several, each with the
   Adapters for its own scripts.
+- An AE2 **Crafting Monitor** in each crafting CPU, so the page can show
+  what it's making (see [Crafting CPUs](docs/in-game.md#crafting-cpus)).
 - GTNH 2.9.0-beta-2 or later for crafting from the page.
 
 The full list, including the OpenComputers config settings, is under

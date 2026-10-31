@@ -88,6 +88,25 @@ The rest:
   their material, and patterns lose their crafting-table output counts and
   substitution settings.
 
+### Crafting CPUs
+
+Put an AE2 **Crafting Monitor** in each crafting CPU's multiblock. It's
+the only way the scripts can ask a CPU what it's making. A CPU without
+one still shows its progress and ingredients, but:
+
+- its card says "Unknown output" instead of the item, and has no icon
+  or link to the item's history
+- its job has no **Tree** view
+- a job that starts right after another ends isn't noticed as new, so a
+  pin on the first carries over to the second
+- cancelling from the page can't check it's still the job you saw
+- when several crafts start at once, a request from the page can't be
+  matched to its CPU, so it isn't pinned for you
+
+A job that has only just started can say "Starting job…" for a few
+seconds even with a monitor. "Unknown output" means the CPU really has
+no monitor.
+
 ### Connecting the Adapter
 
 An Adapter doesn't have to touch the ME Controller. Put an **MFU** in the

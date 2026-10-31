@@ -192,6 +192,12 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
   color: var(--muted);
   margin-top: 2px;
 }
+.monitor-hint {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.monitor-hint a { color: var(--accent); }
 .badge {
   flex-shrink: 0;
   font-size: 11px;
