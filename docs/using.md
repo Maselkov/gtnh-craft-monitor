@@ -16,7 +16,10 @@ One card per crafting CPU, updated within a second of each report from the
 game. A busy card shows:
 
 - **Output item** — needs an AE2 **Crafting Monitor** block in that CPU's
-  multiblock. Without one, the card shows "Crafting job (no monitor tile)".
+  multiblock. Without one, the card shows "Unknown output" and a link to
+  [Crafting CPUs](in-game.md#crafting-cpus), which lists what else a CPU
+  without one loses. For a job's first few seconds the card can say
+  "Starting job…" until the CPU reports what it's making.
 - **Progress** — each item or fluid type the job still has to make counts
   as one step, and the bar is the average of how far along each step is.
   It never moves backwards. It counts steps done, not time left.
@@ -371,6 +374,9 @@ draws each threshold as a dashed line.
   which interface holds a step's items is a guess when several have its
   pattern. Two interfaces on one machine are only taken as one when they
   share a name and touch a common block.
+- On a CPU without a Crafting Monitor, a job that starts right after
+  another ends looks like the same job, so a pin carries over to it. The
+  same goes for two back-to-back jobs making the same item on any CPU.
 - Stock rules react within `WATCH_INTERVAL_SECONDS` (1 minute by default).
   AE2 picks the CPU for each craft itself, so the idle-CPU limit is checked
   when a craft is requested, not enforced while it runs.

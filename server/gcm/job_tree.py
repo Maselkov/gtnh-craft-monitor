@@ -60,6 +60,7 @@ def _entry(cpu):
         return {
             "started_at": entry["started_at"],
             "output": entry["output"],
+            "monitor_missing": entry["monitor_missing"],
             "peaks": dict(entry["peaks"]),
             "last_left": dict(entry["last_left"]),
             "moved_at": dict(entry["moved_at"]),
@@ -154,7 +155,9 @@ def tree(cpu):
     if patterns_at is None:
         return None, "No pattern scan yet: the tree is rebuilt from the network's patterns."
     if not entry["output"]:
-        return None, "The CPU doesn't say what it's making (no Crafting Monitor on it)."
+        if entry["monitor_missing"]:
+            return None, "The CPU can't say what it's making: add an AE2 Crafting Monitor to it."
+        return None, "Waiting for the CPU to say what it's making."
     cache_key = (cpu, entry["started_at"], len(entry["peaks"]))
     with _lock:
         hit = _cache.get(cache_key)

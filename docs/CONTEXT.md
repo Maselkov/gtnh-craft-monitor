@@ -709,6 +709,18 @@ goes idle) is `finished`, anything more is `incomplete`. That covers
 cancellation and interruption without claiming more certainty than the
 data supports.
 
+**"No Crafting Monitor" is only said once it's certain.** A CPU with a
+monitor can report a job with no `finalOutput()` for its first poll or
+two. The cause isn't confirmed; most likely AE2 updates the monitor tile
+after the job starts. So `tracking.process_jobs` sets `monitor_missing`
+on a job only when its CPU has never reported an output since the server
+started (`state.cpu_has_monitor`), and the job has gone
+`MONITOR_GRACE_SECONDS` without one. A job already running when the
+server starts skips the wait, so a CPU without a monitor is named at
+once after a restart. Until then the card says "Starting job…". dev.py
+fakes both cases: every job's first report has no output, and a02 never
+has one.
+
 **Held-up steps read pushes and returns apart** (`gcm/bottlenecks.py`).
 In AE2's `CraftingCPUCluster`, pending is `tasks` (runs not yet pushed)
 and active is `waitingFor` (outputs pushed and not back), so a push moves

@@ -502,8 +502,11 @@ def backfill_history(days=7):
 # ---------------------------------------------------------------- fake game
 
 class Cpu:
-    def __init__(self, name, storage, coprocessors):
+    def __init__(self, name, storage, coprocessors, monitor=True):
         self.name, self.storage, self.coprocessors = name, storage, coprocessors
+        # Without a Crafting Monitor, finalOutput() gives nothing. With
+        # one, a job's first report can still come without it.
+        self.monitor = monitor
         self.job = None           # {"output": name, "items": {name: [scheduled, crafting, stored]}}
         self.idle_ticks = 0
         # craft_monitor.lua's watch-tick look at a job that just ended,
@@ -611,14 +614,15 @@ class Cpu:
             if self.last_look:
                 idle["last_busy"], self.last_look = self.last_look, None
             return idle
-        out = BY_NAME.get(self.job["output"], {})
-        return {
-            "name": self.name, "busy": True, "storage": self.storage,
-            "coprocessors": self.coprocessors, "final_output": self.job["output"],
-            "final_output_mod": out.get("mod"), "final_output_internal": out.get("internal"),
-            "final_output_damage": out.get("damage"),
-            **self._lists(),
-        }
+        report = {"name": self.name, "busy": True, "storage": self.storage,
+                  "coprocessors": self.coprocessors, **self._lists()}
+        reports = self.job.get("reports", 0)
+        self.job["reports"] = reports + 1
+        if self.monitor and reports:
+            out = BY_NAME.get(self.job["output"], {})
+            report.update(final_output=self.job["output"], final_output_mod=out.get("mod"),
+                          final_output_internal=out.get("internal"), final_output_damage=out.get("damage"))
+        return report
 
 
 def random_ingredients(count, exclude):
@@ -695,7 +699,7 @@ class FakeGame:
     def __init__(self, app, stock=None):
         self.client = app.test_client()
         self.cpus = [Cpu("M00", 131072, 256), Cpu("a00", 16384, 16), Cpu("a01", 16384, 16),
-                     Cpu("a02", 16384, 16), Cpu("a03", 16384, 16), Cpu("B01", 65536, 64),
+                     Cpu("a02", 16384, 16, monitor=False), Cpu("a03", 16384, 16), Cpu("B01", 65536, 64),
                      Cpu("T00", 65536, 64), Cpu("T01", 65536, 64)]
         self.cpus[0].start(BIG_JOB[0], random_ingredients(BIG_JOB[1], BIG_JOB[0]))
         self.cpus[-2].start_chain(*CHAIN_JOB)

@@ -33,6 +33,11 @@ from gcm import bottlenecks, commands, progress, push, state, store, webhooks
 # bursts rather than evenly, so the pace is only a rough guide.
 _PACE_SLACK = 2
 
+# How long a job may report no final output before its CPU is taken to
+# have no Crafting Monitor. A job that just started can report none for
+# its first poll or two even with one.
+MONITOR_GRACE_SECONDS = 15
+
 
 def _classify_status(name, entry, ended_at):
     """"finished" or "incomplete" for the job in `entry` on CPU `name`,
@@ -115,6 +120,9 @@ def _new_job_entry(started_at, seen_from_start=True):
         # inputs it pulled at the start, which tell its patterns apart.
         "first_stored": None,
         "output": None,
+        # No output reported, and past MONITOR_GRACE_SECONDS: the CPU
+        # has no Crafting Monitor.
+        "monitor_missing": False,
         "started_at": started_at,
         "seen_from_start": seen_from_start,
         # When the first status report with steps in it (the progress
@@ -303,6 +311,14 @@ def process_jobs(jobs):
                     entry["output"] = output
                     entry["label"] = job.get("final_output")
                     entry["icon"] = job.get("final_output_icon")
+                    state.cpu_has_monitor.add(name)
+                # A job that was already running when the server started
+                # is past the grace period.
+                entry["monitor_missing"] = job["monitor_missing"] = (
+                    not entry["output"]
+                    and name not in state.cpu_has_monitor
+                    and (not entry["seen_from_start"] or now - entry["started_at"] >= MONITOR_GRACE_SECONDS)
+                )
                 _update_progress(entry, job, now)
             else:
                 job["progress_percent"] = None

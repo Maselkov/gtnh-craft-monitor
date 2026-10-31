@@ -735,3 +735,44 @@ class TestCraftStats:
 
     def test_unknown_range_is_a_week(self, client):
         assert stats(client, range="decade")["range"] == "week"
+
+
+class TestMonitorMissing:
+    # A job that just started can report no output for a poll or two even
+    # with a Crafting Monitor, so the page waits before blaming the CPU.
+    def _flag(self, client):
+        return client.get("/api/crafts").get_json()["jobs"][0]["monitor_missing"]
+
+    def _age(self, seconds):
+        state.cpu_last_known["W01"]["started_at"] -= seconds
+
+    def _start(self, client, api_headers):
+        post_job(client, api_headers, busy=False)
+        post_job(client, api_headers)
+
+    def test_output_late_in_a_new_job_is_never_flagged(self, client, api_headers):
+        self._start(client, api_headers)
+        assert self._flag(client) is False
+        post_job(client, api_headers, "Iron Ingot")
+        self._age(60)
+        post_job(client, api_headers, "Iron Ingot")
+        assert self._flag(client) is False
+
+    def test_no_output_past_the_grace_period_is_flagged(self, client, api_headers):
+        self._start(client, api_headers)
+        self._age(tracking.MONITOR_GRACE_SECONDS)
+        post_job(client, api_headers)
+        assert self._flag(client) is True
+
+    def test_job_running_before_the_server_started_is_flagged_at_once(self, client, api_headers):
+        post_job(client, api_headers)
+        assert self._flag(client) is True
+
+    def test_cpu_that_reported_an_output_is_never_flagged(self, client, api_headers):
+        self._start(client, api_headers)
+        post_job(client, api_headers, "Iron Ingot")
+        post_job(client, api_headers, busy=False)
+        post_job(client, api_headers)
+        self._age(60)
+        post_job(client, api_headers)
+        assert self._flag(client) is False

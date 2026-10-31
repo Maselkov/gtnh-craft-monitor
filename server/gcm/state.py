@@ -122,6 +122,9 @@ cpu_last_known = {}
 # job that ended before the game reported its outcome, recorded once it
 # does or after tracking.OUTCOME_WAIT_SECONDS.
 cpu_ending = {}
+# Names of CPUs that have reported a final output, so have a Crafting
+# Monitor (see tracking.MONITOR_GRACE_SECONDS).
+cpu_has_monitor = set()
 
 
 # Small ad-hoc debugging channel: the Lua side can POST a raw dump here
@@ -170,4 +173,5 @@ def reset():
         cpu_last_busy.clear()
         cpu_last_known.clear()
         cpu_ending.clear()
+        cpu_has_monitor.clear()
     debug_dumps.clear()
