@@ -4,6 +4,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 import net.minecraft.init.Items;
 import net.minecraft.item.ItemStack;
@@ -25,7 +26,9 @@ final class Formulas {
     private static Method getAssociation;
     private static Field itemMaterial;
     private static Field stackMaterial;
+    /** Materials.getChemicalFormula(), or the public mChemicalFormula field before 2.9.0 had it. */
     private static Method chemicalFormula;
+    private static Field chemicalFormulaField;
     /** "mod:internal:damage" of each GT++ material component -> its material's formula. */
     private static final Map<String, String> gtPlusPlus = new HashMap<>();
     private static boolean ready;
@@ -39,7 +42,12 @@ final class Formulas {
             getAssociation = unificator.getMethod("getAssociation", ItemStack.class);
             itemMaterial = Class.forName("gregtech.api.objects.ItemData").getField("mMaterial");
             stackMaterial = Class.forName("gregtech.api.objects.MaterialStack").getField("mMaterial");
-            chemicalFormula = Class.forName("gregtech.api.enums.Materials").getMethod("getChemicalFormula");
+            Class<?> materials = Class.forName("gregtech.api.enums.Materials");
+            try {
+                chemicalFormula = materials.getMethod("getChemicalFormula");
+            } catch (NoSuchMethodException e) {
+                chemicalFormulaField = materials.getField("mChemicalFormula");
+            }
             ready = true;
         } catch (Throwable t) {
             IconExportMod.LOG.info("No GregTech formulas: {}", t.toString());
@@ -48,8 +56,18 @@ final class Formulas {
         try {
             Class<?> material = Class.forName("gtPlusPlus.core.material.Material");
             Map<?, ?> components = (Map<?, ?>) material.getField("mComponentMap").get(null);
-            Map<?, ?> byName = (Map<?, ?>) material.getField("mMaterialsByName").get(null);
-            Field formula = material.getField("chemicalFormula");
+            // Components are keyed by unlocalized name; the formula field was vChemicalFormula before 2.9.0.
+            Method unlocalizedName = material.getMethod("getUnlocalizedName");
+            Field formula;
+            try {
+                formula = material.getField("chemicalFormula");
+            } catch (NoSuchFieldException e) {
+                formula = material.getField("vChemicalFormula");
+            }
+            Map<Object, Object> byName = new HashMap<>();
+            for (Object each : (Set<?>) material.getField("mMaterialMap").get(null)) {
+                byName.put(unlocalizedName.invoke(each), each);
+            }
             for (Map.Entry<?, ?> entry : components.entrySet()) {
                 Object owner = byName.get(entry.getKey());
                 String text = owner == null ? null : (String) formula.get(owner);
@@ -79,7 +97,8 @@ final class Formulas {
             Object materialStack = data == null ? null : itemMaterial.get(data);
             Object material = materialStack == null ? null : stackMaterial.get(materialStack);
             if (material != null) {
-                String text = (String) chemicalFormula.invoke(material);
+                String text = (String) (chemicalFormula != null ? chemicalFormula.invoke(material)
+                        : chemicalFormulaField.get(material));
                 if (valid(text)) {
                     return text;
                 }
