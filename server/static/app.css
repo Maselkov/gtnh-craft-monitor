@@ -1795,6 +1795,13 @@ body.private-locked #networkTab {
   font-size: 11px;
   color: var(--muted);
   margin-bottom: 10px;
+  /* The run time and time left change every redraw: even-width digits
+     keep the line's width put, so it doesn't wrap on one tick and
+     unwrap on the next, resizing the whole row of cards. */
+  font-variant-numeric: tabular-nums;
+}
+.progress-part {
+  white-space: nowrap;
 }
 .empty {
   color: var(--muted);
