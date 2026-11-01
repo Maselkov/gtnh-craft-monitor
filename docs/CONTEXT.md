@@ -1303,6 +1303,36 @@ installs a WebP bundle mostly works (browsers don't trust an image's
 content type anyway), but its favicon and craft history icons 404 and
 reduced motion still animates.
 
+**Run-to-run differences.** Two exports of the same pack with the same
+code aren't identical. Measured on 2.9.0 (two runs at once): 91 of ~132k
+images differ, only 9 of them animated (6 loop lengths, 3 with a few
+frames off). Most of the rest is state the pack picks once per launch,
+which the export can't set:
+- GT++ alloys (Octiron, Laurenium...) tinted or not: a GregTech tie-break
+  over an identity-hashed map (`MaterialUtils.getMostCommonTextureSet`);
+  players see it too.
+- BuildCraft gates: each gate is listed plain and once per expansion, the
+  expansions from a hash set, all under one label. by_key_label takes the
+  last one listed, so a different expansion each launch (22 entries).
+- Galacticraft's Tier 2 rocket, Forestry bees, Thaumcraft's Mana Bean and
+  crystals, NEI's icons for the Entangled Bose-Einstein Condensates, a
+  cropsnh leaf and a few others.
+
+Tried and dropped: breaking lookup ties by NBT (no NBT, then the
+shortest) instead of list order fixes the gates but moves ~4,000 icons
+to a worse variant (AE2 facades of another block, black Railcraft tank
+walls, Draconic gear at 0%); the old order is stable for nearly
+everything else. `-XX:hashCode=3` (sequential identity hashes) doesn't
+steady the gates or the bees: startup hashes from many threads.
+
+So to judge an exporter change, run the old code twice and compare with
+`tools/icon-export/ci/compare_exports.py OLD NEW --base2 OLD2`: it decodes
+each icon whose bytes differ, says how (still pixels, became animated or
+still, animation timing, frame pixels, only the encoding) and per mod,
+and leaves out what the two old runs already disagree on. For a quick
+check, the same with `GCM_ANIMATION_TICKS=0` and
+`-Dgcm.iconexport.only=<regex>` takes about 80 s a run.
+
 **Distribution.** `.github/workflows/gtnh-data.yml` runs daily:
 `ci/detect.py` lists GTNH's stable/beta/RC tags (GT-New-Horizons-Modpack
 releases, nightlies skipped), drops those that already have a

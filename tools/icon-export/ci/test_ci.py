@@ -5,7 +5,7 @@ import json
 import os
 import sys
 import zipfile
-from io import BytesIO
+from io import BytesIO, StringIO
 
 import pytest
 from PIL import Image
@@ -14,6 +14,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.dirname(HERE))
 
+import compare_exports  # noqa: E402
 import detect  # noqa: E402
 import export  # noqa: E402
 import validate  # noqa: E402
@@ -423,3 +424,57 @@ def test_tooltips_without_the_dtpf_fail(tmp_path):
     (export_dir / "item_info.json").write_text(json.dumps({"tooltips": {"by_key": {"a:i0:0": "Hold Shift"}}}))
     problems, _, _ = validate.check(export_dir)
     assert any("DTPF" in p for p in problems)
+
+
+GREEN = png({(0, 0): (10, 200, 10, 255)})
+
+
+def animation(*runs):
+    frames = {"r": RED, "b": BLUE, "g": GREEN}
+    return export.build_webp(frames, [list(run) for run in runs], 50)
+
+
+def test_compare_exports_classes_each_change(tmp_path):
+    base = {"item/a/still~0.webp": RED_WEBP,
+            "item/a/encoded~0.webp": RED_WEBP,
+            "item/a/starts~0.webp": RED_WEBP,
+            "item/b/stops~0.webp": animation(("r", 1), ("b", 1)),
+            "item/b/timing~0.webp": animation(("r", 1), ("b", 1)),
+            "item/b/frames~0.webp": animation(("r", 1), ("b", 1)),
+            "item/b/gone~0.webp": RED_WEBP}
+    new = {"item/a/still~0.webp": BLUE_WEBP,
+           "item/a/encoded~0.webp": RED,
+           "item/a/starts~0.webp": animation(("r", 1), ("b", 1)),
+           "item/b/stops~0.webp": RED_WEBP,
+           "item/b/timing~0.webp": animation(("r", 2), ("b", 1)),
+           "item/b/frames~0.webp": animation(("r", 1), ("g", 1)),
+           "item/b/added~0.webp": RED_WEBP}
+    write_zip(tmp_path / "base.zip", base)
+    write_zip(tmp_path / "new.zip", new)
+    found = compare_exports.main([str(tmp_path / "base.zip"), str(tmp_path / "new.zip")],
+                                 out=StringIO())
+    assert {name: cls for name, (cls, _) in found.items()} == {
+        "item/a/still~0.webp": "still pixels",
+        "item/a/encoded~0.webp": "same pixels",
+        "item/a/starts~0.webp": "became animated",
+        "item/b/stops~0.webp": "became still",
+        "item/b/timing~0.webp": "animation timing",
+        "item/b/frames~0.webp": "animation pixels",
+        "item/b/gone~0.webp": "only in base",
+        "item/b/added~0.webp": "only in new",
+    }
+    assert found["item/b/frames~0.webp"][1].startswith("1/2 frames (1)")
+
+
+def test_compare_exports_leaves_out_what_the_base_runs_disagree_on(tmp_path):
+    for name, noisy, changed in (("base", RED_WEBP, RED_WEBP),
+                                 ("base2", BLUE_WEBP, RED_WEBP),
+                                 ("new", GREEN, BLUE_WEBP)):
+        (tmp_path / name).mkdir()
+        write_zip(tmp_path / name / "images.zip",
+                  {"item/a/noisy~0.webp": noisy, "item/a/changed~0.webp": changed})
+    out = StringIO()
+    found = compare_exports.main([str(tmp_path / "base"), str(tmp_path / "new"),
+                                  "--base2", str(tmp_path / "base2")], out=out)
+    assert list(found) == ["item/a/changed~0.webp"]
+    assert "1 icons differ between the two base runs" in out.getvalue()
