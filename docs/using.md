@@ -184,11 +184,14 @@ a change affects. It needs your patterns, so an
   in the list, then **Check patterns** under *Pattern check*. Only that
   version's recipes are downloaded (about 2 MB); the icons in use don't
   change.
-- **After updating:** once you switch the game data to the new version,
-  admins get a notice at the top of the page if the update affects any
-  pattern. **Show patterns** opens the list. Picking the version in use
-  and **Check patterns** shows it again later. The notice's &times; hides
-  it for that update.
+- **After updating:** if you forget to switch the game data, admins get a
+  notice once your patterns or crafting jobs use items only a newer
+  version has (see
+  [When the game updates](server.md#when-the-game-updates)). Once you
+  switch the game data to the new version, admins get a notice at the top
+  of the page if the update affects any pattern. **Show patterns** opens
+  the list. Picking the version in use and **Check patterns** shows it
+  again later. The notice's &times; hides it for that update.
 
 Each pattern lands in one of these:
 

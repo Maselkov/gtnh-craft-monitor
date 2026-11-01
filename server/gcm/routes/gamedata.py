@@ -1,11 +1,12 @@
 """The Game data admin page: which GTNH version's icons and item catalog
 are live (and with which textures), what's published, and installing one;
-and checking the network's patterns against another version's recipes.
-The logic is in gcm/gamedata.py and gcm/recipes.py."""
+checking the network's patterns against another version's recipes; and
+the notice that the game data looks older than the game. The logic is in
+gcm/gamedata.py, gcm/recipes.py and gcm/gamedata_check.py."""
 
 from flask import Blueprint, jsonify, request
 
-from gcm import auth, gamedata, recipes
+from gcm import auth, gamedata, gamedata_check, recipes
 
 
 bp = Blueprint("gamedata", __name__)
@@ -86,3 +87,11 @@ def admin_recipe_notice_get():
     """For the page's notice that the last upgrade broke or changed
     patterns (recipes.notice()): {from, to, counts}, or {}."""
     return jsonify(recipes.notice())
+
+
+@bp.route("/api/admin/gamedata-notice", methods=["GET"])
+@auth.admin_required
+def admin_gamedata_notice_get():
+    """For the page's notice that the game data looks older than the game
+    (gamedata_check.notice())."""
+    return jsonify(gamedata_check.notice())

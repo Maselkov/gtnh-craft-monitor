@@ -108,7 +108,9 @@ async function startServer(extraEnv = {}) {
 // made with Python so its zips and checksums are exactly what the
 // server expects. A second release, E2E_NEXT_VERSION, is the same bundle
 // with other recipes (next/): the seeded Macerator pattern's recipe takes
-// two Neutronium Ingots there, for the pattern check.
+// two Neutronium Ingots there, for the pattern check. Its item list has
+// the GregTech items the seeded patterns use too, which the first one's
+// lacks, so admins are told the game data looks older than the game.
 const E2E_DATA_VERSION = '2.9.0-e2e';
 const E2E_NEXT_VERSION = '2.9.1-e2e';
 const MAKE_BUNDLE = `
@@ -142,6 +144,7 @@ open(out + "/icons_lookup.json", "w").write(json.dumps(
                 "gregtech:gt.metaitem.01:11028": "item/gregtech/gt.metaitem.01~11028.png"},
      "fluids_by_key": {}, "by_label": {}, "bleed": {"item/minecraft/iron_ingot~0.png": 12}}))
 open(out + "/item_catalog.txt", "w").write("minecraft:iron_ingot\\n")
+open(out + "/next/item_catalog.txt", "w").write("gregtech:gt.metaitem.01\\nminecraft:iron_ingot\\n")
 open(out + "/ore_dict.json", "w").write(json.dumps(
     {"gemDiamond": ["minecraft:diamond:0", "IC2:itemPartIndustrialDiamond:0"],
      "ingotNeutronium": ["gregtech:gt.metaitem.01:11028"]}))
@@ -156,7 +159,7 @@ for bundle in (out, out + "/next"):
     files = {}
     for name in ("images.zip", "images-faithful32.zip", "icons_lookup.json", "item_catalog.txt", "ore_dict.json",
                  "item_info.json", "recipes.json.gz"):
-        data = open((bundle if name == "recipes.json.gz" else out) + "/" + name, "rb").read()
+        data = open((bundle if name in ("recipes.json.gz", "item_catalog.txt") else out) + "/" + name, "rb").read()
         files[name] = {"size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
     open(bundle + "/data.json", "w").write(
         json.dumps({"format": 1, "files": files, "generated_at": "2026-09-25T00:00:00Z"}))
@@ -166,7 +169,7 @@ const BUNDLE_FILES = [
   'item_info.json', 'recipes.json.gz',
 ];
 // The files E2E_NEXT_VERSION has of its own; the rest are the same.
-const NEXT_FILES = ['data.json', 'recipes.json.gz'];
+const NEXT_FILES = ['data.json', 'recipes.json.gz', 'item_catalog.txt'];
 
 // What the server posted to its webhook (WEBHOOK_URLS points at the
 // fake GitHub server's /webhook).
@@ -1716,6 +1719,31 @@ async function main() {
     await waitFor('check closed', `!visible($('#recipeCheckModal')) && visible($('#gamedataModal'))`);
     await evaluate(`pressKey('Escape'), true`);
     await waitFor('game data closed', `!visible($('#gamedataModal'))`);
+  });
+
+  step('admin: a notice when the game data looks older than the game', async () => {
+    // The seeded patterns' GregTech items: only E2E_NEXT_VERSION's item
+    // list has them.
+    await waitFor('notice', `visible($('#gamedataNotice'))
+      && $('#gamedataNoticeText').textContent === "Your network has an item type the GTNH ${E2E_DATA_VERSION} game data doesn't know (Iron Dust), so the network scanner skips it. It's in ${E2E_NEXT_VERSION}."
+      && $('#gamedataNoticeSwitch').textContent === 'Switch to ${E2E_NEXT_VERSION}\u2026'`);
+    await click(`$('#gamedataNoticeSwitch')`);
+    await waitFor('Game data, the version picked, why', `visible($('#gamedataModal'))
+      && $('#gamedataVersion').value === '${E2E_NEXT_VERSION}'
+      && $('#gamedataCurrent').textContent.startsWith('In use: GTNH ${E2E_DATA_VERSION}')
+      && visible($('#gamedataUnknown'))
+      && $('#gamedataUnknownSummary').textContent === "1 item type your network has isn't in this game data"
+      && $('#gamedataUnknownList').textContent === 'Iron Dust gregtech:gt.metaitem.01, since ${E2E_NEXT_VERSION}'`);
+    await evaluate(`pressKey('Escape'), true`);
+    await waitFor('game data closed', `!visible($('#gamedataModal'))`);
+    await click(`$('[data-action="dismiss-gamedata-notice"]')`);
+    await waitFor('closed', `!visible($('#gamedataNotice'))`);
+    await cdp.send('Page.reload', {});
+    await waitFor('reloaded', `document.readyState === 'complete' && !window.byText`);
+    await evaluate(PAGE_LIB);
+    await waitFor('signed in', `$('#settingsUser').textContent !== ''`);
+    await sleep(1000);
+    await waitFor('still closed for that suggestion', `!visible($('#gamedataNotice'))`);
   });
 
   step('ore-dictionary substitutes: a Substitute-ticked pattern takes Industrial Diamonds as diamonds', async () => {

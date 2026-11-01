@@ -6,7 +6,7 @@ import time
 
 from flask import Blueprint, g, jsonify, request, Response
 
-from gcm import auth, bottlenecks, config, craft_stats, icons, job_tree, patterns, planner, state, store, tracking
+from gcm import auth, bottlenecks, config, craft_stats, gamedata_check, icons, job_tree, patterns, planner, state, store, tracking
 
 
 bp = Blueprint("crafts", __name__)
@@ -60,6 +60,7 @@ def crafts_post():
     # Before storing: it also fills in each job's progress. Outside
     # crafts_lock - tracking has its own lock.
     tracking.process_jobs(jobs)
+    gamedata_check.note_jobs(jobs)
 
     with state.crafts_lock:
         first = state.crafts["received_at"] is None

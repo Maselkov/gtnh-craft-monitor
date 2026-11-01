@@ -114,6 +114,8 @@ gcm/item_info.py    item descriptions, rarity, fluid details, mod names
                     (item_info.json, via the bundle index) by the lookup's keys
 gcm/gamedata.py     per-GTNH-version game data bundles: list, download,
                     select, and which one icons.py uses
+gcm/gamedata_check.py  whether the game data looks older than the game,
+                    for the admins' notice
 gcm/charts.py       matplotlib PNGs for OpenGraph, with cache + rate limit
 gcm/routes/*.py     one Flask Blueprint per area: crafts, craft_requests,
                     network, power, users, gamedata, pages
@@ -974,6 +976,31 @@ pattern whose output nothing makes any more can say whether anything
 still uses it. Only an Unpackager recipe left (TAKE_APART_MAPS) means
 removed: that's how GTNH 2.9.0 retired GT++'s Transmission Components,
 so stock can be taken apart.
+
+**Stale game data is found from item ids, confirmed against newer
+catalogs** (`gcm/gamedata_check.py`). OpenComputers can't read the
+modpack version, and the item scan only asks for the selected catalog's
+ids, so items a newer pack added are missing with no error: 2.8.4's
+catalog lacks 1,126 ids that 2.9.0's has (and has 770 that 2.9.0
+dropped). Patterns and crafting jobs name items without going through
+the catalog, so an id they report that the catalog lacks is the
+evidence. Only whole ids (`mod:name`, the catalog's own lines) are
+compared: variants differ by NBT and damage values for reasons that
+aren't the version. An id counts only once a newer version's catalog
+(an installed bundle's, or the release's `item_catalog.txt`, ~325 KB,
+cached in `DATA_DIR/catalogs/` by the release's `data.json` asset id) is
+found to have it. That leaves out NEI-hidden items (the catalog is NEI's
+list), modified packs' and junk, so one confirmed id is enough. The
+suggestion is the version with the most of them, the oldest of those,
+and a final release before its own pre-releases: versions are ordered
+by `gamedata.version_key()`, since publish order isn't version order
+(2.8.4's data was published after 2.9.0's). Pre-releases can't be told
+apart this way: 2.9.0-RC-1 to 2.9.0 added four ids (three LittleTiles
+items and a StructureLib debug item) and RC-2 to 2.9.0 seven variants,
+none likely in a network. So that case goes by name: selected data for a
+pre-release whose final release is out. Not detectable: game data newer
+than the game (a catalog id the game lacks reads as out of stock), and
+fluids and essentia, which catalogs don't list.
 
 ## Test suite (server/tests/)
 

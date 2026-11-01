@@ -327,3 +327,31 @@ and download them.
 For a pack that isn't covered (a nightly, a modified pack), or if you'd
 rather not use prebuilt data, build it yourself with
 [`tools/icon-export`](../tools/icon-export/README.md).
+
+### When the game updates
+
+Nothing in the game can tell the server which GTNH version it runs, and
+the network scanner only looks for the items the picked version's item
+list has. So after the game server updates, items the new version added
+are missing from the Network tab until the game data is switched too.
+
+The server watches for that. When your patterns or crafting jobs use
+items the game data in use doesn't know, it looks them up in the item
+lists of newer versions: those already downloaded, and the published
+ones (about 300 KB each, kept in `DATA_DIR/catalogs/`). If a newer
+version has them, admins get a notice at the top of the page naming the
+items and that version. **Switch to…** opens **Game data** with it
+picked; the switch is yours to make, since it downloads the version. The
+dialog lists the items and the version each came in. The &times; hides
+the notice until it would suggest another version.
+
+On game data for a pre-release (`2.9.0-RC-1`), whose items are nearly the
+same as the final release's, the notice comes once the final release
+(`2.9.0`) is published instead.
+
+Items no published version has aren't counted, and are listed in the
+dialog: hidden in NEI, or from a nightly or modified pack, which needs
+[game data built for it](../tools/icon-export/README.md). The check needs
+patterns (an [ME Interface Terminal](in-game.md#me-interface-terminal))
+or busy crafting CPUs to go on, and can't tell when the game data is
+newer than the game.

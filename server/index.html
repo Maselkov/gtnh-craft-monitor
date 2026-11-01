@@ -98,6 +98,12 @@
     <a id="scriptsNoticeChanges" target="_blank" rel="noopener">What changed</a>
     <button class="history-close-btn note-dismiss" data-action="dismiss-scripts-notice" title="Don't show this again for this version">&times;</button>
   </div>
+  <!-- Admins: game data that looks older than the game (gamedata.js). -->
+  <div class="gamedata-note scripts-notice" id="gamedataNotice" hidden>
+    <span id="gamedataNoticeText"></span>
+    <button class="range-btn" id="gamedataNoticeSwitch" data-action="gamedata-notice-switch"></button>
+    <button class="history-close-btn note-dismiss" data-action="dismiss-gamedata-notice" title="Don't show this again for this suggestion">&times;</button>
+  </div>
   <!-- Admins: patterns the last GTNH upgrade's recipe changes affect (recipe-check.js). -->
   <div class="gamedata-note scripts-notice" id="recipeNotice" hidden>
     <span id="recipeNoticeText"></span>
@@ -385,6 +391,14 @@
       </div>
       <div class="modal-note">Item icons and the network scanner's item list, for the GTNH version your server runs. The download is about 300 MB and is used without a restart; the scanner switches on its next scan.</div>
       <div id="gamedataCurrent" class="gamedata-current"></div>
+      <details id="gamedataUnknown" class="gamedata-unknown" hidden>
+        <summary id="gamedataUnknownSummary"></summary>
+        <ul id="gamedataUnknownList"></ul>
+        <div id="gamedataUnpublished" class="modal-note" hidden>
+          <span id="gamedataUnpublishedText"></span>
+          <a href="https://github.com/Maselkov/gtnh-craft-monitor/blob/main/tools/icon-export/README.md" target="_blank" rel="noopener">Building game data</a>
+        </div>
+      </details>
       <label class="gamedata-label" for="gamedataVersion">GTNH version</label>
       <select id="gamedataVersion" class="modal-amount-input"></select>
       <label class="gamedata-label" for="gamedataTextures">Icon textures</label>
