@@ -78,8 +78,22 @@ export function patternTitle(p) {
   return `${outputs || '?'}`;
 }
 
+// A broken pattern whose output no GregTech recipe makes in `to`. Used
+// only where an item is taken apart (GTNH's Unpackager recipe for a
+// removed item) is as good as removed.
+export function removedText(removed, to) {
+  if (removed.used) {
+    return `Nothing in GregTech makes ${removed.name} in ${to}. It may be made another way now (a crafting table, another mod's machine), or have been removed.`;
+  }
+  const apart = removed.taken_apart_in.length
+    ? ` Any you have left can be taken apart in the ${removed.taken_apart_in.join(' or ')}.`
+    : '';
+  return `Removed in ${to}: nothing makes ${removed.name} any more, and nothing uses it.${apart}`;
+}
+
 function patternHtml(p, from, to) {
   const lines = [];
+  if (p.removed) lines.push(removedText(p.removed, to));
   if (p.status === 'moved') lines.push(`Now made in ${p.moved_to.join(', ')}.`);
   for (const change of p.changes || []) lines.push(change);
   if (p.machine_known === false) {

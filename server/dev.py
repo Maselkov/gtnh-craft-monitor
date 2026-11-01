@@ -411,10 +411,12 @@ def install_icons(data_dir):
 
 PREVIOUS_VERSION = "dev-before"
 # How "dev"'s recipes differ from PREVIOUS_VERSION's, by the pattern
-# provider whose recipe changes: one pattern broken, one moved and two
+# provider whose recipe changes: two patterns broken (one by an item
+# removed, which only an Unpackager takes apart now), one moved and two
 # changed outside the pattern.
 RECIPE_CHANGES = {
     "Bending Machine T4:EV": {"inputs": [("Inconel-625 Ingot", 2)]},
+    "Circuit Assembler": {"removed": "Ultimate Circuit"},
     "Lathe T3:HV": {"machine": "Cutting Machine"},
     "Fluid Extractor": {"eut": 1920},
     "Electric Implosion Compressor": {"fluids": [("Water", 1000)]},
@@ -441,6 +443,10 @@ def recipe_maps(changed):
         if crafting or any(BY_NAME[n]["kind"] == "essentia" for n, _ in inputs + outputs):
             continue
         change = RECIPE_CHANGES.get(provider, {}) if changed else {}
+        if change.get("removed") in [n for n, _ in outputs]:
+            # As GTNH removes an item: only taking it apart is left.
+            inputs, outputs, provider = outputs, [e for e in inputs if BY_NAME[e[0]]["kind"] != "fluid"], "Unpackager"
+            change = {}
         inputs = change.get("inputs", inputs)
         machine = change.get("machine", _machine(provider))
         recipe = {"e": change.get("eut", 120), "d": 200}

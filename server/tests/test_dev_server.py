@@ -97,15 +97,19 @@ def test_the_version_before_has_the_recipes_the_pattern_check_flags(tmp_path):
     finally:
         for idx in indexes:
             idx.close()
-    by_provider = {p["provider"]["name"]: p["status"] for p in result["patterns"]}
-    assert by_provider == {
+    by_provider = {p["provider"]["name"]: p for p in result["patterns"]}
+    assert {name: p["status"] for name, p in by_provider.items()} == {
         "Bending Machine T4:EV": "broken",
+        "Circuit Assembler": "broken",
         "Lathe T3:HV": "moved",
         "Fluid Extractor": "changed",
         "Electric Implosion Compressor": "changed",
         "Infusion Altar": "unchecked",
     }
     assert result["counts"]["crafting"] == 3
+    assert by_provider["Circuit Assembler"]["removed"] == {
+        "name": "Ultimate Circuit", "used": False, "taken_apart_in": ["Unpackager"],
+    }
 
 
 def test_the_bundles_descriptions_reach_the_page(tmp_path, game, client):

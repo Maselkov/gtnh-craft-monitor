@@ -23,6 +23,7 @@ FREEZER = "gt.recipe.vacuumfreezer"
 LCR = "gt.recipe.largechemicalreactor"
 MIXER = "gt.recipe.multimixer"
 MACERATOR = "gt.recipe.macerator"
+UNPACKAGER = "gt.recipe.unpackager"
 
 DUST = "gregtech:gt.metaitem.01:2028"
 HOT = "gregtech:gt.metaitem.01:12028"
@@ -36,6 +37,7 @@ MACHINES = {
     LCR: ["Large Chemical Reactor"],
     MIXER: ["Industrial Mixing Machine"],
     MACERATOR: ["Basic Macerator", "Pulverizer"],
+    UNPACKAGER: ["Basic Unpackager", "Advanced Unpackager"],
 }
 
 
@@ -160,6 +162,19 @@ class TestMatching:
         # What the new version makes it with instead.
         assert broken["new"][0][0]["inputs"][0]["size"] == 2
         assert broken["new"][0][0]["inputs"][0]["name"] == f"Name of {DUST}"
+        assert "removed" not in broken
+
+    def test_an_item_nothing_makes_or_uses_any_more_is_removed(self, versions):
+        unpack = {"i": [[HOT, 1]], "o": [[DUST, 1]], "e": 30, "d": 100}
+        result = check(versions, {EBF: [ebf()]}, {UNPACKAGER: [unpack]}, [EBF_PATTERN])
+        broken = only(result)
+        assert broken["status"] == "broken" and broken["new"] == []
+        # Taking it apart, which GTNH keeps for removed items, isn't a use.
+        assert broken["removed"] == {"name": f"Name of {HOT}", "used": False, "taken_apart_in": ["Basic Unpackager"]}
+
+    def test_an_item_nothing_makes_but_something_uses(self, versions):
+        result = check(versions, {EBF: [ebf()]}, {FREEZER: [freezer()]}, [EBF_PATTERN])
+        assert only(result)["removed"] == {"name": f"Name of {HOT}", "used": True, "taken_apart_in": []}
 
     def test_a_changed_gas_is_a_change_outside_the_pattern(self, versions):
         result = check(versions, {EBF: [ebf()]}, {EBF: [ebf(gas="helium")]}, [EBF_PATTERN])
