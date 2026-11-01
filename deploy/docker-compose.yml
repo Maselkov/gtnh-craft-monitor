@@ -1,13 +1,15 @@
 # Compose file for running a published image (see docs/server.md,
 # "Docker"). On the deployment host it sits in DEPLOY_DIR beside .env and
-# data/; gcm-deploy.sh sets GCM_TAG to the release it deploys.
+# data/; gcm-deploy.sh sets GCM_TAG to the release it deploys. A second
+# copy on the same host (the testing instance) sets GCM_CONTAINER_NAME and
+# GCM_PORT in its .env.
 services:
   gtnh-craft-monitor:
     image: ghcr.io/maselkov/gtnh-craft-monitor:${GCM_TAG:-latest}
-    container_name: gtnh-craft-monitor
+    container_name: ${GCM_CONTAINER_NAME:-gtnh-craft-monitor}
     restart: unless-stopped
     ports:
-      - "8420:8420"
+      - "${GCM_PORT:-8420}:8420"
     environment:
       # The in-game scripts' shared secret. Leave it unset to have one
       # generated into data/api_key on first start.

@@ -1,0 +1,56 @@
+name: Deploy
+
+# Called by publish.yml (production, each release) and testing.yml
+# (testing, each push to main) with an image tag that's already on GHCR.
+#
+# Runs on the self-hosted runner, which SSHes to the deployment host. Each
+# environment's deploy key there is locked to a forced command
+# (deploy/gcm-deploy.sh) that names its instance, so all this job - or
+# anyone holding a key - can do is deploy an image to that key's instance:
+# a release to production, a main build to testing. The repo is never
+# checked out on either machine.
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: "production or testing"
+        type: string
+        required: true
+      tag:
+        description: "The image tag to deploy: 1.2.0, or sha-<commit> for testing"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: [self-hosted, gcm-deploy]
+    # Protection rules (allowed refs, reviewers) and the SSH key live here.
+    environment: ${{ inputs.environment }}
+    concurrency:
+      group: deploy-${{ inputs.environment }}
+      cancel-in-progress: false
+    permissions:
+      packages: read
+    steps:
+      - name: Deploy over SSH
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ vars.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          dir=$(mktemp -d)
+          trap 'rm -rf "$dir"' EXIT
+          (umask 077 && printf '%s\n' "$SSH_KEY" > "$dir/key")
+          printf '%s\n' "$KNOWN_HOSTS" > "$dir/known_hosts"
+          # The short-lived job token goes over stdin so the deployment host
+          # can pull from GHCR without storing any registry credentials.
+          printf '%s\n%s\n' "$GITHUB_ACTOR" "$GHCR_TOKEN" |
+            ssh -i "$dir/key" -o IdentitiesOnly=yes -o BatchMode=yes \
+              -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$dir/known_hosts" \
+              "$DEPLOY_HOST" "deploy $TAG"
