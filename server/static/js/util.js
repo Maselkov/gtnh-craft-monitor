@@ -53,6 +53,15 @@ export const PIN_ICON = '<svg class="ui-icon" viewBox="0 0 16 16" width="1em" he
 export const BELL_ICON = '<svg class="ui-icon" viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true"><path fill="currentColor" d="M8 1.2a1 1 0 0 1 1 1v.7a4.6 4.6 0 0 1 3.6 4.5v3l1.3 1.7a.6.6 0 0 1-.5 1H2.6a.6.6 0 0 1-.5-1l1.3-1.7v-3A4.6 4.6 0 0 1 7 2.9v-.7a1 1 0 0 1 1-1zM6.2 14.3h3.6a1.8 1.8 0 0 1-3.6 0z"/></svg>';
 export const RESTOCK_ICON = '<svg class="ui-icon" viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13.2 7A5.2 5.2 0 0 0 3.7 4.6"/><path d="M3.4 1.9v2.9h2.9"/><path d="M2.8 9a5.2 5.2 0 0 0 9.5 2.4"/><path d="M12.6 14.1v-2.9H9.7"/></g></svg>';
 
+// A page of the user guides, e.g. docsUrl('in-game.md#crafting-cpus').
+export function docsUrl(page) {
+  return `https://github.com/Maselkov/gtnh-craft-monitor/blob/main/docs/${page}`;
+}
+
+// Where the guide says how to connect an ME Interface Terminal, which
+// the crafting plan and a job's tree are read through.
+export const TERMINAL_DOCS_URL = docsUrl('in-game.md#me-interface-terminal');
+
 export function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
@@ -193,4 +202,21 @@ export function formatRate(perSecond, unit = '') {
   const [value, per] = Math.abs(perHour) >= 1 ? [perHour, 'h'] : [perHour * 24, 'd'];
   if (Math.abs(value) < 0.5) return null;
   return `${value > 0 ? '+' : '−'}${formatQty(Math.abs(value))}${unit}/${per}`;
+}
+
+// Notes a viewer can close (the Network tab's Interface Terminal note,
+// the scripts notice), remembered in this browser under `key`. `value`
+// says which instance was closed - a version, say, so the next one shows
+// again. Also kept in memory: with storage blocked, closing still holds
+// until a reload.
+const closedNotes = new Map();
+
+export function noteClosed(key, value = '1') {
+  if (closedNotes.has(key)) return closedNotes.get(key) === value;
+  try { return localStorage.getItem(key) === value; } catch (e) { return false; }
+}
+
+export function closeNote(key, value = '1') {
+  closedNotes.set(key, value);
+  try { localStorage.setItem(key, value); } catch (e) { /* in memory until a reload */ }
 }

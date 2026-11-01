@@ -11,7 +11,8 @@ Basically, it's web AE2 for your base.
 
 - **[Crafts](docs/using.md#crafts-tab)** — every AE2 crafting CPU with its
   current job, output item, progress, and a live grid of its ingredients or
-  a live tree of its steps that points out the ones that are stuck. Pin a
+  a live tree of its steps that points out the ones that are stuck (with an
+  [ME Interface Terminal](docs/in-game.md#me-interface-terminal) connected). Pin a
   job to get a notification when it finishes. Recent crafts lists every job
   that ended.
 - **[Power](docs/using.md#power-tab)** — stored EU of a GregTech multiblock
@@ -22,7 +23,7 @@ Basically, it's web AE2 for your base.
   stock history charts that show how fast an item is running out.
 - **[Remote crafting](docs/using.md#requesting-and-cancelling-crafts)** —
   request or cancel AE2 crafts from the browser, with a preview of the
-  crafting plan.
+  crafting plan (with an ME Interface Terminal connected).
 - **[Stock rules](docs/using.md#stock-rules)** — get a notification when an
   item runs low, or have the server queue a craft to keep it stocked.
 - **[Webhooks](docs/using.md#webhooks)** — finished pinned crafts and failed
@@ -45,7 +46,8 @@ Basically, it's web AE2 for your base.
   - **Crafts and Network tabs:** an Adapter on the ME Controller.
   - **Power tab:** an Adapter on any casing of the GregTech multiblock.
   - **Crafting plan and craft tree** (optional): an Adapter on a block
-    holding an ME Interface Terminal part.
+    holding an ME Interface Terminal part (see
+    [ME Interface Terminal](docs/in-game.md#me-interface-terminal)).
 
   Connect the Adapters with OpenComputers cable, not AE2's OpenComputers
   P2P tunnels: those make components go missing. One computer can run

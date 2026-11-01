@@ -6,7 +6,7 @@ import time
 
 from flask import Blueprint, g, jsonify, request, Response
 
-from gcm import auth, bottlenecks, config, craft_stats, icons, job_tree, planner, state, store, tracking
+from gcm import auth, bottlenecks, config, craft_stats, icons, job_tree, patterns, planner, state, store, tracking
 
 
 bp = Blueprint("crafts", __name__)
@@ -134,7 +134,7 @@ def crafts_tree_get(cpu):
         return jsonify({"stale": True})
     result, reason = job_tree.tree(cpu)
     if result is None:
-        return jsonify({"tree": None, "reason": reason})
+        return jsonify({"tree": None, "reason": reason, "needs_terminal": patterns.terminal_missing()})
     if path is not None:
         node = planner.subtree(result["root"], path)
         if node is None:

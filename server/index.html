@@ -148,6 +148,12 @@
   </div>
 
   <div id="networkTab" style="display:none;">
+    <!-- First, so it stacks with any page-wide notice above the tabs. -->
+    <div class="gamedata-note" id="networkTerminalNote" hidden>
+      <span>Connect an ME Interface Terminal to see the crafting plan before you request a craft, and each job's steps on the Crafts tab.</span>
+      <a id="networkTerminalHow" target="_blank" rel="noopener">How</a>
+      <button class="history-close-btn note-dismiss" data-action="dismiss-terminal-note" title="Don't show this again">&times;</button>
+    </div>
     <div class="sub" id="networkSourceLine">Waiting for data&hellip;</div>
     <div class="gamedata-note" id="networkGameDataNote" hidden>
       <span>No GTNH version is picked yet, so items have no icons and the network scanner has no item list.</span>

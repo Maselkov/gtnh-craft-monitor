@@ -9,8 +9,8 @@ import { stockBadgeFor } from './stock.js';
 import { activeTab } from './tabs.js';
 import { bindCellTooltip, hideTooltip, showTooltip, tooltipVisible } from './tooltip.js';
 import {
-  delegateActions, escapeHtml, essentiaBadgeHtml, formatDuration, formatQty, formatRate, formatRelativeTime,
-  iconClass, iconUrl, kindTooltipHtml, PIN_ICON,
+  closeNote, delegateActions, escapeHtml, essentiaBadgeHtml, formatDuration, formatQty, formatRate,
+  formatRelativeTime, iconClass, iconUrl, kindTooltipHtml, noteClosed, PIN_ICON, TERMINAL_DOCS_URL,
 } from './util.js';
 
 // ---------- Network browser ----------
@@ -24,6 +24,7 @@ let networkChanges = null;
 // Grid (icons only, like the game's terminal) or list (with names, for
 // a touch screen where there's no hover tooltip), per viewer.
 const NETWORK_VIEW_KEY = 'gtnhCraftMonitor.networkView';
+const TERMINAL_NOTE_DISMISSED_KEY = 'gtnhCraftMonitor.terminalNoteDismissed';
 let networkView = 'grid';
 let networkShownItems = [];  // the currently-rendered array, indexed by
                               // each cell's data-idx - lets the tooltip
@@ -460,12 +461,27 @@ export function updateGameDataNote() {
   document.getElementById('networkGameDataAsk').hidden = admin;
 }
 
+// No patterns, and network_browser.lua says it has no ME Interface
+// Terminal to read them with: admins, who set up the game side, are
+// told what one adds, until they close the note.
+export function updateTerminalNote() {
+  const admin = Boolean(AUTH_USER && AUTH_USER.role === 'admin');
+  document.getElementById('networkTerminalNote').hidden =
+    !admin || noteClosed(TERMINAL_NOTE_DISMISSED_KEY) || !lastNetworkData || !lastNetworkData.needs_terminal;
+}
+
+function dismissTerminalNote() {
+  closeNote(TERMINAL_NOTE_DISMISSED_KEY);
+  updateTerminalNote();
+}
+
 export async function fetchNetwork() {
   try {
     const res = await fetch('/api/network');
     const data = await res.json();
     lastNetworkData = data;
     updateGameDataNote();
+    updateTerminalNote();
     // Its ETag makes this an empty 304 unless the items or game data changed.
     if (itemInfoWanted) fetchNetworkItemInfo();
     if (networkSort === 'change') await fetchNetworkChanges();
@@ -783,6 +799,7 @@ let networkResizeTicking = false;
 
 export function setupNetworkActions() {
   try { networkView = localStorage.getItem(NETWORK_VIEW_KEY) === 'list' ? 'list' : 'grid'; } catch (e) { /* grid */ }
+  document.getElementById('networkTerminalHow').href = TERMINAL_DOCS_URL;
   showNetworkView();
   window.addEventListener('scroll', onNetworkScroll);
 
@@ -800,5 +817,6 @@ export function setupNetworkActions() {
     'network-sort': (el) => setNetworkSort(el.dataset.sort),
     'network-change-range': (el) => setNetworkChangeRange(el.dataset.range),
     'network-view': (el) => setNetworkView(el.dataset.view),
+    'dismiss-terminal-note': dismissTerminalNote,
   });
 }

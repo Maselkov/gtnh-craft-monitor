@@ -147,6 +147,35 @@ def current():
         return state.patterns["patterns"], state.patterns["updated_at"]
 
 
+def note_terminal(found):
+    """What a network scan said about the ME Interface Terminal: True,
+    False, or anything else for not saying."""
+    with state.patterns_lock:
+        state.patterns["terminal"] = found if isinstance(found, bool) else None
+
+
+def terminal_missing():
+    """Whether no patterns have been read and network_browser.lua says it
+    has no ME Interface Terminal to read them with - what the page then
+    points out."""
+    with state.patterns_lock:
+        return state.patterns["terminal"] is False and state.patterns["updated_at"] is None
+
+
+def missing_reason(what):
+    """Why there's no `what` ("crafting plan", "tree") while no patterns
+    have been read."""
+    with state.patterns_lock:
+        terminal = state.patterns["terminal"]
+    if terminal is False:
+        return (f"The {what} is built from your patterns, and needs an ME Interface Terminal "
+                "connected to the computer running network_browser.lua.")
+    if terminal:
+        return "Reading your patterns: the first scan runs after the next network scan."
+    return (f"No pattern scan yet: the {what} is built from your patterns, read through an "
+            "ME Interface Terminal connected to the computer running network_browser.lua.")
+
+
 def version():
     """Changes whenever snapshot() could, for an ETag."""
     with state.patterns_lock:

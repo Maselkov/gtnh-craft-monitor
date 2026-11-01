@@ -151,6 +151,11 @@ the same `start` → `batch` × N → `finish` protocol as the item scan
 alongside it keeps the two from holding memory at the same time. A failed
 pattern scan is only logged, and is tried again after the next item scan.
 
+Each item scan's `scan/finish` also says whether there's a terminal
+(`interface_terminal`: `true` or `false`; left out when pattern scans are
+turned off). Until patterns have been read, the server uses it to say
+"connect a terminal" rather than "wait for the first pattern scan".
+
 What it reports, found with `oc/pattern_dump.lua` on a real network:
 
 - Processing patterns have real sizes.

@@ -97,6 +97,15 @@ h1 {
 .gamedata-note[hidden], .connect-note[hidden] {
   display: none;
 }
+.gamedata-note .note-dismiss {
+  margin-left: auto;
+}
+#networkTerminalNote {
+  margin-top: 12px;
+}
+.gamedata-note a, #craftPlanNote a {
+  color: var(--accent);
+}
 /* auth.js sets body.is-admin. */
 body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
   display: none;
@@ -1327,6 +1336,9 @@ body.private-locked #networkTab {
 }
 .agent-dot.warn {
   background: var(--busy);
+}
+.agent-dot.off {
+  background: var(--muted);
 }
 .agent-command.failed {
   color: var(--stale);

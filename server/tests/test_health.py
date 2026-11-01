@@ -1,6 +1,7 @@
 from gcm import config, retention, state, store, webhooks
 from conftest import login_as
 from test_item_history_api import IRON, run_scan
+from test_network_api import run_scan as run_batched_scan
 
 
 def health(client):
@@ -19,6 +20,11 @@ class TestHealth:
         assert client.get("/api/admin/health").status_code == 403
         login_as(client, "olive", role="operator")
         assert client.get("/api/admin/health").status_code == 403
+
+    def test_no_interface_terminal_is_said_without_a_warning(self, client, api_headers):
+        assert feed(health(client), "patterns")["off"] is None
+        run_batched_scan(client, api_headers, [], interface_terminal=False)
+        assert feed(health(client), "patterns")["off"] == "no ME Interface Terminal connected (optional)"
 
     def test_nothing_reported_yet(self, client):
         data = health(client)

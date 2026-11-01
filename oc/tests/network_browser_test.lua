@@ -66,7 +66,7 @@ test("a full scan: catalog download, chunked batches, fluids, finish", function(
 
   local finish = env:requests_to("^/api/network/scan/finish$")
   t.eq(#finish, 1)
-  t.eq(finish[1].json, { scan_token = "tok-1", chunks_sent = 4, total_errors = 0 })
+  t.eq(finish[1].json, { scan_token = "tok-1", chunks_sent = 4, total_errors = 0, interface_terminal = false })
 end)
 
 test("essentia follows the fluids, in its own chunk", function()
@@ -92,7 +92,8 @@ test("without Thaumic Energistics the scan is items and fluids, as before", func
   env:start_service("network_browser")
   env:run({ seconds = 60 })
   t.eq(#batches(env), 3)
-  t.eq(env:requests_to("^/api/network/scan/finish$")[1].json, { scan_token = "tok-1", chunks_sent = 3, total_errors = 0 })
+  t.eq(env:requests_to("^/api/network/scan/finish$")[1].json, { scan_token = "tok-1", chunks_sent = 3, total_errors = 0,
+    interface_terminal = false })
 end)
 
 test("a batch that can't be encoded is an error, and the scan goes on", function()
@@ -490,6 +491,7 @@ test("after an item scan, every pattern goes to the server in chunks", function(
   t.truthy(order["/api/network/scan/finish"] < order["/api/network/patterns/start"],
     "patterns come after the item scan")
 
+  t.eq(env:requests_to("^/api/network/scan/finish$")[1].json.interface_terminal, true)
   local b = pattern_batches(env)
   t.eq(#b, 2)
   t.eq(b[1].scan_token, "ptok-1")
@@ -564,6 +566,8 @@ test("PATTERN_SCAN_INTERVAL_SECONDS = 0 turns pattern scans off", function()
   env:start_service("network_browser")
   env:run({ seconds = 60 })
   t.eq(#env:requests_to("^/api/network/patterns"), 0)
+  -- Off isn't the same as no terminal: the page shouldn't suggest one.
+  t.eq(env:requests_to("^/api/network/scan/finish$")[1].json.interface_terminal, nil)
 end)
 
 test("a broken pattern list is reported as an error, tried again, and item scans go on", function()

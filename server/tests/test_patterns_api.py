@@ -4,6 +4,7 @@ the shapes oc/pattern_dump.lua found on a real GTNH 2.9 network."""
 from gcm import inventory, nbt, patterns, state
 from conftest import login_as
 from nbt_fixtures import seed_tag, tag_hex
+from test_network_api import run_scan
 
 
 def run_pattern_scan(client, api_headers, batches, total_errors=0):
@@ -242,3 +243,38 @@ def test_a_pattern_scan_past_the_limit_is_abandoned(client, api_headers, monkeyp
     assert res.get_json()["ok"] is False
     assert state.pattern_buffer == []
     assert [p["provider"]["name"] for p in scanned(client)["patterns"]] == ["Molecular Assembler"]
+
+
+class TestInterfaceTerminal:
+    # network_browser.lua says with each network scan whether it has an ME
+    # Interface Terminal, so the page can tell "connect one" from "wait".
+    PLAN = {"internal": "planks", "amount": 1}
+
+    def plan(self, client):
+        return client.get("/api/network/plan", query_string=self.PLAN).get_json()
+
+    def test_without_one_the_page_suggests_one(self, client, api_headers):
+        login_as(client, "alice")
+        run_scan(client, api_headers, [], interface_terminal=False)
+        assert client.get("/api/network").get_json()["needs_terminal"] is True
+        data = self.plan(client)
+        assert "needs an ME Interface Terminal" in data["reason"] and data["needs_terminal"] is True
+
+    def test_with_one_it_waits_for_the_first_pattern_scan(self, client, api_headers):
+        login_as(client, "alice")
+        run_scan(client, api_headers, [], interface_terminal=True)
+        assert client.get("/api/network").get_json()["needs_terminal"] is False
+        data = self.plan(client)
+        assert data["reason"].startswith("Reading your patterns") and data["needs_terminal"] is False
+
+    def test_not_said_keeps_the_old_wording(self, client, api_headers):
+        login_as(client, "alice")
+        run_scan(client, api_headers, [])
+        data = self.plan(client)
+        assert "No pattern scan yet" in data["reason"] and data["needs_terminal"] is False
+
+    def test_patterns_already_read_are_used_without_one(self, client, api_headers):
+        login_as(client, "alice")
+        run_pattern_scan(client, api_headers, [[]])
+        run_scan(client, api_headers, [], interface_terminal=False)
+        assert client.get("/api/network").get_json()["needs_terminal"] is False

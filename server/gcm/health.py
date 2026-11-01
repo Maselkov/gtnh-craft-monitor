@@ -75,6 +75,9 @@ def _patterns(now):
         "patterns": len(current),
         # Read on demand, not on a schedule: an old reading is fine.
         "ok": updated_at is not None,
+        # Said instead of "nothing yet" for a feed that's optional and
+        # not set up, with no warning.
+        "off": "no ME Interface Terminal connected (optional)" if patterns.terminal_missing() else None,
     }
 
 

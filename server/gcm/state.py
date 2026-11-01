@@ -102,6 +102,10 @@ patterns = {
     "in_progress": False,
     "current_scan_token": None,
     "chunks_received": 0,
+    # Whether network_browser.lua found an ME Interface Terminal, as its
+    # last network scan said: None until one does (older scripts, or
+    # pattern scans turned off).
+    "terminal": None,
 }
 
 
@@ -168,6 +172,7 @@ def reset():
             in_progress=False,
             current_scan_token=None,
             chunks_received=0,
+            terminal=None,
         )
     with tracking_lock:
         cpu_last_busy.clear()
