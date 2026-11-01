@@ -166,6 +166,11 @@ in-game computers are listed under it (see
 - how many browsers get push notifications, and how the last webhook post
   went.
 - how long the server has been up, its release, and the game data version.
+  When a newer release is out, it says so, with a link to what's new; a
+  dot on **Settings (⚙)** and a line under **Status** in its menu point
+  here. Updating the server is done where it runs (see the
+  [README](../README.md#updating)). Anyone signed in sees the release in
+  the settings menu.
 
 Until a tab's script first reports, the Crafts, Power and Network tabs
 say which script they're waiting for. Admins get a **Connect a computer**

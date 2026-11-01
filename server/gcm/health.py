@@ -6,7 +6,7 @@ import os
 import shutil
 import time
 
-from gcm import config, gamedata, patterns, retention, state, store, webhooks
+from gcm import agents, config, gamedata, patterns, retention, state, store, webhooks
 
 STARTED_AT = time.time()
 
@@ -114,6 +114,14 @@ def _storage():
     return {"files": files, "free_bytes": free, "total_bytes": total}
 
 
+def _newer_release():
+    """The latest release if it's newer than this server's, as last
+    fetched (the Status dialog's computer list keeps that fresh)."""
+    if not config.SERVER_VERSION:
+        return None
+    return agents.newer_server_release(agents.cached_latest_release())
+
+
 def snapshot(now=None):
     now = time.time() if now is None else now
     delivery = webhooks.last_delivery
@@ -121,6 +129,7 @@ def snapshot(now=None):
     return {
         "uptime_seconds": now - STARTED_AT,
         "version": config.SERVER_VERSION,
+        "newer_release": _newer_release(),
         "gamedata": gamedata.selected_version(),
         "feeds": [_crafts(now), _network(now), _patterns(now), *_power(now)],
         "storage": _storage(),

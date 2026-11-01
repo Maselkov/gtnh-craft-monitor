@@ -1,6 +1,6 @@
 // Sign-in state, admin user/token management modals, settings menu.
 
-import { updateScriptsNotice } from './agents.js';
+import { updateRelease, updateScriptsNotice } from './agents.js';
 import { updateRecipeNotice } from './recipe-check.js';
 import { showToast } from './craft-actions.js';
 import {
@@ -47,6 +47,7 @@ function updateAuthenticationControl() {
   button.style.display = AUTH_USER ? 'none' : '';
   // Signed out, the settings menu holds just the Theme.
   document.getElementById('settingsUser').textContent = AUTH_USER ? `Signed in as ${AUTH_USER.display_name}` : '';
+  document.getElementById('settingsUserRow').hidden = !AUTH_USER;
   document.getElementById('notifToggle').style.display = AUTH_USER ? '' : 'none';
   document.getElementById('signOutBtn').style.display = AUTH_USER ? '' : 'none';
   if (!AUTH_USER) closeSettingsMenu();
@@ -59,6 +60,7 @@ function updateAuthenticationControl() {
   document.getElementById('backupBtn').style.display = adminVisible ? '' : 'none';
   document.getElementById('agentsBtn').style.display = adminVisible ? '' : 'none';
   if (AUTH_USER) syncPushSubscription();
+  updateRelease();
   updateGameDataNote();
   // The notices wait for which of them someone dismissed.
   loadDismissedNotes(isOperator()).then(() => {

@@ -55,8 +55,11 @@ os.environ["SESSION_COOKIE_SECURE"] = "0"
 os.environ["CRAFT_STALL_SECONDS"] = "30"
 os.environ["CRAFT_BLOCK_GRACE_SECONDS"] = "10"
 # As a published image would have it: the first fake computer runs older
-# scripts than this, so admins see the notice asking to update it.
+# scripts than this, so admins see the notice asking to update it. And
+# the real latest release is newer than this server, so Status says so
+# (and auto-update holds back, as it never updates past the latest).
 os.environ["GCM_SCRIPTS_VERSION"] = "v1.1.0"
+os.environ["GCM_VERSION"] = "v1.1.0"
 
 from gcm import bottlenecks, create_app, db, icons, patterns, store  # noqa: E402
 

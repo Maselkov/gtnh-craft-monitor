@@ -370,6 +370,7 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
   position: relative;
 }
 .settings-btn {
+  position: relative;
   font-size: 16px;
   line-height: 1;
   padding: 5px 9px;
@@ -391,16 +392,44 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
   z-index: 50;
 }
 .settings-menu-user {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
   font-size: 11px;
   color: var(--muted);
   padding: 6px 10px 8px;
   border-bottom: 1px solid rgba(128,128,128,0.2);
   margin-bottom: 4px;
   white-space: nowrap;
+}
+.settings-menu-user[hidden] {
+  display: none;
+}
+#settingsUser {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.settings-menu-user:empty {
+/* A newer release of the server is out (agents.js), for admins. */
+.update-dot {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg);
+}
+.update-dot[hidden] {
+  display: none;
+}
+.menu-note {
+  display: block;
+  font-size: 11px;
+  color: var(--accent);
+  margin-top: 2px;
+}
+.menu-note[hidden] {
   display: none;
 }
 .theme-row {

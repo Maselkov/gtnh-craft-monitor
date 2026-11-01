@@ -316,6 +316,33 @@ class TestAutoUpdate:
         assert beat(client, api_headers)["action"] == "update"
 
 
+@pytest.mark.parametrize("server, newer", [("v1.1.3", "v1.2.0"), ("v1.2.0", None), ("v1.3.0", None),
+                                           (None, None)])
+def test_status_says_when_a_newer_server_release_is_out(client, monkeypatch, server, newer):
+    from gcm import config
+
+    monkeypatch.setattr(config, "SERVER_VERSION", server)
+    login_as(client, "root", role="admin")
+    computers(client)  # fetches the latest release (v1.2.0)
+    assert client.get("/api/admin/health").get_json()["newer_release"] == newer
+
+
+@pytest.mark.parametrize("role, server, expected", [
+    ("admin", "v1.1.3", {"version": "v1.1.3", "newer": "v1.2.0"}),
+    ("admin", "v1.2.0", {"version": "v1.2.0", "newer": None}),
+    ("admin", None, {"version": None, "newer": None}),
+    # Only admins hear of a newer release; everyone signed in sees the version.
+    ("viewer", "v1.1.3", {"version": "v1.1.3", "newer": None}),
+])
+def test_release_for_the_settings_menu(client, monkeypatch, role, server, expected):
+    from gcm import config
+
+    monkeypatch.setattr(config, "SERVER_VERSION", server)
+    assert client.get("/api/release").status_code == 401
+    login_as(client, f"{role}-user", role=role)
+    assert client.get("/api/release").get_json() == expected
+
+
 class TestScriptsNotice:
     # Computers whose scripts are older than this server's: only a release
     # that changed the scripts moves config.SCRIPTS_VERSION.

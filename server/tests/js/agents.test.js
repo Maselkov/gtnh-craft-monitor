@@ -86,6 +86,8 @@ test('server health: each feed, storage, background jobs', () => {
   assert.match(html, /1 browser with push &middot; 2 webhooks, last post 2m 0s ago - failed: bad\.test \(refused\)/);
   assert.match(html, /Up 1d 1h &middot; run from source &middot; game data 2\.7\.2/);
   assert.match(renderHealth({ ...HEALTH, version: 'v1.2.0' }), /Up 1d 1h &middot; version v1\.2\.0 &middot;/);
+  assert.match(renderHealth({ ...HEALTH, version: 'v1.2.0', newer_release: 'v1.3.0' }),
+    /version v1\.2\.0 \(v1\.3\.0 is out: <a href="https:\/\/github\.com\/Maselkov\/gtnh-craft-monitor\/releases\/tag\/v1\.3\.0"[^>]*>what's new<\/a>\) &middot;/);
 });
 
 test('connect command: download, then install with the address (no trailing slash) and key', () => {

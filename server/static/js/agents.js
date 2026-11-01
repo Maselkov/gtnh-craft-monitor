@@ -116,6 +116,14 @@ function feedProblem(f) {
   return null;
 }
 
+// Only said here: an older server still works, and updating it is done
+// on the host, not from the page.
+function newerRelease(version) {
+  if (!version) return '';
+  const notes = `https://github.com/Maselkov/gtnh-craft-monitor/releases/tag/${encodeURIComponent(version)}`;
+  return ` (${escapeHtml(version)} is out: <a href="${notes}" target="_blank" rel="noopener">what's new</a>)`;
+}
+
 export function renderHealth(h) {
   const feeds = h.feeds.map((f) => {
     const details = (FEED_DETAILS[f.key] || (() => []))(f).filter(Boolean);
@@ -163,7 +171,7 @@ export function renderHealth(h) {
     <div class="agent-line${webhookFailed ? ' agent-command failed' : ''}">Notifications: ${
       h.push_subscriptions} browser${h.push_subscriptions === 1 ? '' : 's'} with push &middot; ${escapeHtml(hooks)}</div>
     <div class="agent-line">Up ${formatDuration(h.uptime_seconds)} &middot; ${
-      h.version ? `version ${escapeHtml(h.version)}` : 'run from source'} &middot; game data ${escapeHtml(h.gamedata || 'none')}</div>`;
+      h.version ? `version ${escapeHtml(h.version)}${newerRelease(h.newer_release)}` : 'run from source'} &middot; game data ${escapeHtml(h.gamedata || 'none')}</div>`;
 }
 
 async function loadHealth() {
@@ -434,8 +442,36 @@ function dismissScriptsNotice() {
   renderScriptsNotice();
 }
 
+// This server's release in the settings menu, and for admins a dot on
+// the settings button when a newer one is out: an older server still
+// works, and is updated on the host, so nothing louder.
+const RELEASE_MS = 5 * 60 * 1000;
+
+function renderRelease(release) {
+  const newer = (release && release.newer) || '';
+  document.getElementById('settingsVersion').textContent = (release && release.version) || '';
+  document.getElementById('settingsUpdateDot').hidden = !newer;
+  const note = document.getElementById('agentsBtnNote');
+  note.textContent = newer ? `${newer} is out` : '';
+  note.hidden = !newer;
+  const button = document.getElementById('settingsBtn');
+  button.title = newer ? `Settings (${newer} is out)` : 'Settings';
+}
+
+export async function updateRelease() {
+  if (!AUTH_USER) {
+    renderRelease(null);
+    return;
+  }
+  try {
+    const res = await fetch('/api/release');
+    if (res.ok) renderRelease(await res.json());
+  } catch (e) { /* keep what was shown */ }
+}
+
 export function setupAgentsActions() {
   setInterval(updateScriptsNotice, SCRIPTS_NOTICE_MS);
+  setInterval(updateRelease, RELEASE_MS);
   delegateActions(document, {
     'scripts-notice-update': () => openAgentsModal({ toComputers: true }),
     'dismiss-scripts-notice': () => dismissScriptsNotice(),
