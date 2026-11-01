@@ -51,6 +51,15 @@ HEALTH_URL=${HEALTH_URL:-$default_url}
 
 version=${SSH_ORIGINAL_COMMAND:-}
 version=${version#deploy }
+# grep matches line by line, so a version with a newline in it would pass
+# on one good line and write the rest into .env.
+case $version in
+    *"
+"*)
+        echo "usage: $usage" >&2
+        exit 2
+        ;;
+esac
 if ! printf '%s\n' "$version" | grep -Eqx "$tag_pattern"; then
     echo "usage: $usage" >&2
     exit 2
