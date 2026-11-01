@@ -275,6 +275,7 @@ function start()
 end
 
 function stop()
+  print("[gcm_agent] " .. (is_running() and "Stopping." or "Not running."))
   running = false
 end
 

@@ -922,7 +922,6 @@ local function service_loop()
       end
     end
   end
-  print("[craft_monitor] Stopped.")
 end
 
 -- rc calls these as plain global functions (no local scope - loaded in
@@ -961,6 +960,7 @@ end
 -- stopped_on_purpose (a global, so in rc.loaded[name]) tells gcm_agent
 -- not to restart it.
 function stop()
+  print("[craft_monitor] " .. (is_running() and "Stopping." or "Not running."))
   running = false
   stopped_on_purpose = true
 end
