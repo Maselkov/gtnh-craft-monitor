@@ -351,36 +351,30 @@
   </div>
 
   <div id="adminUsersModal" class="modal-overlay" style="display:none;">
-    <div class="modal-box admin-box">
+    <div class="modal-box admin-box admin-users-box">
       <div class="modal-header">
         <div class="modal-item-name">User management</div>
         <button class="history-close-btn" data-action="close-admin" title="Close">&times;</button>
       </div>
+      <div class="status-heading">Visibility</div>
       <div class="agent-settings">
         <label class="agent-setting"><input type="checkbox" id="privateToggle">
           <span>Only signed-in users can see this base
             <span class="agent-line">Signed out, the crafts, network and power are hidden, and links to this base show no preview.</span></span></label>
       </div>
-      <div class="modal-note">Create a user and share the generated access token securely. It is shown only once.</div>
+      <div class="status-heading admin-section-heading">Add a user</div>
       <div class="admin-form-grid">
-        <input id="adminUserName" class="modal-amount-input" style="margin:0;" maxlength="100" placeholder="Display name" autocomplete="off">
-        <select id="adminUserRole" class="modal-amount-input" style="margin:0;">
+        <input id="adminUserName" class="modal-amount-input" maxlength="100" placeholder="Display name" autocomplete="off">
+        <select id="adminUserRole" class="modal-amount-input" aria-describedby="adminRoleHelp">
           <option value="viewer">Viewer</option>
-          <option value="operator">Operator</option>
+          <option value="operator" selected>Operator</option>
           <option value="admin">Admin</option>
         </select>
-      </div>
-      <div id="adminUsersError" class="modal-error" style="display:none;"></div>
-      <div class="modal-buttons" style="margin-top:12px;">
         <button class="modal-btn primary" id="adminCreateUserBtn" data-action="create-user">Create user</button>
       </div>
-      <div id="adminTokenResult" class="admin-token-result" style="display:none;">
-        <label class="modal-label">New access token</label>
-        <textarea id="adminTokenValue" class="modal-amount-input admin-token-value" readonly></textarea>
-        <div class="modal-buttons">
-          <button class="modal-btn secondary" data-action="copy-token">Copy token</button>
-        </div>
-      </div>
+      <div id="adminRoleHelp" class="modal-note admin-role-help"></div>
+      <div id="adminUsersError" class="modal-error" style="display:none;"></div>
+      <div class="status-heading admin-section-heading">Users <span id="adminUsersCount"></span></div>
       <div id="adminUsersList" class="admin-users"></div>
     </div>
   </div>
@@ -391,6 +385,7 @@
         <div class="modal-item-name">Game data</div>
         <button class="history-close-btn" data-action="close-gamedata" title="Close">&times;</button>
       </div>
+      <div class="status-heading">Version</div>
       <div class="modal-note">Item icons and the network scanner's item list, for the GTNH version your server runs. The download is about 300 MB and is used without a restart; the scanner switches on its next scan.</div>
       <div id="gamedataCurrent" class="gamedata-current"></div>
       <details id="gamedataUnknown" class="gamedata-unknown" hidden>
@@ -449,7 +444,11 @@
       </div>
       <div class="status-heading backups-restore-heading">Restore</div>
       <div class="modal-note">Replaces everything with the backup's: every database, account, token and key. Anything since the backup was made is lost, and you're signed out if your session is newer than it.</div>
-      <input type="file" id="restoreFile" class="restore-file" accept=".zip,application/zip">
+      <div class="restore-pick">
+        <label class="range-btn restore-pick-btn">Choose backup&hellip;
+          <input type="file" id="restoreFile" class="restore-file" accept=".zip,application/zip"></label>
+        <span id="restoreFileName" class="restore-file-name">No file chosen</span>
+      </div>
       <div id="restoreError" class="modal-error" style="display:none;"></div>
       <div class="modal-buttons">
         <button class="modal-btn cancel-confirm-btn" id="restoreBtn" data-action="restore-backup" disabled>Restore</button>
@@ -551,12 +550,23 @@
   </div>
 
   <div id="userHistoryModal" class="modal-overlay" style="display:none;">
-    <div class="modal-box admin-box">
+    <div class="modal-box admin-box user-history-box">
       <div class="modal-header">
-        <div id="userHistoryTitle" class="modal-item-name">User history</div>
+        <div class="history-name-wrap">
+          <div id="userHistoryTitle" class="modal-item-name">User history</div>
+          <div id="userHistorySummary" class="cpu-id"></div>
+        </div>
         <button class="history-close-btn" data-action="close-user-history" title="Close">&times;</button>
       </div>
-      <div id="userHistoryList" class="user-history-list"></div>
+      <div id="userHistoryFilters" class="range-buttons user-history-filters">
+        <button class="range-btn active" data-action="user-history-filter" data-filter="all">All</button>
+        <button class="range-btn" data-action="user-history-filter" data-filter="request">Requests</button>
+        <button class="range-btn" data-action="user-history-filter" data-filter="cancel">Cancels</button>
+        <button class="range-btn" data-action="user-history-filter" data-filter="problem">Failed</button>
+        <button id="userHistoryAuto" class="range-btn user-history-auto" data-action="user-history-auto" hidden
+          title="Requests their keep-in-stock targets made"></button>
+      </div>
+      <div id="userHistoryList" class="craft-history-list user-history-list"></div>
     </div>
   </div>
 

@@ -291,10 +291,12 @@ class TestAutoRequestResults:
         events = operator.get("/api/crafts/history").get_json()["events"]
         assert {e["cpu"]: e["auto"] for e in events} == {"I0": True, "I1": False}
 
-    def test_listed_as_auto_in_user_history(self, client, operator, api_headers, requested):
+    def test_listed_as_auto_in_user_history_when_asked(self, client, operator, api_headers, requested):
         login_as(client, "admin", role="admin")
-        events = client.get("/api/admin/users/olive/history").get_json()["events"]
-        assert events[0]["source"] == "auto"
+        history = client.get("/api/admin/users/olive/history").get_json()
+        assert (history["events"], history["auto_count"]) == ([], 1)
+        events = client.get("/api/admin/users/olive/history?auto=1").get_json()["events"]
+        assert [e["source"] for e in events] == ["auto"]
 
 
 def _nbt_string(text):

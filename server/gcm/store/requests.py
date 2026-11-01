@@ -44,13 +44,13 @@ def resolve_request(request_id, status, reason, cpu_name, only_if_open=False):
         )
 
 
-def record_cancel(request_id, user_id, cpu_name, created_at):
+def record_cancel(request_id, user_id, cpu_name, created_at, item_label=None, item_icon=None):
     with db.transaction(db.app_db) as conn:
         conn.execute(
             "INSERT INTO craft_cancel_history "
-            "(request_id, user_id, cpu_name, status, created_at) "
-            "VALUES (?, ?, ?, 'pending', ?)",
-            (request_id, user_id, cpu_name, created_at),
+            "(request_id, user_id, cpu_name, status, created_at, item_label, item_icon) "
+            "VALUES (?, ?, ?, 'pending', ?, ?, ?)",
+            (request_id, user_id, cpu_name, created_at, item_label, item_icon),
         )
 
 
@@ -94,17 +94,26 @@ def close_orphaned():
         )
 
 
-def user_activity(user_id, limit=100):
-    """A user's latest craft requests and cancellations, newest first."""
+def user_activity(user_id, limit=100, include_auto=False):
+    """A user's latest craft requests and cancellations, newest first.
+    Requests a keep-in-stock target made (source 'auto', filed under who
+    last set the target) only with include_auto: the server made them,
+    and a busy target would otherwise push everything else past limit.
+    target: the item (None for a cancel recorded without one); success:
+    whether a resolved cancel worked (None for requests). A request's
+    mod/internal/damage name its item; a cancel's item_icon is the icon
+    path as it was then."""
     with db.transaction(db.app_db) as conn:
         rows = conn.execute(
-            "SELECT 'request', label, status, reason, cpu_name, created_at, resolved_at, source "
-            "FROM craft_request_history WHERE user_id = ? "
+            "SELECT 'request', label, status, reason, cpu_name, created_at, resolved_at, source, "
+            "amount, kind, NULL, mod, internal, damage, NULL "
+            "FROM craft_request_history WHERE user_id = ? AND (? OR source != 'auto') "
             "UNION ALL "
-            "SELECT 'cancel', cpu_name, status, reason, cpu_name, created_at, resolved_at, 'manual' "
+            "SELECT 'cancel', item_label, status, reason, cpu_name, created_at, resolved_at, 'manual', "
+            "NULL, NULL, success, NULL, NULL, NULL, item_icon "
             "FROM craft_cancel_history WHERE user_id = ? "
             "ORDER BY created_at DESC LIMIT ?",
-            (user_id, user_id, limit),
+            (user_id, include_auto, user_id, limit),
         ).fetchall()
     return [
         {
@@ -116,6 +125,22 @@ def user_activity(user_id, limit=100):
             "created_at": row[5],
             "resolved_at": row[6],
             "source": row[7],
+            "amount": row[8],
+            "kind": row[9],
+            "success": None if row[10] is None else bool(row[10]),
+            "mod": row[11],
+            "internal": row[12],
+            "damage": row[13],
+            "item_icon": row[14],
         }
         for row in rows
     ]
+
+
+def user_auto_request_count(user_id):
+    """How many requests a user's keep-in-stock targets have made."""
+    with db.transaction(db.app_db) as conn:
+        return conn.execute(
+            "SELECT COUNT(*) FROM craft_request_history WHERE user_id = ? AND source = 'auto'",
+            (user_id,),
+        ).fetchone()[0]

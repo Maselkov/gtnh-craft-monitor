@@ -623,6 +623,14 @@ def _app_provider_stalls(conn):
     """)
 
 
+def _app_cancel_items(conn):
+    # What the CPU was making when a cancel was asked for, for the admin
+    # user history (gcm/store/requests.py). Rows from before only have
+    # the CPU.
+    conn.execute("ALTER TABLE craft_cancel_history ADD COLUMN item_label TEXT")
+    conn.execute("ALTER TABLE craft_cancel_history ADD COLUMN item_icon TEXT")
+
+
 APP_MIGRATIONS = [
     _app_baseline,
     _app_drop_orphaned_user_rows,
@@ -634,6 +642,7 @@ APP_MIGRATIONS = [
     _app_craft_event_auto,
     _app_settings,
     _app_provider_stalls,
+    _app_cancel_items,
 ]
 POWER_MIGRATIONS = [_power_baseline, _power_machines, _power_drop_impossible_times]
 ITEM_HISTORY_MIGRATIONS = [

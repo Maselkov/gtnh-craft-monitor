@@ -1394,17 +1394,45 @@ async function main() {
     await waitFor('menu open', `visible($('#settingsMenu'))`);
     await click(`$('#adminBtn')`);
     await waitFor('admin dialog', `visible($('#adminUsersModal')) && $('#adminUsersList').textContent.includes('Administrator')`);
+    // Your own history: the requests and the cancel made earlier, each
+    // with how it turned out (the game refused every request).
+    await click(`byText('button', 'History', $$('#adminUsersList .admin-user-row').find(r => r.querySelector('.admin-user-you')))`);
+    await waitFor('own history', `$('#userHistoryTitle').textContent === 'Administrator'
+      && $('#userHistorySummary').textContent === 'Admin · 2 requests · 1 cancel · 2 failed'
+      && $('#userHistoryList .status-badge.cancelled') && $('#userHistoryList .history-day')
+      && !$('#userHistoryList .status-badge.auto') && $('#userHistoryAuto').textContent === 'Stock refills (1)'`);
+    // A stock target's requests only on asking: the server made them.
+    await click(`$('#userHistoryAuto')`);
+    await waitFor('refills shown', `$('#userHistoryAuto').classList.contains('active') && $('#userHistoryList .status-badge.auto')
+      && $('#userHistorySummary').textContent === 'Admin · 2 requests · 1 cancel · 2 failed'`);
+    await click(`$('#userHistoryFilters [data-filter="cancel"]')`);
+    await waitFor('cancels only', `$$('#userHistoryList .history-row').length > 0
+      && $$('#userHistoryList .history-row').every(r => r.querySelector('.cpu-id').textContent.startsWith('Cancel on CPU'))`);
+    await click(`$('#userHistoryFilters [data-filter="problem"]')`);
+    await waitFor('failed only', `$$('#userHistoryList .history-row').every(r => r.querySelector('.status-badge.failed'))`);
+    await click(`$('#userHistoryModal .history-close-btn')`);
+    // Your own row says so, and can't be deleted (the server refuses it).
+    const me = `$$('#adminUsersList .admin-user-row').find(r => r.querySelector('.admin-user-name')?.textContent === 'Administrator')`;
+    await waitFor('own row', `${me}.querySelector('.admin-user-you') && !${me}.querySelector('[data-action="delete-user"]')`);
+    // New users are operators unless picked otherwise; the picked role is explained.
+    await waitFor('operator by default', `$('#adminUserRole').value === 'operator' && $('#adminRoleHelp').textContent.includes('requests and cancels crafts')`);
+    await evaluate(`(() => { const s = $('#adminUserRole'); s.value = 'admin'; s.dispatchEvent(new Event('change')); })()`);
+    await waitFor('admin explained', `$('#adminRoleHelp').textContent.includes('manages users')`);
+    await evaluate(`(() => { const s = $('#adminUserRole'); s.value = 'operator'; s.dispatchEvent(new Event('change')); })()`);
     await evaluate(`typeInto('#adminUserName', 'E2E Tester')`);
     await click(`$('#adminCreateUserBtn')`);
     const row = `$$('#adminUsersList .admin-user-row').find(r => r.querySelector('.admin-user-name')?.textContent === 'E2E Tester')`;
     await waitFor('user created', row);
-    await waitFor('token shown', `visible($('#adminTokenResult')) && $('#adminTokenValue').value.startsWith('gcm_')`);
+    await waitFor('an operator', `${row}.querySelector('.role-badge').textContent === 'operator' && ${row}.textContent.includes('never used')`);
+    // The one-time token shows in the new user's row.
+    await waitFor('token shown', `visible($('#adminTokenResult')) && ${row}.contains($('#adminTokenResult')) && $('#adminTokenValue').value.startsWith('gcm_')`);
     const firstToken = await evaluate(`$('#adminTokenValue').value`);
     // Clipboard access may be refused headless; either outcome proves the click ran.
     await click(`byText('#adminTokenResult button', 'Copy token')`);
     await waitFor('copied or selected', `$('#toastContainer').textContent.includes('Access token copied.') || document.activeElement === $('#adminTokenValue')`);
     await click(`byText('button', 'History', ${row})`);
-    await waitFor('history dialog', `visible($('#userHistoryModal')) && $('#userHistoryTitle').textContent === 'E2E Tester history'`);
+    await waitFor('history dialog', `visible($('#userHistoryModal')) && $('#userHistoryTitle').textContent === 'E2E Tester'
+      && $('#userHistorySummary').textContent === 'Operator · 0 requests · 0 cancels' && $('#userHistoryList').textContent.includes('No craft requests or cancels yet.')`);
     await click(`$('#userHistoryModal .history-close-btn')`);
     await waitFor('closed by button', `!visible($('#userHistoryModal'))`);
     await click(`byText('button', 'History', ${row})`);
@@ -1413,8 +1441,8 @@ async function main() {
     await waitFor('closed by backdrop', `!visible($('#userHistoryModal'))`);
     await click(`byText('button', 'New token', ${row})`);
     await waitFor('new token', `$('#adminTokenValue').value !== ${JSON.stringify(firstToken)}`);
-    await waitFor('one token row', `${row}.querySelectorAll('.admin-revoke-btn').length === 2`);
-    await click(`${row}.querySelector('.admin-token-row .admin-revoke-btn')`);
+    await waitFor('one token row', `${row}.querySelectorAll('.admin-token-revoke').length === 1`);
+    await click(`${row}.querySelector('.admin-token-revoke')`);
     await waitFor('token revoked', `${row}?.textContent.includes('No active tokens')`);
     await click(`byText('button', 'Delete', ${row})`);
     await waitFor('user deleted', `!(${row})`);
@@ -1589,7 +1617,8 @@ async function main() {
     await waitFor('refused', `visible($('#restoreError')) && $('#restoreError').textContent === "That isn't a zip file."`);
 
     await pick(backupZip);
-    await waitFor('error cleared', `!visible($('#restoreError')) && $('#restoreBtn').textContent === 'Restore'`);
+    await waitFor('error cleared', `!visible($('#restoreError')) && $('#restoreBtn').textContent === 'Restore'
+      && $('#restoreFileName').textContent === ${JSON.stringify(path.basename(backupZip))}`);
     await click(`$('#restoreBtn')`);
     await click(`$('#restoreBtn')`);
     await waitFor('restored', `$('#toastContainer').textContent.includes('Backup restored. Reloading')`);

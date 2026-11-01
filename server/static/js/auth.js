@@ -14,7 +14,11 @@ import {
 } from './crafts.js';
 import { openGameDataModal, updateGameDataNotice } from './gamedata.js';
 import { updateGameDataNote, updateTerminalNote } from './network.js';
-import { delegateActions, escapeHtml, formatQty, loadDismissedNotes, onBackdropClick } from './util.js';
+import { nameText } from './description.js';
+import {
+  dayLabel, delegateActions, escapeHtml, formatQty, formatRelativeTime, iconClass, iconUrl, loadDismissedNotes,
+  onBackdropClick,
+} from './util.js';
 
 export let AUTH_USER = null;
 // Only signed-in users may see the crafts, network and power
@@ -140,8 +144,10 @@ let restoreArmed = false;
 function resetRestoreButton() {
   restoreArmed = false;
   const button = document.getElementById('restoreBtn');
+  const file = document.getElementById('restoreFile').files[0];
   button.textContent = 'Restore';
-  button.disabled = !document.getElementById('restoreFile').files.length;
+  button.disabled = !file;
+  document.getElementById('restoreFileName').textContent = file ? file.name : 'No file chosen';
   showRestoreError('');
 }
 
@@ -204,48 +210,106 @@ async function submitAccessToken() {
   if (lastData) render(lastData);
 }
 
+// What each role may do, under the role picker and on each user's badge
+// (docs/server.md has the same table).
+const ROLE_HELP = {
+  viewer: 'Sees the crafts, network and power, and keeps their own pins and completion history.',
+  operator: 'Also requests and cancels crafts, sets stock targets, and sees the last game update\'s pattern check.',
+  admin: 'Also manages users, computers, game data, webhooks and backups.',
+};
+
+// The token just made, shown once in its user's row until the dialog
+// closes or the list changes some other way.
+let shownToken = null;
+
+function updateRoleHelp() {
+  const role = document.getElementById('adminUserRole').value;
+  document.getElementById('adminRoleHelp').textContent = ROLE_HELP[role] || '';
+}
+
 async function openAdminUsersModal() {
   if (!AUTH_USER || AUTH_USER.role !== 'admin') return;
+  shownToken = null;
   document.getElementById('adminUsersModal').style.display = 'flex';
   document.getElementById('adminUsersError').style.display = 'none';
-  document.getElementById('adminTokenResult').style.display = 'none';
   document.getElementById('privateToggle').checked = SERVER_PRIVATE;
+  updateRoleHelp();
   await refreshAdminUsers();
   document.getElementById('adminUserName').focus();
 }
 
 export function closeAdminUsersModal() {
+  shownToken = null;
   document.getElementById('adminUsersModal').style.display = 'none';
+}
+
+// "Nov 1", or "Nov 1, 2025" for another year.
+function formatTokenDate(seconds) {
+  const date = new Date(seconds * 1000);
+  const year = date.getFullYear() === new Date().getFullYear() ? undefined : 'numeric';
+  return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year });
+}
+
+function adminTokenRowHtml(user, token) {
+  const used = token.last_used_at ? `used ${formatRelativeTime(token.last_used_at)}` : 'never used';
+  return `<div class="admin-token-row" title="${escapeHtml(token.id)}">
+    <span class="admin-token-meta">Token made ${formatTokenDate(token.created_at)} · ${used}</span>
+    <button class="admin-token-revoke" data-action="revoke-token" data-token-id="${escapeHtml(token.id)}"
+      data-display-name="${escapeHtml(user.display_name)}">Revoke</button>
+  </div>`;
+}
+
+function adminNewTokenHtml(token) {
+  return `<div id="adminTokenResult" class="admin-token-result">
+    <div class="modal-label">New access token: share it securely, it's shown only once.</div>
+    <textarea id="adminTokenValue" class="modal-amount-input admin-token-value" readonly>${escapeHtml(token)}</textarea>
+    <div class="modal-buttons">
+      <button class="modal-btn secondary" data-action="copy-token">Copy token</button>
+    </div>
+  </div>`;
+}
+
+function adminUserRowHtml(user) {
+  const id = escapeHtml(user.id);
+  const name = escapeHtml(user.display_name);
+  const isMe = AUTH_USER && user.id === AUTH_USER.id;
+  const isNew = shownToken && shownToken.userId === user.id;
+  const tokens = (user.tokens || []).map((token) => adminTokenRowHtml(user, token)).join('')
+    || '<div class="admin-token-row">No active tokens: they can\'t sign in.</div>';
+  return `<div class="admin-user-row${isNew ? ' new' : ''}" data-user-id="${id}">
+    <div class="admin-user-main">
+      <div class="admin-user-title">
+        <span class="admin-user-name" title="${name}">${name}</span>${isMe ? '<span class="admin-user-you">you</span>' : ''}
+      </div>
+      <div class="admin-token-list">${tokens}</div>
+    </div>
+    <div class="admin-user-role-cell">
+      <span class="badge role-badge ${escapeHtml(user.role)}" title="${escapeHtml(ROLE_HELP[user.role] || '')}">${escapeHtml(user.role)}</span>
+      ${user.disabled_at ? '<span class="badge role-badge disabled">disabled</span>' : ''}
+    </div>
+    <div class="admin-user-actions">
+      <button class="range-btn" data-action="user-history" data-user-id="${id}" data-role="${escapeHtml(user.role)}">History</button>
+      <button class="range-btn" data-action="regenerate-token" data-user-id="${id}" data-display-name="${name}">New token</button>
+      ${isMe ? '' : `<button class="range-btn admin-delete-btn" data-action="delete-user" data-user-id="${id}" data-display-name="${name}">Delete</button>`}
+    </div>
+    ${isNew ? adminNewTokenHtml(shownToken.token) : ''}
+  </div>`;
 }
 
 async function refreshAdminUsers() {
   const list = document.getElementById('adminUsersList');
-  list.textContent = 'Loading users...';
+  const count = document.getElementById('adminUsersCount');
+  if (!list.children.length) list.textContent = 'Loading users...';
   const response = await fetch('/api/admin/users');
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     list.textContent = data.error || 'Could not load users.';
+    count.textContent = '';
     return;
   }
-  list.innerHTML = data.users.map((user) => {
-    const tokens = (user.tokens || []).map((token) => `
-      <div class="admin-token-row">
-        <span class="admin-token-id">${escapeHtml(token.id)}</span>
-        <button class="admin-revoke-btn" data-action="revoke-token" data-token-id="${escapeHtml(token.id)}">Revoke</button>
-      </div>`).join('') || '<div class="admin-token-row">No active tokens</div>';
-    return `<div class="admin-user-row">
-      <div>
-        <div class="admin-user-name">${escapeHtml(user.display_name)}</div>
-        <div class="admin-token-list">${tokens}</div>
-      </div>
-      <div class="admin-user-actions">
-        <span class="admin-user-role">${escapeHtml(user.role)}${user.disabled_at ? ' (disabled)' : ''}</span>
-        <button class="admin-history-btn" data-action="user-history" data-user-id="${escapeHtml(user.id)}">History</button>
-        <button class="admin-history-btn" data-action="regenerate-token" data-user-id="${escapeHtml(user.id)}" data-display-name="${escapeHtml(user.display_name)}">New token</button>
-        <button class="admin-revoke-btn" data-action="delete-user" data-user-id="${escapeHtml(user.id)}" data-display-name="${escapeHtml(user.display_name)}">Delete</button>
-      </div>
-    </div>`;
-  }).join('') || '<div class="admin-user-row">No users yet.</div>';
+  count.textContent = `(${data.users.length})`;
+  list.innerHTML = data.users.map(adminUserRowHtml).join('') || '<div class="admin-users-empty">No users yet.</div>';
+  list.querySelector('.admin-user-row.new')?.scrollIntoView({ block: 'nearest' });
 }
 
 export function setupAuthControls() {
@@ -278,6 +342,12 @@ export function setupAuthControls() {
     'create-user': () => createAdminUser(),
     'copy-token': () => copyAdminToken(),
     'close-user-history': () => closeUserHistoryModal(),
+    'user-history-filter': (el) => { historyFilter = el.dataset.filter; renderUserHistory(); },
+    'user-history-auto': () => { historyShowAuto = !historyShowAuto; loadUserHistory(); },
+  });
+  document.getElementById('adminUserRole').addEventListener('change', updateRoleHelp);
+  document.getElementById('adminUserName').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') createAdminUser();
   });
   const privateToggle = document.getElementById('privateToggle');
   privateToggle.addEventListener('change', () => savePrivate(privateToggle));
@@ -289,38 +359,126 @@ export function setupAuthControls() {
 
 export function setupAdminActions() {
   delegateActions(document.getElementById('adminUsersList'), {
-    'revoke-token': (el) => revokeAdminToken(el.dataset.tokenId),
-    'user-history': (el) => openUserHistory(el.dataset.userId),
+    'revoke-token': (el) => revokeAdminToken(el.dataset.tokenId, el.dataset.displayName),
+    'user-history': (el) => openUserHistory(el.dataset.userId, el.dataset.role),
     'regenerate-token': (el) => regenerateAdminToken(el.dataset.userId, el.dataset.displayName),
     'delete-user': (el) => deleteAdminUser(el.dataset.userId, el.dataset.displayName),
   });
 }
 
+// The user history dialog: one user's craft requests and cancels
+// (store.requests.user_activity), newest first, filtered on the page.
+// Their stock targets' requests only on asking: the server made those.
+let historyUser = null;
+let historyEvents = [];
+let historyFilter = 'all';
+let historyShowAuto = false;
+let historyAutoCount = 0;
+
 function closeUserHistoryModal() {
   document.getElementById('userHistoryModal').style.display = 'none';
 }
 
-function formatHistoryTime(timestamp) {
-  return timestamp ? new Date(timestamp * 1000).toLocaleString() : 'Pending';
+// [badge class, text] for how a request or cancel turned out.
+function historyOutcome(e) {
+  if (e.status === 'pending') return ['waiting', 'Waiting'];
+  if (e.type === 'cancel') return e.success ? ['cancelled', 'Cancelled'] : ['failed', 'Not cancelled'];
+  return e.status === 'accepted' ? ['started', 'Started'] : ['failed', 'Failed'];
 }
 
-async function openUserHistory(userId) {
-  const list = document.getElementById('userHistoryList');
+function historyMatches(e) {
+  if (historyFilter === 'problem') return historyOutcome(e)[0] === 'failed';
+  return historyFilter === 'all' || e.type === historyFilter;
+}
+
+function userHistoryRowHtml(e) {
+  const icon = e.icon
+    ? `<img class="${iconClass('craft-icon', e.icon)}" src="${iconUrl(e.icon)}" alt="" loading="lazy" data-remove-on-error>`
+    : '<span class="craft-icon"></span>';
+  const [outcome, outcomeText] = historyOutcome(e);
+  const amount = e.type === 'request' && e.amount != null
+    ? `<span class="user-history-amount">${formatQty(e.amount)}${e.kind === 'fluid' ? ' mB' : ''}</span> `
+    : '';
+  const name = e.target ? escapeHtml(nameText(e.target)) : 'A craft';
+  const what = e.type === 'cancel'
+    ? `Cancel on CPU ${escapeHtml(e.cpu_name || '?')}`
+    : `Request${e.cpu_name ? ` &middot; CPU ${escapeHtml(e.cpu_name)}` : ''}`;
+  const auto = e.source === 'auto'
+    ? '<span class="status-badge auto" title="Asked for by a keep-in-stock target">Auto</span>' : '';
+  const when = new Date(e.created_at * 1000).toLocaleString();
+  return `<div class="history-row user-history-row">
+    ${icon}
+    <div class="history-row-main">
+      <div class="history-row-name">${amount}${name}${auto}<span class="status-badge ${outcome}">${outcomeText}</span></div>
+      <div class="cpu-id">${what}</div>
+      ${e.reason ? `<div class="user-history-reason">${escapeHtml(e.reason)}</div>` : ''}
+    </div>
+    <div class="history-row-when" title="${escapeHtml(when)}">${formatRelativeTime(e.created_at)}</div>
+  </div>`;
+}
+
+function renderUserHistory() {
+  for (const button of document.querySelectorAll('#userHistoryFilters [data-filter]')) {
+    button.classList.toggle('active', button.dataset.filter === historyFilter);
+  }
+  let html = '';
+  let lastDay = null;
+  for (const e of historyEvents.filter(historyMatches)) {
+    const day = dayLabel(e.created_at);
+    if (day !== lastDay) {
+      html += `<div class="history-day">${escapeHtml(day)}</div>`;
+      lastDay = day;
+    }
+    html += userHistoryRowHtml(e);
+  }
+  const none = historyEvents.length ? 'Nothing matches.'
+    : historyAutoCount ? 'No craft requests or cancels of their own; Stock refills shows their stock targets\' requests.'
+      : 'No craft requests or cancels yet.';
+  document.getElementById('userHistoryList').innerHTML = html || `<div class="empty">${none}</div>`;
+}
+
+function openUserHistory(userId, role) {
   document.getElementById('userHistoryModal').style.display = 'flex';
   document.getElementById('userHistoryTitle').textContent = 'User history';
-  list.textContent = 'Loading history...';
-  const response = await fetch(`/api/admin/users/${encodeURIComponent(userId)}/history`);
+  document.getElementById('userHistorySummary').textContent = '';
+  document.getElementById('userHistoryAuto').hidden = true;
+  historyUser = { id: userId, role };
+  historyEvents = [];
+  historyFilter = 'all';
+  historyShowAuto = false;
+  loadUserHistory();
+}
+
+async function loadUserHistory() {
+  const user = historyUser;
+  const list = document.getElementById('userHistoryList');
+  if (!historyEvents.length) list.textContent = 'Loading history...';
+  const query = historyShowAuto ? '?auto=1' : '';
+  const response = await fetch(`/api/admin/users/${encodeURIComponent(user.id)}/history${query}`);
   const data = await response.json().catch(() => ({}));
+  if (user !== historyUser) return;  // another user's was opened meanwhile
   if (!response.ok) {
     list.textContent = data.error || 'Could not load history.';
     return;
   }
-  document.getElementById('userHistoryTitle').textContent = `${data.user.display_name} history`;
-  list.innerHTML = data.events.map((event) => `
-    <div class="user-history-row">
-      <div class="user-history-target">${event.type === 'cancel' ? 'Cancel' : (event.source === 'auto' ? 'Auto request' : 'Request')}: ${escapeHtml(event.target || '?')}</div>
-      <div class="user-history-meta">${escapeHtml(event.status)} · ${formatHistoryTime(event.created_at)}${event.reason ? ` · ${escapeHtml(event.reason)}` : ''}</div>
-    </div>`).join('') || '<div class="user-history-row">No craft actions recorded.</div>';
+  historyEvents = data.events;
+  const own = historyEvents.filter((e) => e.source !== 'auto');
+  const requests = own.filter((e) => e.type === 'request').length;
+  const failed = own.filter((e) => historyOutcome(e)[0] === 'failed').length;
+  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+  document.getElementById('userHistoryTitle').textContent = data.user.display_name;
+  document.getElementById('userHistorySummary').textContent = [
+    user.role ? user.role.charAt(0).toUpperCase() + user.role.slice(1) : '',
+    plural(requests, 'request'),
+    plural(own.length - requests, 'cancel'),
+    failed ? `${failed} failed` : '',
+  ].filter(Boolean).join(' · ');
+  historyAutoCount = data.auto_count;
+  const auto = document.getElementById('userHistoryAuto');
+  auto.hidden = !data.auto_count;
+  auto.textContent = `Stock refills (${formatQty(data.auto_count)})`;
+  auto.classList.toggle('active', historyShowAuto);
+  renderUserHistory();
 }
 
 async function createAdminUser() {
@@ -348,8 +506,7 @@ async function createAdminUser() {
       return;
     }
     document.getElementById('adminUserName').value = '';
-    document.getElementById('adminTokenValue').value = data.token;
-    document.getElementById('adminTokenResult').style.display = 'block';
+    shownToken = { userId: data.user.id, token: data.token };
     await refreshAdminUsers();
   } finally {
     button.disabled = false;
@@ -378,8 +535,8 @@ async function savePrivate(box) {
   showToast(error, true);
 }
 
-async function revokeAdminToken(tokenId) {
-  if (!window.confirm(`Revoke ${tokenId}? Any sessions created with it will end immediately.`)) return;
+async function revokeAdminToken(tokenId, displayName) {
+  if (!window.confirm(`Revoke this token of ${displayName}? Any sessions created with it will end immediately.`)) return;
   const response = await fetch(`/api/admin/tokens/${encodeURIComponent(tokenId)}/revoke`, {
     method: 'POST',
   });
@@ -389,6 +546,7 @@ async function revokeAdminToken(tokenId) {
     return;
   }
   showToast('Access token revoked.');
+  shownToken = null;
   await refreshAdminUsers();
 }
 
@@ -402,8 +560,7 @@ async function regenerateAdminToken(userId, displayName) {
     showToast(data.error || 'Could not generate a new token.', true);
     return;
   }
-  document.getElementById('adminTokenValue').value = data.token;
-  document.getElementById('adminTokenResult').style.display = 'block';
+  shownToken = { userId, token: data.token };
   showToast(`New token generated for ${displayName}.`);
   await refreshAdminUsers();
 }
@@ -419,6 +576,7 @@ async function deleteAdminUser(userId, displayName) {
     return;
   }
   showToast(`${displayName} deleted.`);
+  if (shownToken?.userId === userId) shownToken = null;
   await refreshAdminUsers();
 }
 

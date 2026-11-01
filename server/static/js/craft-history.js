@@ -9,8 +9,8 @@
 import { nameText } from './description.js';
 import { activeTab } from './tabs.js';
 import {
-  bindFilterInput, delegateActions, escapeHtml, formatDuration, formatRelativeTime, iconClass, iconUrl,
-  setHtmlKeepingIcons,
+  bindFilterInput, dayLabel, delegateActions, escapeHtml, formatDuration, formatRelativeTime,
+  iconClass, iconUrl, setHtmlKeepingIcons,
 } from './util.js';
 
 const PAGE_SIZE = 25;
@@ -156,15 +156,6 @@ function renderRow(e) {
       <div class="history-row-when" title="${escapeHtml(when)}">${formatRelativeTime(e.finishedAt)}</div>
     </div>
   `;
-}
-
-// "Today", "Yesterday", or the date, for a Unix time in seconds.
-function dayLabel(seconds) {
-  const day = new Date(seconds * 1000).setHours(0, 0, 0, 0);
-  const today = new Date().setHours(0, 0, 0, 0);
-  if (day === today) return 'Today';
-  if (today - day <= 86400000 * 1.5) return 'Yesterday';  // 1.5: a DST day is 23 or 25 hours
-  return new Date(day).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
 function render() {

@@ -175,6 +175,15 @@ export function formatRelativeTime(seconds) {
   return Math.round(diffHr / 24) + 'd ago';
 }
 
+// "Today", "Yesterday", or the date, for a Unix time in seconds.
+export function dayLabel(seconds) {
+  const day = new Date(seconds * 1000).setHours(0, 0, 0, 0);
+  const today = new Date().setHours(0, 0, 0, 0);
+  if (day === today) return 'Today';
+  if (today - day <= 86400000 * 1.5) return 'Yesterday';  // 1.5: a DST day is 23 or 25 hours
+  return new Date(day).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
 // A length of time in seconds, to its two largest units: "42s",
 // "4m 12s", "3h 5m", "2d 4h".
 export function formatDuration(seconds) {
