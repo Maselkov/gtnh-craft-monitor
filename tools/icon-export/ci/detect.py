@@ -9,8 +9,9 @@ to this repo for forks without one), and whose MultiMC client
 zip can be found on downloads.gtnewhorizons.com. A version whose zip isn't
 up yet is skipped and picked up again on a later run.
 
-Manual runs (INPUT_VERSION set): just that version, using INPUT_PACK_URL
-if given, even if it's already published when INPUT_FORCE is "true".
+Manual runs (INPUT_VERSION set): just those versions (comma-separated),
+even if they're already published when INPUT_FORCE is "true". INPUT_PACK_URL
+gives the zip for a single version.
 
 Writes `matrix` (JSON, {"include": [{"version", "pack_url"}]}) and `count`
 to $GITHUB_OUTPUT. Standard library only.
@@ -105,14 +106,21 @@ def plan(gtnh_releases, our_releases, exists=url_exists,
          version=None, pack_url=None, force=False):
     published = published_versions(our_releases)
     if version:
-        if version in published and not force:
-            log(f"{version} is already published; set force to rebuild it.")
-            return []
-        url = pack_url or find_pack_url(version, exists)
-        if not url:
-            raise SystemExit(f"No client zip found for {version}; "
-                             "pass pack_url.")
-        return [{"version": version, "pack_url": url}]
+        versions = [v.strip() for v in version.split(",") if v.strip()]
+        if pack_url and len(versions) > 1:
+            raise SystemExit("pack_url is for a single version; build the "
+                             "others in a separate run.")
+        builds = []
+        for v in versions:
+            if v in published and not force:
+                log(f"{v} is already published; set force to rebuild it.")
+                continue
+            url = pack_url or find_pack_url(v, exists)
+            if not url:
+                raise SystemExit(f"No client zip found for {v}; "
+                                 "pass pack_url.")
+            builds.append({"version": v, "pack_url": url})
+        return builds
 
     builds = []
     for candidate in gtnh_versions(gtnh_releases):
