@@ -9,8 +9,8 @@ import { stockBadgeFor } from './stock.js';
 import { activeTab } from './tabs.js';
 import { bindCellTooltip, hideTooltip, showTooltip, tooltipVisible } from './tooltip.js';
 import {
-  delegateActions, escapeHtml, essentiaBadgeHtml, formatDuration, formatQty, formatRate, formatRelativeTime,
-  iconClass, iconUrl, kindTooltipHtml, PIN_ICON, TERMINAL_DOCS_URL,
+  closeNote, delegateActions, escapeHtml, essentiaBadgeHtml, formatDuration, formatQty, formatRate,
+  formatRelativeTime, iconClass, iconUrl, kindTooltipHtml, noteClosed, PIN_ICON, TERMINAL_DOCS_URL,
 } from './util.js';
 
 // ---------- Network browser ----------
@@ -464,16 +464,14 @@ export function updateGameDataNote() {
 // No patterns, and network_browser.lua says it has no ME Interface
 // Terminal to read them with: admins, who set up the game side, are
 // told what one adds, until they close the note.
-let terminalNoteDismissed = false;
 export function updateTerminalNote() {
   const admin = Boolean(AUTH_USER && AUTH_USER.role === 'admin');
   document.getElementById('networkTerminalNote').hidden =
-    !admin || terminalNoteDismissed || !lastNetworkData || !lastNetworkData.needs_terminal;
+    !admin || noteClosed(TERMINAL_NOTE_DISMISSED_KEY) || !lastNetworkData || !lastNetworkData.needs_terminal;
 }
 
 function dismissTerminalNote() {
-  terminalNoteDismissed = true;
-  try { localStorage.setItem(TERMINAL_NOTE_DISMISSED_KEY, '1'); } catch (e) { /* per-viewer nicety only */ }
+  closeNote(TERMINAL_NOTE_DISMISSED_KEY);
   updateTerminalNote();
 }
 
@@ -801,7 +799,6 @@ let networkResizeTicking = false;
 
 export function setupNetworkActions() {
   try { networkView = localStorage.getItem(NETWORK_VIEW_KEY) === 'list' ? 'list' : 'grid'; } catch (e) { /* grid */ }
-  try { terminalNoteDismissed = localStorage.getItem(TERMINAL_NOTE_DISMISSED_KEY) === '1'; } catch (e) { /* shown */ }
   document.getElementById('networkTerminalHow').href = TERMINAL_DOCS_URL;
   showNetworkView();
   window.addEventListener('scroll', onNetworkScroll);
