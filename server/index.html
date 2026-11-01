@@ -415,7 +415,8 @@
       </div>
       <div class="status-heading">Pattern check</div>
       <div class="modal-note">GTNH doesn't publish its recipe changes. This compares the GregTech recipes of two versions and lists the patterns a change affects: before updating, pick the new version; after, pick the one in use to check against the version before it.</div>
-      <div id="recipeCheckFor" class="gamedata-current"></div>
+      <div class="gamedata-current"><span id="recipeCheckFor"></span>
+        <a id="recipeCheckForHow" target="_blank" rel="noopener" hidden>How to connect one</a></div>
       <div class="modal-buttons">
         <button class="modal-btn secondary" id="recipeCheckBtn" data-action="check-recipes">Check patterns</button>
       </div>
@@ -429,7 +430,8 @@
         <button class="history-close-btn" data-action="close-recipe-check" title="Close">&times;</button>
       </div>
       <div id="recipeCheckSummary" class="gamedata-current"></div>
-      <div id="recipeCheckError" class="modal-error" style="display:none;"></div>
+      <div id="recipeCheckError" class="modal-error" style="display:none;"><span id="recipeCheckErrorText"></span>
+        <a id="recipeCheckErrorHow" target="_blank" rel="noopener" hidden>How to connect one</a></div>
       <div id="recipeCheckList"></div>
     </div>
   </div>

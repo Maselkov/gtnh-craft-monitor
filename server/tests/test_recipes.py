@@ -326,9 +326,25 @@ class TestApi:
 
     def test_without_a_pattern_scan(self, admin, bundles, monkeypatch):
         monkeypatch.setattr(patterns, "current", lambda: ([], None))
-        response = admin.get("/api/admin/recipe-check")
-        assert response.status_code == 409
-        assert "patterns" in response.get_json()["error"]
+        for terminal, why in ((False, "no_terminal"), (True, "reading"), (None, "unknown")):
+            patterns.note_terminal(terminal)
+            response = admin.get("/api/admin/recipe-check")
+            data = response.get_json()
+            assert response.status_code == 409 and data["patterns"] == why
+            assert data["error"] == patterns.missing_reason("pattern check")
+            assert "recipe check" not in data["error"]
+            # The Game data dialog says so before the button's pressed.
+            gamedata_page = admin.get("/api/admin/gamedata").get_json()
+            assert gamedata_page["patterns_missing"] == why
+            assert gamedata_page["patterns_missing_reason"] == data["error"]
+
+    def test_a_pattern_scan_leaves_nothing_missing(self, admin, bundles):
+        page = admin.get("/api/admin/gamedata").get_json()
+        assert page["patterns_missing"] is None and page["patterns_missing_reason"] is None
+
+    def test_other_errors_dont_blame_the_patterns(self, admin, bundles):
+        data = admin.get("/api/admin/recipe-check?from=2.9.0&to=2.9.0").get_json()
+        assert "patterns" not in data
 
     def test_the_same_version_twice(self, admin, bundles):
         response = admin.get("/api/admin/recipe-check?from=2.9.0&to=2.9.0")

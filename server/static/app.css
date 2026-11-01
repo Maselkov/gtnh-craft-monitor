@@ -111,7 +111,7 @@ h1 {
 #networkTerminalNote {
   margin-top: 12px;
 }
-.gamedata-note a, #craftPlanNote a {
+.gamedata-note a, #craftPlanNote a, #recipeCheckForHow, #recipeCheckErrorHow {
   color: var(--accent);
 }
 /* auth.js sets body.is-admin. */
