@@ -38,6 +38,14 @@ test('formatDuration shows the two largest units', () => {
   assert.equal(formatDuration(-5), '0s');
 });
 
+test('formatDuration pads the smaller unit when asked', () => {
+  assert.equal(formatDuration(5, { pad: true }), '05s');
+  assert.equal(formatDuration(245, { pad: true }), '4m 05s');
+  assert.equal(formatDuration(3 * 3600 + 5 * 60, { pad: true }), '3h 05m');
+  assert.equal(formatDuration(2 * 86400 + 4 * 3600, { pad: true }), '2d 04h');
+  assert.equal(formatDuration(252, { pad: true }), '4m 12s');
+});
+
 test('formatRate signs the amount and picks hours or days', () => {
   assert.equal(formatRate(1e6 / 3600), '+1.00M/h');
   assert.equal(formatRate(-1200 / 3600, ' mB'), '−1.2k mB/h');

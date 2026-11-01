@@ -461,18 +461,30 @@ export function tickSourceLine() {
   sourceLine.textContent = `Source: ${lastData.source} - updated ${ageDisplay}s ago`;
 }
 
-// " · running 12m 5s · ~25m left" - how long the job has run (at least,
-// for one already running when the server started) and, once its pace
-// is known, the server's guess at the rest.
+// The parts after "41% · 0/1 steps done": "running 12m 05s" - how
+// long the job has run (at least, for one already running when the
+// server started) - and, once its pace is known, the server's guess at
+// the rest, "~25m 00s left". Padded, since they tick every redraw.
 function jobTiming(job) {
-  if (job.running_seconds == null) return '';
+  if (job.running_seconds == null) return [];
   const age = dataAge() ?? 0;
-  const elapsed = formatDuration(job.running_seconds + age);
-  let text = ` &middot; running ${job.started_known ? '' : '&ge;'}${escapeHtml(elapsed)}`;
+  const elapsed = formatDuration(job.running_seconds + age, { pad: true });
+  const parts = [`running ${job.started_known ? '' : '&ge;'}${escapeHtml(elapsed)}`];
   if (job.eta_seconds != null) {
-    text += ` &middot; <span class="job-eta" title="If the rest of the job goes at the pace it has so far. Steps can take very different times, so this is rough.">~${escapeHtml(formatDuration(Math.max(0, job.eta_seconds - age)))} left</span>`;
+    parts.push(`<span class="job-eta" title="If the rest of the job goes at the pace it has so far. Steps can take very different times, so this is rough.">~${escapeHtml(formatDuration(Math.max(0, job.eta_seconds - age), { pad: true }))} left</span>`);
   }
-  return text;
+  return parts;
+}
+
+// The line under a job's progress bar. Each part is kept whole, so a
+// card too narrow for the line breaks it between parts, not mid-part.
+function progressLabel(job) {
+  const parts = [
+    `${escapeHtml(job.progress_percent)}%`,
+    `${escapeHtml(job.steps_done ?? '?')}/${escapeHtml(job.steps_total ?? '?')} steps done`,
+    ...jobTiming(job),
+  ];
+  return parts.map((p, i) => `<span class="progress-part">${p}${i < parts.length - 1 ? ' &middot;' : ''}</span>`).join(' ');
 }
 
 function renderCard(job) {
@@ -490,7 +502,7 @@ function renderCard(job) {
   const hasProgress = job.busy && job.progress_percent != null;
   const progressBar = hasProgress ? `
     <div class="progress-track"><div class="progress-fill" data-progress="${escapeHtml(job.progress_percent)}"></div></div>
-    <div class="progress-label">${escapeHtml(job.progress_percent)}% &middot; ${escapeHtml(job.steps_done ?? '?')}/${escapeHtml(job.steps_total ?? '?')} steps done${jobTiming(job)}</div>
+    <div class="progress-label">${progressLabel(job)}</div>
   ` : '';
 
   const itemCount = job.busy ? ingredientCount(job) : 0;

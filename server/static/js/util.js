@@ -185,13 +185,16 @@ export function dayLabel(seconds) {
 }
 
 // A length of time in seconds, to its two largest units: "42s",
-// "4m 12s", "3h 5m", "2d 4h".
-export function formatDuration(seconds) {
+// "4m 12s", "3h 5m", "2d 4h". pad zero-pads the smaller unit ("4m 05s",
+// "05s"), for a duration redrawn as it ticks: its length then only
+// changes with the units, so the text around it doesn't reflow.
+export function formatDuration(seconds, { pad = false } = {}) {
   const s = Math.max(0, Math.round(seconds));
-  if (s < 60) return s + 's';
-  if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ${Math.floor(s % 3600 / 60)}m`;
-  return `${Math.floor(s / 86400)}d ${Math.floor(s % 86400 / 3600)}h`;
+  const two = n => (pad ? String(n).padStart(2, '0') : n);
+  if (s < 60) return two(s) + 's';
+  if (s < 3600) return `${Math.floor(s / 60)}m ${two(s % 60)}s`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ${two(Math.floor(s % 3600 / 60))}m`;
+  return `${Math.floor(s / 86400)}d ${two(Math.floor(s % 86400 / 3600))}h`;
 }
 
 // Where a machine (a pattern's provider) is, to go and find it:
