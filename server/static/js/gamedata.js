@@ -11,7 +11,7 @@ import { closeNote, delegateActions, escapeHtml, noteClosed, onBackdropClick } f
 
 const NOTICE_MS = 5 * 60 * 1000;
 const NOTICE_PENDING_MS = 3000;
-const NOTICE_DISMISSED_KEY = 'gtnhCraftMonitor.gamedataNoticeDismissed';
+const NOTICE = 'gamedata';  // its name in gcm/notices.py
 // Unknown item types listed in the dialog's own notice.
 const NOTICE_NAMES = 3;
 
@@ -256,7 +256,7 @@ function renderNotice() {
   const el = document.getElementById('gamedataNotice');
   const admin = Boolean(AUTH_USER && AUTH_USER.role === 'admin');
   renderUnknown();
-  if (!admin || !notice || !notice.kind || noteClosed(NOTICE_DISMISSED_KEY, noticeKey(notice))) {
+  if (!admin || !notice || !notice.kind || noteClosed(NOTICE, noticeKey(notice))) {
     el.hidden = true;
     return;
   }
@@ -312,7 +312,7 @@ export function setupGameDataActions() {
   delegateActions(document, {
     'gamedata-notice-switch': () => openGameDataModal({ version: notice.suggest }),
     'dismiss-gamedata-notice': () => {
-      closeNote(NOTICE_DISMISSED_KEY, noticeKey(notice));
+      closeNote(NOTICE, noticeKey(notice));
       renderNotice();
     },
     'open-gamedata': () => { closeSettingsMenu(); openGameDataModal(); },

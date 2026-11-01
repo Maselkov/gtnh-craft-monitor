@@ -1444,6 +1444,9 @@ async function main() {
     await click(`$('[data-action="close-agents"]')`);
     await click(`$('[data-action="dismiss-scripts-notice"]')`);
     await waitFor('closed', `!visible($('#scriptsNotice'))`);
+    // Kept on the server for every admin, not in this browser.
+    await sleep(300);
+    await evaluate(`localStorage.clear(), true`);
     await cdp.send('Page.reload', {});
     await waitFor('reloaded again', `document.readyState === 'complete' && !window.byText`);
     await evaluate(PAGE_LIB);

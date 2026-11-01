@@ -397,14 +397,14 @@ export function closeAgentsModal() {
 // without opening Status. Closing it holds for that scripts version: the
 // next release that changes the scripts brings it back.
 const SCRIPTS_NOTICE_MS = 5 * 60 * 1000;
-const SCRIPTS_NOTICE_DISMISSED_KEY = 'gtnhCraftMonitor.scriptsNoticeDismissed';
+const SCRIPTS_NOTICE = 'scripts_update';  // its name in gcm/notices.py
 let scriptsNotice = null;
 
 function renderScriptsNotice() {
   const el = document.getElementById('scriptsNotice');
   const n = scriptsNotice;
   const admin = Boolean(AUTH_USER && AUTH_USER.role === 'admin');
-  if (!admin || !n || !n.version || noteClosed(SCRIPTS_NOTICE_DISMISSED_KEY, n.version)) {
+  if (!admin || !n || !n.version || noteClosed(SCRIPTS_NOTICE, n.version)) {
     el.hidden = true;
     return;
   }
@@ -430,7 +430,7 @@ export async function updateScriptsNotice() {
 }
 
 function dismissScriptsNotice() {
-  closeNote(SCRIPTS_NOTICE_DISMISSED_KEY, scriptsNotice.version);
+  closeNote(SCRIPTS_NOTICE, scriptsNotice.version);
   renderScriptsNotice();
 }
 

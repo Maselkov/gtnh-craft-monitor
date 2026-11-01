@@ -24,7 +24,7 @@ let networkChanges = null;
 // Grid (icons only, like the game's terminal) or list (with names, for
 // a touch screen where there's no hover tooltip), per viewer.
 const NETWORK_VIEW_KEY = 'gtnhCraftMonitor.networkView';
-const TERMINAL_NOTE_DISMISSED_KEY = 'gtnhCraftMonitor.terminalNoteDismissed';
+const TERMINAL_NOTE = 'terminal';  // its name in gcm/notices.py
 let networkView = 'grid';
 let networkShownItems = [];  // the currently-rendered array, indexed by
                               // each cell's data-idx - lets the tooltip
@@ -467,11 +467,11 @@ export function updateGameDataNote() {
 export function updateTerminalNote() {
   const admin = Boolean(AUTH_USER && AUTH_USER.role === 'admin');
   document.getElementById('networkTerminalNote').hidden =
-    !admin || noteClosed(TERMINAL_NOTE_DISMISSED_KEY) || !lastNetworkData || !lastNetworkData.needs_terminal;
+    !admin || noteClosed(TERMINAL_NOTE) || !lastNetworkData || !lastNetworkData.needs_terminal;
 }
 
 function dismissTerminalNote() {
-  closeNote(TERMINAL_NOTE_DISMISSED_KEY);
+  closeNote(TERMINAL_NOTE);
   updateTerminalNote();
 }
 

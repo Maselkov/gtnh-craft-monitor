@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  closeNote, escapeHtml, essentiaBadgeHtml, formatDuration, formatQty, formatRate, iconClass, kindTooltipHtml, noteClosed,
+  closeNote, escapeHtml, essentiaBadgeHtml, formatDuration, formatQty, formatRate, iconClass, kindTooltipHtml, loadDismissedNotes, noteClosed,
 } from '../../static/js/util.js';
 
 test('formatQty abbreviates like the in-game terminal', () => {
@@ -59,35 +59,74 @@ test('the tooltip says what a fluid or essentia is', () => {
   assert.equal(kindTooltipHtml('item'), '');
 });
 
-test('a closed note stays closed, for the value it was closed at', () => {
-  const real = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
-  const stored = new Map();
+// A fake server for the notice endpoints, and a fake localStorage.
+function fakeNotices(dismissed, legacy = {}, { failPut = false } = {}) {
+  const puts = [];
+  const stored = new Map(Object.entries(legacy));
+  const real = {
+    fetch: Object.getOwnPropertyDescriptor(globalThis, 'fetch'),
+    localStorage: Object.getOwnPropertyDescriptor(globalThis, 'localStorage'),
+  };
+  globalThis.fetch = async (url, opts = {}) => {
+    if (opts.method === 'PUT') {
+      puts.push([url, JSON.parse(opts.body).value]);
+      return { ok: !failPut };
+    }
+    return { ok: true, json: async () => ({ dismissed }) };
+  };
   Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
-    getItem: (k) => (stored.has(k) ? stored.get(k) : null), setItem: (k, v) => stored.set(k, String(v)),
+    getItem: (k) => (stored.has(k) ? stored.get(k) : null), removeItem: (k) => stored.delete(k),
   } });
+  const restore = () => {
+    for (const [name, d] of Object.entries(real)) {
+      if (d) Object.defineProperty(globalThis, name, d);
+      else delete globalThis[name];
+    }
+  };
+  return { puts, stored, restore };
+}
+
+const settle = () => new Promise((r) => setTimeout(r, 0));
+
+test('a notice stays hidden until the server says what admins dismissed', async () => {
+  assert.equal(noteClosed('recipe_check', '2.9.0-RC-1>2.9.0'), true);
+  const fake = fakeNotices({ recipe_check: '2.9.0-RC-1>2.9.0' });
   try {
-    stored.set('test.earlier', 'v1');
-    assert.equal(noteClosed('test.earlier', 'v1'), true);   // closed in an earlier visit
-    assert.equal(noteClosed('test.earlier', 'v2'), false);  // a newer one shows
-    closeNote('test.note');
-    assert.equal(stored.get('test.note'), '1');
-    assert.equal(noteClosed('test.note'), true);
+    await loadDismissedNotes(true);
+    assert.equal(noteClosed('recipe_check', '2.9.0-RC-1>2.9.0'), true);
+    assert.equal(noteClosed('recipe_check', '2.9.0>2.9.1'), false);  // the next upgrade shows
+    assert.equal(noteClosed('terminal'), false);
   } finally {
-    if (real) Object.defineProperty(globalThis, 'localStorage', real);
-    else delete globalThis.localStorage;
+    fake.restore();
   }
 });
 
-test('with storage blocked, a closed note still holds until a reload', () => {
-  const real = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
-  Object.defineProperty(globalThis, 'localStorage', { configurable: true, get() { throw new Error('blocked'); } });
+test('dismissing a notice saves it on the server, and holds here if that fails', async () => {
+  const fake = fakeNotices({}, {}, { failPut: true });
   try {
-    assert.equal(noteClosed('test.blocked', 'v1'), false);
-    closeNote('test.blocked', 'v1');
-    assert.equal(noteClosed('test.blocked', 'v1'), true);
-    assert.equal(noteClosed('test.blocked', 'v2'), false);
+    await loadDismissedNotes(true);
+    assert.equal(await closeNote('scripts_update', '7.2.0'), false);
+    assert.deepEqual(fake.puts, [['/api/admin/notices/scripts_update', '7.2.0']]);
+    assert.equal(noteClosed('scripts_update', '7.2.0'), true);
   } finally {
-    if (real) Object.defineProperty(globalThis, 'localStorage', real);
-    else delete globalThis.localStorage;
+    fake.restore();
+  }
+});
+
+test('a dismissal this browser kept is moved to the server once', async () => {
+  const fake = fakeNotices({ gamedata: '2.9.0>2.9.1' }, {
+    'gtnhCraftMonitor.terminalNoteDismissed': '1',
+    'gtnhCraftMonitor.gamedataNoticeDismissed': '2.8.4>2.9.0',
+  });
+  try {
+    await loadDismissedNotes(true);
+    await settle();
+    // The server's own dismissal wins over an older one kept here.
+    assert.deepEqual(fake.puts, [['/api/admin/notices/terminal', '1']]);
+    assert.equal(noteClosed('terminal'), true);
+    assert.equal(noteClosed('gamedata', '2.9.0>2.9.1'), true);
+    assert.equal(fake.stored.size, 0);
+  } finally {
+    fake.restore();
   }
 });

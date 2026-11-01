@@ -191,7 +191,8 @@ a change affects. It needs your patterns, so an
   switch the game data to the new version, admins get a notice at the top
   of the page if the update affects any pattern. **Show patterns** opens
   the list. Picking the version in use and **Check patterns** shows it
-  again later. The notice's &times; hides it for that update.
+  again later. The notice's &times; hides it for that update, for every
+  admin.
 
 Each pattern lands in one of these:
 

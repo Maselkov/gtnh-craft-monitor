@@ -1002,6 +1002,18 @@ pre-release whose final release is out. Not detectable: game data newer
 than the game (a catalog id the game lacks reads as out of stock), and
 fluids and essentia, which catalogs don't list.
 
+**Admin notices are dismissed on the server, for every admin.** The
+pattern check, scripts and game data notices and the Interface Terminal
+note are each about the server, not a browser: "I've handled this
+upgrade" holds whoever signs in next, on whatever device. So the
+dismissed value (a version pair, a release) is a row in app.db's
+settings (gcm/notices.py), which backups already cover, rather than in
+localStorage, where a new device or another admin brought back a notice
+dealt with a month ago. Until they're loaded, noteClosed() says closed,
+so a dismissed notice doesn't flash up. Each browser moves what it kept
+in localStorage before to the server once. Viewer-only conveniences (the
+theme, a collapsed section) stay in localStorage.
+
 ## Test suite (server/tests/)
 
 201 pytest tests across 17 files, covering every endpoint - crafts, CPU
