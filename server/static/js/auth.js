@@ -12,7 +12,7 @@ import {
   syncPushSubscription,
   updateNotifToggle,
 } from './crafts.js';
-import { openGameDataModal } from './gamedata.js';
+import { openGameDataModal, updateGameDataNotice } from './gamedata.js';
 import { updateGameDataNote, updateTerminalNote } from './network.js';
 import { delegateActions, escapeHtml, formatQty, onBackdropClick } from './util.js';
 
@@ -60,6 +60,7 @@ function updateAuthenticationControl() {
   if (AUTH_USER) syncPushSubscription();
   updateGameDataNote();
   updateScriptsNotice();
+  updateGameDataNotice();
   updateRecipeNotice();
   updateTerminalNote();
   const locked = isLocked();

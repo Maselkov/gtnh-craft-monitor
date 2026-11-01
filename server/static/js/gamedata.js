@@ -1,14 +1,23 @@
 // Game data admin modal: picking the GTNH version whose item icons and
 // scanner item list the server uses, and which textures the icons are
-// rendered with (server/gcm/gamedata.py); and starting a pattern check
-// against a version's recipes (recipe-check.js).
+// rendered with (server/gcm/gamedata.py); starting a pattern check
+// against a version's recipes (recipe-check.js); and the page-wide notice
+// that the game data looks older than the game (gcm/gamedata_check.py).
 
 import { AUTH_USER, closeSettingsMenu } from './auth.js';
 import { fetchNetwork } from './network.js';
 import { openRecipeCheck, updateRecipeNotice, versionsToCheck } from './recipe-check.js';
-import { delegateActions, escapeHtml, onBackdropClick } from './util.js';
+import { closeNote, delegateActions, escapeHtml, noteClosed, onBackdropClick } from './util.js';
+
+const NOTICE_MS = 5 * 60 * 1000;
+const NOTICE_PENDING_MS = 3000;
+const NOTICE_DISMISSED_KEY = 'gtnhCraftMonitor.gamedataNoticeDismissed';
+// Unknown item types listed in the dialog's own notice.
+const NOTICE_NAMES = 3;
 
 let pollTimer = null;
+// The last /api/admin/gamedata-notice answer.
+let notice = null;
 // The last listing: texture set details, and per version what can be
 // picked ({version, published_at, base_size, sizes: {textures: bytes},
 // installed: Set of textures on disk, update_available: a newer build of
@@ -110,7 +119,7 @@ function renderStatus(status) {
   if (status.state === 'error') showError(status.error);
 }
 
-async function loadGameData(refresh) {
+async function loadGameData(refresh, pick) {
   const currentLine = document.getElementById('gamedataCurrent');
   const select = document.getElementById('gamedataVersion');
   showError('');
@@ -148,9 +157,11 @@ async function loadGameData(refresh) {
   select.innerHTML = versions.map((v) =>
     `<option value="${escapeHtml(v.version)}">${escapeHtml(versionLabel(v))}</option>`,
   ).join('') || '<option value="">No game data published yet</option>';
-  if (versions.some((v) => v.version === previous)) select.value = previous;
+  if (pick && versions.some((v) => v.version === pick)) select.value = pick;
+  else if (versions.some((v) => v.version === previous)) select.value = previous;
   else if (data.selected) select.value = data.selected;
   renderTextures();
+  renderUnknown();
   document.getElementById('gamedataInstallBtn').disabled = versions.length === 0;
 
   if (data.available_error) showError(data.available_error);
@@ -206,10 +217,11 @@ async function installGameData() {
   }
 }
 
-export async function openGameDataModal() {
+// options.version: the version to have picked, as the notice suggests.
+export async function openGameDataModal(options = {}) {
   if (!AUTH_USER || AUTH_USER.role !== 'admin') return;
   document.getElementById('gamedataModal').style.display = 'flex';
-  await loadGameData(false);
+  await loadGameData(false, options.version);
 }
 
 export function closeGameDataModal() {
@@ -217,10 +229,92 @@ export function closeGameDataModal() {
   stopPolling();
   fetchNetwork();  // the Network tab's "no GTNH version" note
   updateRecipeNotice();  // a switch may have changed recipes patterns use
+  updateGameDataNotice();
+}
+
+// ---------- the notice that the game data looks older than the game ----------
+
+export function gamedataNoticeText(n) {
+  if (n.kind === 'prerelease') {
+    return `You're using game data for GTNH ${n.selected}, and ${n.suggest} is out. If your server has updated, switch to it.`;
+  }
+  const one = n.count === 1;
+  const names = n.ids.slice(0, NOTICE_NAMES).map((i) => i.label).join(', ')
+    + (n.count > NOTICE_NAMES ? ', \u2026' : '');
+  let where;
+  if (n.suggest_count < n.count) where = `${n.suggest} has ${n.suggest_count} of them.`;
+  else where = `${one ? 'It\'s' : 'They\'re'} in ${n.suggest}.`;
+  return `Your network has ${one ? 'an item type' : `${n.count} item types`} the GTNH ${n.selected} game data`
+    + ` doesn't know (${names}), so the network scanner skips ${one ? 'it' : 'them'}. ${where}`;
+}
+
+function noticeKey(n) {
+  return `${n.selected}>${n.suggest}`;
+}
+
+function renderNotice() {
+  const el = document.getElementById('gamedataNotice');
+  const admin = Boolean(AUTH_USER && AUTH_USER.role === 'admin');
+  renderUnknown();
+  if (!admin || !notice || !notice.kind || noteClosed(NOTICE_DISMISSED_KEY, noticeKey(notice))) {
+    el.hidden = true;
+    return;
+  }
+  document.getElementById('gamedataNoticeText').textContent = gamedataNoticeText(notice);
+  document.getElementById('gamedataNoticeSwitch').textContent = `Switch to ${notice.suggest}\u2026`;
+  el.hidden = false;
+}
+
+// In the dialog: what the notice is based on, and the item types no
+// published version has.
+function renderUnknown() {
+  const box = document.getElementById('gamedataUnknown');
+  const n = notice && notice.selected && notice.selected === current.version ? notice : null;
+  const ids = n && n.kind === 'behind' ? n.ids : [];
+  const count = ids.length ? n.count : 0;
+  const unpublished = n ? n.unpublished_count || 0 : 0;
+  box.hidden = !count && !unpublished;
+  if (box.hidden) return;
+  const total = count + unpublished;
+  document.getElementById('gamedataUnknownSummary').textContent =
+    `${total} item type${total === 1 ? '' : 's'} your network has ${total === 1 ? 'isn\'t' : 'aren\'t'} in this game data`;
+  document.getElementById('gamedataUnknownList').innerHTML = ids.map((i) =>
+    `<li>${escapeHtml(i.label)} <span class="gamedata-id">${escapeHtml(i.id)}</span>, since ${escapeHtml(i.version)}</li>`,
+  ).join('') + (count > ids.length ? `<li>and ${count - ids.length} more</li>` : '');
+  const note = document.getElementById('gamedataUnpublished');
+  note.hidden = !unpublished;
+  if (unpublished) {
+    const names = n.unpublished.slice(0, NOTICE_NAMES).map((i) => i.label).join(', ')
+      + (unpublished > NOTICE_NAMES ? ', \u2026' : '');
+    document.getElementById('gamedataUnpublishedText').textContent =
+      `Not in any published version: ${names}. ${unpublished === 1 ? 'It' : 'They'} may be hidden in NEI,`
+      + ' or if your server runs a nightly or a modified pack, build game data for it yourself.';
+  }
+}
+
+export async function updateGameDataNotice() {
+  if (!AUTH_USER || AUTH_USER.role !== 'admin') {
+    notice = null;
+    renderNotice();
+    return;
+  }
+  try {
+    const res = await fetch('/api/admin/gamedata-notice');
+    if (res.ok) notice = await res.json();
+  } catch (e) { /* keep what was shown */ }
+  renderNotice();
+  // Worked out in the background, downloading newer versions' item lists.
+  if (notice && notice.pending) setTimeout(updateGameDataNotice, NOTICE_PENDING_MS);
 }
 
 export function setupGameDataActions() {
+  setInterval(updateGameDataNotice, NOTICE_MS);
   delegateActions(document, {
+    'gamedata-notice-switch': () => openGameDataModal({ version: notice.suggest }),
+    'dismiss-gamedata-notice': () => {
+      closeNote(NOTICE_DISMISSED_KEY, noticeKey(notice));
+      renderNotice();
+    },
     'open-gamedata': () => { closeSettingsMenu(); openGameDataModal(); },
     'close-gamedata': () => closeGameDataModal(),
     'refresh-gamedata': () => loadGameData(true),

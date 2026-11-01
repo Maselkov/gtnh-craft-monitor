@@ -7,7 +7,7 @@ import zipfile
 import dev
 import pytest
 from conftest import TEST_API_KEY, bundle_index, login_as, ore_dict_index
-from gcm import item_info, oredict, patterns, recipe_index, recipes
+from gcm import config, gamedata, gamedata_check, item_info, oredict, patterns, recipe_index, recipes, state
 
 
 @pytest.fixture()
@@ -72,7 +72,7 @@ def test_cancel_request_idles_the_cpu(game, client):
 
 def test_icon_bundle_covers_every_item_but_essentia(tmp_path):
     dev.install_icons(str(tmp_path))
-    bundle = tmp_path / "gamedata" / "dev"
+    bundle = tmp_path / "gamedata" / dev.GTNH_VERSION
     lookup = json.loads((bundle / "icons_lookup.json").read_text())
     with zipfile.ZipFile(bundle / "images.zip") as zf:
         names = set(zf.namelist())
@@ -80,7 +80,7 @@ def test_icon_bundle_covers_every_item_but_essentia(tmp_path):
     # Essentia has none, to show the page's stand-in.
     assert len(paths) == sum(1 for it in dev.CATALOG if it["kind"] != "essentia")
     assert set(paths) <= names
-    assert json.loads((tmp_path / "gamedata" / "selected.json").read_text())["version"] == "dev"
+    assert json.loads((tmp_path / "gamedata" / "selected.json").read_text())["version"] == dev.GTNH_VERSION
 
 
 def test_the_version_before_has_the_recipes_the_pattern_check_flags(tmp_path):
@@ -88,7 +88,7 @@ def test_the_version_before_has_the_recipes_the_pattern_check_flags(tmp_path):
     gamedata_dir = tmp_path / "gamedata"
     assert json.loads((gamedata_dir / "selected.json").read_text())["previous"] == dev.PREVIOUS_VERSION
     indexes = []
-    for version in (dev.PREVIOUS_VERSION, "dev"):
+    for version in (dev.PREVIOUS_VERSION, dev.GTNH_VERSION):
         path = str(tmp_path / f"{version}.sqlite")
         recipe_index.build(str(gamedata_dir / version / "recipes.json.gz"), path)
         indexes.append(recipe_index.RecipeIndex(path))
@@ -106,15 +106,35 @@ def test_the_version_before_has_the_recipes_the_pattern_check_flags(tmp_path):
         "Electric Implosion Compressor": "changed",
         "Infusion Altar": "unchecked",
     }
-    assert result["counts"]["crafting"] == 3
+    assert result["counts"]["crafting"] == 4
     assert by_provider["Circuit Assembler"]["removed"] == {
         "name": "Ultimate Circuit", "used": False, "taken_apart_in": ["Unpackager"],
     }
 
 
+@pytest.mark.parametrize("prerelease", [False, True])
+def test_the_bundles_bring_the_game_data_notice(tmp_path, monkeypatch, prerelease):
+    monkeypatch.setattr(config, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(config, "GAMEDATA_DIR", str(tmp_path / "gamedata"))
+    monkeypatch.setattr(gamedata, "available", lambda refresh=False: ([], None))
+    dev.install_icons(str(tmp_path), prerelease=prerelease)
+    with state.patterns_lock:
+        state.patterns["patterns"] = [patterns.normalize(p) for p in dev.pattern_scan()]
+
+    selected = gamedata.selected_version()
+    unknown = gamedata_check.unknown_ids()
+    assert unknown == {f"gregtech:{dev.BY_NAME[dev.NEWER_ITEM]['internal']}": dev.NEWER_ITEM}
+    result = gamedata_check.check(selected, unknown)
+    if prerelease:
+        assert (selected, result["kind"], result["suggest"]) == (dev.PRERELEASE_VERSION, "prerelease", dev.GTNH_VERSION)
+        assert result["unpublished_count"] == 1
+    else:
+        assert (selected, result["kind"], result["suggest"]) == (dev.GTNH_VERSION, "behind", dev.NEXT_VERSION)
+
+
 def test_the_bundles_descriptions_reach_the_page(tmp_path, game, client):
     dev.install_icons(str(tmp_path))
-    item_info.load(bundle_index(tmp_path / "gamedata" / "dev"))
+    item_info.load(bundle_index(tmp_path / "gamedata" / dev.GTNH_VERSION))
     try:
         game.tick()
         info = client.get("/api/network/info").get_json()

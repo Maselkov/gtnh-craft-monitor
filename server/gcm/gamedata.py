@@ -60,6 +60,9 @@ RELEASE_FILE = "release.json"
 AVAILABLE_TTL_SECONDS = 600
 # Versions become directory names, so keep them to tag-safe characters.
 _VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+# GTNH's own version names: 2.9.0, 2.9.0-beta-2, 2.9.0-RC-1.
+_VERSION_KEY_RE = re.compile(r"^(\d+(?:\.\d+)*)(?:-(beta|rc)-?(\d+))?(?=$|-)", re.IGNORECASE)
+_STAGES = {"beta": 0, "rc": 1, "": 2}
 
 _lock = threading.Lock()
 _status = {}
@@ -84,6 +87,23 @@ reset()
 
 def valid_version(version):
     return isinstance(version, str) and bool(_VERSION_RE.match(version))
+
+
+def version_key(version):
+    """version's numbers and pre-release stage, for putting versions in
+    order (2.9.0-beta-2 < 2.9.0-RC-1 < 2.9.0, whatever order they were
+    published in), or None for one that doesn't start with numbers.
+    Anything after them (a locally built "2.9.0-mypack") is ignored."""
+    match = _VERSION_KEY_RE.match(version) if isinstance(version, str) else None
+    if not match:
+        return None
+    stage = (match.group(2) or "").lower()
+    return (tuple(int(n) for n in match.group(1).split(".")), _STAGES[stage], int(match.group(3) or 0))
+
+
+def is_prerelease(version):
+    key = version_key(version)
+    return key is not None and key[1] != _STAGES[""]
 
 
 def texture_sets():

@@ -126,10 +126,21 @@ ITEMS = [
     ("Dimensionally Transcendent Plasma Forge", "block", (90, 40, 140)),
     # A real name with formatting codes in it, as AE2's storage parts have.
     ("\u00a7a16k\u00a7r ME Storage Component", "circuit", (60, 140, 60)),
+    # Newer than the selected game data: see NEWER_ITEM.
+    ("Reinforced Neutronium Casing", "block", (70, 70, 80)),
     ("Ordo", "essentia", None),
     ("Metallum", "essentia", None),
     ("Praecantatio", "essentia", None),
 ]
+
+
+# An item of GTNH_VERSION's that only NEXT_VERSION's catalog has (a new
+# casing block, as 2.9.0's gt.blockcasings14:6, but an id no real version
+# has, so the published catalogs the check also reads never have it), as
+# if the game had been updated since its game data was picked. A pattern makes it, so admins
+# see the notice that the game data looks older than the game
+# (gcm/gamedata_check.py), and the scan skips it, as the real one would.
+NEWER_ITEM = "Reinforced Neutronium Casing"
 
 
 def _slug(name):
@@ -143,6 +154,9 @@ def _item(index, name, shape, colour):
     if shape == "fluid":
         return {"name": name, "mod": None, "internal": _slug(name), "damage": None,
                 "kind": "fluid", "shape": shape, "colour": colour}
+    if name == NEWER_ITEM:
+        return {"name": name, "mod": "gregtech", "internal": "gt.blockcasings.dev", "damage": 6,
+                "kind": "item", "shape": shape, "colour": colour}
     return {"name": name, "mod": "gregtech", "internal": "gt.metaitem.01", "damage": 30000 + index,
             "kind": "item", "shape": shape, "colour": colour}
 
@@ -186,6 +200,7 @@ PATTERNS = [
      {"beSubstitute": True}),
     ("Circuit Assembler", False, [("\u00a7a16k\u00a7r ME Storage Component", 1)],
      [("SMD Capacitor", 4), ("Silicon Wafer", 1), ("Glass Dust", 2)]),
+    ("Molecular Assembler", True, [(NEWER_ITEM, 1)], [("Neutronium Plate", 6), ("Titanium Gear", 1)]),
 ]
 # Some items' tooltips below their name, as the bundle's item_info.json
 # has them (gcm/item_info.py): formatting codes and all, so the page's
@@ -366,10 +381,19 @@ def _png(shape, colour):
             + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
 
 
-def install_icons(data_dir):
+def _write_catalog(bundle, newer):
+    with open(os.path.join(bundle, "item_catalog.txt"), "w", encoding="utf-8") as f:
+        f.write("".join(sorted({f"{it['mod']}:{it['internal']}\n" for it in CATALOG
+                                if it["mod"] and (newer or it["name"] != NEWER_ITEM)})))
+
+
+def install_icons(data_dir, prerelease=False):
     """Writes a game data bundle for CATALOG and selects it, the same
-    layout gcm/gamedata.py installs from a release."""
-    bundle = os.path.join(data_dir, "gamedata", "dev")
+    layout gcm/gamedata.py installs from a release. With prerelease, the
+    selected version is a pre-release whose final release is installed
+    too, and NEWER_ITEM is in neither."""
+    version, next_version = (PRERELEASE_VERSION, GTNH_VERSION) if prerelease else (GTNH_VERSION, NEXT_VERSION)
+    bundle = os.path.join(data_dir, "gamedata", version)
     os.makedirs(bundle, exist_ok=True)
     by_key, fluids_by_key = {}, {}
     with zipfile.ZipFile(os.path.join(bundle, "images.zip"), "w") as zf:
@@ -389,8 +413,7 @@ def install_icons(data_dir):
         json.dump(ore_dict(), f)
     with open(os.path.join(bundle, "item_info.json"), "w", encoding="utf-8") as f:
         json.dump(item_info(), f)
-    with open(os.path.join(bundle, "item_catalog.txt"), "w", encoding="utf-8") as f:
-        f.write("".join(f"{it['mod']}:{it['internal']}\n" for it in CATALOG if it["mod"]))
+    _write_catalog(bundle, newer=False)
     # Its hash is the bundle's build id, which busts icon caches: new
     # icons after a change here get new URLs.
     digest = hashlib.sha256(open(os.path.join(bundle, "images.zip"), "rb").read()).hexdigest()
@@ -403,14 +426,24 @@ def install_icons(data_dir):
     shutil.copytree(bundle, before)
     write_recipes(os.path.join(bundle, "recipes.json.gz"), recipe_maps(changed=True))
     write_recipes(os.path.join(before, "recipes.json.gz"), recipe_maps(changed=False))
+    # And a newer one, with NEWER_ITEM in its catalog.
+    after = os.path.join(data_dir, "gamedata", next_version)
+    shutil.rmtree(after, ignore_errors=True)
+    shutil.copytree(bundle, after)
+    _write_catalog(after, newer=not prerelease)
     with open(os.path.join(data_dir, "gamedata", "selected.json"), "w", encoding="utf-8") as f:
-        json.dump({"version": "dev", "textures": "default", "previous": PREVIOUS_VERSION}, f)
+        json.dump({"version": version, "textures": "default", "previous": PREVIOUS_VERSION}, f)
 
 
 # ---------------------------------------------------------------- recipes
 
-PREVIOUS_VERSION = "dev-before"
-# How "dev"'s recipes differ from PREVIOUS_VERSION's, by the pattern
+# Named like GTNH's own versions, so they go in order
+# (gamedata.version_key()).
+GTNH_VERSION = "2.9.0-dev"
+PREVIOUS_VERSION = "2.8.4-dev"
+NEXT_VERSION = "2.9.1-dev"
+PRERELEASE_VERSION = "2.9.0-RC-1-dev"
+# How GTNH_VERSION's recipes differ from PREVIOUS_VERSION's, by the pattern
 # provider whose recipe changes: two patterns broken (one by an item
 # removed, which only an Unpackager takes apart now), one moved and two
 # changed outside the pattern.
@@ -897,6 +930,8 @@ class FakeGame:
     def scan(self):
         items = []
         for it in CATALOG:
+            if it["name"] == NEWER_ITEM:
+                continue
             if it["name"] not in ALWAYS_EMPTY and it["name"] not in ALWAYS_STOCKED:
                 self.stock[it["name"]] = max(0, self.stock[it["name"]] + random.randint(-50, 60))
             entry = self._scanned(it)
@@ -974,7 +1009,7 @@ def admin_token():
 def run(args, data_dir):
     fresh = not os.path.exists(os.path.join(data_dir, "app.db"))
     if not args.no_icons:
-        install_icons(data_dir)
+        install_icons(data_dir, prerelease=args.prerelease)
     else:
         shutil.rmtree(os.path.join(data_dir, "gamedata"), ignore_errors=True)
 
@@ -1009,6 +1044,8 @@ def main():
     parser.add_argument("--open", action="store_true", help="open the page in a browser")
     parser.add_argument("--no-terminal", action="store_true",
                         help="no ME Interface Terminal: no patterns, so no crafting plan or job tree")
+    parser.add_argument("--prerelease", action="store_true",
+                        help="game data for a pre-release whose final release is out, not an older version")
     args = parser.parse_args()
 
     # A plain kill skips finally blocks - exit normally instead, so the
