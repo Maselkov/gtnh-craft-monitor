@@ -10,9 +10,10 @@ from gcm import config, gamedata, patterns, retention, state, store, webhooks
 
 STARTED_AT = time.time()
 
-# A full scan takes a minute or two and runs about every 20 minutes
-# (network_browser.lua): past these, something has stopped.
-SCAN_STUCK_SECONDS = 600
+# A full scan can take 10+ minutes on a big network, and the next one
+# starts 10 minutes after it ends (network_browser.lua): past these,
+# something has stopped.
+SCAN_STUCK_SECONDS = 1800
 SCAN_STALE_SECONDS = 3600
 # power_monitor.lua reports about once a minute.
 POWER_STALE_SECONDS = 300

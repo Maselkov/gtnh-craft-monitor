@@ -685,7 +685,7 @@ function renderNetworkList() {
     networkRenderedCount = 0;
     emptyEl.style.display = lastNetworkData && lastNetworkData.in_progress ? 'none' : 'block';
     if (lastNetworkData && lastNetworkData.in_progress) {
-      listEl.innerHTML = '<div class="network-note">First scan in progress - this takes a minute or two.</div>';
+      listEl.innerHTML = '<div class="network-note">First scan in progress - on a big network this can take 10 minutes or more.</div>';
     }
     return;
   }

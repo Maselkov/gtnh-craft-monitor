@@ -379,8 +379,8 @@ never sees it.
 | `HTTP_TIMEOUT_SECONDS` | `20` | Give up on a request to the server that stalls this long |
 | `SHOW_STATUS` | `false` | Draw a status screen |
 
-A full scan takes about 165 batches with the GTNH catalog and runs every
-10 minutes by default.
+A full scan takes about 165 batches with the GTNH catalog, which can take 10
+minutes or more on a big network, and runs every 10 minutes by default.
 
 `item_catalog.txt` lists about 11,000 item IDs (`modid:internalname`, damage
 values merged): everything in NEI's item list, including items NEI hides,

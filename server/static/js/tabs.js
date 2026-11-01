@@ -67,7 +67,7 @@ export function switchTab(tab, pushUrl) {
     fetchNetwork();
     fetchNetworkPins();
     fetchStockRules();
-    // A full scan takes a minute or two and this data doesn't change
+    // A full scan can take 10+ minutes and this data doesn't change
     // fast - no point polling anywhere near as often as crafts/power.
     // Stock rules only change with a scan (or an auto-craft's answer);
     // main.js polls them on every tab, for the tab badge.
