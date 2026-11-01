@@ -46,9 +46,9 @@
       <div class="settings-wrap" id="settingsWrap">
         <button class="notif-btn settings-btn" id="settingsBtn" title="Settings"
           aria-label="Settings" aria-haspopup="true" aria-expanded="false"
-          data-action="toggle-settings"><svg class="ui-icon" viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true"><g fill="currentColor"><rect x="6.9" y="0.6" width="2.2" height="3.2" rx="0.5" transform="rotate(0 8 8)"/><rect x="6.9" y="0.6" width="2.2" height="3.2" rx="0.5" transform="rotate(45 8 8)"/><rect x="6.9" y="0.6" width="2.2" height="3.2" rx="0.5" transform="rotate(90 8 8)"/><rect x="6.9" y="0.6" width="2.2" height="3.2" rx="0.5" transform="rotate(135 8 8)"/><rect x="6.9" y="0.6" width="2.2" height="3.2" rx="0.5" transform="rotate(180 8 8)"/><rect x="6.9" y="0.6" width="2.2" height="3.2" rx="0.5" transform="rotate(225 8 8)"/><rect x="6.9" y="0.6" width="2.2" height="3.2" rx="0.5" transform="rotate(270 8 8)"/><rect x="6.9" y="0.6" width="2.2" height="3.2" rx="0.5" transform="rotate(315 8 8)"/><path fill-rule="evenodd" d="M8 3.1a4.9 4.9 0 1 0 0 9.8 4.9 4.9 0 0 0 0-9.8zm0 2.8a2.1 2.1 0 1 1 0 4.2 2.1 2.1 0 0 1 0-4.2z"/></g></svg></button>
+          data-action="toggle-settings"><svg class="ui-icon" viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true"><g fill="currentColor"><rect x="6.9" y="0.6" width="2.2" height="3.2" rx="0.5" transform="rotate(0 8 8)"/><rect x="6.9" y="0.6" width="2.2" height="3.2" rx="0.5" transform="rotate(45 8 8)"/><rect x="6.9" y="0.6" width="2.2" height="3.2" rx="0.5" transform="rotate(90 8 8)"/><rect x="6.9" y="0.6" width="2.2" height="3.2" rx="0.5" transform="rotate(135 8 8)"/><rect x="6.9" y="0.6" width="2.2" height="3.2" rx="0.5" transform="rotate(180 8 8)"/><rect x="6.9" y="0.6" width="2.2" height="3.2" rx="0.5" transform="rotate(225 8 8)"/><rect x="6.9" y="0.6" width="2.2" height="3.2" rx="0.5" transform="rotate(270 8 8)"/><rect x="6.9" y="0.6" width="2.2" height="3.2" rx="0.5" transform="rotate(315 8 8)"/><path fill-rule="evenodd" d="M8 3.1a4.9 4.9 0 1 0 0 9.8 4.9 4.9 0 0 0 0-9.8zm0 2.8a2.1 2.1 0 1 1 0 4.2 2.1 2.1 0 0 1 0-4.2z"/></g></svg><span class="update-dot" id="settingsUpdateDot" hidden></span></button>
         <div class="settings-menu" id="settingsMenu" role="menu" style="display:none;">
-          <div class="settings-menu-user" id="settingsUser"></div>
+          <div class="settings-menu-user" id="settingsUserRow" hidden><span id="settingsUser"></span><span id="settingsVersion"></span></div>
           <div class="theme-row">
             Theme
             <div class="theme-seg" role="radiogroup" aria-label="Theme">
@@ -75,7 +75,7 @@
           <button class="settings-menu-item" id="patternCheckBtn" role="menuitem" style="display:none;"
             data-action="open-pattern-check">Pattern check</button>
           <button class="settings-menu-item" id="agentsBtn" role="menuitem" style="display:none;"
-            data-action="open-agents">Status</button>
+            data-action="open-agents">Status<span class="menu-note" id="agentsBtnNote" hidden></span></button>
           <button class="settings-menu-item" id="webhooksBtn" role="menuitem" style="display:none;"
             data-action="open-webhooks">Webhooks</button>
           <button class="settings-menu-item" id="backupBtn" role="menuitem" style="display:none;"

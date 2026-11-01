@@ -95,6 +95,8 @@ HTTPS, backups and running without Docker, see the
 What changed in each version is on the
 [releases page](https://github.com/Maselkov/gtnh-craft-monitor/releases);
 **Watch → Custom → Releases** on GitHub tells you when there's a new one.
+The page tells admins too, with a dot on **Settings (⚙)**: the menu then
+says which release is out, and **Status** links to what's new in it.
 
 ```bash
 docker compose pull

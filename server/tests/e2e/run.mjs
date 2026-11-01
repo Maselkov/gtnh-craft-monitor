@@ -561,6 +561,8 @@ async function main() {
     await evaluate(`typeInto('#accessTokenInput', ${JSON.stringify(adminToken)})`);
     await click(`$('#authBtn')`);
     await waitFor('admin menu available', `$('#settingsUser').textContent !== '' && !visible($('#authBtn'))`);
+    // Run from source: no version, and nothing to update to.
+    await waitFor('no version, no update dot', `$('#settingsVersion').textContent === '' && !visible($('#settingsUpdateDot'))`);
   });
 
   step('sign out, then sign in again with the Enter key', async () => {
@@ -1902,7 +1904,10 @@ async function main() {
   // Last, as its session cookie replaces the main server's (cookies
   // don't tell ports apart).
   step('first-time setup through the setup link on a server with no users', async () => {
-    const fresh = await startServer();
+    // A release, older than the fake GitHub's latest (v1.2.0).
+    const fresh = await startServer({
+      GAMEDATA_API_URL: github, GAMEDATA_REPO: 'e2e/repo', SCRIPTS_REPO: 'e2e/scripts', GCM_VERSION: 'v1.1.0',
+    });
     if (!fresh.setupCode) throw new Error('no setup link in the server log');
     await cdp.send('Page.navigate', { url: `${fresh.base}/#setup=${fresh.setupCode}` });
     await waitFor('reloaded', `document.readyState === 'complete' && !window.byText`);
@@ -1923,6 +1928,15 @@ async function main() {
     await waitFor('signed in as the new admin', `!visible($('#setupModal')) && $('#settingsUser').textContent === 'Signed in as Ann' && $('#adminBtn').style.display === ''`);
     await waitFor('then on to picking the GTNH version', `visible($('#gamedataModal'))`);
     await click(`$('[data-action="close-gamedata"]')`);
+    // A newer release is out: a dot on the settings button, and the menu
+    // says which, beside this server's own.
+    await waitFor('update dot', `visible($('#settingsUpdateDot'))`);
+    await click(`$('#settingsBtn')`);
+    await waitFor('menu: version, and the newer one at Status', `visible($('#settingsMenu'))
+      && $('#settingsVersion').textContent === 'v1.1.0' && $('#settingsUser').textContent === 'Signed in as Ann'
+      && visible($('#agentsBtnNote')) && $('#agentsBtnNote').textContent === 'v1.2.0 is out'`);
+    await click(`$('#settingsBtn')`);
+    await waitFor('menu closed', `!visible($('#settingsMenu'))`);
     // An admin gets the button, which opens Status at Connect a computer.
     await waitFor('connect button', `visible($('#root [data-action="connect-computer"]'))
       && !visible($('#root .connect-note .non-admin-only'))`);

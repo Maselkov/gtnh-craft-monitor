@@ -319,6 +319,12 @@ def _fetch_in_background():
     threading.Thread(target=latest_release, daemon=True, name="latest-release").start()
 
 
+def newer_server_release(latest):
+    """latest if it's a newer release than this server's, else None (also
+    when the server doesn't know its release)."""
+    return latest if is_behind(config.SERVER_VERSION, latest) else None
+
+
 def is_behind(version, latest):
     """Whether an installed version is an older release than latest. A
     branch (main) or unknown version isn't compared."""

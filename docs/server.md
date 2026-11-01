@@ -121,7 +121,7 @@ Everything else:
 | `GAMEDATA_SHARED_DIR` | empty | Bundles shared by several servers, read without downloading; see [Game data](#game-data). |
 | `GAMEDATA_API_URL` | `https://api.github.com` | GitHub API base for that list (for mirrors). |
 | `SCRIPTS_REPO` | `Maselkov/gtnh-craft-monitor` | Repo whose newest `vX.Y.Z` tag the Status dialog offers as an update. |
-| `GCM_VERSION` | the image's release | This server's release (`vX.Y.Z`), shown in the Status dialog. The published image sets it; set it yourself when building from a release tag if you want **Update computers when the server updates**. |
+| `GCM_VERSION` | the image's release | This server's release (`vX.Y.Z`), shown in the settings menu and the Status dialog; admins see when a newer one is out. The published image sets it; set it yourself when building from a release tag if you want **Update computers when the server updates**. |
 | `GCM_SCRIPTS_VERSION` | set by the image | The oldest release (`vX.Y.Z`) with the same in-game scripts as this one. Admins are told about computers on anything older (see [From the web page](in-game.md#from-the-web-page)). The published image sets it; unset, nothing is said. |
 
 ## Exposing it beyond your LAN

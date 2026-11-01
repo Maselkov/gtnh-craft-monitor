@@ -52,6 +52,17 @@ def admin_agents_get():
                     "scripts_version": config.SCRIPTS_VERSION})
 
 
+@bp.route("/api/release", methods=["GET"])
+@auth.login_required
+def release_get():
+    """This server's release, for the settings menu, and for admins the
+    newer one that's out, if any: {version, newer}."""
+    newer = None
+    if config.SERVER_VERSION and auth.is_admin(g.user):
+        newer = agents.newer_server_release(agents.latest_release()[0])
+    return jsonify({"version": config.SERVER_VERSION, "newer": newer})
+
+
 @bp.route("/api/admin/scripts-notice", methods=["GET"])
 @auth.admin_required
 def admin_scripts_notice_get():
