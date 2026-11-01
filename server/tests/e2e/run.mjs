@@ -2002,6 +2002,15 @@ async function main() {
       && $('#craftPlanNote').textContent.includes('needs an ME Interface Terminal')
       && $('#craftPlanNote a').href.endsWith('in-game.md#me-interface-terminal')`);
     await click(`byText('#craftRequestModal button', 'Cancel')`);
+    // Game data's pattern check says it before the button's pressed.
+    await click(`$('#settingsBtn')`);
+    await click(`$('#gamedataBtn')`);
+    await waitFor('pattern check needs a terminal', `visible($('#gamedataModal'))
+      && $('#recipeCheckFor').textContent.startsWith('The pattern check is built from your patterns, and needs an ME Interface Terminal')
+      && visible($('#recipeCheckForHow')) && $('#recipeCheckForHow').href.endsWith('in-game.md#me-interface-terminal')
+      && $('#recipeCheckBtn').disabled`);
+    await evaluate(`pressKey('Escape'), true`);
+    await waitFor('game data closed', `!visible($('#gamedataModal'))`);
     await click(`$('[data-action="dismiss-terminal-note"]')`);
     await waitFor('note closed', `!visible($('#networkTerminalNote'))`);
     await cdp.send('Page.reload', {});

@@ -162,15 +162,28 @@ def terminal_missing():
         return state.patterns["terminal"] is False and state.patterns["updated_at"] is None
 
 
-def missing_reason(what):
-    """Why there's no `what` ("crafting plan", "tree") while no patterns
-    have been read."""
+def missing():
+    """Why no patterns have been read, for the page to say: None (they
+    have), "no_terminal" (network_browser.lua has no ME Interface Terminal
+    to read them with), "reading" (it has one; the first scan is on its
+    way) or "unknown" (it hasn't said)."""
+    if current()[1] is not None:
+        return None
     with state.patterns_lock:
         terminal = state.patterns["terminal"]
     if terminal is False:
+        return "no_terminal"
+    return "reading" if terminal else "unknown"
+
+
+def missing_reason(what):
+    """Why there's no `what` ("crafting plan", "tree") while no patterns
+    have been read."""
+    reason = missing()
+    if reason == "no_terminal":
         return (f"The {what} is built from your patterns, and needs an ME Interface Terminal "
                 "connected to the computer running network_browser.lua.")
-    if terminal:
+    if reason == "reading":
         return "Reading your patterns: the first scan runs after the next network scan."
     return (f"No pattern scan yet: the {what} is built from your patterns, read through an "
             "ME Interface Terminal connected to the computer running network_browser.lua.")

@@ -6,7 +6,7 @@ gcm/gamedata.py, gcm/recipes.py and gcm/gamedata_check.py."""
 
 from flask import Blueprint, g, jsonify, request
 
-from gcm import auth, gamedata, gamedata_check, recipes
+from gcm import auth, gamedata, gamedata_check, patterns, recipes
 
 
 bp = Blueprint("gamedata", __name__)
@@ -20,12 +20,17 @@ NO_UPGRADE = ("There's no upgrade to check yet: the pattern check compares the g
 def admin_gamedata_get():
     releases, error = gamedata.available(refresh=request.args.get("refresh") == "1")
     version, textures = gamedata.selected()
+    missing = patterns.missing()
     return jsonify(
         {
             "selected": version,
             "selected_textures": textures,
             # The pattern check after an upgrade compares against it.
             "previous": gamedata.previous_version(),
+            # Why the pattern check can't run yet (patterns.missing()), and
+            # how to say so: its button waits for a pattern scan.
+            "patterns_missing": missing,
+            "patterns_missing_reason": missing and patterns.missing_reason("pattern check"),
             "textures": gamedata.texture_sets(),
             "installed": gamedata.installed(),
             "available": [
@@ -93,6 +98,9 @@ def recipe_check_get():
 
 def _recipe_check(from_version, to_version):
     state, body = recipes.result(from_version, to_version)
+    if state == "no_patterns":
+        # "reading" is a wait, not a fault; "no_terminal" gets a how-to.
+        return jsonify({"state": "error", "error": body, "patterns": patterns.missing()}), 409
     if state == "error":
         return jsonify({"state": "error", "error": body}), 409
     if state == "preparing":

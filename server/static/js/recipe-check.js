@@ -8,7 +8,7 @@
 
 import { closeSettingsMenu, isOperator } from './auth.js';
 import {
-  closeNote, delegateActions, escapeHtml, iconClass, iconUrl, noteClosed, onBackdropClick,
+  TERMINAL_DOCS_URL, closeNote, delegateActions, escapeHtml, iconClass, iconUrl, noteClosed, onBackdropClick,
 } from './util.js';
 
 const POLL_MS = 1000;
@@ -146,9 +146,11 @@ function render(data) {
   }).join('') || '<div class="empty">No pattern uses a recipe that changed.</div>';
 }
 
-function showError(message) {
+// how: also link to connecting an ME Interface Terminal.
+function showError(message, how = false) {
   const error = document.getElementById('recipeCheckError');
-  error.textContent = message || '';
+  document.getElementById('recipeCheckErrorText').textContent = message || '';
+  document.getElementById('recipeCheckErrorHow').hidden = !how;
   error.style.display = message ? '' : 'none';
 }
 
@@ -179,9 +181,14 @@ async function load(from, to) {
     pollTimer = setTimeout(() => load(from, to), POLL_MS);
     return;
   }
+  // The first pattern scan is on its way: a wait, not a fault.
+  if (data.patterns === 'reading') {
+    document.getElementById('recipeCheckSummary').textContent = data.error;
+    return;
+  }
   if (!response.ok) {
     document.getElementById('recipeCheckSummary').textContent = '';
-    showError(data.error || 'Could not check the patterns.');
+    showError(data.error || 'Could not check the patterns.', data.patterns === 'no_terminal');
     return;
   }
   render(data);
@@ -249,6 +256,7 @@ export async function updateRecipeNotice() {
 }
 
 export function setupRecipeCheckActions() {
+  document.getElementById('recipeCheckErrorHow').href = TERMINAL_DOCS_URL;
   setInterval(updateRecipeNotice, NOTICE_MS);
   delegateActions(document, {
     'close-recipe-check': () => closeRecipeCheck(),

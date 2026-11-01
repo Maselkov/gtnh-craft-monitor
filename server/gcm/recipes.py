@@ -623,7 +623,8 @@ def _key(from_version, to_version):
 def result(from_version, to_version):
     """The check from one version to another: ("ready", result),
     ("preparing", None) while recipes download or index in the
-    background, or ("error", message)."""
+    background, ("no_patterns", message) before a pattern scan (see
+    patterns.missing() for why), or ("error", message)."""
     for v in (from_version, to_version):
         if not gamedata.valid_version(v):
             return "error", "Pick two GTNH versions to compare."
@@ -631,7 +632,7 @@ def result(from_version, to_version):
         return "error", "Pick two different GTNH versions."
     pattern_list, updated_at = patterns.current()
     if updated_at is None:
-        return "error", patterns.missing_reason("recipe check")
+        return "no_patterns", patterns.missing_reason("pattern check")
     key = _key(from_version, to_version)
     with _lock:
         if key in _results:

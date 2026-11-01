@@ -7,7 +7,9 @@
 import { AUTH_USER, closeSettingsMenu } from './auth.js';
 import { fetchNetwork } from './network.js';
 import { openRecipeCheck, updateRecipeNotice, versionsToCheck } from './recipe-check.js';
-import { closeNote, delegateActions, escapeHtml, noteClosed, onBackdropClick } from './util.js';
+import {
+  TERMINAL_DOCS_URL, closeNote, delegateActions, escapeHtml, noteClosed, onBackdropClick,
+} from './util.js';
 
 const NOTICE_MS = 5 * 60 * 1000;
 const NOTICE_PENDING_MS = 3000;
@@ -27,6 +29,8 @@ let versions = [];
 let current = { version: null, textures: null };
 // The version selected before the current one, while it's on disk.
 let previousVersion = null;
+// Why there's no pattern scan to check yet ({why, reason}), or null.
+let patternsMissing = null;
 
 function showError(message) {
   const error = document.getElementById('gamedataError');
@@ -98,10 +102,14 @@ function recipeCheckVersions() {
 
 function renderRecipeCheck() {
   const pair = recipeCheckVersions();
-  document.getElementById('recipeCheckFor').textContent = pair
-    ? `Compares GTNH ${pair.from}'s recipes with ${pair.to}'s.`
-    : 'Pick a version other than the one in use, to compare the two.';
-  document.getElementById('recipeCheckBtn').disabled = !pair;
+  let text;
+  if (patternsMissing) text = patternsMissing.reason;
+  else if (pair) text = `Compares GTNH ${pair.from}'s recipes with ${pair.to}'s.`;
+  else text = 'Pick a version other than the one in use, to compare the two.';
+  document.getElementById('recipeCheckFor').textContent = text;
+  document.getElementById('recipeCheckForHow').hidden = !patternsMissing || patternsMissing.why !== 'no_terminal';
+  // Nothing to check without a pattern scan: said here, not after a click.
+  document.getElementById('recipeCheckBtn').disabled = !pair || Boolean(patternsMissing);
 }
 
 function renderStatus(status) {
@@ -134,6 +142,7 @@ async function loadGameData(refresh, pick) {
   textureSets = data.textures;
   current = { version: data.selected, textures: data.selected_textures };
   previousVersion = data.previous || null;
+  patternsMissing = data.patterns_missing ? { why: data.patterns_missing, reason: data.patterns_missing_reason } : null;
   const inUse = textureSets.find((t) => t.id === data.selected_textures);
   const selectedRelease = data.available.find((r) => r.version === data.selected);
   currentLine.textContent = data.selected
@@ -308,6 +317,7 @@ export async function updateGameDataNotice() {
 }
 
 export function setupGameDataActions() {
+  document.getElementById('recipeCheckForHow').href = TERMINAL_DOCS_URL;
   setInterval(updateGameDataNotice, NOTICE_MS);
   delegateActions(document, {
     'gamedata-notice-switch': () => openGameDataModal({ version: notice.suggest }),
