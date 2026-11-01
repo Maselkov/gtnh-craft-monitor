@@ -7,6 +7,7 @@ import time
 
 import pytest
 
+from conftest import login_as
 from gcm import config, gamedata, oredict, patterns, recipe_index, recipes
 from test_gamedata import admin, github, make_bundle  # noqa: F401
 
@@ -311,16 +312,16 @@ class TestApi:
         assert {p["status"] for p in data["patterns"]} == {"moved", "changed"}
 
     def test_the_notice_counts_what_the_upgrade_broke(self, admin, bundles):
-        assert admin.get("/api/admin/recipe-notice").get_json() == {"pending": True}
+        assert admin.get("/api/recipe-notice").get_json() == {"pending": True}
         finished()
-        notice = admin.get("/api/admin/recipe-notice").get_json()
+        notice = admin.get("/api/recipe-notice").get_json()
         assert notice == {"from": "2.9.0-RC-1", "to": "2.9.0", "counts": {"broken": 0, "moved": 1, "changed": 1}}
 
     def test_no_notice_when_nothing_changed(self, admin, bundles, monkeypatch):
         monkeypatch.setattr(patterns, "current", lambda: ([pattern([stack(DUST, 1)], [stack(INGOT, 1)])], 1.0))
-        admin.get("/api/admin/recipe-notice")
+        admin.get("/api/recipe-notice")
         finished()
-        assert admin.get("/api/admin/recipe-notice").get_json() == {}
+        assert admin.get("/api/recipe-notice").get_json() == {}
 
     def test_without_a_pattern_scan(self, admin, bundles, monkeypatch):
         monkeypatch.setattr(patterns, "current", lambda: ([], None))
@@ -332,9 +333,30 @@ class TestApi:
         response = admin.get("/api/admin/recipe-check?from=2.9.0&to=2.9.0")
         assert response.status_code == 409
 
-    def test_needs_an_admin(self, client, bundles):
-        assert client.get("/api/admin/recipe-check").status_code in (401, 403)
-        assert client.get("/api/admin/recipe-notice").status_code in (401, 403)
+    def test_operators_see_the_upgrades_check_only(self, client, bundles):
+        login_as(client, "usr_op", "operator")
+        client.get("/api/recipe-check")
+        finished()
+        data = client.get("/api/recipe-check").get_json()
+        assert data["state"] == "ready" and (data["from"], data["to"]) == ("2.9.0-RC-1", "2.9.0")
+        assert client.get("/api/recipe-notice").get_json()["counts"]["moved"] == 1
+        # Another version means downloading its recipes: an admin's call.
+        assert client.get("/api/admin/recipe-check?from=2.8.4&to=2.9.0").status_code == 403
+        # The operators' check ignores versions asked for.
+        assert client.get("/api/recipe-check?from=2.8.4&to=2.9.0").get_json()["from"] == "2.9.0-RC-1"
+
+    def test_without_an_upgrade_operators_are_told_so(self, client, bundles, monkeypatch):
+        monkeypatch.setattr(recipes, "default_versions", lambda: ("2.9.0", None))
+        login_as(client, "usr_op", "operator")
+        response = client.get("/api/recipe-check")
+        assert response.status_code == 409 and "no upgrade to check" in response.get_json()["error"]
+
+    def test_viewers_see_nothing(self, client, bundles):
+        for path in ("/api/admin/recipe-check", "/api/recipe-check", "/api/recipe-notice"):
+            assert client.get(path).status_code in (401, 403)
+        login_as(client, "usr_viewer", "viewer")
+        for path in ("/api/admin/recipe-check", "/api/recipe-check", "/api/recipe-notice"):
+            assert client.get(path).status_code == 403
 
 
 def with_recipes(bundle, data, sha256=None):

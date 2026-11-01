@@ -1014,6 +1014,15 @@ so a dismissed notice doesn't flash up. Each browser moves what it kept
 in localStorage before to the server once. Viewer-only conveniences (the
 theme, a collapsed section) stay in localStorage.
 
+**Operators see the last upgrade's pattern check, not any two versions.**
+They request crafts and fix patterns in game, so after an upgrade the
+check is theirs as much as an admin's: its notice, its dismissal
+(gcm/notices.py's ROLES) and /api/recipe-check. That endpoint only
+serves previous -> selected, the pair the notice already works out and
+caches; picking another version downloads its recipes and builds a
+~60 MB index, which stays an admin's call (/api/admin/recipe-check).
+Viewers, who on a public server are anyone, don't see a base's patterns.
+
 ## Test suite (server/tests/)
 
 201 pytest tests across 17 files, covering every endpoint - crafts, CPU
