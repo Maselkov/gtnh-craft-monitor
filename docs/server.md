@@ -44,6 +44,11 @@ The Compose file runs the newest release (`latest`); to stay on one, set
 `deploy/gcm-deploy.sh` sets it on each release deploy. Updating is covered
 in the [README](../README.md#updating).
 
+To run a second copy on the same host, put the Compose file in its own
+directory and give that copy's `.env` another container name and host
+port, e.g. `GCM_CONTAINER_NAME=gtnh-craft-monitor-testing` and
+`GCM_PORT=8422`. Each copy keeps its own `data/` and API key.
+
 ## Building from a clone
 
 To run your own changes, or unreleased ones, build the image from a clone

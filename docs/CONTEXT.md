@@ -928,6 +928,18 @@ block is never run, so the CSP doesn't apply to it. Discord takes the
 `media`, so the dark one comes last. Unfurled `components` embeds are
 output only: webhooks still send a classic embed.
 
+**Two deployments, one script, two keys.** A release tag deploys
+production (publish.yml); each push to main deploys testing
+(testing.yml), both through deploy.yml and the same forced command,
+`deploy/gcm-deploy.sh`. The instance comes from the forced command in
+`authorized_keys`, not from what CI sends, and each instance accepts only
+its own kind of tag (`x.y.z` or `sha-<commit>`). So a leaked testing key
+can't put an unreleased build on production, and CI can't pick the
+directory. ci.yml has no push trigger of its own on main: testing.yml
+runs it before deploying, which would otherwise run the suite twice.
+Testing's image says `main-<commit>` as its version, which isn't a
+`vX.Y.Z`, so it never auto-updates computers.
+
 **The pattern check compares versions, not a pattern with a recipe.**
 Players write processing patterns partial on purpose: an EBF pattern
 without its gas, a DTPF one without its catalyst, the circuit in the input

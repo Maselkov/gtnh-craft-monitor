@@ -1,11 +1,10 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
-  # publish.yml runs these before it builds and deploys a release.
+  # publish.yml runs these before it builds and deploys a release, and
+  # testing.yml on each push to main before it deploys that.
   workflow_call:
 
 permissions:
