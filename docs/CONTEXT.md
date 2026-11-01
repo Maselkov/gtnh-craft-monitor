@@ -1047,7 +1047,13 @@ separately from app releases.
    stack through NEI's `drawItem` into an FBO (NESQL's projection and
    lighting), and writes `images.zip`, `icons_lookup.json`,
    `item_catalog.txt` and `export-report.json`, then exits. About 1.5
-   minutes for ~215k icons; the animation stages add about 4 more.
+   minutes for ~220k icons; the animation stages add about 14 more for
+   2.9.0's ~9,000 animated icons. Each frame renders batches for
+   `frameMillis` (250 ms), since the main menu holds the game to 30 fps
+   and one batch a frame spent most of the export waiting. Batches stay
+   128 icons: where a batch starts shows in a few icons (GalaxySpace's
+   rockets came out animated, BuildCraft's engines in another pose, when
+   batches were cut by time instead).
 4. Animated icons (see "Animated icons" below): after the still pass the
    mod finds which icons animate and renders those tick by tick, writing
    each one's distinct frames to `animations.zip` and their order and

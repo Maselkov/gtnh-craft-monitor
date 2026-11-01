@@ -10,8 +10,9 @@ yourself.
 
 `run.sh` starts the GTNH client headlessly in Docker (Xvfb, software
 rendering, no Minecraft account), renders every item and fluid, and writes
-the same bundle CI publishes. It takes about 7 minutes (most of it capturing
-animated icons; `GCM_ANIMATION_TICKS=0` skips that), plus a one-time
+the same bundle CI publishes. It takes about 20 minutes for 2.9.0 (most of it
+capturing its ~9,000 animated icons; `GCM_ANIMATION_TICKS=0` skips that,
+for about 3 minutes), plus a one-time
 ~250 MB download of Minecraft's libraries and assets.
 
 ## Building game data
