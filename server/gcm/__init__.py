@@ -5,7 +5,7 @@ from flask import Flask
 
 from gcm import (
     agents, auth, backup, bottlenecks, charts, commands, config, db, gamedata, inventory, job_tree, patterns, planner, push,
-    retention, security, state, store, webhooks,
+    recipes, retention, security, state, store, webhooks,
 )
 from gcm.routes import agent, craft_requests, crafts, network, pages, power, users
 from gcm.routes import backup as backup_routes
@@ -77,6 +77,7 @@ def reset_runtime_state():
     agents.reset()
     charts.reset()
     gamedata.reset()
+    recipes.reset()
     planner.reset()
     job_tree.reset()
     bottlenecks.reset()

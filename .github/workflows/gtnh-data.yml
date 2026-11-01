@@ -168,7 +168,7 @@ jobs:
           print(f"Game data for GTNH {d['gtnh_version']}: "
                 f"{c['by_keyEntries']} item icons, {c['fluids_by_keyEntries']} "
                 f"fluid icons, {c['tooltipsByKey']} item descriptions, "
-                f"{c['catalogIds']} catalog IDs. "
+                f"{c['catalogIds']} catalog IDs, {c['recipes']} GregTech recipes. "
                 f"{c['itemsFailed']} item stacks couldn't be rendered.\n\n"
                 "Install it from the Game data page in the server's admin menu.\n")
           f = d["textures"].get("faithful32")
@@ -193,7 +193,7 @@ jobs:
             --notes "$notes" \
             out/data.json out/images.zip out/images-faithful32.zip \
             out/icons_lookup.json out/item_catalog.txt out/ore_dict.json out/item_info.json \
-            out/export-report.json
+            out/recipes.json.gz out/export-report.json
 
       - name: Keep logs
         if: failure()

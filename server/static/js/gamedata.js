@@ -1,9 +1,11 @@
 // Game data admin modal: picking the GTNH version whose item icons and
 // scanner item list the server uses, and which textures the icons are
-// rendered with (server/gcm/gamedata.py).
+// rendered with (server/gcm/gamedata.py); and starting a pattern check
+// against a version's recipes (recipe-check.js).
 
 import { AUTH_USER, closeSettingsMenu } from './auth.js';
 import { fetchNetwork } from './network.js';
+import { openRecipeCheck, updateRecipeNotice, versionsToCheck } from './recipe-check.js';
 import { delegateActions, escapeHtml, onBackdropClick } from './util.js';
 
 let pollTimer = null;
@@ -14,6 +16,8 @@ let pollTimer = null;
 let textureSets = [];
 let versions = [];
 let current = { version: null, textures: null };
+// The version selected before the current one, while it's on disk.
+let previousVersion = null;
 
 function showError(message) {
   const error = document.getElementById('gamedataError');
@@ -76,6 +80,19 @@ function renderTextures() {
   if (keep) select.value = keep.id;
   select.disabled = sets.length === 0;
   renderCredit();
+  renderRecipeCheck();
+}
+
+function recipeCheckVersions() {
+  return versionsToCheck(document.getElementById('gamedataVersion').value, current.version, previousVersion);
+}
+
+function renderRecipeCheck() {
+  const pair = recipeCheckVersions();
+  document.getElementById('recipeCheckFor').textContent = pair
+    ? `Compares GTNH ${pair.from}'s recipes with ${pair.to}'s.`
+    : 'Pick a version other than the one in use, to compare the two.';
+  document.getElementById('recipeCheckBtn').disabled = !pair;
 }
 
 function renderStatus(status) {
@@ -107,6 +124,7 @@ async function loadGameData(refresh) {
   }
   textureSets = data.textures;
   current = { version: data.selected, textures: data.selected_textures };
+  previousVersion = data.previous || null;
   const inUse = textureSets.find((t) => t.id === data.selected_textures);
   const selectedRelease = data.available.find((r) => r.version === data.selected);
   currentLine.textContent = data.selected
@@ -198,6 +216,7 @@ export function closeGameDataModal() {
   document.getElementById('gamedataModal').style.display = 'none';
   stopPolling();
   fetchNetwork();  // the Network tab's "no GTNH version" note
+  updateRecipeNotice();  // a switch may have changed recipes patterns use
 }
 
 export function setupGameDataActions() {
@@ -206,6 +225,10 @@ export function setupGameDataActions() {
     'close-gamedata': () => closeGameDataModal(),
     'refresh-gamedata': () => loadGameData(true),
     'install-gamedata': () => installGameData(),
+    'check-recipes': () => {
+      const pair = recipeCheckVersions();
+      if (pair) openRecipeCheck(pair.from, pair.to);
+    },
   });
   onBackdropClick('gamedataModal', closeGameDataModal);
   document.getElementById('gamedataVersion').addEventListener('change', renderTextures);

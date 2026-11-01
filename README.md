@@ -26,6 +26,9 @@ Basically, it's web AE2 for your base.
   crafting plan (with an ME Interface Terminal connected).
 - **[Stock rules](docs/using.md#stock-rules)** — get a notification when an
   item runs low, or have the server queue a craft to keep it stocked.
+- **[Pattern check](docs/using.md#pattern-check)** — before or after a GTNH
+  update, lists the patterns whose GregTech recipe changed: broken, moved
+  to another machine, or needing a different fluid, circuit or coil.
 - **[Webhooks](docs/using.md#webhooks)** — finished pinned crafts and failed
   auto-crafts posted to a Discord channel or any other webhook.
 - **[Accounts](docs/server.md#user-accounts)** — per-user tokens with

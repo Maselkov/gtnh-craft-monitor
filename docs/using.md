@@ -4,6 +4,7 @@
 - [Pins and notifications](#pins-and-notifications)
 - [Webhooks](#webhooks)
 - [Server status](#server-status)
+- [Pattern check](#pattern-check)
 - [Power tab](#power-tab)
 - [Network tab](#network-tab)
 - [Requesting and cancelling crafts](#requesting-and-cancelling-crafts)
@@ -170,6 +171,49 @@ Until a tab's script first reports, the Crafts, Power and Network tabs
 say which script they're waiting for. Admins get a **Connect a computer**
 button there that opens this dialog at
 [Connect a computer](in-game.md#from-the-web-page).
+
+## Pattern check
+
+GTNH doesn't publish its recipe changes, so after an update a processing
+pattern made for the old recipe can quietly stall a machine. The pattern
+check compares two GTNH versions' GregTech recipes and lists the patterns
+a change affects. It needs your patterns, so an
+[ME Interface Terminal](in-game.md#me-interface-terminal).
+
+- **Before updating:** **Settings (⚙) → Game data**, pick the new version
+  in the list, then **Check patterns** under *Pattern check*. Only that
+  version's recipes are downloaded (about 2 MB); the icons in use don't
+  change.
+- **After updating:** once you switch the game data to the new version,
+  admins get a notice at the top of the page if the update affects any
+  pattern. **Show patterns** opens the list. Picking the version in use
+  and **Check patterns** shows it again later. The notice's &times; hides
+  it for that update.
+
+Each pattern lands in one of these:
+
+- **Broken:** nothing makes the pattern's output from its inputs any more,
+  or not in those amounts. The check shows the old recipe and what makes the
+  output now.
+- **Moved to another machine:** the same recipe, now in another machine
+  (its pattern needs to move).
+- **Changed outside the pattern:** the pattern still matches, but
+  something it leaves out changed: a gas or fluid supplied separately, the
+  programmed circuit, a catalyst, the voltage tier, the coil heat, or a
+  new byproduct that will fill the machine's output.
+- **Not checked:** it matched no GregTech recipe in the older version
+  either: another mod's machine (Thaumcraft, Botania and the like), or a
+  setup the check can't follow.
+
+Patterns don't have to list everything. An EBF pattern without its gas or
+circuit matches, and so does one scaled up (16 dust to 16 ingots). An EBF
+pattern can also output the cooled ingot and leave the hot one to a
+vacuum freezer. The pattern's machine comes from the name the ME Interface
+Terminal shows for its interface or hatch, when that's a GregTech
+machine's name (or starts with one), or else from the other patterns on the
+same interface. When neither tells, the check takes any machine that made
+the recipe before, and says so. Crafting-table patterns aren't checked:
+AE2 already marks those invalid itself.
 
 ## Power tab
 
@@ -385,5 +429,12 @@ draws each threshold as a dashed line.
 - Stock rules react within `WATCH_INTERVAL_SECONDS` (1 minute by default).
   AE2 picks the CPU for each craft itself, so the idle-CPU limit is checked
   when a craft is requested, not enforced while it runs.
+- The pattern check only knows GregTech's recipe maps (GT++, bartworks
+  and the other GregTech addons included). It compares what a pattern
+  matched before with what matches now, so a pattern that never matched a
+  GregTech recipe isn't checked, and a new, cheaper way to make something
+  your patterns make doesn't show.
+  It also needs game data built with recipes: versions built before that
+  can't be compared until they're rebuilt.
 - With HTTP disabled in the Minecraft server's OpenComputers config, nothing works. The
   only alternative is an in-game display.

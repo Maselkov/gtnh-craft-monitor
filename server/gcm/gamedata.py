@@ -41,8 +41,8 @@ TAG_PREFIX = "gtnh-data-"
 BASE_FILES = ("data.json", "icons_lookup.json", "item_catalog.txt")
 # Fetched with the base files when a release has them; older releases
 # don't, and work without (no ore-dictionary substitutions in plans, no
-# item descriptions or mod names).
-OPTIONAL_FILES = ("ore_dict.json", "item_info.json")
+# item descriptions or mod names, no recipe check against them).
+OPTIONAL_FILES = ("ore_dict.json", "item_info.json", "recipes.json.gz")
 TEXTURES = {
     "default": {"file": "images.zip", "name": "Default"},
     "faithful32": {
@@ -162,6 +162,23 @@ def selected():
 
 def selected_version():
     return selected()[0]
+
+
+def previous_version():
+    """The version selected before the current one, while its bundle is
+    still on disk (_prune() keeps it), or None."""
+    previous = _read_selected().get("previous")
+    return previous if _has_base(previous) else None
+
+
+def bundle_file(version, name):
+    """The path of one of version's bundle files, or None if it isn't
+    installed or its bundle hasn't that file (older ones lack the
+    OPTIONAL_FILES)."""
+    if not _has_base(version):
+        return None
+    path = os.path.join(_bundle_dir(version), name)
+    return path if os.path.isfile(path) else None
 
 
 def build_id(version):
@@ -466,8 +483,9 @@ def _prune():
             shutil.rmtree(path, ignore_errors=True)
 
 
-def _download(url, path):
-    """Streams url to path, counting progress. Returns the SHA-256."""
+def download(url, path, count=True):
+    """Streams url to path, counting progress towards the install's unless
+    count is False. Returns the SHA-256."""
     digest = hashlib.sha256()
     request = urllib.request.Request(url, headers={"User-Agent": "gtnh-craft-monitor"})
     with urllib.request.urlopen(request, timeout=60) as response, open(path, "wb") as f:
@@ -477,8 +495,9 @@ def _download(url, path):
                 break
             f.write(chunk)
             digest.update(chunk)
-            with _lock:
-                _status["done_bytes"] += len(chunk)
+            if count:
+                with _lock:
+                    _status["done_bytes"] += len(chunk)
     return digest.hexdigest()
 
 
@@ -498,7 +517,7 @@ def _install(release, textures):
     try:
         shutil.rmtree(part, ignore_errors=True)
         os.makedirs(part)
-        _download(release["assets"]["data.json"], os.path.join(part, "data.json"))
+        download(release["assets"]["data.json"], os.path.join(part, "data.json"))
         with open(os.path.join(part, "data.json"), encoding="utf-8") as f:
             expected = json.load(f)["files"]
         reuse_base = _has_own_base(version) and _read_bytes(
@@ -512,7 +531,7 @@ def _install(release, textures):
             optional = [n for n in OPTIONAL_FILES if n in expected and n in release["assets"]]
             names = list(BASE_FILES[1:]) + optional + names
         for name in names:
-            digest = _download(release["assets"][name], os.path.join(part, name))
+            digest = download(release["assets"][name], os.path.join(part, name))
             if digest != expected[name]["sha256"]:
                 raise ValueError(f"{name} doesn't match its checksum in data.json")
         record = os.path.join(part, RELEASE_FILE)

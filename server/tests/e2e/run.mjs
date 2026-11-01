@@ -106,11 +106,28 @@ async function startServer(extraEnv = {}) {
 // Ingot's is in the lookup but not the zips, and it has a description
 // and the rest of item_info.json),
 // made with Python so its zips and checksums are exactly what the
-// server expects.
+// server expects. A second release, E2E_NEXT_VERSION, is the same bundle
+// with other recipes (next/): the seeded Macerator pattern's recipe takes
+// two Neutronium Ingots there, for the pattern check.
 const E2E_DATA_VERSION = '2.9.0-e2e';
+const E2E_NEXT_VERSION = '2.9.1-e2e';
 const MAKE_BUNDLE = `
-import hashlib, json, struct, sys, zipfile, zlib
+import gzip, hashlib, json, os, struct, sys, zipfile, zlib
 out = sys.argv[1]
+def recipes(path, ingots):
+    data = {"format": 1, "items": ["gregtech:gt.metaitem.01:11028", "gregtech:gt.metaitem.01:2032",
+                                   "gregtech:gt.metaitem.01:2129", "minecraft:iron_ingot:0"],
+            "item_names": ["Neutronium Ingot", "Iron Dust", "Neutronium Dust", "Iron Ingot"],
+            "fluids": ["water"], "fluid_names": ["Water"],
+            "maps": {"gt.recipe.macerator": {"machines": [{"name": "Macerator", "key": None}],
+                                             "recipes": [{"i": [[0, ingots]], "o": [[1, 1]], "e": 30, "d": 100}]},
+                     "gt.recipe.compressor": {"machines": [{"name": "Compressor", "key": None}],
+                                              "recipes": [{"i": [[2, 1]], "o": [[0, 1]], "e": 30, "d": 100}]}}}
+    with gzip.open(path, "wt") as f:
+        json.dump(data, f)
+recipes(out + "/recipes.json.gz", 1)
+os.makedirs(out + "/next", exist_ok=True)
+recipes(out + "/next/recipes.json.gz", 2)
 def chunk(kind, data):
     return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
 def png(size):
@@ -135,17 +152,21 @@ open(out + "/item_info.json", "w").write(json.dumps({
     "rarity": {"by_key": {nt: "d"}},
     "fluids": {"water": {"temperature": 295, "gaseous": False, "formula": "H\\u2082O"}},
     "mods": {"gregtech": "GregTech", "minecraft": "Minecraft"}}))
-files = {}
-for name in ("images.zip", "images-faithful32.zip", "icons_lookup.json", "item_catalog.txt", "ore_dict.json",
-             "item_info.json"):
-    data = open(out + "/" + name, "rb").read()
-    files[name] = {"size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
-open(out + "/data.json", "w").write(json.dumps({"format": 1, "files": files, "generated_at": "2026-09-25T00:00:00Z"}))
+for bundle in (out, out + "/next"):
+    files = {}
+    for name in ("images.zip", "images-faithful32.zip", "icons_lookup.json", "item_catalog.txt", "ore_dict.json",
+                 "item_info.json", "recipes.json.gz"):
+        data = open((bundle if name == "recipes.json.gz" else out) + "/" + name, "rb").read()
+        files[name] = {"size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+    open(bundle + "/data.json", "w").write(
+        json.dumps({"format": 1, "files": files, "generated_at": "2026-09-25T00:00:00Z"}))
 `;
 const BUNDLE_FILES = [
   'data.json', 'images.zip', 'images-faithful32.zip', 'icons_lookup.json', 'item_catalog.txt', 'ore_dict.json',
-  'item_info.json',
+  'item_info.json', 'recipes.json.gz',
 ];
+// The files E2E_NEXT_VERSION has of its own; the rest are the same.
+const NEXT_FILES = ['data.json', 'recipes.json.gz'];
 
 // What the server posted to its webhook (WEBHOOK_URLS points at the
 // fake GitHub server's /webhook).
@@ -176,25 +197,34 @@ async function startFakeGitHub() {
     }
     if (req.url.startsWith('/repos/')) {
       res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify([{
-        tag_name: `gtnh-data-${E2E_DATA_VERSION}`,
-        published_at: '2026-09-25T00:00:00Z',
-        assets: BUNDLE_FILES.map((name, index) => ({
-          name,
-          id: 1000 + index,
-          size: fs.statSync(path.join(dir, name)).size,
-          browser_download_url: `${base}/assets/${name}`,
-        })),
-      }]));
+      const release = (version, publishedAt, assets, ids) => ({
+        tag_name: `gtnh-data-${version}`,
+        published_at: publishedAt,
+        assets: BUNDLE_FILES.map((name, index) => {
+          const own = assets === 'assets-next' && NEXT_FILES.includes(name);
+          return {
+            name,
+            id: ids + index,
+            size: fs.statSync(path.join(own ? path.join(dir, 'next') : dir, name)).size,
+            browser_download_url: `${base}/${assets}/${name}`,
+          };
+        }),
+      });
+      // Published before E2E_DATA_VERSION, so that one stays first.
+      res.end(JSON.stringify([
+        release(E2E_DATA_VERSION, '2026-09-25T00:00:00Z', 'assets', 1000),
+        release(E2E_NEXT_VERSION, '2026-09-20T00:00:00Z', 'assets-next', 2000),
+      ]));
       return;
     }
-    const name = req.url.replace('/assets/', '');
-    if (!BUNDLE_FILES.includes(name)) {
+    const [, assets, name] = req.url.split('/');
+    if (!BUNDLE_FILES.includes(name) || !['assets', 'assets-next'].includes(assets)) {
       res.statusCode = 404;
       res.end();
       return;
     }
-    res.end(fs.readFileSync(path.join(dir, name)));
+    const own = assets === 'assets-next' && NEXT_FILES.includes(name);
+    res.end(fs.readFileSync(path.join(own ? path.join(dir, 'next') : dir, name)));
   });
   await new Promise((resolve) => server.listen(port, '127.0.0.1', resolve));
   server.unref();
@@ -1658,6 +1688,34 @@ async function main() {
     await click(`$('#tabBtnCrafts')`);
     await click(`$('#tabBtnNetwork')`);
     await waitFor('faithful icon', `$$('#networkList img.network-cell-icon').some((i) => i.src.includes('~faithful32') && i.complete && i.naturalWidth === 32)`);
+  });
+
+  step('admin: check the patterns against another version\'s recipes', async () => {
+    await click(`$('#settingsBtn')`);
+    await click(`$('#gamedataBtn')`);
+    await waitFor('both versions listed', `$$('#gamedataVersion option').some((o) => o.value === '${E2E_NEXT_VERSION}')`);
+    // The version in use, with none before it: nothing to compare.
+    await waitFor('nothing to compare', `$('#recipeCheckBtn').disabled
+      && $('#recipeCheckFor').textContent.startsWith('Pick a version other than the one in use')`);
+    await evaluate(`$('#gamedataVersion').value = '${E2E_NEXT_VERSION}', $('#gamedataVersion').dispatchEvent(new Event('change')), true`);
+    await waitFor('compares the two', `!$('#recipeCheckBtn').disabled
+      && $('#recipeCheckFor').textContent === "Compares GTNH ${E2E_DATA_VERSION}'s recipes with ${E2E_NEXT_VERSION}'s."`);
+    await click(`$('#recipeCheckBtn')`);
+    // Only the other version's recipes are downloaded, in the background.
+    await waitFor('checked', `visible($('#recipeCheckModal'))
+      && $('#recipeCheckSummary').textContent.startsWith('From GTNH ${E2E_DATA_VERSION} to ${E2E_NEXT_VERSION}: 1 broken, 0 moved')`);
+    await waitFor('the Macerator pattern broke', `(() => {
+      const row = $('.recipe-check-row');
+      return row && row.querySelector('.recipe-check-provider').textContent === 'Macerator'
+        && $$('.recipe-label', row).map((l) => l.textContent).join('|') === 'Before (${E2E_DATA_VERSION})|Now (${E2E_NEXT_VERSION})'
+        && $$('.recipe-block', row)[1].textContent.includes('2xNeutronium Ingot');
+    })()`);
+    await waitFor('the in-use version is unchanged', `$('#gamedataCurrent').textContent.startsWith('In use: GTNH ${E2E_DATA_VERSION}')`);
+    // Escape closes the check first, then Game data.
+    await evaluate(`pressKey('Escape'), true`);
+    await waitFor('check closed', `!visible($('#recipeCheckModal')) && visible($('#gamedataModal'))`);
+    await evaluate(`pressKey('Escape'), true`);
+    await waitFor('game data closed', `!visible($('#gamedataModal'))`);
   });
 
   step('ore-dictionary substitutes: a Substitute-ticked pattern takes Industrial Diamonds as diamonds', async () => {

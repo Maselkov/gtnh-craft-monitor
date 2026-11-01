@@ -7,7 +7,7 @@ import zipfile
 import dev
 import pytest
 from conftest import TEST_API_KEY, bundle_index, login_as, ore_dict_index
-from gcm import item_info, oredict
+from gcm import item_info, oredict, patterns, recipe_index, recipes
 
 
 @pytest.fixture()
@@ -81,6 +81,31 @@ def test_icon_bundle_covers_every_item_but_essentia(tmp_path):
     assert len(paths) == sum(1 for it in dev.CATALOG if it["kind"] != "essentia")
     assert set(paths) <= names
     assert json.loads((tmp_path / "gamedata" / "selected.json").read_text())["version"] == "dev"
+
+
+def test_the_version_before_has_the_recipes_the_pattern_check_flags(tmp_path):
+    dev.install_icons(str(tmp_path))
+    gamedata_dir = tmp_path / "gamedata"
+    assert json.loads((gamedata_dir / "selected.json").read_text())["previous"] == dev.PREVIOUS_VERSION
+    indexes = []
+    for version in (dev.PREVIOUS_VERSION, "dev"):
+        path = str(tmp_path / f"{version}.sqlite")
+        recipe_index.build(str(gamedata_dir / version / "recipes.json.gz"), path)
+        indexes.append(recipe_index.RecipeIndex(path))
+    try:
+        result = recipes.compare([patterns.normalize(p) for p in dev.pattern_scan()], *indexes)
+    finally:
+        for idx in indexes:
+            idx.close()
+    by_provider = {p["provider"]["name"]: p["status"] for p in result["patterns"]}
+    assert by_provider == {
+        "Bending Machine T4:EV": "broken",
+        "Lathe T3:HV": "moved",
+        "Fluid Extractor": "changed",
+        "Electric Implosion Compressor": "changed",
+        "Infusion Altar": "unchecked",
+    }
+    assert result["counts"]["crafting"] == 3
 
 
 def test_the_bundles_descriptions_reach_the_page(tmp_path, game, client):
