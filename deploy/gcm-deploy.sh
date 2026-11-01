@@ -75,11 +75,11 @@ printf '%s' "$registry_token" |
 
 # Kept in .env, not only exported, so a plain `docker compose up -d` on the
 # host keeps the deployed version instead of falling back to latest.
-# Rewritten in place (cat, not mv) to keep .env's owner and mode.
+# Rewritten in place, with no temp file, to keep .env's owner and mode and
+# never leave a copy of its secrets behind.
 touch .env
-{ grep -v '^GCM_TAG=' .env || true; echo "GCM_TAG=$version"; } > .env.new
-cat .env.new > .env
-rm .env.new
+kept=$(grep -v '^GCM_TAG=' .env || true)
+{ [ -z "$kept" ] || printf '%s\n' "$kept"; echo "GCM_TAG=$version"; } > .env
 docker compose pull
 docker compose up -d --remove-orphans
 # Only this project's images, and only those no container uses: each
