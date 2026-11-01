@@ -11,7 +11,7 @@
 import { nameText } from './description.js';
 import { itemMatchesSearch, parseSearchQuery } from './search.js';
 import { ensureLoaded, flashRow, graft, matchingEntries, matchTree, nodeAt, openAbove, searchNoteText } from './tree-nav.js';
-import { delegateActions, escapeHtml, formatDuration, formatQty, iconClass, iconUrl, machinePlace } from './util.js';
+import { delegateActions, escapeHtml, formatDuration, formatQty, iconClass, iconUrl, machinePlace, TERMINAL_DOCS_URL } from './util.js';
 
 let cpu = null;            // the CPU shown, null when the tree isn't
 let treeData = null;       // the last /api/crafts/<cpu>/tree answer
@@ -241,9 +241,13 @@ function treeUrl(params) {
   return `/api/crafts/${encodeURIComponent(cpu)}/tree` + (params ? '?' + new URLSearchParams(params) : '');
 }
 
-function showNote(text) {
+// needsTerminal as in craft-plan.js's showNote().
+function showNote(text, needsTerminal = false) {
   const body = document.getElementById('ingredientsTree');
-  body.innerHTML = `<div class="network-note">${escapeHtml(text)}</div>`;
+  const link = needsTerminal
+    ? ` <a href="${escapeHtml(TERMINAL_DOCS_URL)}" target="_blank" rel="noopener">How to connect one</a>`
+    : '';
+  body.innerHTML = `<div class="network-note">${escapeHtml(text)}${link}</div>`;
 }
 
 async function fetchTree() {
@@ -254,7 +258,7 @@ async function fetchTree() {
   treeData = data;
   branchesLoading = new Set();
   if (!data.tree) {
-    showNote(data.reason || 'No tree for this job.');
+    showNote(data.reason || 'No tree for this job.', data.needs_terminal);
     return;
   }
   startSearch();

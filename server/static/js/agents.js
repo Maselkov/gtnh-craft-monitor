@@ -120,6 +120,12 @@ export function renderHealth(h) {
   const feeds = h.feeds.map((f) => {
     const details = (FEED_DETAILS[f.key] || (() => []))(f).filter(Boolean);
     const problem = feedProblem(f);
+    if (f.off) {
+      return `<div class="health-feed">
+        <span class="agent-dot off"></span><span class="health-label">${escapeHtml(f.label)}</span>
+        <span class="agent-line">${escapeHtml(f.off)}</span>
+      </div>`;
+    }
     return `<div class="health-feed">
       <span class="agent-dot ${f.ok ? 'running' : 'warn'}"></span><span class="health-label">${escapeHtml(f.label)}</span>
       <span class="agent-line">${escapeHtml(f.age_seconds == null ? `nothing from ${f.script} yet` : `updated ${ago(f.age_seconds)}`)}${

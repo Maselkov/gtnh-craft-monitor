@@ -100,11 +100,14 @@ h1 {
 .scripts-notice {
   margin-top: 12px;
 }
-.scripts-notice a {
-  color: var(--accent);
-}
-.scripts-notice-dismiss {
+.gamedata-note .note-dismiss {
   margin-left: auto;
+}
+#networkTerminalNote {
+  margin-top: 12px;
+}
+.gamedata-note a, #craftPlanNote a {
+  color: var(--accent);
 }
 /* auth.js sets body.is-admin. */
 body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
@@ -1336,6 +1339,9 @@ body.private-locked #networkTab {
 }
 .agent-dot.warn {
   background: var(--busy);
+}
+.agent-dot.off {
+  background: var(--muted);
 }
 .agent-command.failed {
   color: var(--stale);

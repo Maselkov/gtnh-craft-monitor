@@ -1843,6 +1843,34 @@ async function main() {
       && !visible($('#powerChartWrap')) && !visible($('#powerEmpty'))`);
     await click(`$('#tabBtnNetwork')`);
     await waitFor('network: no script yet', `visible($('#networkEmpty [data-action="connect-computer"]'))`);
+
+    // A network scan that says there's no ME Interface Terminal: admins
+    // get a note on the Network tab, and the craft dialog says why
+    // there's no plan.
+    const { data: scan } = await game(fresh.base, '/api/network/scan/start', {});
+    await game(fresh.base, '/api/network/scan/batch', { scan_token: scan.scan_token, items: SEEDED_ITEMS.map(it => ({ ...it })) });
+    await game(fresh.base, '/api/network/scan/finish',
+      { scan_token: scan.scan_token, chunks_sent: 1, total_errors: 0, interface_terminal: false });
+    // The tab refetches every minute, and on being opened.
+    await click(`$('#tabBtnPower')`);
+    await click(`$('#tabBtnNetwork')`);
+    await waitFor('terminal note', `visible($('#networkTerminalNote'))
+      && $('#networkTerminalHow').href.endsWith('in-game.md#me-interface-terminal')`);
+    await evaluate(`openItem('Iron Ingot'), true`);
+    await click(`$('#itemHistoryCraftBtn')`);
+    await waitFor('plan note with a link', `visible($('#craftRequestModal'))
+      && $('#craftPlanNote').textContent.includes('needs an ME Interface Terminal')
+      && $('#craftPlanNote a').href.endsWith('in-game.md#me-interface-terminal')`);
+    await click(`byText('#craftRequestModal button', 'Cancel')`);
+    await click(`$('[data-action="dismiss-terminal-note"]')`);
+    await waitFor('note closed', `!visible($('#networkTerminalNote'))`);
+    await cdp.send('Page.reload', {});
+    await waitFor('reloaded', `document.readyState === 'complete' && !window.byText`);
+    await evaluate(PAGE_LIB);
+    await click(`$('#tabBtnNetwork')`);
+    await waitFor('items back', `$$('#networkList .network-cell').length === ${SEEDED_ITEMS.length}`);
+    await sleep(500);
+    await waitFor('still closed after a reload', `!visible($('#networkTerminalNote'))`);
   });
 
   let failed = 0;

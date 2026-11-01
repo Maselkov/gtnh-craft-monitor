@@ -56,7 +56,7 @@ Adapters for what each script reads:
 |---|---|---|
 | `craft_monitor.lua` | the ME Controller (any face), or an ME Interface if there is no controller | Crafts tab, crafting from the page |
 | `network_browser.lua` | the ME Controller, as above | Network tab, stock rules |
-| `network_browser.lua` (optional) | a block holding an **ME Interface Terminal** part | the crafting plan and the craft tree (see [Reading patterns](how-it-works.md#reading-patterns)) |
+| `network_browser.lua` (optional) | a block holding an **ME Interface Terminal** part | the crafting plan and the craft tree (see [ME Interface Terminal](#me-interface-terminal)) |
 | `power_monitor.lua` | any casing block of the GregTech multiblock, one per machine with [`MACHINES`](#power_monitorlua) | Power tab |
 
 The scripts are independent: they can run on one computer or on separate
@@ -106,6 +106,26 @@ one still shows its progress and ingredients, but:
 A job that has only just started can say "Starting job…" for a few
 seconds even with a monitor. "Unknown output" means the CPU really has
 no monitor.
+
+### ME Interface Terminal
+
+Optional, but it's what the page reads your patterns through. With an
+Adapter touching a block that holds an ME Interface Terminal part (often
+the cable the terminal sits on), connected to the computer running
+`network_browser.lua`, you get:
+
+- the **crafting plan** in the craft dialog: what a craft takes and
+  what's missing, before you request it
+- the **Tree** view of a running job on the Crafts tab, step by step
+- stuck steps called out, with the machine they're waiting on
+
+Patterns are first read after the next network scan, then every
+[`PATTERN_SCAN_INTERVAL_SECONDS`](#network_browserlua) (an hour by default).
+
+Without one, the network scan tells the server so. The craft dialog and
+the Tree view then say a terminal is needed, the Network tab shows admins
+a note about it until they close it, and **Status** lists Patterns as
+"no ME Interface Terminal connected (optional)".
 
 ### Connecting the Adapter
 

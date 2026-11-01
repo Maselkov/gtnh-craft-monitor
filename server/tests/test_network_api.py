@@ -9,7 +9,7 @@ from conftest import bundle_index, login_as
 from nbt_fixtures import seed_tag
 
 
-def run_scan(client, api_headers, batches):
+def run_scan(client, api_headers, batches, **finish):
     start_res = client.post("/api/network/scan/start", headers=api_headers)
     token = start_res.get_json()["scan_token"]
     for batch in batches:
@@ -20,7 +20,7 @@ def run_scan(client, api_headers, batches):
         )
     return client.post(
         "/api/network/scan/finish",
-        json={"scan_token": token, "chunks_sent": len(batches), "total_errors": 0},
+        json={"scan_token": token, "chunks_sent": len(batches), "total_errors": 0, **finish},
         headers=api_headers,
     )
 

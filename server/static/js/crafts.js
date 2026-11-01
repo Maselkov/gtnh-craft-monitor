@@ -10,7 +10,7 @@ import { ingredientCount, openIngredientsModal, refreshIngredientsModal } from '
 import { nameText } from './description.js';
 import { craftsBadge, setTabBadge } from './tab-badges.js';
 import {
-  delegateActions, escapeHtml, formatDuration, formatRelativeTime, iconClass, iconUrl, PIN_ICON,
+  delegateActions, docsUrl, escapeHtml, formatDuration, formatRelativeTime, iconClass, iconUrl, PIN_ICON,
   setHtmlKeepingIcons,
 } from './util.js';
 
@@ -44,7 +44,7 @@ export function clearPins() {
 // "new scan" isn't a plausible second cause here.
 const LS_NOTIFIED_COMPLETION_IDS = 'gtnhCraftMonitor.notifiedCompletionIds';
 
-const MONITOR_DOCS_URL = 'https://github.com/Maselkov/gtnh-craft-monitor/blob/main/docs/in-game.md#crafting-cpus';
+const MONITOR_DOCS_URL = docsUrl('in-game.md#crafting-cpus');
 
 function loadClaimedIds() {
   try {
