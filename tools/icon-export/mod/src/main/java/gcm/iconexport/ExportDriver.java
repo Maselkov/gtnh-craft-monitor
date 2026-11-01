@@ -139,10 +139,24 @@ public final class ExportDriver {
     /**
      * Renders from inside a GUI screen's draw call, the context NEI normally draws items in: the
      * GL state is what GUI item rendering expects, and nothing else draws in between batches.
+     *
+     * <p>Each frame renders batches for {@code frameMillis}, not just one: the main menu holds the
+     * game to 30 fps, which left one batch a frame mostly waiting. Batches stay the same size,
+     * since where they start shows in a few icons (GalaxySpace's rockets, BuildCraft's engines).
+     * A frame stops at the end of a stage, so stages start on a new frame as they did with one
+     * batch a frame.
      */
     private final class ExportScreen extends GuiScreen {
         @Override
         public void drawScreen(int mouseX, int mouseY, float partialTicks) {
+            long deadline = System.nanoTime() + config.frameMillis * 1_000_000L;
+            Stage started = stage;
+            do {
+                drawBatch();
+            } while (stage == started && System.nanoTime() < deadline);
+        }
+
+        private void drawBatch() {
             try {
                 switch (stage) {
                     case RENDERING:

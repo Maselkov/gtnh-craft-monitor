@@ -10,6 +10,11 @@ final class ExportConfig {
     final File outDir;
     final int iconSize;
     final int renderBatchSize;
+    /**
+     * How long each frame keeps rendering batches for. At the main menu the game holds frames to
+     * 30 fps, and one batch a frame left the export mostly waiting out that cap.
+     */
+    final int frameMillis;
     final int menuDelayTicks;
     final int neiSettleTicks;
     final int neiTimeoutSeconds;
@@ -23,11 +28,12 @@ final class ExportConfig {
      */
     final int maxAnimationTicks;
 
-    private ExportConfig(File outDir, int iconSize, int renderBatchSize, int menuDelayTicks, int neiSettleTicks,
-            int neiTimeoutSeconds, int limit, String only, int maxAnimationTicks) {
+    private ExportConfig(File outDir, int iconSize, int renderBatchSize, int frameMillis, int menuDelayTicks,
+            int neiSettleTicks, int neiTimeoutSeconds, int limit, String only, int maxAnimationTicks) {
         this.outDir = outDir;
         this.iconSize = iconSize;
         this.renderBatchSize = renderBatchSize;
+        this.frameMillis = frameMillis;
         this.menuDelayTicks = menuDelayTicks;
         this.neiSettleTicks = neiSettleTicks;
         this.neiTimeoutSeconds = neiTimeoutSeconds;
@@ -45,6 +51,7 @@ final class ExportConfig {
                 // 64 matches NESQL's default, which the existing images.zip was made with.
                 Integer.getInteger("gcm.iconexport.iconSize", 64),
                 Integer.getInteger("gcm.iconexport.batchSize", 128),
+                Integer.getInteger("gcm.iconexport.frameMillis", 250),
                 Integer.getInteger("gcm.iconexport.menuDelayTicks", 100),
                 Integer.getInteger("gcm.iconexport.neiSettleTicks", 20),
                 Integer.getInteger("gcm.iconexport.neiTimeoutSeconds", 600),
