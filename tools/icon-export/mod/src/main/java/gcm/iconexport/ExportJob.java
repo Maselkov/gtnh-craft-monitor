@@ -21,7 +21,8 @@ import cpw.mods.fml.common.registry.GameRegistry;
  * <p>Image paths use NESQL-Exporter's scheme exactly ({@code item/<mod>/<name>~<damage>[~<nbt>].png},
  * {@code fluid/<mod>/<name>.png}), so an images.zip from either tool can be swapped for the other
  * and the two can be diffed entry by entry. Essentia, which NESQL didn't export, is
- * {@code aspect/<tag>.png}.
+ * {@code aspect/<tag>.png}. export.py converts what this writes to WebP and renames the paths
+ * {@code .webp}, in images.zip and icons_lookup.json alike; the server reads either.
  */
 final class ExportJob {
 

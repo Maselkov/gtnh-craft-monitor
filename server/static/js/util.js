@@ -10,13 +10,21 @@ export function removeLegacyStorageKeys() {
     .forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
 }
 
-// Animated icons are APNGs. Viewers who've asked their browser for reduced
-// motion get each one's first frame instead (the server's ?still=1).
+// Animated icons are animated WebPs (APNGs in older game data). Viewers
+// who've asked their browser for reduced motion get each one's first
+// frame instead (the server's ?still=1).
 const REDUCED_MOTION = typeof matchMedia === 'function'
   && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export function iconUrl(path) {
   return `/icons?path=${encodeURIComponent(path)}${REDUCED_MOTION ? '&still=1' : ''}`;
+}
+
+// The icon of a fixed item ("modid:internalname:damage"), for icons the
+// page shows itself rather than ones the server resolved: its image's
+// path differs between game data versions (.webp or .png).
+export function iconKeyUrl(key) {
+  return `/icons?key=${encodeURIComponent(key)}${REDUCED_MOTION ? '&still=1' : ''}`;
 }
 
 // Icons drawn past the item box (a cosmic halo) are bigger images with the
@@ -118,7 +126,7 @@ export function bindFilterInput(input, onChange) {
 
 // el.innerHTML = html, but each icon <img> already in el is kept and moved
 // into the new markup in place of a new one with the same src. A new <img>
-// starts an animated icon (APNG) over from its first frame, so redrawing
+// starts an animated icon over from its first frame, so redrawing
 // every second or so made them stutter; a moved one keeps going. Only
 // within this document, though: a template's content is a document of its
 // own, and an <img> moved through one restarts too - hence importNode.

@@ -612,7 +612,7 @@ export's downloader sets its own.
 
 **A `%2F` inside a URL *path segment* gets mangled by reverse proxies.**
 This is why icons are served as `/icons?path=<encoded>` (query string)
-rather than `/icons/<path>` - a path like `item/gregtech/foo.png` needs
+rather than `/icons/<path>` - a path like `item/gregtech/foo.webp` needs
 its slashes encoded, and many reverse proxies refuse to treat an encoded
 slash in a path segment as a real separator (security measure against
 path-traversal tricks). Query-string values don't have this problem.
@@ -1110,8 +1110,10 @@ separately from app releases.
    mod finds which icons animate and renders those tick by tick, writing
    each one's distinct frames to `animations.zip` and their order and
    timing to `animations.json`. `export.py` (`build_animations`) finds each
-   sequence's loop and replaces the still icon in `images.zip` with an
-   APNG at the same path.
+   sequence's loop and builds an animated WebP of it, which takes the
+   still icon's place. `finish_images` then writes every icon as lossless
+   WebP, renamed `.webp` in `images.zip` and `icons_lookup.json` alike
+   (see "Icon image format" below).
 5. With `--faithful <zip>`, `export.py` enables that resource pack in
    `options.txt` (the pack ships none) and launches the game again into a
    scratch directory. It then writes `images-faithful32.zip` with every
@@ -1244,25 +1246,62 @@ Only icons the lookup references go through these stages. The mod renders
 every stack (~215k), but NBT variants that share a key are only shown
 when `by_key_label` (key plus label, e.g. each crop's seeds) points at them,
 and `export.py` (`finish_images`) drops them from `images.zip` too, which
-leaves ~117k icons. That roughly offsets what the APNGs add.
+leaves ~117k icons. That roughly offsets what the animations add.
 `build_animations` takes the shortest period the sequence repeats at least
 twice. Failing that, `near_loop` looks for a frame that's nearly frame 0
 again after moving well away (mean channel difference under 1), taking the
 closest one: the transcendent ingot turns 3.5 degrees a tick, so it's only
 exactly back after 720 ticks but within half a degree after 103. Else the
-whole capture loops. An APNG over 1 MB is rebuilt at half the frame rate
+whole capture loops. An animation over 1 MB is rebuilt at half the frame rate
 (each frame shown twice as long, so the speed stays), repeatedly, and kept
 still if it doesn't fit even at 4 frames: big 3D renders that change
-completely every tick (Tectech's Forge of the Gods) came out at several MB. It's written with Pillow (frames after the
-first store only what changed). The image pins Pillow 11.3 from pip: jammy's
-python3-pil (9.0) compared APNG frames without alpha and merged the ones
-that differed only in it, so the Raw Tesseract (a black wireframe turning
-on a transparent background) came out still. `build_apng` now fails the
-export if Pillow writes fewer frames than it was given. APNG keeps the `.png` path and frame 0 is
-the still icon, so the lookup, `/icons`, stored craft-history paths and
-anything that can't animate all work unchanged. `/icons?still=1` returns
-frame 0 (`icons.read_still_image`); the frontend asks for it when the
-browser prefers reduced motion (`iconUrl()` in `util.js`).
+completely every tick (Tectech's Forge of the Gods) came out at several MB.
+It's written with Pillow (frames after the first store only what changed).
+The image pins Pillow 11.3 from pip: jammy's python3-pil (9.0) compared
+APNG frames without alpha and merged the ones that differed only in it, so
+the Raw Tesseract (a black wireframe turning on a transparent background)
+came out still. `build_webp` fails the export if what it wrote doesn't
+last as long as the frames it was given, or doesn't move. Frame 0 is the
+still icon, which is what anything that can't animate shows.
+`/icons?still=1` returns frame 0 (`icons.read_still_image`); the frontend
+asks for it when the browser prefers reduced motion (`iconUrl()` in
+`util.js`).
+
+**Icon image format.** Bundles carry lossless WebP, animated WebP for
+animations; bundles built before that carried PNG and APNG (and NESQL's
+zips are PNG). Measured on 2.9.0-beta-3's 117k icons, WebP is pixel for pixel the
+same in 67% of the stills' PNG bytes and 48% of the APNGs', which takes
+`images.zip` from 254 MB to 160 MB. AVIF lost: lossless it's twice PNG's
+size, and lossy it only wins once it softens the pixel art. Lossy WebP
+smears colours (it halves their resolution), so it's no option either.
+Pillow's `method=4` gets nearly all of `method=6`'s saving at ~1 ms a
+still and ~20 ms an animation (6 took 0.6 s an animation). The mod still
+writes PNG (Java has no WebP writer), and `finish_images` converts in a
+process pool, ~40 s for a whole bundle on 16 cores. Still WebPs come out a little
+bigger deflated, so they're stored in the zip as they are; animated ones
+deflate by ~15%, so they're deflated. libwebp crops each animation frame
+to what changed, the first one too, and sets the file's alpha flag only
+if a cropped frame has transparency: an icon with a transparent margin
+that never changes (OpenComputers' cards) lost it, and decoders that go by
+the flag (Pillow) showed the margin opaque black. `build_webp` sets the
+flag itself whenever a frame has transparency.
+
+A WebP's name says WebP: the bundle's paths end `.webp`, and `data.json`
+says `"image_format": "webp"` (without it, a bundle is PNG). Two kinds of
+path outlive a bundle, and both have to work with either. Craft history
+stores the path an icon had when it was recorded; `icons.current_path()`
+re-prefixes those for the live bundle already, and swaps a `.png` or
+`.webp` suffix for the live bundle's, so the API only ever hands out paths
+that name a real entry. The page's own fixed icons (the favicon's ME
+Interface, the Blank Pattern badge) had hard-coded `.png` paths; they ask
+by item instead, `/icons?key=modid:internalname:damage`, served with a
+day's cache rather than the immutable week, as the same URL gets the next
+bundle's image. The favicon, apple-touch icon and manifest add
+`notification=1`, a 192px PNG, since they declare `image/png`. `/icons`
+names its content type from the bytes. A server from before WebP that
+installs a WebP bundle mostly works (browsers don't trust an image's
+content type anyway), but its favicon and craft history icons 404 and
+reduced motion still animates.
 
 **Distribution.** `.github/workflows/gtnh-data.yml` runs daily:
 `ci/detect.py` lists GTNH's stable/beta/RC tags (GT-New-Horizons-Modpack
@@ -1341,9 +1380,9 @@ picked. The server's copy is a separate file so a hand-placed list is
 never overwritten.
 
 Image paths inside the zip keep NESQL's scheme
-(`item/<mod>/<name>~<damage>[~<nbt>].png`, `fluid/<mod>/<name>.png`), so
-old and new zips can be diffed. `images.zip` is ~250 MB per version
-(`images-faithful32.zip` ~300 MB), so
+(`item/<mod>/<name>~<damage>[~<nbt>].png`, `fluid/<mod>/<name>.png`), only
+ending `.webp` since bundles are WebP, so old and new zips can be diffed.
+`images.zip` is ~160 MB per version (~250 MB as PNG), so
 it's never in git; the server reads icons out of it on demand, never
 unpacking it to disk.
 

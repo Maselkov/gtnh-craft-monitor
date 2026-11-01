@@ -59,6 +59,12 @@ token with Contents: read and write on that repo, stored as the
 
 ## Bundle format
 
+Icons in `images.zip` are lossless WebP (animated WebP for animated ones),
+named after NESQL's scheme but ending `.webp`
+(`item/<mod>/<name>~<damage>[~<nbt>].webp`), and `data.json` says
+`"image_format": "webp"`. Bundles built before WebP have PNG and APNG
+icons named `.png` and no `image_format`; the server reads both.
+
 The icon lookup contains six tables:
 
 - `by_key` — `modid:internalname:damage` → icon, for ordinary items. When

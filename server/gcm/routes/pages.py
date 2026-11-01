@@ -24,11 +24,17 @@ def icon():
     # tricks), even though the icon paths from NESQL are inherently
     # slash-containing (item/gregtech/whatever.png). Query string values
     # don't have that problem - %2F there just decodes normally.
-    img_path = request.args.get("path", "")
+    #
+    # ?key=modid:internalname:damage instead of a path is for the page's
+    # fixed icons (the favicon, the Blank Pattern badge): an item, whose
+    # image is .webp in one bundle and .png in another.
+    key = request.args.get("key", "")
+    img_path = icons.icon_for_key(key) if key else request.args.get("path", "")
     if not img_path:
         abort(404)
-    # Animated icons are APNGs; ?still=1 asks for just the first frame.
-    # ?notification=1 is that, scaled up for a notification.
+    # Animated icons are animated WebPs (APNGs in older bundles); ?still=1
+    # asks for just the first frame. ?notification=1 is that as a PNG,
+    # scaled up for a notification.
     if request.args.get("notification") == "1":
         data = icons.read_notification_image(img_path)
     elif request.args.get("still") == "1":
@@ -39,10 +45,11 @@ def icon():
         abort(404)
     return Response(
         data,
-        mimetype="image/png",
+        mimetype=icons.image_mimetype(data),
         headers={
-            # Icons for a given item never change, safe to cache hard.
-            "Cache-Control": "public, max-age=604800, immutable",
+            # A path's image never changes (its version prefix does), safe
+            # to cache hard; a key's changes with the bundle.
+            "Cache-Control": "public, max-age=86400" if key else "public, max-age=604800, immutable",
         },
     )
 

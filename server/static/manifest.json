@@ -8,9 +8,9 @@
   "theme_color": "#0f1115",
   "icons": [
     {
-      "src": "/icons?path=item%2Fappliedenergistics2%2Ftile.BlockInterface~0.png",
+      "src": "/icons?key=appliedenergistics2%3Atile.BlockInterface%3A0&notification=1",
       "type": "image/png",
-      "sizes": "any"
+      "sizes": "192x192"
     }
   ]
 }

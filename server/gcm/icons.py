@@ -59,6 +59,11 @@ _images_zip_path = None
 # them by.
 _bleed = {}
 
+# The live bundle's image files' suffix: ".webp", or ".png" for bundles
+# made before they were WebP (data.json's "image_format").
+_image_suffix = ".png"
+_IMAGE_SUFFIXES = (".png", ".webp")
+
 _index = None
 _images_zip_name = None
 _images_zip_fd = None
@@ -82,11 +87,13 @@ class _Table:
         return default if value is None else value
 
 
-def load(index, images_zip_path, version=None):
+def load(index, images_zip_path, version=None, image_format="png"):
     """Makes the given index (a gamedata_index.Index, or None for no
-    icons) and the zip it describes the live ones."""
+    icons) and the zip it describes the live ones. image_format: "webp"
+    or "png", what the zip's images are."""
     global _icons_by_key, _icons_by_key_label, _icons_by_key_material, _icons_by_label, _fluids_by_key, _aspects_by_key
     global _index, _images_zip_fd, _images_zip_missing_logged, _images_zip_path, _images_zip_name, _version, _bleed
+    global _image_suffix
 
     def table(name):
         return _Table(index, name) if index else {}
@@ -106,6 +113,7 @@ def load(index, images_zip_path, version=None):
         _aspects_by_key = table("aspects_by_key")
         _bleed = table("bleed")
         _version = version
+        _image_suffix = ".webp" if image_format == "webp" else ".png"
         _index = index
 
 
@@ -144,9 +152,10 @@ def _read_entry(fd, entry):
 
 
 def read_image(path):
-    """The PNG at path inside images.zip, or None if it isn't there (or
-    there's no images.zip). Accepts paths with or without a version prefix:
-    craft history stores whatever path was current when it was recorded."""
+    """The image (WebP or PNG) at path inside images.zip, or None if it
+    isn't there (or there's no images.zip). Accepts paths with or without
+    a version prefix: craft history stores whatever path was current when
+    it was recorded."""
     head, sep, rest = path.partition("/")
     if sep and head not in _ZIP_ROOTS:
         path = rest
@@ -163,17 +172,32 @@ def read_image(path):
         return None
 
 
-def is_animated(png):
-    """APNGs carry an acTL chunk ahead of the image data; plain PNGs don't."""
-    return b"acTL" in png[:4096].split(b"IDAT", 1)[0]
+def is_webp(data):
+    return data[:4] == b"RIFF" and data[8:12] == b"WEBP"
+
+
+def is_animated(data):
+    """An animated WebP has a VP8X chunk first with its animation flag
+    set; an APNG carries an acTL chunk ahead of the image data."""
+    if is_webp(data):
+        return data[12:16] == b"VP8X" and bool(data[20] & 0x02)
+    return b"acTL" in data[:4096].split(b"IDAT", 1)[0]
+
+
+def image_mimetype(data):
+    return "image/webp" if is_webp(data) else "image/png"
 
 
 @functools.lru_cache(maxsize=4096)
-def _still(png):
+def _still(data):
     from PIL import Image
 
+    # An animated image opens at its first frame.
     out = io.BytesIO()
-    Image.open(io.BytesIO(png)).save(out, format="PNG")
+    if is_webp(data):
+        Image.open(io.BytesIO(data)).save(out, format="WEBP", lossless=True)
+    else:
+        Image.open(io.BytesIO(data)).save(out, format="PNG")
     return out.getvalue()
 
 
@@ -196,7 +220,7 @@ NOTIFICATION_ICON_PIXELS = 192
 def _notification_icon(png):
     from PIL import Image
 
-    image = Image.open(io.BytesIO(png))  # an APNG opens at its first frame
+    image = Image.open(io.BytesIO(png))  # an animated one opens at its first frame
     factor = max(1, NOTIFICATION_ICON_PIXELS // max(image.size))
     image = image.convert("RGBA").resize(
         (image.width * factor, image.height * factor), Image.Resampling.NEAREST
@@ -245,11 +269,29 @@ def resolve_icon(mod, internal, damage, label, variant=None, kind=None, variant_
 def current_path(path):
     """A stored icon path (craft history keeps whatever was current when it
     was recorded) with the live bundle's prefix, so it's sized and cached
-    like a freshly resolved one."""
+    like a freshly resolved one, and its suffix: a bundle with WebP icons
+    names them .webp, one with PNGs .png, and the path may have been
+    stored under either."""
     if not path:
         return path
     head, sep, rest = path.partition("/")
-    return _prefixed(rest if sep and head not in _ZIP_ROOTS else path)
+    path = rest if sep and head not in _ZIP_ROOTS else path
+    for suffix in _IMAGE_SUFFIXES:
+        if path.endswith(suffix):
+            path = path.removesuffix(suffix) + _image_suffix
+            break
+    return _prefixed(path)
+
+
+def icon_for_key(key):
+    """The prefixed image path for an item's "modid:internalname:damage",
+    or None: what the page asks for when it shows a fixed item's icon (the
+    favicon's ME Interface), rather than a path that names a file."""
+    mod, _, rest = (key or "").partition(":")
+    internal, _, damage = rest.rpartition(":")
+    if not (mod and internal and damage):
+        return None
+    return _prefixed(_lookup(mod, internal, damage, None))
 
 
 def _prefixed(path):
