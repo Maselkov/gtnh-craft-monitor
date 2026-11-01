@@ -97,6 +97,9 @@ h1 {
 .gamedata-note[hidden], .connect-note[hidden] {
   display: none;
 }
+.scripts-notice {
+  margin-top: 12px;
+}
 .gamedata-note .note-dismiss {
   margin-left: auto;
 }

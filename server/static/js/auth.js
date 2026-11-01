@@ -1,5 +1,6 @@
 // Sign-in state, admin user/token management modals, settings menu.
 
+import { updateScriptsNotice } from './agents.js';
 import { showToast } from './craft-actions.js';
 import {
   clearPins,
@@ -57,6 +58,7 @@ function updateAuthenticationControl() {
   document.getElementById('agentsBtn').style.display = adminVisible ? '' : 'none';
   if (AUTH_USER) syncPushSubscription();
   updateGameDataNote();
+  updateScriptsNotice();
   updateTerminalNote();
   const locked = isLocked();
   document.body.classList.toggle('private-locked', locked);

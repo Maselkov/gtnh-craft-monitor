@@ -21,6 +21,12 @@ test('a computer: version, services, memory, buttons', () => {
   assert.doesNotMatch(html, /disabled/);
 });
 
+test('a computer missing script changes this server needs says so', () => {
+  const html = renderComputer({ ...COMPUTER, scripts_behind: true }, 'v1.2.0', 'v1.1.0');
+  assert.match(html, /scripts changed in v1\.1\.0: update recommended/);
+  assert.doesNotMatch(html, /update available/);
+});
+
 test('buttons wait while a command is under way, and offline', () => {
   const busy = renderComputer({ ...COMPUTER, command: { action: 'reboot', ref: null, status: 'sent' } }, 'v1.2.0');
   assert.match(busy, /Reboot: running…/);

@@ -9,7 +9,7 @@
 import { AUTH_USER, closeSettingsMenu } from './auth.js';
 import { showToast } from './craft-actions.js';
 import {
-  delegateActions, escapeHtml, formatDuration, formatQty, formatRelativeTime, onBackdropClick,
+  closeNote, delegateActions, escapeHtml, formatDuration, formatQty, formatRelativeTime, noteClosed, onBackdropClick,
 } from './util.js';
 
 const REFRESH_MS = 5000;
@@ -57,9 +57,14 @@ function memoryLine(c) {
     <div class="stock-bar"><div class="stats-bar-fill" data-fill="${used}"></div></div>`;
 }
 
-export function renderComputer(c, latest) {
+// scriptsVersion: the oldest release with this server's scripts
+// (config.SCRIPTS_VERSION). A computer older than that is missing script
+// changes the server needs; one only behind the latest release isn't.
+export function renderComputer(c, latest, scriptsVersion) {
   const version = c.version ? escapeHtml(c.version) : 'unknown version';
-  const behind = c.behind ? ` &middot; update available: ${escapeHtml(latest)}` : '';
+  let behind = '';
+  if (c.scripts_behind) behind = ` &middot; <span class="agent-command failed">scripts changed in ${escapeHtml(scriptsVersion)}: update recommended</span>`;
+  else if (c.behind) behind = ` &middot; update available: ${escapeHtml(latest)}`;
   const services = c.services.length
     ? c.services.map(s => `<span${s.gave_up ? ' class="agent-command failed"' : ''}><span class="agent-dot${s.running ? ' running' : ''}"></span>${escapeHtml(s.name)}${serviceLabel(s)}</span>`).join('')
     : '<span class="agent-line">No scripts installed</span>';
@@ -181,9 +186,10 @@ async function loadAgents() {
     document.getElementById('agentsLatest').textContent = data.latest_release
       ? `Latest release: ${data.latest_release}. Updating downloads the scripts on the computer, then reboots it.`
       : `Latest release unknown${data.latest_error ? ` (${data.latest_error})` : ''}.`;
+    updateScriptsNotice();
     const list = document.getElementById('agentsList');
     list.innerHTML = data.computers.length
-      ? data.computers.map(c => renderComputer(c, data.latest_release)).join('')
+      ? data.computers.map(c => renderComputer(c, data.latest_release, data.scripts_version)).join('')
       : '<div class="empty">No computers yet. Connect one with the commands below. A computer installed before gcm_agent existed shows up after one <code>gcm update</code>.</div>';
     for (const bar of list.querySelectorAll('.stats-bar-fill')) {
       bar.style.width = `${Number(bar.dataset.fill)}%`;
@@ -355,8 +361,9 @@ export function connectNoteHtml(text) {
 }
 
 // toConnect scrolls to Connect a computer once the sections above it
-// have loaded, so it doesn't move off screen as they fill in.
-async function openAgentsModal({ toConnect = false } = {}) {
+// have loaded, so it doesn't move off screen as they fill in; toComputers
+// to the computers.
+async function openAgentsModal({ toConnect = false, toComputers = false } = {}) {
   if (!AUTH_USER || AUTH_USER.role !== 'admin') return;
   document.getElementById('agentsModal').style.display = 'flex';
   loadSettings();
@@ -365,6 +372,7 @@ async function openAgentsModal({ toConnect = false } = {}) {
   refreshTimer = setInterval(() => { loadHealth(); loadAgents(); }, REFRESH_MS);
   await Promise.all([loadHealth(), loadAgents()]);
   if (toConnect) document.querySelector('#agentsModal .connect-heading').scrollIntoView({ block: 'start' });
+  if (toComputers) document.querySelector('#agentsModal .computers-heading').scrollIntoView({ block: 'start' });
 }
 
 function editConnectAddress() {
@@ -384,8 +392,53 @@ export function closeAgentsModal() {
   refreshTimer = null;
 }
 
+// The page-wide notice that computers run scripts older than this
+// server's (server/gcm/agents.py scripts_behind()), so admins hear of it
+// without opening Status. Closing it holds for that scripts version: the
+// next release that changes the scripts brings it back.
+const SCRIPTS_NOTICE_MS = 5 * 60 * 1000;
+const SCRIPTS_NOTICE_DISMISSED_KEY = 'gtnhCraftMonitor.scriptsNoticeDismissed';
+let scriptsNotice = null;
+
+function renderScriptsNotice() {
+  const el = document.getElementById('scriptsNotice');
+  const n = scriptsNotice;
+  const admin = Boolean(AUTH_USER && AUTH_USER.role === 'admin');
+  if (!admin || !n || !n.version || noteClosed(SCRIPTS_NOTICE_DISMISSED_KEY, n.version)) {
+    el.hidden = true;
+    return;
+  }
+  const count = n.computers.length;
+  document.getElementById('scriptsNoticeText').textContent =
+    `${count === 1 ? 'A computer runs' : `${count} computers run`} in-game scripts older than ${n.version}, which this server needs for everything to work.`;
+  document.getElementById('scriptsNoticeChanges').href =
+    `https://github.com/Maselkov/gtnh-craft-monitor/releases/tag/${encodeURIComponent(n.version)}`;
+  el.hidden = false;
+}
+
+export async function updateScriptsNotice() {
+  if (!AUTH_USER || AUTH_USER.role !== 'admin') {
+    scriptsNotice = null;
+    renderScriptsNotice();
+    return;
+  }
+  try {
+    const res = await fetch('/api/admin/scripts-notice');
+    if (res.ok) scriptsNotice = await res.json();
+  } catch (e) { /* keep what was shown */ }
+  renderScriptsNotice();
+}
+
+function dismissScriptsNotice() {
+  closeNote(SCRIPTS_NOTICE_DISMISSED_KEY, scriptsNotice.version);
+  renderScriptsNotice();
+}
+
 export function setupAgentsActions() {
+  setInterval(updateScriptsNotice, SCRIPTS_NOTICE_MS);
   delegateActions(document, {
+    'scripts-notice-update': () => openAgentsModal({ toComputers: true }),
+    'dismiss-scripts-notice': () => dismissScriptsNotice(),
     'open-agents': () => { closeSettingsMenu(); openAgentsModal(); },
     'connect-computer': () => openAgentsModal({ toConnect: true }),
     'close-agents': () => closeAgentsModal(),

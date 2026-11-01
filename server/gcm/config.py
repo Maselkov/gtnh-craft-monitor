@@ -48,6 +48,10 @@ SCRIPTS_REPO = os.environ.get("SCRIPTS_REPO", "Maselkov/gtnh-craft-monitor")
 # (Dockerfile); unset when run from source. The Status dialog's
 # auto-update only works with one.
 SERVER_VERSION = os.environ.get("GCM_VERSION", "").strip() or None
+# The oldest release with the same in-game scripts as this one (vX.Y.Z),
+# worked out by publish.yml from git: a computer on an older one is told
+# to update (gcm/agents.py scripts_behind()). Unset when run from source.
+SCRIPTS_VERSION = os.environ.get("GCM_SCRIPTS_VERSION", "").strip() or None
 GTNH_VERSION = os.environ.get("GTNH_VERSION", "").strip()
 GTNH_TEXTURES = os.environ.get("GTNH_TEXTURES", "").strip()
 # A directory of bundles (<version>/ each, as in DATA_DIR/gamedata) that

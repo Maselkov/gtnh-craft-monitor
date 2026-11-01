@@ -43,6 +43,10 @@ COPY static ./static
 # and auto-update needs it. After the COPYs, so a new tag reuses their layers.
 ARG GCM_VERSION=
 ENV GCM_VERSION=$GCM_VERSION
+# The oldest release with this one's in-game scripts, also from
+# publish.yml: computers on an older one are asked to update.
+ARG GCM_SCRIPTS_VERSION=
+ENV GCM_SCRIPTS_VERSION=$GCM_SCRIPTS_VERSION
 ENV PORT=8420
 ENV STALE_AFTER_SECONDS=30
 ENV SESSION_COOKIE_SECURE=1

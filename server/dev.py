@@ -53,6 +53,9 @@ os.environ["SESSION_COOKIE_SECURE"] = "0"
 # one. Blocked and busy steps (gcm/bottlenecks.py) count after the grace.
 os.environ["CRAFT_STALL_SECONDS"] = "30"
 os.environ["CRAFT_BLOCK_GRACE_SECONDS"] = "10"
+# As a published image would have it: the first fake computer runs older
+# scripts than this, so admins see the notice asking to update it.
+os.environ["GCM_SCRIPTS_VERSION"] = "v1.1.0"
 
 from gcm import bottlenecks, create_app, db, icons, patterns, store  # noqa: E402
 
@@ -716,7 +719,7 @@ class FakeGame:
         self.computers = [
             FakeComputer("1f3a9c20-5b1e-4d2a-9e77-0c4b8f2d6a11", "v1.0.0",
                          ["craft_monitor", "network_browser"], 4 * 1024 * 1024),
-            FakeComputer("77b0e1d4-2c9a-4f6b-8d03-5e1a7c9b2f40", "v1.0.0", ["power_monitor"], 1024 * 1024),
+            FakeComputer("77b0e1d4-2c9a-4f6b-8d03-5e1a7c9b2f40", "v1.1.0", ["power_monitor"], 1024 * 1024),
         ]
         self.ticks = 0
 

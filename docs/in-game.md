@@ -229,6 +229,18 @@ Two checkboxes there apply to every computer:
   server's release is also the latest one, and only with a server that
   knows its release (the published Docker image does).
 
+When a release changes the in-game scripts, admins don't have to open
+Status to find out. A notice at the top of every tab says how many
+computers run scripts older than the server needs, with a button that
+opens Status at the computers and a link to that release's notes. Those
+computers' cards say "update recommended". A release that only changed
+the server doesn't bring the notice up. Neither does a computer that's
+being updated, or one that **Update computers when the server updates**
+is about to update; if that update fails, the notice shows. Closing the
+notice hides it until the next release that changes the scripts. It only
+knows about computers running `gcm_agent`, and needs the published Docker
+image (see `GCM_SCRIPTS_VERSION` in [server.md](server.md)).
+
 The server can only ask for those three things. `gcm` downloads from its
 own fixed GitHub repository, so nothing on the server can make a computer
 run other code. A computer installed before the agent existed shows up
