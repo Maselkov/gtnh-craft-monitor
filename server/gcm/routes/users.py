@@ -1,8 +1,9 @@
-"""Sign-in/sign-out, first-run setup, and admin user/token management."""
+"""Sign-in/sign-out, first-run setup, admin user/token management, and
+the notices admins dismiss."""
 
 from flask import Blueprint, g, jsonify, request
 
-from gcm import auth, config, store
+from gcm import auth, config, notices, store
 
 
 bp = Blueprint("users", __name__)
@@ -96,6 +97,26 @@ def admin_visibility_put():
         return jsonify({"error": "private must be true or false"}), 400
     auth.set_private(private)
     return jsonify({"private": private})
+
+
+@bp.route("/api/admin/notices", methods=["GET"])
+@auth.admin_required
+def admin_notices_get():
+    """{"dismissed": {name: value}}: the notices admins dismissed, and for
+    which value (gcm/notices.py)."""
+    return jsonify({"dismissed": notices.dismissed()})
+
+
+@bp.route("/api/admin/notices/<name>", methods=["PUT"])
+@auth.admin_required
+def admin_notice_put(name):
+    """Body: {"value": str} - dismisses the notice for that value, for
+    every admin."""
+    payload = request.get_json(silent=True)
+    error = notices.dismiss(name, payload.get("value") if isinstance(payload, dict) else None)
+    if error:
+        return jsonify({"error": error}), 400
+    return admin_notices_get()
 
 
 @bp.route("/api/admin/users", methods=["POST"])

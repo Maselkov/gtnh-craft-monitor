@@ -11,7 +11,7 @@ import {
 const POLL_MS = 1000;
 const NOTICE_MS = 5 * 60 * 1000;
 const NOTICE_PENDING_MS = 3000;
-const NOTICE_DISMISSED_KEY = 'gtnhCraftMonitor.recipeNoticeDismissed';
+const NOTICE = 'recipe_check';  // its name in gcm/notices.py
 
 // What each status means, in the order they're listed.
 const SECTIONS = [
@@ -218,7 +218,7 @@ function noticeKey(n) {
 function renderNotice() {
   const el = document.getElementById('recipeNotice');
   const admin = Boolean(AUTH_USER && AUTH_USER.role === 'admin');
-  if (!admin || !notice || !notice.to || noteClosed(NOTICE_DISMISSED_KEY, noticeKey(notice))) {
+  if (!admin || !notice || !notice.to || noteClosed(NOTICE, noticeKey(notice))) {
     el.hidden = true;
     return;
   }
@@ -247,7 +247,7 @@ export function setupRecipeCheckActions() {
     'close-recipe-check': () => closeRecipeCheck(),
     'recipe-notice-show': () => openRecipeCheck(notice.from, notice.to),
     'dismiss-recipe-notice': () => {
-      closeNote(NOTICE_DISMISSED_KEY, noticeKey(notice));
+      closeNote(NOTICE, noticeKey(notice));
       renderNotice();
     },
   });

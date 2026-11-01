@@ -343,7 +343,7 @@ version has them, admins get a notice at the top of the page naming the
 items and that version. **Switch to…** opens **Game data** with it
 picked; the switch is yours to make, since it downloads the version. The
 dialog lists the items and the version each came in. The &times; hides
-the notice until it would suggest another version.
+the notice, for every admin, until it would suggest another version.
 
 On game data for a pre-release (`2.9.0-RC-1`), whose items are nearly the
 same as the final release's, the notice comes once the final release

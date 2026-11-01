@@ -14,7 +14,7 @@ import {
 } from './crafts.js';
 import { openGameDataModal, updateGameDataNotice } from './gamedata.js';
 import { updateGameDataNote, updateTerminalNote } from './network.js';
-import { delegateActions, escapeHtml, formatQty, onBackdropClick } from './util.js';
+import { delegateActions, escapeHtml, formatQty, loadDismissedNotes, onBackdropClick } from './util.js';
 
 export let AUTH_USER = null;
 // Only signed-in users may see the crafts, network and power
@@ -59,10 +59,13 @@ function updateAuthenticationControl() {
   document.getElementById('agentsBtn').style.display = adminVisible ? '' : 'none';
   if (AUTH_USER) syncPushSubscription();
   updateGameDataNote();
-  updateScriptsNotice();
-  updateGameDataNotice();
-  updateRecipeNotice();
-  updateTerminalNote();
+  // The admin notices wait for which of them admins dismissed.
+  loadDismissedNotes(Boolean(adminVisible)).then(() => {
+    updateScriptsNotice();
+    updateGameDataNotice();
+    updateRecipeNotice();
+    updateTerminalNote();
+  });
   const locked = isLocked();
   document.body.classList.toggle('private-locked', locked);
   document.getElementById('privateNotice').style.display = locked ? '' : 'none';

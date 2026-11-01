@@ -204,19 +204,54 @@ export function formatRate(perSecond, unit = '') {
   return `${value > 0 ? '+' : '−'}${formatQty(Math.abs(value))}${unit}/${per}`;
 }
 
-// Notes a viewer can close (the Network tab's Interface Terminal note,
-// the scripts notice), remembered in this browser under `key`. `value`
-// says which instance was closed - a version, say, so the next one shows
-// again. Also kept in memory: with storage blocked, closing still holds
-// until a reload.
-const closedNotes = new Map();
+// Admin notices an admin can dismiss (gcm/notices.py: the pattern check,
+// scripts and game data notices, the Network tab's Interface Terminal
+// note), kept on the server so dismissing one holds for every admin on
+// every browser. `value` says which instance was dismissed - a version,
+// say, so the next one shows again. null until loaded: a notice stays
+// hidden rather than flash up and vanish.
+let dismissedNotes = null;
 
-export function noteClosed(key, value = '1') {
-  if (closedNotes.has(key)) return closedNotes.get(key) === value;
-  try { return localStorage.getItem(key) === value; } catch (e) { return false; }
+// Where browsers kept these before the server did: moved over once.
+const LEGACY_NOTE_KEYS = {
+  recipe_check: 'gtnhCraftMonitor.recipeNoticeDismissed',
+  scripts_update: 'gtnhCraftMonitor.scriptsNoticeDismissed',
+  gamedata: 'gtnhCraftMonitor.gamedataNoticeDismissed',
+  terminal: 'gtnhCraftMonitor.terminalNoteDismissed',
+};
+
+export async function loadDismissedNotes(admin) {
+  if (!admin) {
+    dismissedNotes = {};
+    return;
+  }
+  try {
+    const res = await fetch('/api/admin/notices');
+    dismissedNotes = res.ok ? (await res.json()).dismissed : {};
+  } catch (e) {
+    dismissedNotes = {};
+  }
+  for (const [name, key] of Object.entries(LEGACY_NOTE_KEYS)) {
+    let value = null;
+    try { value = localStorage.getItem(key); } catch (e) { continue; }
+    if (value === null) continue;
+    const saved = name in dismissedNotes ? Promise.resolve(true) : closeNote(name, value);
+    // Kept until the server has it: tried again on the next load.
+    saved.then((ok) => { if (ok) try { localStorage.removeItem(key); } catch (e) { /* next load */ } });
+  }
 }
 
-export function closeNote(key, value = '1') {
-  closedNotes.set(key, value);
-  try { localStorage.setItem(key, value); } catch (e) { /* in memory until a reload */ }
+export function noteClosed(name, value = '1') {
+  return dismissedNotes === null || dismissedNotes[name] === value;
+}
+
+// Resolves to whether the server saved it; if not, it's dismissed here
+// until a reload.
+export function closeNote(name, value = '1') {
+  dismissedNotes = { ...dismissedNotes, [name]: value };
+  return fetch(`/api/admin/notices/${encodeURIComponent(name)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ value }),
+  }).then((res) => res.ok, () => false);
 }

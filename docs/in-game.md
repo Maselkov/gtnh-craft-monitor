@@ -124,7 +124,7 @@ Patterns are first read after the next network scan, then every
 
 Without one, the network scan tells the server so. The craft dialog and
 the Tree view then say a terminal is needed, the Network tab shows admins
-a note about it until they close it, and **Status** lists Patterns as
+a note about it until one of them closes it, and **Status** lists Patterns as
 "no ME Interface Terminal connected (optional)".
 
 ### Connecting the Adapter
@@ -237,7 +237,8 @@ computers' cards say "update recommended". A release that only changed
 the server doesn't bring the notice up. Neither does a computer that's
 being updated, or one that **Update computers when the server updates**
 is about to update; if that update fails, the notice shows. Closing the
-notice hides it until the next release that changes the scripts. It only
+notice hides it, for every admin, until the next release that changes
+the scripts. It only
 knows about computers running `gcm_agent`, and needs the published Docker
 image (see `GCM_SCRIPTS_VERSION` in [server.md](server.md)).
 
