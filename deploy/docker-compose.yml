@@ -1,6 +1,6 @@
 # Compose file for running a published image (see docs/server.md,
 # "Docker"). On the deployment host it sits in DEPLOY_DIR beside .env and
-# data/; gcm-deploy.sh sets GCM_TAG to the release it deploys. A second
+# data/; gcm-deploy.sh sets GCM_TAG in .env to the version it deploys. A second
 # copy on the same host (the testing instance) sets GCM_CONTAINER_NAME and
 # GCM_PORT in its .env.
 services:

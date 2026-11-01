@@ -16,6 +16,7 @@
 # images, or to the other's instance.
 #
 # DEPLOY_DIR holds a copy of deploy/docker-compose.yml, .env and data/.
+# Each deploy sets GCM_TAG in .env to the version it deployed.
 # testing's .env needs its own container name and port, and leaves out
 # production's webhooks:
 #
@@ -63,7 +64,13 @@ trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
 printf '%s' "$registry_token" |
     docker login ghcr.io -u "$registry_user" --password-stdin >/dev/null
 
-export GCM_TAG="$version"
+# Kept in .env, not only exported, so a plain `docker compose up -d` on the
+# host keeps the deployed version instead of falling back to latest.
+# Rewritten in place (cat, not mv) to keep .env's owner and mode.
+touch .env
+{ grep -v '^GCM_TAG=' .env || true; echo "GCM_TAG=$version"; } > .env.new
+cat .env.new > .env
+rm .env.new
 docker compose pull
 docker compose up -d --remove-orphans
 # Only this project's images, and only those no container uses: each
