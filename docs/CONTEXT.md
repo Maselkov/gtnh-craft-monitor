@@ -1355,6 +1355,19 @@ heartbeat reads the latest tag from the cache and refreshes it in a
 background thread rather than waiting on GitHub. One try per (computer,
 release) per server process.
 
+The page's "update your scripts" notice compares each computer with
+`GCM_SCRIPTS_VERSION`, not with the latest tag, so a release that only
+changed the server says nothing. The image is built from `server/` with
+no `oc/` or git, so publish.yml works it out:
+1. the last commit at or before the tag that touched `oc/`, leaving out
+   `oc/tests` and the `*_dump.lua` debug tools, which aren't installed
+2. the oldest `vX.Y.Z` tag that contains that commit and is merged into
+   this tag
+
+`agents.scripts_behind()` leaves out offline computers, ones with a
+command under way, and ones auto-update is about to update (target set,
+not tried yet). A failed auto attempt shows again.
+
 `is_running()` (each service, from its worker thread's status) exists
 because `running` stays true when a loop dies of an error; `start()`
 uses it too, so `rc <name> start` works again after such a crash.

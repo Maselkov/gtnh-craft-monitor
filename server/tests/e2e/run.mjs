@@ -433,6 +433,8 @@ async function main() {
   const github = await startFakeGitHub();
   const { base, setupCode } = await startServer({
     GAMEDATA_API_URL: github, GAMEDATA_REPO: 'e2e/repo', SCRIPTS_REPO: 'e2e/scripts',
+    // As publish.yml would set it: computers older than this get a notice.
+    GCM_SCRIPTS_VERSION: 'v1.1.0',
   });
   // The first admin, made the way the setup dialog makes it; the dialog
   // itself is tried on a server of its own, last.
@@ -1388,6 +1390,33 @@ async function main() {
     await waitFor('admin dialog again', `visible($('#adminUsersModal'))`);
     await click(`$('#adminUsersModal')`);
     await waitFor('closed by backdrop', `!visible($('#adminUsersModal'))`);
+  });
+
+  step('admin: a notice when a computer\'s scripts are older than the server needs', async () => {
+    // v1.0.0 is older than GCM_SCRIPTS_VERSION (v1.1.0). The next step's
+    // computer, on v1.1.0, only has a newer release to update to: no notice.
+    await game(base, '/api/agent/heartbeat', {
+      address: 'ffffffff-0000-4000-8000-000000000002', version: 'v1.0.0', components: ['power'],
+      services: [{ name: 'power_monitor', running: true }], free_memory: 1048576, total_memory: 4194304, uptime: 60,
+    });
+    await cdp.send('Page.reload', {});
+    await waitFor('reloaded', `document.readyState === 'complete' && !window.byText`);
+    await evaluate(PAGE_LIB);
+    await waitFor('notice', `visible($('#scriptsNotice'))
+      && $('#scriptsNoticeText').textContent.startsWith('A computer runs in-game scripts older than v1.1.0')
+      && $('#scriptsNoticeChanges').href.endsWith('/releases/tag/v1.1.0')`);
+    await click(`$('[data-action="scripts-notice-update"]')`);
+    await waitFor('Status, the computer says why', `visible($('#agentsModal'))
+      && $('#agentsList').textContent.includes('scripts changed in v1.1.0: update recommended')`);
+    await click(`$('[data-action="close-agents"]')`);
+    await click(`$('[data-action="dismiss-scripts-notice"]')`);
+    await waitFor('closed', `!visible($('#scriptsNotice'))`);
+    await cdp.send('Page.reload', {});
+    await waitFor('reloaded again', `document.readyState === 'complete' && !window.byText`);
+    await evaluate(PAGE_LIB);
+    await waitFor('signed in', `$('#settingsUser').textContent !== ''`);
+    await sleep(1000);
+    await waitFor('still closed for v1.1.0', `!visible($('#scriptsNotice'))`);
   });
 
   step('admin: Status shows the server; lists computers; update one and see the result', async () => {

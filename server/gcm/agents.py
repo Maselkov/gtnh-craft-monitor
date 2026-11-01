@@ -202,6 +202,29 @@ def _rebooting(cmd, ok, message, rebooting):
     return ok is True and (cmd["action"] == "reboot" or (isinstance(message, str) and message.endswith("rebooting.")))
 
 
+def scripts_behind():
+    """The online computers whose scripts are older than this server's
+    (config.SCRIPTS_VERSION), for the page's notice: {"version",
+    "computers": [address, ...]}, or None when there are none. Only a
+    release that changed the scripts moves SCRIPTS_VERSION, so a
+    server-only release says nothing. Left out: a computer with a
+    command under way, and one auto_update is about to update."""
+    version = config.SCRIPTS_VERSION
+    if not _version_key(version):
+        return None
+    target = _auto_update_target()
+    now = time.time()
+    with _lock:
+        behind = [
+            address for address, agent in sorted(_agents.items())
+            if is_behind(agent["version"], version)
+            and now - agent["last_seen"] <= OFFLINE_AFTER_SECONDS
+            and not _busy_locked(address)
+            and not (target and is_behind(agent["version"], target) and (address, target) not in _auto_attempted)
+        ]
+    return {"version": version, "computers": behind} if behind else None
+
+
 def result(cmd_id, ok, message, version, rebooting=None):
     """The computer's report on a command. False for an unknown or
     already finished one. A computer about to reboot is watched for

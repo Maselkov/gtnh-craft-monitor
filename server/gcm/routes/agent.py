@@ -47,7 +47,17 @@ def admin_agents_get():
     computers = agents.snapshot()
     for computer in computers:
         computer["behind"] = agents.is_behind(computer["version"], latest)
-    return jsonify({"computers": computers, "latest_release": latest, "latest_error": error})
+        computer["scripts_behind"] = agents.is_behind(computer["version"], config.SCRIPTS_VERSION)
+    return jsonify({"computers": computers, "latest_release": latest, "latest_error": error,
+                    "scripts_version": config.SCRIPTS_VERSION})
+
+
+@bp.route("/api/admin/scripts-notice", methods=["GET"])
+@auth.admin_required
+def admin_scripts_notice_get():
+    """For the page's notice that computers need their scripts updated
+    (agents.scripts_behind()): {version, computers}, or {}."""
+    return jsonify(agents.scripts_behind() or {})
 
 
 @bp.route("/api/admin/agent-settings", methods=["GET"])

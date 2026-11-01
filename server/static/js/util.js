@@ -194,3 +194,20 @@ export function formatRate(perSecond, unit = '') {
   if (Math.abs(value) < 0.5) return null;
   return `${value > 0 ? '+' : '−'}${formatQty(Math.abs(value))}${unit}/${per}`;
 }
+
+// Notes a viewer can close (the Network tab's Interface Terminal note,
+// the scripts notice), remembered in this browser under `key`. `value`
+// says which instance was closed - a version, say, so the next one shows
+// again. Also kept in memory: with storage blocked, closing still holds
+// until a reload.
+const closedNotes = new Map();
+
+export function noteClosed(key, value = '1') {
+  if (closedNotes.has(key)) return closedNotes.get(key) === value;
+  try { return localStorage.getItem(key) === value; } catch (e) { return false; }
+}
+
+export function closeNote(key, value = '1') {
+  closedNotes.set(key, value);
+  try { localStorage.setItem(key, value); } catch (e) { /* in memory until a reload */ }
+}

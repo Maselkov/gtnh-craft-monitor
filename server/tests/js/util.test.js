@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { escapeHtml, essentiaBadgeHtml, formatDuration, formatQty, formatRate, iconClass, kindTooltipHtml } from '../../static/js/util.js';
+import {
+  closeNote, escapeHtml, essentiaBadgeHtml, formatDuration, formatQty, formatRate, iconClass, kindTooltipHtml, noteClosed,
+} from '../../static/js/util.js';
 
 test('formatQty abbreviates like the in-game terminal', () => {
   assert.equal(formatQty(null), '?');
@@ -55,4 +57,37 @@ test('the tooltip says what a fluid or essentia is', () => {
   assert.match(kindTooltipHtml('fluid'), />Fluid</);
   assert.match(kindTooltipHtml('essentia'), />Essentia</);
   assert.equal(kindTooltipHtml('item'), '');
+});
+
+test('a closed note stays closed, for the value it was closed at', () => {
+  const real = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const stored = new Map();
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
+    getItem: (k) => (stored.has(k) ? stored.get(k) : null), setItem: (k, v) => stored.set(k, String(v)),
+  } });
+  try {
+    stored.set('test.earlier', 'v1');
+    assert.equal(noteClosed('test.earlier', 'v1'), true);   // closed in an earlier visit
+    assert.equal(noteClosed('test.earlier', 'v2'), false);  // a newer one shows
+    closeNote('test.note');
+    assert.equal(stored.get('test.note'), '1');
+    assert.equal(noteClosed('test.note'), true);
+  } finally {
+    if (real) Object.defineProperty(globalThis, 'localStorage', real);
+    else delete globalThis.localStorage;
+  }
+});
+
+test('with storage blocked, a closed note still holds until a reload', () => {
+  const real = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, get() { throw new Error('blocked'); } });
+  try {
+    assert.equal(noteClosed('test.blocked', 'v1'), false);
+    closeNote('test.blocked', 'v1');
+    assert.equal(noteClosed('test.blocked', 'v1'), true);
+    assert.equal(noteClosed('test.blocked', 'v2'), false);
+  } finally {
+    if (real) Object.defineProperty(globalThis, 'localStorage', real);
+    else delete globalThis.localStorage;
+  }
 });

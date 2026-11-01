@@ -314,3 +314,74 @@ class TestAutoUpdate:
         assert started == [1] and github == []  # one fetch at a time, and not in the heartbeat
         agents.latest_release()
         assert beat(client, api_headers)["action"] == "update"
+
+
+class TestScriptsNotice:
+    # Computers whose scripts are older than this server's: only a release
+    # that changed the scripts moves config.SCRIPTS_VERSION.
+    @pytest.fixture
+    def scripts_at(self, client, monkeypatch):
+        from gcm import config
+
+        def at(version, server=None, auto_update=False):
+            monkeypatch.setattr(config, "SCRIPTS_VERSION", version)
+            monkeypatch.setattr(config, "SERVER_VERSION", server)
+            login_as(client, "root", role="admin")
+            client.put("/api/admin/agent-settings", json={"auto_update": auto_update})
+            computers(client)  # fetches the latest release (v1.2.0)
+        return at
+
+    def notice(self, client):
+        return client.get("/api/admin/scripts-notice").get_json()
+
+    def test_admins_only(self, client):
+        assert client.get("/api/admin/scripts-notice").status_code == 403
+        login_as(client, "olive", role="operator")
+        assert client.get("/api/admin/scripts-notice").status_code == 403
+
+    def test_a_computer_behind_is_named(self, client, api_headers, scripts_at):
+        beat(client, api_headers)
+        scripts_at("v1.1.0")
+        assert self.notice(client) == {"version": "v1.1.0", "computers": ["comp-1"]}
+        [c] = computers(client)["computers"]
+        assert c["scripts_behind"] is True and computers(client)["scripts_version"] == "v1.1.0"
+
+    @pytest.mark.parametrize("scripts,computer", [
+        ("v1.0.0", "v1.0.0"),  # the release since only changed the server
+        ("v1.0.0", "v1.1.0"),
+        ("v1.1.0", "main"),
+        ("v1.1.0", None),
+        (None, "v1.0.0"),      # run from source
+    ])
+    def test_nothing_to_say(self, client, api_headers, scripts_at, scripts, computer):
+        beat(client, api_headers, version=computer)
+        scripts_at(scripts)
+        assert self.notice(client) == {}
+
+    def test_not_while_a_command_is_under_way(self, client, api_headers, scripts_at):
+        beat(client, api_headers)
+        scripts_at("v1.1.0")
+        command(client, "update", "release")
+        assert self.notice(client) == {}
+
+    def test_not_for_an_offline_computer(self, client, api_headers, scripts_at):
+        beat(client, api_headers)
+        agents._agents["comp-1"]["last_seen"] -= agents.OFFLINE_AFTER_SECONDS + 1
+        scripts_at("v1.1.0")
+        assert self.notice(client) == {}
+
+    def test_not_while_auto_update_will_do_it(self, client, api_headers, scripts_at):
+        beat(client, api_headers)
+        scripts_at("v1.1.0", server="v1.2.0", auto_update=True)
+        assert self.notice(client) == {}
+        # Its one try fails: now it's up to the admin.
+        cmd = beat(client, api_headers)
+        client.post(f"/api/agent/commands/{cmd['id']}/result", json={"ok": False, "message": "HTTP 404"},
+                    headers=api_headers)
+        assert self.notice(client)["computers"] == ["comp-1"]
+
+    def test_auto_update_on_but_held_back(self, client, api_headers, scripts_at):
+        # A newer release than this server is out, so auto_update waits.
+        beat(client, api_headers)
+        scripts_at("v1.1.0", server="v1.1.3", auto_update=True)
+        assert self.notice(client)["computers"] == ["comp-1"]

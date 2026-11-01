@@ -26,7 +26,27 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # The tags and history, for the scripts version below.
+          fetch-depth: 0
           persist-credentials: false
+      # The oldest release with this tag's in-game scripts: the one holding
+      # the last change to oc/ (tests and the debug dumps, which aren't
+      # installed, aside). The page asks admins to update
+      # computers on anything older (gcm/config.py SCRIPTS_VERSION), so a
+      # release that only changed the server asks nothing. Empty for a
+      # manual dispatch.
+      - id: scripts
+        run: |
+          version=
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            changed=$(git log -1 --format=%H "$GITHUB_REF_NAME" -- oc ':!oc/tests' ':!oc/*_dump.lua')
+            if [[ -n "$changed" ]]; then
+              version=$(git tag --contains "$changed" --merged "$GITHUB_REF_NAME" --sort=v:refname \
+                | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)
+            fi
+          fi
+          echo "Scripts version: ${version:-none}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       # No QEMU needed for arm64: the Dockerfile installs the packages for
       # the target platform on the runner's own CPU and runs nothing in the
       # arm64 stage.
@@ -54,7 +74,9 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           # vX.Y.Z on a release; a manual dispatch's branch name never
           # counts as one (gcm/config.py SERVER_VERSION).
-          build-args: GCM_VERSION=${{ github.ref_name }}
+          build-args: |
+            GCM_VERSION=${{ github.ref_name }}
+            GCM_SCRIPTS_VERSION=${{ steps.scripts.outputs.version }}
           # A registry cache rather than type=gha: the Actions cache a tag
           # run writes can't be read by the next tag's run, so every
           # release would start cold. Spelled out because image refs must

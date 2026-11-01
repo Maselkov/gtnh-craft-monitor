@@ -91,6 +91,13 @@
     <p>Sign in with the access token one of its admins gave you.</p>
   </div>
   <div class="stale-banner" id="loadError" role="alert"></div>
+  <!-- Admins: computers whose scripts this server has outgrown (agents.js). -->
+  <div class="gamedata-note scripts-notice" id="scriptsNotice" hidden>
+    <span id="scriptsNoticeText"></span>
+    <button class="range-btn" data-action="scripts-notice-update">Update&hellip;</button>
+    <a id="scriptsNoticeChanges" target="_blank" rel="noopener">What changed</a>
+    <button class="history-close-btn scripts-notice-dismiss" data-action="dismiss-scripts-notice" title="Don't show this again for this version">&times;</button>
+  </div>
 
   <div id="craftsTab">
     <div class="sub" id="sourceLine">Waiting for data&hellip;</div>
@@ -439,7 +446,7 @@
       <div class="status-body">
         <div class="status-heading">Server</div>
         <div id="serverHealth" class="server-health"></div>
-        <div class="status-heading">Computers</div>
+        <div class="status-heading computers-heading">Computers</div>
         <div id="agentsLatest" class="modal-note"></div>
         <div class="agent-settings">
           <label class="agent-setting"><input type="checkbox" id="autoRestartToggle" disabled>

@@ -97,6 +97,15 @@ h1 {
 .gamedata-note[hidden], .connect-note[hidden] {
   display: none;
 }
+.scripts-notice {
+  margin-top: 12px;
+}
+.scripts-notice a {
+  color: var(--accent);
+}
+.scripts-notice-dismiss {
+  margin-left: auto;
+}
 /* auth.js sets body.is-admin. */
 body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
   display: none;
