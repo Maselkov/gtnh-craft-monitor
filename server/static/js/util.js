@@ -204,12 +204,13 @@ export function formatRate(perSecond, unit = '') {
   return `${value > 0 ? '+' : '−'}${formatQty(Math.abs(value))}${unit}/${per}`;
 }
 
-// Admin notices an admin can dismiss (gcm/notices.py: the pattern check,
-// scripts and game data notices, the Network tab's Interface Terminal
-// note), kept on the server so dismissing one holds for every admin on
-// every browser. `value` says which instance was dismissed - a version,
-// say, so the next one shows again. null until loaded: a notice stays
-// hidden rather than flash up and vanish.
+// Notices someone can dismiss (gcm/notices.py: the pattern check, for
+// operators too; the scripts and game data notices and the Network tab's
+// Interface Terminal note, for admins), kept on the server so dismissing
+// one holds for everyone who sees it, on every browser. `value` says
+// which instance was dismissed - a version, say, so the next one shows
+// again. null until loaded: a notice stays hidden rather than flash up
+// and vanish.
 let dismissedNotes = null;
 
 // Where browsers kept these before the server did: moved over once.
@@ -220,13 +221,14 @@ const LEGACY_NOTE_KEYS = {
   terminal: 'gtnhCraftMonitor.terminalNoteDismissed',
 };
 
-export async function loadDismissedNotes(admin) {
-  if (!admin) {
+// operator: whether the user sees any of them (an operator or admin).
+export async function loadDismissedNotes(operator) {
+  if (!operator) {
     dismissedNotes = {};
     return;
   }
   try {
-    const res = await fetch('/api/admin/notices');
+    const res = await fetch('/api/notices');
     dismissedNotes = res.ok ? (await res.json()).dismissed : {};
   } catch (e) {
     dismissedNotes = {};
@@ -249,7 +251,7 @@ export function noteClosed(name, value = '1') {
 // until a reload.
 export function closeNote(name, value = '1') {
   dismissedNotes = { ...dismissedNotes, [name]: value };
-  return fetch(`/api/admin/notices/${encodeURIComponent(name)}`, {
+  return fetch(`/api/notices/${encodeURIComponent(name)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ value }),

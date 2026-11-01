@@ -106,7 +106,7 @@ test('dismissing a notice saves it on the server, and holds here if that fails',
   try {
     await loadDismissedNotes(true);
     assert.equal(await closeNote('scripts_update', '7.2.0'), false);
-    assert.deepEqual(fake.puts, [['/api/admin/notices/scripts_update', '7.2.0']]);
+    assert.deepEqual(fake.puts, [['/api/notices/scripts_update', '7.2.0']]);
     assert.equal(noteClosed('scripts_update', '7.2.0'), true);
   } finally {
     fake.restore();
@@ -122,7 +122,7 @@ test('a dismissal this browser kept is moved to the server once', async () => {
     await loadDismissedNotes(true);
     await settle();
     // The server's own dismissal wins over an older one kept here.
-    assert.deepEqual(fake.puts, [['/api/admin/notices/terminal', '1']]);
+    assert.deepEqual(fake.puts, [['/api/notices/terminal', '1']]);
     assert.equal(noteClosed('terminal'), true);
     assert.equal(noteClosed('gamedata', '2.9.0>2.9.1'), true);
     assert.equal(fake.stored.size, 0);

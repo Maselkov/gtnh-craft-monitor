@@ -11,6 +11,9 @@ from gcm import auth, gamedata, gamedata_check, recipes
 
 bp = Blueprint("gamedata", __name__)
 
+NO_UPGRADE = ("There's no upgrade to check yet: the pattern check compares the game data in use with the "
+              "version used before it, and the game data hasn't been switched from one version to another.")
+
 
 @bp.route("/api/admin/gamedata", methods=["GET"])
 @auth.admin_required
@@ -71,8 +74,24 @@ def admin_recipe_check_get():
     (previous -> selected). {"state": "preparing"} while recipes download
     or index; poll again."""
     default_from, default_to = recipes.default_versions()
-    from_version = request.args.get("from") or default_from
-    to_version = request.args.get("to") or default_to
+    return _recipe_check(request.args.get("from") or default_from, request.args.get("to") or default_to)
+
+
+@bp.route("/api/recipe-check", methods=["GET"])
+@auth.login_required
+@auth.operator_required
+def recipe_check_get():
+    """The last upgrade's check (previous -> selected), for operators too:
+    they fix patterns in game. Only that pair, whose result the notice
+    already asks for: another version means downloading its recipes,
+    which is an admin's call (/api/admin/recipe-check)."""
+    from_version, to_version = recipes.default_versions()
+    if not to_version:
+        return jsonify({"state": "error", "error": NO_UPGRADE}), 409
+    return _recipe_check(from_version, to_version)
+
+
+def _recipe_check(from_version, to_version):
     state, body = recipes.result(from_version, to_version)
     if state == "error":
         return jsonify({"state": "error", "error": body}), 409
@@ -81,9 +100,10 @@ def admin_recipe_check_get():
     return jsonify({"state": "ready", **body})
 
 
-@bp.route("/api/admin/recipe-notice", methods=["GET"])
-@auth.admin_required
-def admin_recipe_notice_get():
+@bp.route("/api/recipe-notice", methods=["GET"])
+@auth.login_required
+@auth.operator_required
+def recipe_notice_get():
     """For the page's notice that the last upgrade broke or changed
     patterns (recipes.notice()): {from, to, counts}, or {}."""
     return jsonify(recipes.notice())

@@ -1,9 +1,12 @@
-// Pattern check (admins): the network's patterns held against two GTNH
-// versions' GregTech recipes, to find the ones an update breaks
-// (server/gcm/recipes.py). Opened from the Game data dialog, or from the
-// page-wide notice an upgrade that affects patterns brings up.
+// Pattern check: the network's patterns held against two GTNH versions'
+// GregTech recipes, to find the ones an update breaks
+// (server/gcm/recipes.py). The last upgrade's check is for operators
+// too, who fix patterns in game: from the settings menu, or the
+// page-wide notice an upgrade that affects patterns brings up. Any other
+// two versions are an admin's, from the Game data dialog: checking one
+// downloads its recipes.
 
-import { AUTH_USER } from './auth.js';
+import { closeSettingsMenu, isOperator } from './auth.js';
 import {
   closeNote, delegateActions, escapeHtml, iconClass, iconUrl, noteClosed, onBackdropClick,
 } from './util.js';
@@ -156,13 +159,14 @@ function stopPolling() {
 
 async function load(from, to) {
   stopPolling();
-  const params = new URLSearchParams();
-  if (from) params.set('from', from);
-  if (to) params.set('to', to);
+  // Neither given: the last upgrade's, which operators may see too.
+  const url = from && to
+    ? `/api/admin/recipe-check?${new URLSearchParams({ from, to })}`
+    : '/api/recipe-check';
   let response;
   let data;
   try {
-    response = await fetch(`/api/admin/recipe-check?${params}`);
+    response = await fetch(url);
     data = await response.json();
   } catch (e) {
     showError('Could not check the patterns.');
@@ -183,8 +187,9 @@ async function load(from, to) {
   render(data);
 }
 
+// from and to: two versions (admins); left out, the last upgrade's.
 export function openRecipeCheck(from, to) {
-  if (!AUTH_USER || AUTH_USER.role !== 'admin') return;
+  if (!isOperator()) return;
   showError('');
   document.getElementById('recipeCheckTitle').textContent = 'Pattern check';
   document.getElementById('recipeCheckSummary').textContent = 'Checking...';
@@ -217,8 +222,7 @@ function noticeKey(n) {
 
 function renderNotice() {
   const el = document.getElementById('recipeNotice');
-  const admin = Boolean(AUTH_USER && AUTH_USER.role === 'admin');
-  if (!admin || !notice || !notice.to || noteClosed(NOTICE, noticeKey(notice))) {
+  if (!isOperator() || !notice || !notice.to || noteClosed(NOTICE, noticeKey(notice))) {
     el.hidden = true;
     return;
   }
@@ -227,13 +231,13 @@ function renderNotice() {
 }
 
 export async function updateRecipeNotice() {
-  if (!AUTH_USER || AUTH_USER.role !== 'admin') {
+  if (!isOperator()) {
     notice = null;
     renderNotice();
     return;
   }
   try {
-    const res = await fetch('/api/admin/recipe-notice');
+    const res = await fetch('/api/recipe-notice');
     if (res.ok) notice = await res.json();
   } catch (e) { /* keep what was shown */ }
   renderNotice();
@@ -245,7 +249,8 @@ export function setupRecipeCheckActions() {
   setInterval(updateRecipeNotice, NOTICE_MS);
   delegateActions(document, {
     'close-recipe-check': () => closeRecipeCheck(),
-    'recipe-notice-show': () => openRecipeCheck(notice.from, notice.to),
+    'recipe-notice-show': () => openRecipeCheck(),
+    'open-pattern-check': () => { closeSettingsMenu(); openRecipeCheck(); },
     'dismiss-recipe-notice': () => {
       closeNote(NOTICE, noticeKey(notice));
       renderNotice();

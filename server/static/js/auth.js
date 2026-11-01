@@ -54,13 +54,14 @@ function updateAuthenticationControl() {
   adminButton.style.display = adminVisible ? '' : 'none';
   document.body.classList.toggle('is-admin', Boolean(adminVisible));
   document.getElementById('gamedataBtn').style.display = adminVisible ? '' : 'none';
+  document.getElementById('patternCheckBtn').style.display = isOperator() ? '' : 'none';
   document.getElementById('webhooksBtn').style.display = adminVisible ? '' : 'none';
   document.getElementById('backupBtn').style.display = adminVisible ? '' : 'none';
   document.getElementById('agentsBtn').style.display = adminVisible ? '' : 'none';
   if (AUTH_USER) syncPushSubscription();
   updateGameDataNote();
-  // The admin notices wait for which of them admins dismissed.
-  loadDismissedNotes(Boolean(adminVisible)).then(() => {
+  // The notices wait for which of them someone dismissed.
+  loadDismissedNotes(isOperator()).then(() => {
     updateScriptsNotice();
     updateGameDataNotice();
     updateRecipeNotice();

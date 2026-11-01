@@ -159,7 +159,7 @@ so a token can be replaced without losing data.
 | Role | Can |
 |---|---|
 | Viewer | View everything; keep personal pins and completion history |
-| Operator | Also request and cancel crafts |
+| Operator | Also request and cancel crafts, and see the last game update's [pattern check](using.md#pattern-check) |
 | Admin | Also manage users and tokens |
 
 The first admin is made with the setup link from the server's log (see the

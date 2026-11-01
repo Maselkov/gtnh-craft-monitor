@@ -1,5 +1,5 @@
 """Sign-in/sign-out, first-run setup, admin user/token management, and
-the notices admins dismiss."""
+the page's notices someone dismissed."""
 
 from flask import Blueprint, g, jsonify, request
 
@@ -99,24 +99,26 @@ def admin_visibility_put():
     return jsonify({"private": private})
 
 
-@bp.route("/api/admin/notices", methods=["GET"])
-@auth.admin_required
-def admin_notices_get():
-    """{"dismissed": {name: value}}: the notices admins dismissed, and for
-    which value (gcm/notices.py)."""
-    return jsonify({"dismissed": notices.dismissed()})
+@bp.route("/api/notices", methods=["GET"])
+@auth.login_required
+@auth.operator_required
+def notices_get():
+    """{"dismissed": {name: value}}: the notices this user sees that were
+    dismissed, and for which value (gcm/notices.py)."""
+    return jsonify({"dismissed": notices.dismissed(g.user)})
 
 
-@bp.route("/api/admin/notices/<name>", methods=["PUT"])
-@auth.admin_required
-def admin_notice_put(name):
+@bp.route("/api/notices/<name>", methods=["PUT"])
+@auth.login_required
+@auth.operator_required
+def notice_put(name):
     """Body: {"value": str} - dismisses the notice for that value, for
-    every admin."""
+    everyone who sees it."""
     payload = request.get_json(silent=True)
-    error = notices.dismiss(name, payload.get("value") if isinstance(payload, dict) else None)
+    error = notices.dismiss(g.user, name, payload.get("value") if isinstance(payload, dict) else None)
     if error:
-        return jsonify({"error": error}), 400
-    return admin_notices_get()
+        return jsonify({"error": error[0]}), error[1]
+    return notices_get()
 
 
 @bp.route("/api/admin/users", methods=["POST"])

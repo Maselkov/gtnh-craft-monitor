@@ -1722,6 +1722,14 @@ async function main() {
     await waitFor('check closed', `!visible($('#recipeCheckModal')) && visible($('#gamedataModal'))`);
     await evaluate(`pressKey('Escape'), true`);
     await waitFor('game data closed', `!visible($('#gamedataModal'))`);
+    // The settings menu's Pattern check (operators' too) is the last
+    // upgrade's only, and the game data was never switched.
+    await click(`$('#settingsBtn')`);
+    await click(`$('#patternCheckBtn')`);
+    await waitFor('no upgrade yet', `visible($('#recipeCheckModal'))
+      && $('#recipeCheckError').textContent.startsWith("There's no upgrade to check yet")`);
+    await evaluate(`pressKey('Escape'), true`);
+    await waitFor('check closed again', `!visible($('#recipeCheckModal'))`);
   });
 
   step('admin: a notice when the game data looks older than the game', async () => {

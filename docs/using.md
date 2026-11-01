@@ -180,19 +180,23 @@ check compares two GTNH versions' GregTech recipes and lists the patterns
 a change affects. It needs your patterns, so an
 [ME Interface Terminal](in-game.md#me-interface-terminal).
 
-- **Before updating:** **Settings (⚙) → Game data**, pick the new version
-  in the list, then **Check patterns** under *Pattern check*. Only that
-  version's recipes are downloaded (about 2 MB); the icons in use don't
-  change.
+- **Before updating** (admins): **Settings (⚙) → Game data**, pick the
+  new version in the list, then **Check patterns** under *Pattern check*.
+  Only that version's recipes are downloaded (about 2 MB); the icons in
+  use don't change.
 - **After updating:** if you forget to switch the game data, admins get a
   notice once your patterns or crafting jobs use items only a newer
   version has (see
-  [When the game updates](server.md#when-the-game-updates)). Once you
-  switch the game data to the new version, admins get a notice at the top
-  of the page if the update affects any pattern. **Show patterns** opens
-  the list. Picking the version in use and **Check patterns** shows it
-  again later. The notice's &times; hides it for that update, for every
-  admin.
+  [When the game updates](server.md#when-the-game-updates)). Once an
+  admin switches the game data to the new version, operators and admins
+  get a notice at the top of the page if the update affects any pattern.
+  **Show patterns** opens the list, and **Settings (⚙) → Pattern check**
+  shows it again later. The notice's &times; hides it for that update,
+  for every operator and admin.
+
+Operators see only the last update's check (the game data in use against
+the version before it): checking another version downloads its recipes,
+which is an admin's call. Viewers don't see the check.
 
 Each pattern lands in one of these:
 
