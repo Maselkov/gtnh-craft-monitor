@@ -16,6 +16,7 @@
 # images, or to the other's instance.
 #
 # DEPLOY_DIR holds a copy of deploy/docker-compose.yml, .env and data/.
+# Each deploy sets GCM_TAG in .env to the version it deployed.
 # testing's .env needs its own container name and port, and leaves out
 # production's webhooks:
 #
@@ -50,6 +51,15 @@ HEALTH_URL=${HEALTH_URL:-$default_url}
 
 version=${SSH_ORIGINAL_COMMAND:-}
 version=${version#deploy }
+# grep matches line by line, so a version with a newline in it would pass
+# on one good line and write the rest into .env.
+case $version in
+    *"
+"*)
+        echo "usage: $usage" >&2
+        exit 2
+        ;;
+esac
 if ! printf '%s\n' "$version" | grep -Eqx "$tag_pattern"; then
     echo "usage: $usage" >&2
     exit 2
@@ -63,7 +73,13 @@ trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
 printf '%s' "$registry_token" |
     docker login ghcr.io -u "$registry_user" --password-stdin >/dev/null
 
-export GCM_TAG="$version"
+# Kept in .env, not only exported, so a plain `docker compose up -d` on the
+# host keeps the deployed version instead of falling back to latest.
+# Rewritten in place, with no temp file, to keep .env's owner and mode and
+# never leave a copy of its secrets behind.
+touch .env
+kept=$(grep -v '^GCM_TAG=' .env || true)
+{ [ -z "$kept" ] || printf '%s\n' "$kept"; echo "GCM_TAG=$version"; } > .env
 docker compose pull
 docker compose up -d --remove-orphans
 # Only this project's images, and only those no container uses: each

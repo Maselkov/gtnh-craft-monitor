@@ -41,7 +41,7 @@ again.
 
 The Compose file runs the newest release (`latest`); to stay on one, set
 `GCM_TAG` in `.env` to its version, e.g. `GCM_TAG=5.0.0`.
-`deploy/gcm-deploy.sh` sets it on each release deploy. Updating is covered
+`deploy/gcm-deploy.sh` writes the version it deploys there. Updating is covered
 in the [README](../README.md#updating).
 
 To run a second copy on the same host, put the Compose file in its own
