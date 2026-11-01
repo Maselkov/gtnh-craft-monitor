@@ -206,6 +206,7 @@ export function closeRecipeCheck() {
 // ---------- the notice after an upgrade ----------
 
 export function noticeText(n) {
+  if (n.error) return `The pattern check for GTNH ${n.from} to ${n.to} couldn't run. ${n.error}`;
   const c = n.counts;
   const parts = [
     c.broken && `${c.broken} broken`,
@@ -216,8 +217,9 @@ export function noticeText(n) {
   return `GTNH ${n.to} changed recipes ${total === 1 ? 'a pattern uses' : `${total} patterns use`} (${parts.join(', ')}), compared with ${n.from}.`;
 }
 
-function noticeKey(n) {
-  return `${n.from}>${n.to}`;
+// Dismissing the error doesn't hide the result once the check runs.
+export function noticeKey(n) {
+  return n.error ? `${n.from}>${n.to} error` : `${n.from}>${n.to}`;
 }
 
 function renderNotice() {
@@ -227,6 +229,7 @@ function renderNotice() {
     return;
   }
   document.getElementById('recipeNoticeText').textContent = noticeText(notice);
+  document.getElementById('recipeNoticeShow').hidden = Boolean(notice.error);
   el.hidden = false;
 }
 

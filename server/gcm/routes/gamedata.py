@@ -4,7 +4,7 @@ checking the network's patterns against another version's recipes; and
 the notice that the game data looks older than the game. The logic is in
 gcm/gamedata.py, gcm/recipes.py and gcm/gamedata_check.py."""
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, g, jsonify, request
 
 from gcm import auth, gamedata, gamedata_check, recipes
 
@@ -105,8 +105,13 @@ def _recipe_check(from_version, to_version):
 @auth.operator_required
 def recipe_notice_get():
     """For the page's notice that the last upgrade broke or changed
-    patterns (recipes.notice()): {from, to, counts}, or {}."""
-    return jsonify(recipes.notice())
+    patterns (recipes.notice()): {from, to, counts}, {from, to, error} for
+    admins when the check couldn't run, or {}."""
+    notice = recipes.notice()
+    # Only an admin can do anything about it.
+    if "error" in notice and not auth.is_admin(g.user):
+        notice = {}
+    return jsonify(notice)
 
 
 @bp.route("/api/admin/gamedata-notice", methods=["GET"])

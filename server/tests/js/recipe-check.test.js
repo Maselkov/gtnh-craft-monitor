@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  amountText, machineText, noticeText, removedText, summaryText, versionsToCheck,
+  amountText, machineText, noticeKey, noticeText, removedText, summaryText, versionsToCheck,
 } from '../../static/js/recipe-check.js';
 
 test('picking another version checks it against the one in use', () => {
@@ -55,4 +55,11 @@ test('the notice only names what there is', () => {
     'GTNH 2.9.0 changed recipes a pattern uses (1 broken), compared with 2.9.0-RC-1.');
   assert.equal(noticeText({ from: 'a', to: 'b', counts: { broken: 2, moved: 1, changed: 3 } }),
     'GTNH b changed recipes 6 patterns use (2 broken, 1 moved to another machine, 3 changed), compared with a.');
+});
+
+test("a check that couldn't run is said, and dismissed apart from its result", () => {
+  const failed = { from: '2.9.0-RC-2', to: '2.9.0', error: "Couldn't index GTNH 2.9.0-RC-2's recipes: it was killed." };
+  assert.equal(noticeText(failed),
+    "The pattern check for GTNH 2.9.0-RC-2 to 2.9.0 couldn't run. Couldn't index GTNH 2.9.0-RC-2's recipes: it was killed.");
+  assert.notEqual(noticeKey(failed), noticeKey({ from: '2.9.0-RC-2', to: '2.9.0', counts: {} }));
 });

@@ -106,10 +106,11 @@
     <button class="range-btn" id="gamedataNoticeSwitch" data-action="gamedata-notice-switch"></button>
     <button class="history-close-btn note-dismiss" data-action="dismiss-gamedata-notice" title="Don't show this again for this suggestion">&times;</button>
   </div>
-  <!-- Admins: patterns the last GTNH upgrade's recipe changes affect (recipe-check.js). -->
+  <!-- Operators: patterns the last GTNH upgrade's recipe changes affect, or
+       for admins, why that couldn't be checked (recipe-check.js). -->
   <div class="gamedata-note scripts-notice" id="recipeNotice" hidden>
     <span id="recipeNoticeText"></span>
-    <button class="range-btn" data-action="recipe-notice-show">Show patterns</button>
+    <button class="range-btn" id="recipeNoticeShow" data-action="recipe-notice-show">Show patterns</button>
     <button class="history-close-btn note-dismiss" data-action="dismiss-recipe-notice" title="Don't show this again for this upgrade">&times;</button>
   </div>
 

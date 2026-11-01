@@ -5,8 +5,11 @@ check (gcm/recipes.py) only ever looks at the few that make what the
 network's patterns make.
 
 gcm/recipes.py builds one per version by running this file as a script,
-as gamedata_index.py is built, so the memory parsing the JSON takes goes
-back to the OS when it exits. Standard library only, for the same reason.
+as gamedata_index.py is built, so the memory parsing the JSON takes
+(~200 MB for GTNH 2.9) goes back to the OS when it exits. Standard
+library only, for the same reason. A host serving several servers the
+same bundles (gcm-hosting) can build each one beside its bundle's recipes
+instead, as FILE, so they don't each build their own.
 
 A recipe is kept as its JSON object with the file's item and fluid
 indices swapped for their keys: {"i": [[item key, n], ...], "f":
@@ -28,6 +31,8 @@ from urllib.parse import quote
 # Bumped when the schema or what goes in it changes: an index of another
 # format is built again.
 FORMAT = 2
+# An index built beside a bundle's recipes.json.gz is called this.
+FILE = "recipes.sqlite"
 ITEM, FLUID = 0, 1
 
 SCHEMA = """

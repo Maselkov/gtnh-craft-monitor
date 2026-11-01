@@ -88,18 +88,25 @@ def source(version):
 
 
 def index(version):
-    """version's open RecipeIndex, built first if it's missing or out of
-    date, or None without recipes for it."""
+    """version's open RecipeIndex, or None without recipes for it. One
+    that came with the bundle (recipe_index.FILE beside its recipes) is
+    used as it is; otherwise it's built in this server's own directory
+    first if it's missing or out of date. Raises ValueError if building
+    it fails."""
     path = source(version)
     if path is None:
         return None
-    out = os.path.join(_dir(), f"{version}.sqlite")
+    shipped = os.path.join(os.path.dirname(path), recipe_index.FILE)
+    if os.path.dirname(path) != _dir() and recipe_index.is_current(shipped, path):
+        out = shipped
+    else:
+        out = os.path.join(_dir(), f"{version}.sqlite")
     with _lock:
         cached = _indexes.get(version)
-    if cached and recipe_index.is_current(out, path):
+    if cached and cached[0] == out and recipe_index.is_current(out, path):
         return cached[1]
-    os.makedirs(_dir(), exist_ok=True)
-    if not recipe_index.is_current(out, path):
+    if out != shipped and not recipe_index.is_current(out, path):
+        os.makedirs(_dir(), exist_ok=True)
         log.info("Indexing the %s recipes...", version)
         started = time.monotonic()
         # As gamedata.index_path(): a separate process, so the memory the
@@ -109,8 +116,12 @@ def index(version):
             [sys.executable, "-I", "-c", script, recipe_index.__file__, path, out], capture_output=True, text=True
         )
         if result.returncode != 0:
-            log.error("Indexing the %s recipes failed:\n%s", version, result.stderr.strip())
-            return None
+            log.error("Indexing the %s recipes failed (exit status %d):\n%s", version, result.returncode,
+                      result.stderr.strip())
+            # Killed without a word: most likely by a memory limit.
+            reason = ("it was killed, most likely for running out of memory (it takes about 200 MB)"
+                      if result.returncode < 0 else (result.stderr.strip().splitlines() or ["unknown error"])[-1])
+            raise ValueError(f"Couldn't index GTNH {version}'s recipes: {reason}.")
         log.info("Indexed the %s recipes in %.1fs", version, time.monotonic() - started)
     opened = recipe_index.RecipeIndex(out)
     with _lock:
@@ -669,15 +680,16 @@ def notice():
     """For the page's notice after an upgrade: {from, to, counts} when the
     upgrade from the previous version breaks or changes patterns,
     {"pending": True} while that's being worked out in the background,
-    {} otherwise."""
+    {from, to, error} if it couldn't be, {} otherwise."""
     from_version, to_version = default_versions()
     if not (from_version and to_version) or patterns.current()[1] is None:
         return {}
     state, checked = result(from_version, to_version)
     if state == "preparing":
         return {"pending": True}
-    if state != "ready":
-        return {}
+    if state == "error":
+        # Said, rather than no notice: that would read as nothing broken.
+        return {"from": from_version, "to": to_version, "error": checked}
     counts = {k: checked["counts"][k] for k in ("broken", "moved", "changed")}
     if not any(counts.values()):
         return {}

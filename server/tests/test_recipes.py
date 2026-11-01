@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import shutil
+import subprocess
 import time
 
 import pytest
@@ -367,6 +368,60 @@ def with_recipes(bundle, data, sha256=None):
     manifest["files"]["recipes.json.gz"] = {"size": len(data), "sha256": sha256 or hashlib.sha256(data).hexdigest()}
     bundle["data.json"] = json.dumps(manifest).encode()
     return bundle
+
+
+class TestIndexes:
+    @pytest.fixture()
+    def shipped(self, tmp_path, bundles, monkeypatch):
+        """Each version's recipes in a bundle directory of its own, with an
+        index built beside them, as a host builds them for shared bundles."""
+        files = {}
+        for version, path in bundles.items():
+            bundle = tmp_path / "shared" / version
+            bundle.mkdir(parents=True)
+            files[version] = str(bundle / recipes.FILE)
+            shutil.copy(path, files[version])
+            recipe_index.build(files[version], str(bundle / recipe_index.FILE))
+        monkeypatch.setattr(gamedata, "bundle_file", lambda version, name: files.get(version))
+        return files
+
+    def test_an_index_beside_the_bundle_is_used_as_it_is(self, admin, shipped, monkeypatch):
+        def no_building(*args, **kwargs):
+            raise AssertionError("built an index the bundle came with")
+
+        monkeypatch.setattr(subprocess, "run", no_building)
+        admin.get("/api/admin/recipe-check")
+        finished()
+        assert admin.get("/api/admin/recipe-check").get_json()["state"] == "ready"
+        assert not os.path.exists(os.path.join(config.DATA_DIR, "recipes"))
+
+    def test_an_out_of_date_one_is_built_again_in_the_servers_own_directory(self, admin, shipped):
+        write_recipes(shipped["2.9.0"], {MIXER: [fertilizer()], EBF: [ebf(gas="helium"), ebf(dust=2)]})
+        admin.get("/api/admin/recipe-check")
+        finished()
+        assert admin.get("/api/admin/recipe-check").get_json()["state"] == "ready"
+        assert os.listdir(os.path.join(config.DATA_DIR, "recipes")) == ["2.9.0.sqlite"]
+
+    def test_building_one_out_of_memory_is_said(self, admin, client, bundles, monkeypatch):
+        # How it ends when the kernel kills it: no output, a negative status.
+        monkeypatch.setattr(subprocess, "run", lambda args, **kwargs: subprocess.CompletedProcess(args, -9, "", ""))
+        admin.get("/api/recipe-notice")
+        finished()
+        notice = admin.get("/api/recipe-notice").get_json()
+        assert (notice["from"], notice["to"]) == ("2.9.0-RC-1", "2.9.0")
+        assert "2.9.0-RC-1's recipes" in notice["error"] and "memory" in notice["error"]
+        # Operators can't do anything about it.
+        login_as(client, "usr_op", "operator")
+        assert client.get("/api/recipe-notice").get_json() == {}
+
+    def test_building_one_failing_says_why(self, admin, bundles, monkeypatch):
+        failed = subprocess.CompletedProcess([], 1, "", "Traceback ...\nValueError: not a recipes file\n")
+        monkeypatch.setattr(subprocess, "run", lambda args, **kwargs: failed)
+        admin.get("/api/admin/recipe-check")
+        finished()
+        response = admin.get("/api/admin/recipe-check")
+        assert response.status_code == 409
+        assert response.get_json()["error"] == "Couldn't index GTNH 2.9.0-RC-1's recipes: ValueError: not a recipes file."
 
 
 class TestFetching:

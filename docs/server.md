@@ -288,8 +288,8 @@ Game data also holds the version's GregTech recipes (`recipes.json.gz`,
 about 2 MB), for the [pattern check](using.md#pattern-check). Checking
 against a version that isn't installed downloads only that file, into
 `DATA_DIR/recipes/`, where each version's recipes are also indexed (about
-45 MB per version, built in a couple of seconds the first time it's
-checked). Only the versions in use, the one before it, and the last one
+60 MB per version, built in a couple of seconds the first time it's
+checked, with about 200 MB of memory). Only the versions in use, the one before it, and the last one
 checked against are kept there. Game data built before recipes were
 exported can't be compared until it's rebuilt.
 
@@ -306,8 +306,8 @@ textures the shared copy lacks downloads the whole version into that
 server's own `DATA_DIR/gamedata`. Shared versions are never marked **update
 available**: replace them there when a version is rebuilt. Then index each
 one there (`python app.py index-gamedata <bundle directory>`, a couple of
-seconds), or every server builds its own copy of the index the first time
-it uses that version.
+seconds), or every server builds its own copy of its indexes (game data,
+and recipes if the bundle has them) the first time it uses that version.
 
 Icons come in two texture sets: the pack's own (**Default**), and
 **Faithful 32x**, rendered with the

@@ -971,7 +971,11 @@ provider's other patterns matched alone, else its own single match. Each
 version's recipes are a separate SQLite file (gcm/recipe_index.py,
 ~60 MB for 175k recipes), built in a subprocess like the game data index,
 because the check reads only the few recipes the patterns' outputs lead
-to. It indexes what recipes take as well as what they make, so a broken
+to. Building one takes ~200 MB, more than a hosted server's whole memory
+limit, so as with the game data index, one beside a bundle's recipes
+(`recipes.sqlite`, `app.py index-gamedata` builds it) is used as it is.
+A check that can't run is a notice for admins, not no notice: that would
+read as nothing broken. It indexes what recipes take as well as what they make, so a broken
 pattern whose output nothing makes any more can say whether anything
 still uses it. Only an Unpackager recipe left (TAKE_APART_MAPS) means
 removed: that's how GTNH 2.9.0 retired GT++'s Transmission Components,
