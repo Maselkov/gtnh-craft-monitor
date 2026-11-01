@@ -1213,6 +1213,12 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
   font-size: 15px;
   font-weight: 700;
 }
+/* A plain title takes the free space, so a close button after it sits at
+   the top right, as it does in the history and Ingredients dialogs. */
+.modal-header > .modal-item-name {
+  flex: 1;
+  min-width: 0;
+}
 .history-box {
   width: min(700px, 92vw);
 }
