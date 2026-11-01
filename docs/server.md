@@ -159,8 +159,8 @@ so a token can be replaced without losing data.
 | Role | Can |
 |---|---|
 | Viewer | View everything; keep personal pins and completion history |
-| Operator | Also request and cancel crafts, and see the last game update's [pattern check](using.md#pattern-check) |
-| Admin | Also manage users and tokens |
+| Operator | Also request and cancel crafts, set stock targets, and see the last game update's [pattern check](using.md#pattern-check) |
+| Admin | Also manage users, computers, game data, webhooks and backups |
 
 The first admin is made with the setup link from the server's log (see the
 [Quick start](../README.md#quick-start)). Opening the page without it shows
@@ -177,11 +177,18 @@ docker compose exec gtnh-craft-monitor python app.py create-admin "Your name"
 
 Managing users:
 
-- Each generated token is shown once. Send it to its owner over a secure
-  channel.
+- New users are operators unless you pick another role; the dialog says
+  what the picked role can do.
+- Each generated token is shown once, in its user's row. Send it to its
+  owner over a secure channel.
+- Each user's tokens show when they were made and last used.
+- **History** lists the user's craft requests and cancels, newest first:
+  the item, whether it started or failed (and why), and which CPU.
+  **Stock refills** adds the requests their keep-in-stock targets made;
+  the server makes those, under whoever last set the target.
 - **Revoke** invalidates a token and ends its sessions immediately.
 - **New token** replaces a user's current token in one step.
-- **Delete** permanently removes a user with their tokens, sessions,
+- **Delete** (not on your own account) permanently removes a user with their tokens, sessions,
   pins and pending notifications. Their craft request history is kept.
 
 ### Private servers

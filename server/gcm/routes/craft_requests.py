@@ -185,7 +185,9 @@ def craft_cancel_post():
             "reason": None,
             "created_at": created_at,
         },
-        lambda req_id: store.requests.record_cancel(req_id, user_id, cpu_name, created_at),
+        lambda req_id: store.requests.record_cancel(
+            req_id, user_id, cpu_name, created_at, job.get("final_output"), job.get("final_output_icon")
+        ),
     )
     return jsonify({"ok": True, "id": req_id})
 

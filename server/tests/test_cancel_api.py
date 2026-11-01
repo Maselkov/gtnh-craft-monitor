@@ -122,6 +122,18 @@ class TestCancelLifecycle:
             conn.close()
         assert row == ("resolved", 0, "already finished")
 
+    def test_user_history_names_the_cancelled_item(self, client, api_headers):
+        client.post("/api/crafts", headers=api_headers, json={"source": "me_controller", "jobs": [
+            {"name": "W01", "busy": True, "final_output": "Iron Ingot", "final_output_mod": "minecraft",
+             "final_output_internal": "iron_ingot", "final_output_damage": 0}]})
+        login_as(client, "usr_alice", role="operator")
+        req_id = client.post("/api/craft/cancel", json={"cpu_name": "W01"}).get_json()["id"]
+        client.post(f"/api/craft/cancel/{req_id}/result", json={"success": True}, headers=api_headers)
+        login_as(client, "usr_admin", role="admin")
+        [event] = client.get("/api/admin/users/usr_alice/history").get_json()["events"]
+        assert (event["type"], event["target"], event["cpu_name"], event["success"]) == (
+            "cancel", "Iron Ingot", "W01", True)
+
     def test_result_for_unknown_id_is_404(self, client, api_headers):
         res = client.post(
             "/api/craft/cancel/99999/result",

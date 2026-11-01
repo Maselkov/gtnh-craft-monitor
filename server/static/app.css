@@ -9,6 +9,11 @@
   --idle: #4caf7d;
   --stale: #ff6b6b;
   --essentia: #b48cff;
+  /* Fills under white text (primary and destructive buttons, the stale
+     banner): --accent and --stale darkened to 4.5:1 against white, in
+     either theme. */
+  --accent-fill: #2272c9;
+  --danger-fill: #d13b3b;
   /* NEI's yellow and aqua for its # and $ search prefixes, GregTech's
      green for its =. */
   --search-tooltip: #f2d43d;
@@ -115,7 +120,7 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
 }
 .stale-banner {
   display: none;
-  background: var(--stale);
+  background: var(--danger-fill);
   color: white;
   padding: 8px 12px;
   border-radius: 8px;
@@ -1382,39 +1387,72 @@ body.private-locked #networkTab {
   gap: 6px;
   margin-top: 8px;
 }
+/* Manage users (auth.js): one grid for the list, so each row's role
+   and buttons line up with the others'. */
+.admin-users-box { width: min(640px, 92vw); max-height: calc(100vh - 32px); overflow-y: auto; }
+.admin-section-heading { margin-top: 18px; }
+.admin-form-grid { display: grid; grid-template-columns: minmax(0, 1fr) 130px auto; gap: 8px; }
+.admin-form-grid .modal-amount-input { margin: 0; }
+.admin-role-help { margin: 6px 0 0; }
+#adminUsersError { margin: 8px 0 0; }
 .admin-users {
-  max-height: 220px;
-  overflow-y: auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   border: 1px solid rgba(128,128,128,0.2);
   border-radius: 8px;
-  margin: 12px 0 16px;
-}
-.admin-user-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 9px 11px;
-  border-bottom: 1px solid rgba(128,128,128,0.15);
   font-size: 13px;
 }
+.admin-user-row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+  column-gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(128,128,128,0.15);
+}
 .admin-user-row:last-child { border-bottom: none; }
+.admin-user-row.new { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.admin-users-empty { grid-column: 1 / -1; padding: 10px 12px; color: var(--muted); }
+.admin-user-main { min-width: 0; }
+.admin-user-title { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
 .admin-user-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.admin-user-role { color: var(--muted); font-size: 12px; text-transform: capitalize; flex-shrink: 0; }
-.admin-user-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.admin-history-btn { border: 1px solid rgba(128,128,128,0.3); border-radius: 5px; background: none; color: var(--text); cursor: pointer; font-size: 11px; padding: 3px 6px; }
-.admin-token-list { margin-top: 6px; }
-.admin-token-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; color: var(--muted); font-size: 11px; }
-.admin-token-id { font-family: monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.admin-revoke-btn { margin-left: auto; border: 1px solid rgba(128,128,128,0.3); border-radius: 5px; background: none; color: var(--stale); cursor: pointer; font-size: 11px; padding: 3px 6px; }
-.admin-form-grid { display: grid; grid-template-columns: minmax(0, 1fr) 120px; gap: 8px; }
-.admin-token-result { margin-top: 14px; }
+.admin-user-you { flex-shrink: 0; color: var(--muted); font-size: 11px; }
+.admin-user-role-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.role-badge { text-transform: uppercase; cursor: help; }
+.role-badge.viewer { background: rgba(128,128,128,0.18); color: var(--muted); }
+.role-badge.operator { background: color-mix(in srgb, var(--idle) 22%, transparent); color: color-mix(in srgb, var(--idle) 70%, var(--text)); }
+.role-badge.admin { background: color-mix(in srgb, var(--busy) 25%, transparent); color: color-mix(in srgb, var(--busy) 70%, var(--text)); }
+.role-badge.disabled { background: color-mix(in srgb, var(--stale) 20%, transparent); color: var(--stale); cursor: default; }
+.admin-user-actions { display: flex; align-items: center; gap: 6px; }
+.admin-user-actions .range-btn { padding: 5px 10px; }
+.admin-delete-btn { color: var(--stale); border-color: rgba(255,107,107,0.35); }
+.admin-delete-btn:hover { background: color-mix(in srgb, var(--stale) 15%, transparent); }
+.admin-token-list { margin-top: 3px; }
+.admin-token-row { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; margin-top: 2px; color: var(--muted); font-size: 11px; }
+.admin-token-meta { min-width: 0; }
+.admin-token-revoke { border: none; background: none; padding: 0; color: var(--muted); cursor: pointer; font-size: 11px; text-decoration: underline; flex-shrink: 0; }
+.admin-token-revoke:hover { color: var(--stale); }
+.admin-token-result { grid-column: 1 / -1; margin-top: 10px; }
+.admin-token-result .modal-label { color: var(--text); }
+@media (max-width: 560px) {
+  .admin-form-grid { grid-template-columns: minmax(0, 1fr) 120px; }
+  .admin-form-grid .modal-btn { grid-column: 1 / -1; }
+  .admin-users { display: block; }
+  .admin-user-row { display: flex; flex-wrap: wrap; row-gap: 6px; }
+  .admin-user-main { flex: 1 1 100%; }
+}
 .gamedata-current { font-size: 13px; margin-bottom: 10px; }
 .gamedata-progress { margin-top: 12px; }
 /* Backups dialog (auth.js). */
 .backups-restore-heading { margin-top: 18px; }
 .webhook-urls { resize: vertical; font-family: monospace; font-size: 12px; }
-.restore-file { display: block; width: 100%; margin-bottom: 12px; font-size: 13px; color: var(--text); }
+/* The file input itself is hidden: its label, a normal button, opens it. */
+.restore-pick { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; min-width: 0; }
+.restore-pick-btn { position: relative; flex-shrink: 0; }
+.restore-pick-btn:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.restore-file { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
+.restore-file-name { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gamedata-label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
 .gamedata-credit { margin-top: 6px; color: var(--muted); font-size: 11px; }
 .gamedata-credit a { color: inherit; }
@@ -1423,6 +1461,7 @@ body.private-locked #networkTab {
 .gamedata-unknown ul { margin: 6px 0; padding-left: 18px; max-height: 160px; overflow-y: auto; }
 .gamedata-id { color: var(--muted); font-size: 11px; }
 #gamedataModal .status-heading { margin-top: 18px; }
+#gamedataModal .modal-header + .status-heading { margin-top: 4px; }
 
 /* Pattern check dialog (recipe-check.js): each pattern, then the recipe
    it matched before and what makes it now. */
@@ -1454,12 +1493,22 @@ body.private-locked #networkTab {
 .recipe-stack-amount { color: var(--muted); font-variant-numeric: tabular-nums; }
 .recipe-stack-name { overflow-wrap: anywhere; }
 .recipe-chance { color: var(--muted); font-size: 11px; }
-.admin-token-value { width: 100%; min-height: 70px; resize: vertical; font-family: monospace; font-size: 12px; }
-.user-history-list { max-height: 360px; overflow-y: auto; border: 1px solid rgba(128,128,128,0.2); border-radius: 8px; }
-.user-history-row { padding: 10px 11px; border-bottom: 1px solid rgba(128,128,128,0.15); }
-.user-history-row:last-child { border-bottom: none; }
-.user-history-target { font-size: 13px; font-weight: 600; }
-.user-history-meta { margin-top: 3px; color: var(--muted); font-size: 11px; }
+.admin-token-value { width: 100%; min-height: 70px; resize: vertical; font-family: monospace; font-size: 12px; word-break: break-all; }
+/* User history (auth.js): one user's requests and cancels, drawn like
+   the Crafts tab's Recent crafts. */
+.user-history-box { width: min(620px, 92vw); max-height: calc(100vh - 32px); display: flex; flex-direction: column; }
+.user-history-filters { flex-wrap: wrap; margin-bottom: 12px; }
+/* A switch, not a filter: set apart at the end of the row. */
+.user-history-auto { margin-left: auto; }
+.user-history-list { flex: 1; min-height: 0; overflow-y: auto; margin-top: 0; padding-right: 2px; }
+.user-history-list .empty { color: var(--muted); font-size: 13px; padding: 12px 0; }
+.user-history-row { background: none; }
+.user-history-amount { color: var(--muted); font-weight: 400; }
+.user-history-reason { margin-top: 2px; font-size: 12px; color: var(--stale); overflow-wrap: anywhere; }
+.status-badge.started { background: color-mix(in srgb, var(--idle) 20%, transparent); color: color-mix(in srgb, var(--idle) 70%, var(--text)); }
+.status-badge.cancelled { background: color-mix(in srgb, var(--busy) 22%, transparent); color: color-mix(in srgb, var(--busy) 70%, var(--text)); }
+.status-badge.failed { background: color-mix(in srgb, var(--stale) 20%, transparent); color: var(--stale); }
+.status-badge.waiting { background: rgba(128,128,128,0.18); color: var(--muted); }
 .history-name-wrap {
   flex: 1;
   min-width: 0;
@@ -1598,7 +1647,7 @@ body.private-locked #networkTab {
   cursor: pointer;
 }
 .modal-btn.primary {
-  background: var(--accent);
+  background: var(--accent-fill);
   color: #fff;
 }
 .modal-btn.secondary {
@@ -1606,7 +1655,7 @@ body.private-locked #networkTab {
   color: var(--text);
 }
 .cancel-confirm-btn {
-  background: var(--stale);
+  background: var(--danger-fill);
   color: #fff;
 }
 .toast-container {

@@ -3,7 +3,7 @@ the page's notices someone dismissed."""
 
 from flask import Blueprint, g, jsonify, request
 
-from gcm import auth, config, notices, store
+from gcm import auth, config, icons, notices, store
 
 
 bp = Blueprint("users", __name__)
@@ -178,13 +178,26 @@ def admin_user_token_regenerate(user_id):
 @bp.route("/api/admin/users/<user_id>/history", methods=["GET"])
 @auth.admin_required
 def admin_user_history_get(user_id):
+    """?auto=1 includes the requests the user's keep-in-stock targets made;
+    auto_count is how many there are either way."""
     display_name = store.users.display_name(user_id)
     if display_name is None:
         return jsonify({"error": "unknown user"}), 404
+    events = store.requests.user_activity(user_id, include_auto=request.args.get("auto") == "1")
+    for event in events:
+        # A request's icon is looked up in the game data in use now; a
+        # cancel kept the one its CPU showed, moved to the live bundle.
+        item_icon = event.pop("item_icon")
+        event["icon"] = (
+            icons.resolve_icon(event["mod"], event["internal"], event["damage"], event["target"], kind=event["kind"])
+            if event["type"] == "request"
+            else icons.current_path(item_icon)
+        )
     return jsonify(
         {
             "user": {"id": user_id, "display_name": display_name},
-            "events": store.requests.user_activity(user_id),
+            "events": events,
+            "auto_count": store.requests.user_auto_request_count(user_id),
         }
     )
 
