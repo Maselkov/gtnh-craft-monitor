@@ -1213,8 +1213,11 @@ local function report_crash(report)
   end)
 end
 
+-- Only problems are printed: this runs after boot has drawn the shell
+-- prompt, so a line printed here lands where the shell thinks its cursor
+-- is, and the next command gets typed over it.
 local function service_loop()
-  local me, kind = find_me_component()
+  local me = find_me_component()
   if not me then
     print("[network_browser] No me_controller / me_interface found. Check Adapter placement.")
     running = false
@@ -1230,8 +1233,6 @@ local function service_loop()
     running = false
     return
   end
-
-  print("[network_browser] Using " .. kind .. ". Scanning every " .. CONFIG.SCAN_INTERVAL_SECONDS .. "s.")
 
   -- An error that escapes scan_forever() (running out of memory, most
   -- likely - the three scripts share one computer's) would otherwise kill
@@ -1249,7 +1250,6 @@ local function service_loop()
       sleep_while_running(CONFIG.CRASH_RESTART_SECONDS)
     end
   end
-  print("[network_browser] Stopped.")
 end
 
 -- rc calls these as plain global functions (no local scope - loaded in
@@ -1287,6 +1287,7 @@ end
 -- stopped_on_purpose (a global, so in rc.loaded[name]) tells gcm_agent
 -- not to restart it.
 function stop()
+  print("[network_browser] " .. (is_running() and "Stopping." or "Not running."))
   running = false
   stopped_on_purpose = true
 end

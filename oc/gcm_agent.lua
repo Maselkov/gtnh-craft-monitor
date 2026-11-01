@@ -241,8 +241,10 @@ end
 local running = false
 local worker = nil
 
+-- Only problems are printed: this runs after boot has drawn the shell
+-- prompt, so a line printed here lands where the shell thinks its cursor
+-- is, and the next command gets typed over it.
 local function service_loop()
-  print("[gcm_agent] Reporting every " .. CONFIG.POLL_SECONDS .. "s.")
   while running do
     local reply = post("/heartbeat", heartbeat_body())
     if reply and type(reply.auto_restart) == "boolean" then auto_restart = reply.auto_restart end
@@ -273,6 +275,7 @@ function start()
 end
 
 function stop()
+  print("[gcm_agent] " .. (is_running() and "Stopping." or "Not running."))
   running = false
 end
 
