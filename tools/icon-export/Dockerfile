@@ -44,10 +44,10 @@ RUN apt-get update \
         libopenal1 \
         libasound2 \
     && rm -rf /var/lib/apt/lists/*
-# Not jammy's python3-pil (9.0): its APNG writer compares frames as RGB, so
-# frames differing only in alpha (the Raw Tesseract's black wireframe on a
-# transparent background) were merged into one still image.
-RUN pip3 install --no-cache-dir Pillow==11.3.0
+# Not jammy's python3-pil (9.0), which predates the APNG/WebP fixes export.py
+# relies on. The wheel bundles libwebp; icons are written as (animated) WebP.
+RUN pip3 install --no-cache-dir Pillow==11.3.0 \
+    && python3 -c "from PIL import features; assert features.check('webp')"
 
 COPY --from=mod /gcmiconexport.jar /opt/gcm/gcmiconexport.jar
 COPY export.py /opt/gcm/export.py

@@ -212,6 +212,16 @@ def build_id(version):
         return None
 
 
+def image_format(version):
+    """"webp" or "png": what the bundle's icons are. data.json says
+    "image_format": "webp"; bundles made before that (and NESQL's) are PNG."""
+    try:
+        with open(os.path.join(_bundle_dir(version), "data.json"), encoding="utf-8") as f:
+            return "webp" if json.load(f).get("image_format") == "webp" else "png"
+    except (OSError, ValueError, AttributeError):
+        return "png"
+
+
 def _installed_asset_id(version):
     try:
         with open(os.path.join(_bundle_dir(version), RELEASE_FILE), encoding="utf-8") as f:
@@ -306,7 +316,7 @@ def activate():
         # The icon URL prefix busts browser caches when any of these changes.
         build = build_id(version)
         prefix = f"{version}~{build}" if textures == "default" else f"{version}~{textures}~{build}"
-        icons.load(_index, os.path.join(_bundle_dir(version), TEXTURES[textures]["file"]), prefix)
+        icons.load(_index, os.path.join(_bundle_dir(version), TEXTURES[textures]["file"]), prefix, image_format(version))
         oredict.load(_index)
         item_info.load(_index)
     else:

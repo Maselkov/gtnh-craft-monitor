@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  closeNote, escapeHtml, essentiaBadgeHtml, formatDuration, formatQty, formatRate, iconClass, kindTooltipHtml, loadDismissedNotes, noteClosed,
+  closeNote, escapeHtml, essentiaBadgeHtml, formatDuration, formatQty, formatRate, iconClass, iconKeyUrl, iconUrl, kindTooltipHtml, loadDismissedNotes, noteClosed,
 } from '../../static/js/util.js';
 
 test('formatQty abbreviates like the in-game terminal', () => {
@@ -27,6 +27,12 @@ test('iconClass marks icons drawn past the item box', () => {
   // Only the prefix counts, not a matching item name.
   assert.equal(iconClass('craft-icon', '2.9.0~ab12cd34/item/a/x~bleed12/y.png'), 'craft-icon');
   assert.equal(iconClass('craft-icon', null), 'craft-icon');
+});
+
+test('icons are asked for by path, or by item key for fixed ones', () => {
+  assert.equal(iconUrl('2.9.0~ab12cd34/item/a/b~0.webp'), '/icons?path=2.9.0~ab12cd34%2Fitem%2Fa%2Fb~0.webp');
+  assert.equal(iconKeyUrl('appliedenergistics2:item.ItemMultiMaterial:52'),
+    '/icons?key=appliedenergistics2%3Aitem.ItemMultiMaterial%3A52');
 });
 
 test('formatDuration shows the two largest units', () => {

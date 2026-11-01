@@ -356,7 +356,7 @@ async function notifyCraftDone(id, itemName, icon, status) {
     // Same image as the server's push (gcm/icons.py), so either one looks alike.
     icon: icon
       ? `/icons?path=${encodeURIComponent(icon)}&notification=1`
-      : '/icons?path=item%2Fappliedenergistics2%2Ftile.BlockInterface~0.png',
+      : '/icons?key=appliedenergistics2%3Atile.BlockInterface%3A0&notification=1',
   };
   try {
     const registration = await swRegistration;

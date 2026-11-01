@@ -129,6 +129,13 @@ def test_blank_icon_is_not_counted_as_flat():
 
 RED = png({(0, 0): (200, 10, 10, 255), (1, 0): (10, 200, 10, 255)})
 BLUE = png({(0, 0): (10, 10, 200, 255), (1, 1): (10, 200, 10, 255)})
+# As they are in a finished bundle.
+RED_WEBP = export.to_webp(RED)
+BLUE_WEBP = export.to_webp(BLUE)
+
+
+def pixels(data):
+    return Image.open(BytesIO(data)).convert("RGBA").tobytes()
 
 
 def write_zip(path, files):
@@ -138,17 +145,17 @@ def write_zip(path, files):
 
 
 def test_faithful_zip_falls_back_to_default_renders(tmp_path):
-    lookup = {"by_key": {"a:b:0": "item/a/b~0.png", "a:c:0": "item/a/c~0.png"},
-              "fluids_by_key": {"goo": "fluid/a/goo.png"},
-              "by_label": {"B": "item/a/b~0.png"}}
+    lookup = {"by_key": {"a:b:0": "item/a/b~0.webp", "a:c:0": "item/a/c~0.webp"},
+              "fluids_by_key": {"goo": "fluid/a/goo.webp"},
+              "by_label": {"B": "item/a/b~0.webp"}}
     (tmp_path / "lookup.json").write_text(json.dumps(lookup))
-    write_zip(tmp_path / "default.zip", {"item/a/b~0.png": RED,
-                                         "item/a/c~0.png": RED,
-                                         "fluid/a/goo.png": RED})
+    write_zip(tmp_path / "default.zip", {"item/a/b~0.webp": RED_WEBP,
+                                         "item/a/c~0.webp": RED_WEBP,
+                                         "fluid/a/goo.webp": RED_WEBP})
     # The textured pass rendered an extra stack and missed one.
-    write_zip(tmp_path / "textured.zip", {"item/a/b~0.png": BLUE,
-                                          "fluid/a/goo.png": BLUE,
-                                          "item/a/extra~0.png": BLUE})
+    write_zip(tmp_path / "textured.zip", {"item/a/b~0.webp": BLUE_WEBP,
+                                          "fluid/a/goo.webp": BLUE_WEBP,
+                                          "item/a/extra~0.webp": BLUE_WEBP})
 
     fell_back = export.merge_textures(
         tmp_path / "default.zip", tmp_path / "textured.zip",
@@ -156,18 +163,18 @@ def test_faithful_zip_falls_back_to_default_renders(tmp_path):
 
     assert fell_back == 1
     with zipfile.ZipFile(tmp_path / "out.zip") as zf:
-        assert sorted(zf.namelist()) == ["CREDITS.txt", "fluid/a/goo.png",
-                                         "item/a/b~0.png", "item/a/c~0.png"]
-        assert zf.read("item/a/b~0.png") == BLUE
-        assert zf.read("item/a/c~0.png") == RED
+        assert sorted(zf.namelist()) == ["CREDITS.txt", "fluid/a/goo.webp",
+                                         "item/a/b~0.webp", "item/a/c~0.webp"]
+        assert zf.read("item/a/b~0.webp") == BLUE_WEBP
+        assert zf.read("item/a/c~0.webp") == RED_WEBP
         assert zf.read("CREDITS.txt") == b"Thanks\n"
 
 
-def faithful_export(tmp_path, textured_png):
-    paths = [f"item/a/i{n}~0.png" for n in range(10)]
-    write_zip(tmp_path / "images.zip", {p: RED for p in paths})
+def faithful_export(tmp_path, textured):
+    paths = [f"item/a/i{n}~0.webp" for n in range(10)]
+    write_zip(tmp_path / "images.zip", {p: RED_WEBP for p in paths})
     write_zip(tmp_path / "images-faithful32.zip",
-              {"CREDITS.txt": "Thanks", **{p: textured_png for p in paths}})
+              {"CREDITS.txt": "Thanks", **{p: textured for p in paths}})
     (tmp_path / "icons_lookup.json").write_text(json.dumps(
         {"by_key": {f"a:i{n}:0": p for n, p in enumerate(paths)}}))
     (tmp_path / "export-report.json").write_text(json.dumps(
@@ -183,12 +190,12 @@ def faithful_export(tmp_path, textured_png):
 
 
 def test_faithful_icons_that_changed_pass(tmp_path):
-    problems, _, _ = validate.check(faithful_export(tmp_path, BLUE))
+    problems, _, _ = validate.check(faithful_export(tmp_path, BLUE_WEBP))
     assert problems == []
 
 
 def test_faithful_icons_identical_to_default_fail(tmp_path):
-    problems, _, _ = validate.check(faithful_export(tmp_path, RED))
+    problems, _, _ = validate.check(faithful_export(tmp_path, RED_WEBP))
     assert any("resource pack applied" in p for p in problems)
 
 
@@ -199,8 +206,8 @@ def test_animation_period_finds_the_loop():
     assert export.animation_period(list("ABCDEFA")) == list("ABCDEFA")
 
 
-def test_finish_images_writes_apngs_and_drops_unused_icons(tmp_path):
-    from PIL import Image, ImageSequence
+def test_finish_images_writes_webps_and_drops_unused_icons(tmp_path):
+    from PIL import Image
     still = png({(0, 0): (200, 10, 10, 255), (1, 0): (10, 200, 10, 255)})
     write_zip(tmp_path / "images.zip", {"item/a/anim~0.png": still,
                                         "item/a/flat~0.png": still,
@@ -222,7 +229,8 @@ def test_finish_images_writes_apngs_and_drops_unused_icons(tmp_path):
     (tmp_path / "icons_lookup.json").write_text(json.dumps({
         "by_key": {"a:anim:0": "item/a/anim~0.png", "a:flat:0": "item/a/flat~0.png"},
         "by_key_label": {"a:flat:0|Seed": "item/a/flat~0~seed.png"},
-        "fluids_by_key": {}, "by_label": {"Other": "item/a/other~0.png"}}))
+        "fluids_by_key": {}, "by_label": {"Other": "item/a/other~0.png"},
+        "bleed": {"item/a/other~0.png": 12}}))
     write_zip(tmp_path / "images.zip", {"item/a/anim~0.png": still,
                                         "item/a/flat~0.png": still,
                                         "item/a/flat~0~seed.png": BLUE,
@@ -234,18 +242,33 @@ def test_finish_images_writes_apngs_and_drops_unused_icons(tmp_path):
 
     assert not (tmp_path / "animations.zip").exists()
     with zipfile.ZipFile(tmp_path / "images.zip") as zf:
-        assert "item/a/anim~0~nbt.png" not in zf.namelist()
-        assert zf.read("item/a/flat~0.png") == still
-        assert zf.read("item/a/other~0.png") == BLUE
-        assert zf.read("item/a/flat~0~seed.png") == BLUE
-        image = Image.open(BytesIO(zf.read("item/a/anim~0.png")))
+        # Every icon renamed, and the unused NBT variant gone.
+        assert sorted(zf.namelist()) == [
+            "item/a/anim~0.webp", "item/a/flat~0.webp",
+            "item/a/flat~0~seed.webp", "item/a/other~0.webp"]
+        for name in zf.namelist():
+            assert validate.is_webp(zf.read(name))
+        # Lossless: the same pixels the mod rendered.
+        assert pixels(zf.read("item/a/flat~0.webp")) == pixels(still)
+        assert pixels(zf.read("item/a/other~0.webp")) == pixels(BLUE)
+        assert pixels(zf.read("item/a/flat~0~seed.webp")) == pixels(BLUE)
+        image = Image.open(BytesIO(zf.read("item/a/anim~0.webp")))
         assert image.n_frames == 3
-        durations = [frame.info["duration"]
-                     for frame in ImageSequence.Iterator(image)]
-        assert durations == [100, 50, 150]
+        assert zf.getinfo("item/a/anim~0.webp").compress_type == zipfile.ZIP_DEFLATED
+        assert zf.getinfo("item/a/flat~0.webp").compress_type == zipfile.ZIP_STORED
+        assert export.frame_durations(zf.read("item/a/anim~0.webp")) == [100, 50, 150]
         image.seek(0)
-        assert (image.convert("RGBA").tobytes()
-                == Image.open(BytesIO(still)).convert("RGBA").tobytes())
+        assert image.convert("RGBA").tobytes() == pixels(still)
+    lookup = json.loads((tmp_path / "icons_lookup.json").read_text())
+    assert lookup == {
+        "by_key": {"a:anim:0": "item/a/anim~0.webp", "a:flat:0": "item/a/flat~0.webp"},
+        "by_key_label": {"a:flat:0|Seed": "item/a/flat~0~seed.webp"},
+        "fluids_by_key": {}, "by_label": {"Other": "item/a/other~0.webp"},
+        "bleed": {"item/a/other~0.webp": 12}}
+
+
+def test_webp_path_only_replaces_the_png_suffix():
+    assert export.webp_path("item/minecraft/tile.png~0.png") == "item/minecraft/tile.png~0.webp"
 
 
 def test_near_loop_ends_where_a_spin_comes_back_round():
@@ -285,27 +308,23 @@ def test_oversized_animations_drop_frames_until_they_fit(tmp_path, monkeypatch):
         full = export.build_within_budget(zf, "p", ticks, 50)
         assert Image.open(BytesIO(full)).n_frames == 16
         # Budget that only a quarter of the frames fit in.
-        monkeypatch.setattr(export, "APNG_MAX_BYTES", len(full) // 3)
+        monkeypatch.setattr(export, "ANIMATION_MAX_BYTES", len(full) // 3)
         smaller = export.build_within_budget(zf, "p", ticks, 50)
         image = Image.open(BytesIO(smaller))
         assert image.n_frames < 16
         # Same total length: the animation keeps its speed.
-        total = 0
-        for i in range(image.n_frames):
-            image.seek(i)
-            total += image.info["duration"]
-        assert total == 16 * 50
+        assert sum(export.frame_durations(smaller)) == 16 * 50
 
 
 def test_faithful_icon_of_another_size_falls_back(tmp_path):
     # Drawn past the item box in one pass only: the lookup's bleed table
     # describes the default render, so that's the one kept.
-    lookup = {"by_key": {"a:b:0": "item/a/b~0.png"},
-              "bleed": {"item/a/b~0.png": 12}}
+    lookup = {"by_key": {"a:b:0": "item/a/b~0.webp"},
+              "bleed": {"item/a/b~0.webp": 12}}
     (tmp_path / "lookup.json").write_text(json.dumps(lookup))
-    halo = png({(0, 0): (200, 10, 10, 255)}, size=10)
-    write_zip(tmp_path / "default.zip", {"item/a/b~0.png": halo})
-    write_zip(tmp_path / "textured.zip", {"item/a/b~0.png": BLUE})
+    halo = export.to_webp(png({(0, 0): (200, 10, 10, 255)}, size=10))
+    write_zip(tmp_path / "default.zip", {"item/a/b~0.webp": halo})
+    write_zip(tmp_path / "textured.zip", {"item/a/b~0.webp": BLUE_WEBP})
 
     fell_back = export.merge_textures(
         tmp_path / "default.zip", tmp_path / "textured.zip",
@@ -313,7 +332,7 @@ def test_faithful_icon_of_another_size_falls_back(tmp_path):
 
     assert fell_back == 1
     with zipfile.ZipFile(tmp_path / "out.zip") as zf:
-        assert zf.read("item/a/b~0.png") == halo
+        assert zf.read("item/a/b~0.webp") == halo
 
 
 def test_lookup_paths_leaves_out_the_bleed_table(tmp_path):
@@ -335,7 +354,7 @@ def test_animation_with_frames_of_different_sizes_stays_still(tmp_path):
 def test_bleed_entries_missing_from_the_zip_fail(tmp_path):
     export_dir = faithful_export(tmp_path, BLUE)
     lookup = json.loads((export_dir / "icons_lookup.json").read_text())
-    lookup["bleed"] = {"item/a/gone~0.png": 12}
+    lookup["bleed"] = {"item/a/gone~0.webp": 12}
     (export_dir / "icons_lookup.json").write_text(json.dumps(lookup))
     problems, _, _ = validate.check(export_dir)
     assert any("bleed table" in p for p in problems)
@@ -347,11 +366,50 @@ def test_animation_that_only_changes_alpha_keeps_its_frames(tmp_path):
     frames = {"a": png({(0, 0): (0, 0, 0, 255)}),
               "b": png({(1, 1): (0, 0, 0, 255)}),
               "c": png({(2, 2): (0, 0, 0, 128)})}
-    apng = export.build_apng(frames, [["a", 1], ["b", 1], ["c", 1]], 50)
-    image = Image.open(BytesIO(apng))
+    webp = export.build_webp(frames, [["a", 1], ["b", 1], ["c", 1]], 50)
+    image = Image.open(BytesIO(webp))
     assert image.n_frames == 3
     image.seek(1)
     assert image.convert("RGBA").getpixel((1, 1)) == (0, 0, 0, 255)
+    image.seek(2)
+    assert image.convert("RGBA").getpixel((2, 2)) == (0, 0, 0, 128)
+
+
+def test_animation_with_a_still_transparent_margin_keeps_it(tmp_path):
+    # An OpenComputers card: opaque in the middle, a transparent margin
+    # that never changes, a light blinking. libwebp crops the frames to
+    # the middle, so it's the alpha flag export.py sets that keeps the
+    # margin transparent rather than black.
+    def card(light):
+        pixels = {(x, y): (40, 120, 40, 255) for x in range(2, 14) for y in range(16)}
+        pixels[(8, 8)] = light
+        return png(pixels, size=16)
+    frames = {"a": card((255, 0, 0, 255)), "b": card((0, 255, 0, 255))}
+    webp = export.build_webp(frames, [["a", 1], ["b", 1]], 50)
+    image = Image.open(BytesIO(webp))
+    for frame in range(2):
+        image.seek(frame)
+        assert image.convert("RGBA").getpixel((0, 0))[3] == 0
+        assert image.convert("RGBA").getpixel((2, 2)) == (40, 120, 40, 255)
+
+
+def test_png_icons_fail(tmp_path):
+    export_dir = faithful_export(tmp_path, BLUE_WEBP)
+    with zipfile.ZipFile(export_dir / "images.zip", "a") as zf:
+        zf.writestr("item/a/old~0.png", RED)
+    lookup = json.loads((export_dir / "icons_lookup.json").read_text())
+    lookup["by_key"]["a:old:0"] = "item/a/old~0.png"
+    (export_dir / "icons_lookup.json").write_text(json.dumps(lookup))
+    problems, _, _ = validate.check(export_dir)
+    assert any("aren't .webp" in p for p in problems)
+
+
+def test_png_bytes_under_webp_names_fail(tmp_path):
+    export_dir = faithful_export(tmp_path, BLUE_WEBP)
+    write_zip(export_dir / "images.zip",
+              {f"item/a/i{n}~0.webp": RED for n in range(10)})
+    problems, _, _ = validate.check(export_dir)
+    assert any("aren't WebP" in p for p in problems)
 
 
 def test_lookup_paths_include_aspects(tmp_path):

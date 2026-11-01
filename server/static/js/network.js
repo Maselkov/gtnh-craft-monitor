@@ -10,7 +10,7 @@ import { activeTab } from './tabs.js';
 import { bindCellTooltip, hideTooltip, showTooltip, tooltipVisible } from './tooltip.js';
 import {
   closeNote, delegateActions, escapeHtml, essentiaBadgeHtml, formatDuration, formatQty, formatRate,
-  formatRelativeTime, iconClass, iconUrl, kindTooltipHtml, noteClosed, PIN_ICON, TERMINAL_DOCS_URL,
+  formatRelativeTime, iconClass, iconKeyUrl, iconUrl, kindTooltipHtml, noteClosed, PIN_ICON, TERMINAL_DOCS_URL,
 } from './util.js';
 
 // ---------- Network browser ----------
@@ -592,7 +592,7 @@ function setNetworkView(view) {
 // your search" wall.
 const NETWORK_INITIAL_RENDER = 150;
 const NETWORK_RENDER_BATCH = 150;
-const NETWORK_PATTERN_ICON = 'item/appliedenergistics2/item.ItemMultiMaterial~52.png';  // Blank Pattern
+const NETWORK_PATTERN_ICON = 'appliedenergistics2:item.ItemMultiMaterial:52';  // Blank Pattern
 
 let networkFilteredSorted = [];  // the full filtered+sorted list for
                                   // the CURRENT search/sort - grown
@@ -621,7 +621,7 @@ function buildNetworkCellHtml(it, idx) {
   // ANY craftable item regardless of current stock, matching how the
   // real AE2 terminal marks craftability.
   const patternBadge = it.isCraftable
-    ? `<img class="network-cell-pattern-badge" src="${iconUrl(NETWORK_PATTERN_ICON)}" alt="" loading="lazy" data-remove-on-error>`
+    ? `<img class="network-cell-pattern-badge" src="${iconKeyUrl(NETWORK_PATTERN_ICON)}" alt="" loading="lazy" data-remove-on-error>`
     : '';
   const isPinned = pinnedItemKeys.has(networkItemKey(it.mod, it.internal, it.damage, it.kind, it.variant));
   const pinBadge = isPinned ? `<span class="network-cell-pin-badge">${PIN_ICON}</span>` : '';

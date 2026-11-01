@@ -481,6 +481,118 @@ def test_animated_icons_can_be_fetched_as_a_still_frame(admin, github, monkeypat
     assert {big.convert("RGBA").getpixel((x, y)) for x in range(48) for y in range(48)} == {(255, 0, 0, 255)}
 
 
+def webp(*colours):
+    """A lossless WebP of 4x4 frames of these colours, animated if more than one."""
+    from PIL import Image
+
+    frames = [Image.new("RGBA", (4, 4), colour) for colour in colours]
+    out = io.BytesIO()
+    frames[0].save(out, format="WEBP", lossless=True, save_all=len(frames) > 1,
+                   append_images=frames[1:], duration=100, loop=0)
+    return out.getvalue()
+
+
+ANIMATED_WEBP = webp((255, 0, 0, 255), (0, 0, 255, 255))
+STILL_WEBP = webp((0, 255, 0, 255))
+
+
+def webp_bundle(version, bleed=None):
+    """make_bundle()'s, as the exporter makes them now: WebP icons named
+    .webp (data.json says so), the thing's animated. bleed is given with
+    .png names, renamed like the rest."""
+    bundle = make_bundle(version, faithful=False)
+    lookup = json.loads(bundle["icons_lookup.json"])
+    for table in lookup.values():
+        table.update({key: path.removesuffix(".png") + ".webp" for key, path in table.items()})
+    if bleed is not None:
+        lookup["bleed"] = {path.removesuffix(".png") + ".webp": n for path, n in bleed.items()}
+    bundle["icons_lookup.json"] = json.dumps(lookup).encode()
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w") as zf:
+        zf.writestr("item/test/thing~0.webp", ANIMATED_WEBP)
+        zf.writestr("fluid/test/goo.webp", STILL_WEBP)
+    bundle["images.zip"] = zip_buffer.getvalue()
+    meta = json.loads(bundle["data.json"])
+    meta["image_format"] = "webp"
+    for name in ("images.zip", "icons_lookup.json"):
+        meta["files"][name] = {"size": len(bundle[name]), "sha256": hashlib.sha256(bundle[name]).hexdigest()}
+    bundle["data.json"] = json.dumps(meta).encode()
+    return bundle
+
+
+def test_webp_icons_are_served_as_webp(admin, github):
+    from PIL import Image
+
+    github.bundles["2.9.0-beta-3"] = webp_bundle("2.9.0-beta-3")
+    install(admin, "2.9.0-beta-3")
+    path = icons.resolve_icon("test", "thing", 0, "Thing")
+    assert path == f"{prefix('2.9.0-beta-3')}/item/test/thing~0.webp"
+
+    response = admin.get(f"/icons?path={path}")
+    assert response.data == ANIMATED_WEBP and response.mimetype == "image/webp"
+    assert icons.is_animated(ANIMATED_WEBP) and not icons.is_animated(STILL_WEBP)
+    # Reduced motion: the first frame, still a WebP.
+    response = admin.get(f"/icons?path={path}&still=1")
+    assert response.mimetype == "image/webp"
+    still = Image.open(io.BytesIO(response.data))
+    assert getattr(still, "n_frames", 1) == 1
+    assert still.convert("RGBA").getpixel((0, 0)) == (255, 0, 0, 255)
+    goo = icons.resolve_icon(None, "goo", None, None)
+    assert admin.get(f"/icons?path={goo}&still=1").data == STILL_WEBP
+    # Notifications want a PNG, whatever the bundle's images are.
+    response = admin.get(f"/icons?path={path}&notification=1")
+    assert response.mimetype == "image/png"
+    big = Image.open(io.BytesIO(response.data))
+    assert big.format == "PNG" and big.size == (icons.NOTIFICATION_ICON_PIXELS, icons.NOTIFICATION_ICON_PIXELS)
+    assert big.convert("RGBA").getpixel((0, 0)) == (255, 0, 0, 255)
+
+
+def test_stored_paths_follow_the_bundles_image_format(admin, github):
+    # Craft history recorded with a PNG bundle, read with a WebP one, and
+    # the other way round.
+    github.bundles["2.9.0-beta-3"] = webp_bundle("2.9.0-beta-3", bleed={"item/test/thing~0.png": 12})
+    github.bundles["2.9.0-RC-1"] = make_bundle("2.9.0-RC-1", faithful=False)
+    install(admin, "2.9.0-beta-3")
+
+    webp_path = f"{prefix('2.9.0-beta-3')}~bleed12/item/test/thing~0.webp"
+    assert icons.current_path("2.8.4/item/test/thing~0.png") == webp_path
+    assert icons.current_path("item/test/thing~0.png") == webp_path
+    assert icons.read_image(webp_path) == ANIMATED_WEBP
+    # Only the suffix: a dot elsewhere in a name stays.
+    assert icons.current_path("item/test/tile.png~0.png").endswith("/item/test/tile.png~0.webp")
+
+    install(admin, "2.9.0-RC-1")
+    png_path = f"{prefix('2.9.0-RC-1')}/item/test/thing~0.png"
+    assert icons.current_path(webp_path) == png_path
+    assert icons.read_image(png_path) == PNG
+
+
+@pytest.mark.parametrize("bundle, data, mimetype", [
+    (webp_bundle, ANIMATED_WEBP, "image/webp"),
+    (make_bundle, PNG, "image/png"),
+])
+def test_fixed_icons_are_asked_for_by_item_key(admin, github, bundle, data, mimetype):
+    github.bundles["2.9.0-beta-3"] = bundle("2.9.0-beta-3")
+    install(admin, "2.9.0-beta-3")
+
+    response = admin.get("/icons?key=test:thing:0")
+    assert response.data == data and response.mimetype == mimetype
+    # Not immutable: the same URL gets another bundle's image.
+    assert "immutable" not in response.headers["Cache-Control"]
+    assert admin.get("/icons?key=test:nothing:0").status_code == 404
+    assert admin.get("/icons?key=nonsense").status_code == 404
+
+
+def test_fixed_icon_as_a_favicon_is_a_png(admin, github):
+    from PIL import Image
+
+    github.bundles["2.9.0-beta-3"] = webp_bundle("2.9.0-beta-3")
+    install(admin, "2.9.0-beta-3")
+    response = admin.get("/icons?key=test:thing:0&notification=1")
+    assert response.mimetype == "image/png"
+    assert Image.open(io.BytesIO(response.data)).format == "PNG"
+
+
 def test_a_rebuilt_release_is_offered_as_an_update_and_reinstalled(admin, github, api_headers):
     github.bundles["2.9.0-beta-3"] = make_bundle("2.9.0-beta-3")
     install(admin, "2.9.0-beta-3")

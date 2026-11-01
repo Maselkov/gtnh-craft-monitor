@@ -11,8 +11,10 @@
      page's own /icons route rather than a separate static file, so it
      depends on images.zip being present the same way every other icon
      on the page does - if that's ever missing, the favicon just silently
-     falls back to nothing, same as any other unmatched icon. -->
-<link rel="icon" type="image/png" href="/icons?path=item%2Fappliedenergistics2%2Ftile.BlockInterface~0.png">
+     falls back to nothing, same as any other unmatched icon. Asked for by
+     item key, and as ?notification=1's still 192px PNG, so it's a PNG
+     whatever format the game data's icons are. -->
+<link rel="icon" type="image/png" href="/icons?key=appliedenergistics2%3Atile.BlockInterface%3A0&amp;notification=1">
 <script defer src="/static/vendor/chart-4.4.4.umd.js"></script>
 <script defer src="/static/vendor/chartjs-adapter-date-fns-3.0.0.bundle.min.js"></script>
 <script src="/static/boot.js?v=__ASSET_VERSION__"></script>
@@ -20,7 +22,7 @@
 <!-- Lets the page be added to a phone's home screen as a standalone app -
      iOS only allows web notifications from a page opened that way. -->
 <link rel="manifest" href="/static/manifest.json?v=__ASSET_VERSION__">
-<link rel="apple-touch-icon" href="/icons?path=item%2Fappliedenergistics2%2Ftile.BlockInterface~0.png">
+<link rel="apple-touch-icon" href="/icons?key=appliedenergistics2%3Atile.BlockInterface%3A0&amp;notification=1">
 <meta name="apple-mobile-web-app-capable" content="yes">
 </head>
 <body>

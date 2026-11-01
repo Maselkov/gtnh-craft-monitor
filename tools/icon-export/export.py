@@ -5,7 +5,7 @@ Container entrypoint for the headless icon export (see Dockerfile / run.sh).
 Takes a GTNH MultiMC/Prism client pack zip, launches the game under Xvfb
 with the gcmiconexport mod added, and collects what the mod writes:
 
-    images.zip          item icons
+    images.zip          item icons, as WebP
     icons_lookup.json   item/fluid/aspect keys -> paths in images.zip
     item_catalog.txt    item IDs for oc/network_browser.lua
     ore_dict.json       the ore dictionary
@@ -15,9 +15,11 @@ with the gcmiconexport mod added, and collects what the mod writes:
     data.json           the bundle manifest: GTNH version, counts, the
                         texture sets, and each file's size and SHA-256
 
-Animated icons (GT materials, lava, ...) are captured frame by frame and
-written into images.zip as animated PNGs (APNG) at the same paths. Frame 0
-is the still icon, which is what anything that can't animate shows.
+The mod writes PNGs under NESQL's paths (item/<mod>/<name>~<damage>.png);
+they go into the bundle as lossless WebP, renamed .webp in images.zip and
+icons_lookup.json alike. Animated icons (GT materials, lava, ...) are
+captured frame by frame and become animated WebPs. Frame 0 is the still
+icon, which is what anything that can't animate shows.
 
 With --faithful, the game is launched a second time with that resource
 pack enabled, and its renders go in images-faithful32.zip (same paths, so
@@ -44,7 +46,6 @@ import os
 import re
 import shutil
 import signal
-import struct
 import subprocess
 import sys
 import time
@@ -440,12 +441,20 @@ def animation_period(ticks):
     return ticks
 
 
+# Icons go into the bundle as lossless WebP: the same pixels in about two
+# thirds of the mod's PNGs, and half of APNG for animations. Method 4 gets
+# nearly all of method 6's saving in a fraction of the time (see
+# CONTEXT.md, "Icon image format").
+WEBP_OPTIONS = {"format": "WEBP", "lossless": True, "method": 4}
+
 # An animated icon bigger than this plays at half the frame rate (again
 # if need be) until it fits. Big 3D renders that change completely every
 # tick (Tectech's Forge of the Gods) came out at several MB otherwise.
 # Generous: smooth fades (interpolated textures) need every tick's frame.
-APNG_MAX_BYTES = 1_000_000
-APNG_MIN_FRAMES = 4
+ANIMATION_MAX_BYTES = 1_000_000
+# An animated WebP's VP8X header flag (byte 20) for "has transparency".
+VP8X_ALPHA = 0x10
+ANIMATION_MIN_FRAMES = 4
 
 # Mean per-channel difference (0-255) under which a frame counts as back
 # at frame 0, and how far the animation must have moved away before that.
@@ -487,32 +496,84 @@ def near_loop(ticks, image):
     return None
 
 
-def build_apng(frames, runs, tick_millis):
-    """APNG bytes for [(frame image, ticks)] runs; frames maps frame -> PNG
-    bytes. Pillow stores each frame after the first as just what changed.
-    None if the frames aren't all the same size.
+def build_webp(frames, runs, tick_millis):
+    """Animated WebP bytes for [(frame image, ticks)] runs; frames maps
+    frame -> PNG bytes. libwebp stores each frame after the first as just
+    what changed. None if the frames aren't all the same size.
 
-    Consecutive runs are distinct renders, so Pillow must keep every one. It
-    merges frames it sees as identical, and Pillow before 10 compared them
-    without alpha, silently turning alpha-only animations into stills."""
+    Consecutive runs are distinct renders, so the animation must keep its
+    length and keep moving: an encoder that merged frames it saw as
+    identical (Pillow's APNG writer before 10 compared them without alpha)
+    would turn alpha-only animations into stills."""
     import PIL
     from PIL import Image
     images = [Image.open(BytesIO(frames[frame])).convert("RGBA")
               for frame, _ in runs]
     if len({image.size for image in images}) > 1:
         # Drawn past the item box in some frames only (IconRenderer.BLEED):
-        # an APNG's frames must all be one size.
+        # an animation's frames must all be one size.
         return None
+    durations = [ticks * tick_millis for _, ticks in runs]
     out = BytesIO()
-    images[0].save(out, format="PNG", save_all=True,
-                   append_images=images[1:], loop=0,
-                   duration=[ticks * tick_millis for _, ticks in runs],
-                   disposal=0, blend=0)
-    written = getattr(Image.open(out), "n_frames", 1)
-    if written != len(runs):
-        raise RuntimeError(f"Pillow {PIL.__version__} wrote {written} of "
-                           f"{len(runs)} animation frames")
+    images[0].save(out, save_all=True, append_images=images[1:], loop=0,
+                   duration=durations, **WEBP_OPTIONS)
+    webp = bytearray(out.getvalue())
+    # libwebp crops each frame to what it needs, the first one too, and
+    # sets the file's alpha flag only if a cropped frame has transparency.
+    # An icon whose transparent margin never changes (an OpenComputers
+    # card) is left without it, and decoders that go by it (Pillow) show
+    # the margin opaque black.
+    if any(image.getextrema()[3][0] < 255 for image in images):
+        webp[20] |= VP8X_ALPHA
+    webp = bytes(webp)
+    written = frame_durations(webp)
+    if len(written) < 2 or sum(written) != sum(durations):
+        raise RuntimeError(f"Pillow {PIL.__version__} wrote {len(written)} "
+                           f"frames, {sum(written)} ms, of {len(runs)} "
+                           f"frames, {sum(durations)} ms")
+    return webp
+
+
+def frame_durations(data):
+    """Each frame's duration in an animated image, in ms."""
+    from PIL import Image
+    image = Image.open(BytesIO(data))
+    durations = []
+    for frame in range(getattr(image, "n_frames", 1)):
+        image.seek(frame)
+        image.load()  # a WebP frame's duration is only read with it
+        durations.append(image.info.get("duration", 0))
+    return durations
+
+
+def webp_path(path):
+    """A path the mod wrote (NESQL's scheme, ending .png) as it is in the
+    bundle."""
+    return path.removesuffix(".png") + ".webp"
+
+
+def to_webp(png):
+    """A still icon as lossless WebP."""
+    from PIL import Image
+    image = Image.open(BytesIO(png))
+    if image.mode not in ("RGB", "RGBA"):
+        image = image.convert("RGBA")
+    out = BytesIO()
+    image.save(out, **WEBP_OPTIONS)
     return out.getvalue()
+
+
+def rename_lookup(lookup_path):
+    """icons_lookup.json with its image paths as webp_path() names them."""
+    lookup = json.loads(lookup_path.read_text())
+    for table in LOOKUP_TABLES:
+        if table in lookup:
+            lookup[table] = {key: webp_path(path)
+                             for key, path in lookup[table].items()}
+    if "bleed" in lookup:
+        lookup["bleed"] = {webp_path(path): bleed
+                           for path, bleed in lookup["bleed"].items()}
+    lookup_path.write_text(json.dumps(lookup, separators=(",", ":")))
 
 
 def lookup_paths(lookup_path):
@@ -521,26 +582,42 @@ def lookup_paths(lookup_path):
     return set().union(*(lookup.get(table, {}).values() for table in LOOKUP_TABLES))
 
 
-def png_size(data):
-    """(width, height) from a PNG's (or APNG's) header."""
-    return struct.unpack(">II", data[16:24])
+def image_size(data):
+    """(width, height) of an image; Pillow only reads its header."""
+    from PIL import Image
+    return Image.open(BytesIO(data)).size
 
 
 def finish_images(out_dir):
     """Rewrites images.zip with only the icons the lookup points at (the
     mod renders every stack, but NBT variants sharing a key are never
-    shown), and the animated ones as APNGs. Returns how many are animated."""
+    shown), as WebP, the animated ones from their captured frames, and
+    renames them .webp in icons_lookup.json too. Returns how many are
+    animated."""
     animated = build_animations(out_dir)
-    keep = lookup_paths(out_dir / "icons_lookup.json")
+    lookup_path = out_dir / "icons_lookup.json"
+    keep = lookup_paths(lookup_path)
     images = out_dir / "images.zip"
     tmp = images.with_name("images.zip.part")
+    # Deflate makes still WebPs a little bigger, so they're stored as they
+    # are; animated ones it makes about 15% smaller.
     with zipfile.ZipFile(images) as src, \
-            zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as dst:
-        for info in src.infolist():
-            if info.filename in keep:
-                dst.writestr(info.filename,
-                             animated.get(info.filename) or src.read(info))
+            zipfile.ZipFile(tmp, "w", zipfile.ZIP_STORED) as dst, \
+            concurrent.futures.ProcessPoolExecutor() as pool:
+        names = [info.filename for info in src.infolist()
+                 if info.filename in keep]
+        stills = [name for name in names if name not in animated]
+        converted = dict(zip(stills, pool.map(
+            to_webp, (src.read(name) for name in stills), chunksize=256),
+            strict=True))
+        for name in names:
+            if name in animated:
+                dst.writestr(webp_path(name), animated[name],
+                             compress_type=zipfile.ZIP_DEFLATED)
+            else:
+                dst.writestr(webp_path(name), converted[name])
     tmp.replace(images)
+    rename_lookup(lookup_path)
     return len(animated)
 
 
@@ -558,8 +635,8 @@ def merge_runs(ticks, step=1):
 
 
 def build_within_budget(frames_zip, path, loop, tick_millis):
-    """The loop as APNG bytes, at a lower frame rate if it's too big; None
-    if it doesn't animate, or doesn't fit even with few frames."""
+    """The loop as animated WebP bytes, at a lower frame rate if it's too
+    big; None if it doesn't animate, or doesn't fit even with few frames."""
     step = 1
     while True:
         runs = merge_runs(loop, step)
@@ -567,22 +644,23 @@ def build_within_budget(frames_zip, path, loop, tick_millis):
             return None
         frames = {frame: frames_zip.read(f"{path}/{frame}.png")
                   for frame, _ in runs}
-        apng = build_apng(frames, runs, tick_millis)
-        if apng is None:
+        webp = build_webp(frames, runs, tick_millis)
+        if webp is None:
             log(f"{path}: frames of different sizes; keeping it still.")
             return None
-        if len(apng) <= APNG_MAX_BYTES:
-            return apng
-        if len(runs) <= APNG_MIN_FRAMES:
-            log(f"{path}: {len(apng)} bytes animated even at "
+        if len(webp) <= ANIMATION_MAX_BYTES:
+            return webp
+        if len(runs) <= ANIMATION_MIN_FRAMES:
+            log(f"{path}: {len(webp)} bytes animated even at "
                 f"{len(runs)} frames; keeping it still.")
             return None
         step *= 2
 
 
 def build_animations(out_dir):
-    """APNGs for the icons the mod captured animations for (animations.zip
-    + animations.json, which are removed): {path: APNG bytes}."""
+    """Animated WebPs for the icons the mod captured animations for
+    (animations.zip + animations.json, which are removed): {path the mod
+    wrote: WebP bytes}."""
     anim_zip = out_dir / "animations.zip"
     anim_json = out_dir / "animations.json"
     if not (anim_zip.exists() and anim_json.exists()):
@@ -605,9 +683,9 @@ def build_animations(out_dir):
                     return images[frame]
 
                 loop = near_loop(ticks, image) or ticks
-            apng = build_within_budget(frames_zip, path, loop, tick_millis)
-            if apng:
-                animated[path] = apng
+            webp = build_within_budget(frames_zip, path, loop, tick_millis)
+            if webp:
+                animated[path] = webp
     anim_zip.unlink()
     anim_json.unlink()
     return animated
@@ -634,7 +712,7 @@ def merge_textures(default_zip, textured_zip, lookup_path, dest, credit):
         for name in sorted(wanted):
             default = base.read(name)
             data = textured.read(name) if name in have else None
-            if data and png_size(data) == png_size(default):
+            if data and image_size(data) == image_size(default):
                 out.writestr(name, data)
             else:
                 out.writestr(name, default)
@@ -657,6 +735,8 @@ def write_manifest(out_dir, version_label, report, faithful=None):
                        "sha256": file_hash(path, "sha256")}
     manifest = {
         "format": 1,
+        # Bundles without it have PNG icons (and APNG animations).
+        "image_format": "webp",
         "gtnh_version": version_label,
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "exporter_commit": os.environ.get("GCM_EXPORTER_COMMIT") or None,
@@ -720,7 +800,7 @@ def main():
                             args.cache, args)
 
     report = launch(command, game_dir, args.out, args.out, args.timeout, "")
-    report["apngIcons"] = finish_images(args.out)
+    report["animatedImages"] = finish_images(args.out)
     (args.out / "export-report.json").write_text(
         json.dumps(report, indent=2) + "\n")
     log(f"Default textures: {json.dumps(summary(report))}")
@@ -735,7 +815,7 @@ def main():
         shutil.rmtree(textured_out, ignore_errors=True)
         textured = launch(command, game_dir, textured_out, args.out,
                           args.timeout, "-faithful32")
-        textured["apngIcons"] = finish_images(textured_out)
+        textured["animatedImages"] = finish_images(textured_out)
         credit = (f"{FAITHFUL['credit']}, version {version}.\n"
                   f"{FAITHFUL['url']}\n")
         fell_back = merge_textures(
@@ -744,7 +824,7 @@ def main():
             credit)
         faithful = {**FAITHFUL, "version": version,
                     "items_rendered": textured.get("itemsRendered"),
-                    "animated_icons": textured["apngIcons"],
+                    "animated_icons": textured["animatedImages"],
                     "default_fallbacks": fell_back}
         log(f"Faithful 32x: {json.dumps(summary(textured))}, "
             f"{fell_back} icons fell back to the default render")

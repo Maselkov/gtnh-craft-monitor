@@ -16,8 +16,9 @@ out without the lines that make searching them worthwhile; and enough
 of them have to change with Shift held, or the export's Shift (see
 ExportKeys.java) didn't reach GregTech.
 
-Animated icons (APNGs) are checked too: there have to be plenty of them
-(fewer means the animation capture broke), and none may be huge.
+Icons have to be WebP, under .webp paths. Animated ones are checked too:
+there have to be plenty of them (fewer means the animation capture broke),
+and none may be huge.
 
 images-faithful32.zip, when there is one, gets the same flat check, and
 enough of it has to differ from images.zip to show the resource pack was
@@ -71,6 +72,12 @@ MAX_FALLBACK_SHARE = 0.05
 # A full GTNH export has a few thousand; see CONTEXT.md, "Animated icons".
 MIN_ANIMATED_ICONS = 1000
 MAX_ICON_BYTES = 2_000_000
+# export.py's; every icon's path in them must name a WebP.
+LOOKUP_TABLES = ("by_key", "by_key_label", "by_key_material", "fluids_by_key", "aspects_by_key", "by_label")
+
+
+def is_webp(data):
+    return data[:4] == b"RIFF" and data[8:12] == b"WEBP"
 
 
 def is_flat(png):
@@ -94,8 +101,8 @@ def check(out_dir):
                         "to render")
 
     if report.get("animationTicks", 0) > 0 \
-            and report.get("apngIcons", 0) < MIN_ANIMATED_ICONS:
-        problems.append(f"only {report.get('apngIcons', 0)} animated icons, "
+            and report.get("animatedImages", 0) < MIN_ANIMATED_ICONS:
+        problems.append(f"only {report.get('animatedImages', 0)} animated icons, "
                         f"expected >= {MIN_ANIMATED_ICONS}")
     with zipfile.ZipFile(out_dir / "images.zip") as zf:
         biggest = max(zf.infolist(), key=lambda info: info.file_size)
@@ -113,10 +120,19 @@ def check(out_dir):
     if missing:
         problems.append(f"{len(missing)} icons in the lookup's bleed table "
                         f"aren't in images.zip, e.g. {missing[0]}")
+    not_webp = [p for table in LOOKUP_TABLES
+                for p in lookup.get(table, {}).values() if not p.endswith(".webp")]
+    if not_webp:
+        problems.append(f"{len(not_webp)} paths in the lookup aren't .webp, "
+                        f"e.g. {not_webp[0]}")
     paths = sorted(set(lookup["by_key"].values()))
     sample = random.Random(0).sample(paths, min(FLAT_SAMPLE, len(paths)))
     with zipfile.ZipFile(out_dir / "images.zip") as zf:
         default = {p: zf.read(p) for p in sample}
+    not_webp = [p for p, data in default.items() if not is_webp(data)]
+    if not_webp:
+        problems.append(f"{len(not_webp)} of {len(sample)} sampled icons "
+                        f"aren't WebP, e.g. {not_webp[0]}")
     flat = sum(is_flat(png) for png in default.values())
     if sample and flat / len(sample) > MAX_FLAT_SHARE:
         problems.append(f"{flat} of {len(sample)} sampled icons are flat "

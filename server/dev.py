@@ -20,6 +20,7 @@ Nothing here touches server/data/.
 import argparse
 import gzip
 import hashlib
+import io
 import json
 import math
 import os
@@ -35,7 +36,7 @@ import threading
 import time
 import webbrowser
 import zipfile
-import zlib
+
 
 # A deployment's settings (a sourced .env, say) mustn't leak in: a real
 # API key, data directory or GTNH version would override the dev ones,
@@ -373,15 +374,24 @@ def _pixel(shape, colour, x, y):
     return tuple(max(0, min(255, int(c * shade))) for c in colour) + (255,)
 
 
-def _png(shape, colour):
-    def chunk(kind, data):
-        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+def _frame(shape, colour, brightness=1.0):
+    from PIL import Image
 
-    rows = b"".join(
-        b"\x00" + b"".join(bytes(_pixel(shape, colour, x, y)) for x in range(16)) for y in range(16)
-    )
-    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 16, 16, 8, 6, 0, 0, 0))
-            + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
+    tinted = tuple(min(255, int(c * brightness)) for c in colour)
+    image = Image.new("RGBA", (16, 16))
+    image.putdata([_pixel(shape, tinted, x, y) for y in range(16) for x in range(16)])
+    return image
+
+
+def _webp(shape, colour):
+    """An icon as the exporter writes it, lossless WebP. Fluids pulse, an
+    animated WebP like the game's animated textures."""
+    frames = [_frame(shape, colour, 1 + 0.15 * math.sin(i * math.pi / 4)) for i in range(8)] \
+        if shape == "fluid" else [_frame(shape, colour)]
+    out = io.BytesIO()
+    frames[0].save(out, format="WEBP", lossless=True, save_all=len(frames) > 1,
+                   append_images=frames[1:], duration=150, loop=0)
+    return out.getvalue()
 
 
 def _write_catalog(bundle, newer):
@@ -404,12 +414,12 @@ def install_icons(data_dir, prerelease=False):
             if it["kind"] == "essentia":
                 continue
             if it["kind"] == "fluid":
-                path = f"fluid/{it['internal']}.png"
+                path = f"fluid/{it['internal']}.webp"
                 fluids_by_key[it["internal"]] = path
             else:
-                path = f"item/{it['mod']}/{it['internal']}~{it['damage']}.png"
+                path = f"item/{it['mod']}/{it['internal']}~{it['damage']}.webp"
                 by_key[f"{it['mod']}:{it['internal']}:{it['damage']}"] = path
-            zf.writestr(path, _png(it["shape"], it["colour"]))
+            zf.writestr(path, _webp(it["shape"], it["colour"]))
     with open(os.path.join(bundle, "icons_lookup.json"), "w", encoding="utf-8") as f:
         json.dump({"by_key": by_key, "fluids_by_key": fluids_by_key, "by_label": {}}, f)
     with open(os.path.join(bundle, "ore_dict.json"), "w", encoding="utf-8") as f:
@@ -421,7 +431,7 @@ def install_icons(data_dir, prerelease=False):
     # icons after a change here get new URLs.
     digest = hashlib.sha256(open(os.path.join(bundle, "images.zip"), "rb").read()).hexdigest()
     with open(os.path.join(bundle, "data.json"), "w", encoding="utf-8") as f:
-        json.dump({"format": 1, "files": {}, "generated_at": "dev", "images": digest}, f)
+        json.dump({"format": 1, "image_format": "webp", "files": {}, "generated_at": "dev", "images": digest}, f)
     # The same bundle as the version before it, with the recipes it had,
     # for the pattern check after an upgrade (gcm/recipes.py).
     before = os.path.join(data_dir, "gamedata", PREVIOUS_VERSION)
