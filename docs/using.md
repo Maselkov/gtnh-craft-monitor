@@ -158,7 +158,7 @@ in-game computers are listed under it (see
   each power machine), with how long ago it last reported. A green dot
   means it's current; amber means it's late (crafts after
   `STALE_AFTER_SECONDS`, power after 5 minutes, the network after an hour
-  or a scan running over 10 minutes), crashed, or had its last scan turned
+  or a scan running over 30 minutes), crashed, or had its last scan turned
   away as incomplete. A grey dot on Patterns means there's no ME Interface
   Terminal, which is optional.
 - the size of each database and the free space where they're kept.

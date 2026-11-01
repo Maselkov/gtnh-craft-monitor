@@ -128,7 +128,8 @@ local CONFIG = {
   SCAN_INTERVAL_SECONDS = 600,  -- 10 min between full scans - this data
                                   -- doesn't need to be anywhere near as
                                   -- fresh as crafting status, and a scan
-                                  -- costs real time (a minute or two)
+                                  -- costs real time (10+ minutes on a
+                                  -- big network)
   WATCH_INTERVAL_SECONDS = 60,  -- between full scans, how often to check
                                 -- just the items with a stock rule on them
                                 -- (see run_watch); 0 turns it off
