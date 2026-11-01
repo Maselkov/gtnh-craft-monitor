@@ -55,6 +55,10 @@ FILE = "recipes.json.gz"
 # Only these, not any one-in-one-out recipe, or a macerator would make
 # chance matches.
 FINISHING_MAPS = ("gt.recipe.vacuumfreezer",)
+# Maps that only take an item apart: GTNH keeps an Unpackager recipe for
+# an item it removed, so stock can be turned back into its parts. Using
+# an item there alone doesn't count as using it.
+TAKE_APART_MAPS = ("gt.recipe.unpackager",)
 # Maps whose special value is the coil heat a recipe needs.
 HEAT_MAPS = ("gt.recipe.blastfurnace",)
 TIERS = ("ULV", "LV", "MV", "HV", "EV", "IV", "LuV", "ZPM", "UV", "UHV", "UEV", "UIV", "UMV", "UXV", "MAX")
@@ -477,6 +481,9 @@ def _classify(row, matcher, new_idx, names):
             row["new_shown"] = [
                 (map_name, body, None) for _, map_name, body in matcher.making(new_idx, first_kind, first_key)
             ][:MAX_ALTERNATIVES]
+            if not row["new_shown"]:
+                # Nothing makes it at all: removed, or made outside GregTech.
+                row["removed"] = (first_kind, first_key, new_idx.using(first_kind, first_key))
         return
     old_sigs = {_omitted(row["in"], row["out"], m, matcher): m for m in old}
     new_sigs = {_omitted(row["in"], row["out"], m, matcher): m for m in new}
@@ -570,6 +577,17 @@ def _present(row, names, old_idx, new_idx):
     if row["status"] == "changed":
         old_sig, new_sig = row["changes"]
         out["changes"] = _describe_changes(old_sig, new_sig, names)
+    if "removed" in row:
+        kind, key, used_in = row["removed"]
+        out["removed"] = {
+            "name": names.get((kind, key)) or key,
+            # Used in something other than taking it apart.
+            "used": any(m not in TAKE_APART_MAPS for m in used_in),
+            # Each map's first machine: the Basic Unpackager, not all nine.
+            "taken_apart_in": [
+                new_idx.machines(m)[0]["name"] for m in used_in if m in TAKE_APART_MAPS and new_idx.machines(m)
+            ],
+        }
     if row["status"] == "moved":
         out["moved_to"] = sorted({m for match in row["new_shown"] for m in [x["name"] for x in new_idx.machines(match[0])]})
     return out

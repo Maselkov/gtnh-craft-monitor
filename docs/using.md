@@ -194,7 +194,11 @@ Each pattern lands in one of these:
 
 - **Broken:** nothing makes the pattern's output from its inputs any more,
   or not in those amounts. The check shows the old recipe and what makes the
-  output now.
+  output now. When no GregTech recipe makes it at all, it says so: an item
+  nothing makes or uses any more was removed (GTNH often leaves an
+  Unpackager recipe to take your stock of it apart); one that's still used
+  may be made outside GregTech now, at a crafting table or in another
+  mod's machine.
 - **Moved to another machine:** the same recipe, now in another machine
   (its pattern needs to move).
 - **Changed outside the pattern:** the pattern still matches, but

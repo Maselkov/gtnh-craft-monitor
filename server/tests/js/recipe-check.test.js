@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  amountText, machineText, noticeText, summaryText, versionsToCheck,
+  amountText, machineText, noticeText, removedText, summaryText, versionsToCheck,
 } from '../../static/js/recipe-check.js';
 
 test('picking another version checks it against the one in use', () => {
@@ -19,6 +19,18 @@ test('amounts: fluids in mB, items as a count, whole', () => {
   assert.equal(amountText({ kind: 'item', size: 64 }), '64x');
   assert.equal(amountText({ kind: 'item', size: 0 }), 'not used up');
   assert.equal(amountText({ kind: 'item', size: null }), '?');
+});
+
+test('an output nothing makes or uses any more is called removed', () => {
+  const name = 'Transmission Component (IV)';
+  assert.equal(removedText({ name, used: false, taken_apart_in: ['Basic Unpackager'] }, '2.9.0'),
+    'Removed in 2.9.0: nothing makes Transmission Component (IV) any more, and nothing uses it.'
+    + ' Any you have left can be taken apart in the Basic Unpackager.');
+  assert.equal(removedText({ name, used: false, taken_apart_in: [] }, '2.9.0'),
+    'Removed in 2.9.0: nothing makes Transmission Component (IV) any more, and nothing uses it.');
+  // Still used: it may be made outside GregTech now.
+  assert.match(removedText({ name, used: true, taken_apart_in: [] }, '2.9.0'),
+    /^Nothing in GregTech makes Transmission Component \(IV\) in 2\.9\.0\. It may be made another way/);
 });
 
 test('a step names its first machine and how many others run it', () => {

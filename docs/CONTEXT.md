@@ -967,9 +967,13 @@ match in another map. A pattern's map is the one its provider's name
 names (NEI's catalysts for the map, Recipes.java), else the one its
 provider's other patterns matched alone, else its own single match. Each
 version's recipes are a separate SQLite file (gcm/recipe_index.py,
-~45 MB for 175k recipes), built in a subprocess like the game data index,
+~60 MB for 175k recipes), built in a subprocess like the game data index,
 because the check reads only the few recipes the patterns' outputs lead
-to.
+to. It indexes what recipes take as well as what they make, so a broken
+pattern whose output nothing makes any more can say whether anything
+still uses it. Only an Unpackager recipe left (TAKE_APART_MAPS) means
+removed: that's how GTNH 2.9.0 retired GT++'s Transmission Components,
+so stock can be taken apart.
 
 ## Test suite (server/tests/)
 

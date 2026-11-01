@@ -27,7 +27,7 @@ from urllib.parse import quote
 
 # Bumped when the schema or what goes in it changes: an index of another
 # format is built again.
-FORMAT = 1
+FORMAT = 2
 ITEM, FLUID = 0, 1
 
 SCHEMA = """
@@ -38,6 +38,9 @@ CREATE TABLE machine (map INTEGER NOT NULL, seq INTEGER NOT NULL, v TEXT NOT NUL
 CREATE TABLE recipe (id INTEGER PRIMARY KEY, map INTEGER NOT NULL, body TEXT NOT NULL);
 -- What each recipe makes, by kind (ITEM, FLUID) and key.
 CREATE TABLE output (kind INTEGER NOT NULL, k TEXT NOT NULL, recipe INTEGER NOT NULL,
+    PRIMARY KEY (kind, k, recipe)) WITHOUT ROWID;
+-- What each recipe takes, the same way.
+CREATE TABLE input (kind INTEGER NOT NULL, k TEXT NOT NULL, recipe INTEGER NOT NULL,
     PRIMARY KEY (kind, k, recipe)) WITHOUT ROWID;
 -- Display names, where the export had them.
 CREATE TABLE name (kind INTEGER NOT NULL, k TEXT NOT NULL, v TEXT NOT NULL, PRIMARY KEY (kind, k)) WITHOUT ROWID;
@@ -112,6 +115,8 @@ def build(source, out_path):
                 conn.execute("INSERT INTO recipe VALUES (?, ?, ?)", (recipe_id, map_id, json.dumps(body)))
                 outputs = {(ITEM, o[0]) for o in body["o"]} | {(FLUID, g[0]) for g in body["g"]}
                 conn.executemany("INSERT INTO output VALUES (?, ?, ?)", ((kind, k, recipe_id) for kind, k in outputs))
+                inputs = {(ITEM, i[0]) for i in body["i"]} | {(FLUID, f[0]) for f in body["f"]}
+                conn.executemany("INSERT INTO input VALUES (?, ?, ?)", ((kind, k, recipe_id) for kind, k in inputs))
                 recipe_id += 1
         for kind, keys, names in ((ITEM, items, raw.get("item_names")), (FLUID, fluids, raw.get("fluid_names"))):
             if isinstance(names, list):
@@ -168,6 +173,15 @@ class RecipeIndex:
             (kind, key),
         )
         return [(rid, self._maps[map_id], json.loads(body)) for rid, map_id, body in rows]
+
+    def using(self, kind, key):
+        """The names of the maps with a recipe taking key, an ITEM key or a
+        FLUID name."""
+        rows = self._all(
+            "SELECT DISTINCT r.map FROM input i JOIN recipe r ON r.id = i.recipe WHERE i.kind = ? AND i.k = ?",
+            (kind, key),
+        )
+        return sorted(self._maps[map_id] for (map_id,) in rows)
 
     def names(self, kind, keys):
         """{key: display name} for those of keys the export named."""
