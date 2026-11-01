@@ -765,6 +765,9 @@ local function draw_status(kind, cpus, busy, post_ok, post_err, errors)
   print("Polling every " .. CONFIG.POLL_SECONDS .. "s. 'rc craft_monitor stop' to stop.")
 end
 
+-- Only problems are printed: this runs after boot has drawn the shell
+-- prompt, so a line printed here lands where the shell thinks its cursor
+-- is, and the next command gets typed over it.
 local function service_loop()
   local me, kind = find_me_component()
   if not me then
@@ -772,7 +775,6 @@ local function service_loop()
     running = false
     return
   end
-  print("[craft_monitor] Using component: " .. kind)
 
   if not component.isAvailable("internet") then
     print("[craft_monitor] No Internet Card installed.")
@@ -852,16 +854,10 @@ local function service_loop()
     thread.create(function()
       run_craft_request_loop(me)
     end):detach()
-    print("[craft_monitor] Craft-request thread started (polling every " ..
-      CONFIG.CRAFT_REQUEST_POLL_SECONDS .. "s).")
   else
     print("[craft_monitor] No getCraftable() method on this component (OpenComputers older than 1.12.47?) - craft requests won't be available.")
   end
 
-  print("[craft_monitor] Polling every " .. CONFIG.POLL_SECONDS .. "s.")
-  if not CONFIG.SHOW_STATUS then
-    print("[craft_monitor] SHOW_STATUS = false - running quietly, no further screen output.")
-  end
   while running do
     local ok, raw = pcall(me.getCpus)
     local errors, cpus, busy = {}, 0, 0

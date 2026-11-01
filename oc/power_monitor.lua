@@ -386,6 +386,9 @@ end
 
 local running = false
 
+-- Only problems are printed: this runs after boot has drawn the shell
+-- prompt, so a line printed here lands where the shell thinks its cursor
+-- is, and the next command gets typed over it.
 local function service_loop()
   local machines, findErr = find_machines()
   if not machines then
@@ -400,11 +403,6 @@ local function service_loop()
     return
   end
 
-  print(string.format("[power_monitor] Found %d gt_machine%s. Polling every %ds.",
-    #machines, #machines == 1 and "" or "s", CONFIG.POLL_SECONDS))
-  if not CONFIG.SHOW_STATUS then
-    print("[power_monitor] SHOW_STATUS = false - running quietly, no further screen output.")
-  end
   -- Once the wireless network has been posted, it keeps being posted
   -- even at 0 EU, so its chart and health dot don't go stale.
   local wireless_seen = false

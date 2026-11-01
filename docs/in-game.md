@@ -305,7 +305,10 @@ return {
 Anything not listed keeps the default from the tables below. Changes take
 effect after a reboot.
 
-The scripts don't draw to the screen by default (`SHOW_STATUS = false`). If
+The scripts don't draw to the screen by default (`SHOW_STATUS = false`), and
+they print only when something's wrong (a missing component or card), so
+after boot the screen shows just the shell prompt. `rc <name> status` says
+whether a script is running. If
 you turn on a status screen, enable it for only one script per screen: each
 one clears the terminal on every cycle, so two would flicker.
 
