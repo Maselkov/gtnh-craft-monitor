@@ -15,7 +15,7 @@
 | `oc/sensor_info_dump.lua` | One-off diagnostic: prints a GT machine's full sensor info |
 | `oc/pattern_dump.lua` | One-off diagnostic: sends what the ME Interface Terminal reports about the network's patterns to `/api/debug` |
 | `tools/icon-export/` | Builds game data (item icons, icon lookup, item catalog) from a GTNH pack; CI runs it for each GTNH release. See its [README](tools/icon-export/README.md). |
-| `deploy/` | The Compose file for the published image, and the release deploy script |
+| `deploy/` | The Compose file for the published image, and the deploy script for releases and the testing instance |
 | `docs/` | The user guides, [how it works](docs/how-it-works.md), and [`CONTEXT.md`](docs/CONTEXT.md), longer design notes and the gotchas found along the way |
 
 ## Running it locally
@@ -92,6 +92,12 @@ Pushing a `v*` tag publishes the image to GHCR
 ([`.github/workflows/publish.yml`](.github/workflows/publish.yml)). `gcm`
 in game installs from the newest release tag, so the image and the scripts
 of one release go together.
+
+Each push to `main` runs CI and deploys that commit, as image tag
+`sha-<commit>`, to a testing instance beside production
+([`.github/workflows/testing.yml`](.github/workflows/testing.yml)); a
+release deploys production. Setting either up on a host is described in
+[`deploy/gcm-deploy.sh`](deploy/gcm-deploy.sh).
 
 ## Docs
 
