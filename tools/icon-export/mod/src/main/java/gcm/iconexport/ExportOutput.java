@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.function.Function;
+import java.util.zip.GZIPOutputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -40,6 +41,8 @@ import cpw.mods.fml.common.ModContainer;
  * <li>{@code ore_dict.json} - the ore dictionary, for the crafting plan's substitutions</li>
  * <li>{@code item_info.json} - items' tooltips and rarity, fluids' temperature and state, and mod
  * names, for the page's descriptions and search</li>
+ * <li>{@code recipes.json.gz} - GregTech's recipe maps, for checking patterns against another
+ * version's recipes (see Recipes)</li>
  * </ul>
  * plus {@code export-report.json} with counts and failures, and for animated icons
  * {@code animations.zip} (each icon's distinct frames) with {@code animations.json} (which frame
@@ -140,6 +143,16 @@ final class ExportOutput {
         report.put("fluidFormulas", fluidFormulaCount);
         report.put("fluidInfo", ((Map<?, ?>) info.get("fluids")).size());
         report.put("modNames", ((Map<?, ?>) info.get("mods")).size());
+
+        Recipes recipes = new Recipes();
+        Map<String, Object> recipeFile = recipes.collect();
+        new File(outDir, "recipes.json.gz").delete();
+        if (recipeFile != null) {
+            writeGzipJson("recipes.json.gz", recipeFile);
+        }
+        report.put("recipes", recipes.recipeCount);
+        report.put("recipeMaps", recipeFile == null ? 0 : ((Map<?, ?>) recipeFile.get("maps")).size());
+        report.put("recipeMapsWithMachines", recipes.mapsWithMachines);
 
         report.put("catalogIds", catalog.size());
         for (Map.Entry<String, Object> table : lookup.entrySet()) {
@@ -308,6 +321,15 @@ final class ExportOutput {
         }
         Gson gson = builder.create();
         writeText(name, gson.toJson(value) + (pretty ? "\n" : ""));
+    }
+
+    private void writeGzipJson(String name, Object value) throws IOException {
+        File tmp = new File(outDir, name + ".tmp");
+        try (Writer w = new OutputStreamWriter(new GZIPOutputStream(new FileOutputStream(tmp), 1 << 16),
+                StandardCharsets.UTF_8)) {
+            new GsonBuilder().disableHtmlEscaping().create().toJson(value, w);
+        }
+        Files.move(tmp.toPath(), new File(outDir, name).toPath(), StandardCopyOption.REPLACE_EXISTING);
     }
 
     private void writeText(String name, String content) throws IOException {

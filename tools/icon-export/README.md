@@ -1,7 +1,8 @@
 # Icon export
 
 Builds a game data bundle (item icons, the icon lookup, the item catalog,
-the ore dictionary and item info) from a GTNH client pack. CI runs it for
+the ore dictionary, item info and GregTech's recipes) from a GTNH client
+pack. CI runs it for
 every GTNH release and publishes the result (see
 [Game data](../../docs/server.md#game-data)), so you only need it for a
 pack CI doesn't cover (a nightly, a modified pack), or to build the data
@@ -100,6 +101,19 @@ icon:
 
 Bundles made before it existed have none of it. Before it, `ore_dict.json`
 also left out names only one item has.
+
+`recipes.json.gz` holds GregTech's recipe maps, for the
+[pattern check](../../docs/using.md#pattern-check): about 175,000 recipes
+in 138 maps for GTNH 2.9, about 2 MB gzipped. `items` and `fluids` are
+tables of keys (`modid:internalname:damage`, damage `*` for any; fluid
+registry names) with their display names in `item_names` and
+`fluid_names`. Each map has its `machines` (what NEI lists as its
+catalysts, by name, which is how a pattern's provider is matched to it) and
+its `recipes`: `{"i": [[item, n]], "f": [[fluid, mB]], "o": [[item, n,
+chance?]], "g": [[fluid, mB]], "e": EU/t, "d": ticks, "s": special value}`,
+indices into the tables, n 0 for an input that isn't used up, chance in
+1/10000 only below 100%. Fake (NEI-only) and disabled recipes are left out.
+Bundles made before it existed can't be compared.
 
 ## Credits
 

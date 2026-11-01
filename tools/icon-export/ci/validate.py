@@ -52,6 +52,11 @@ MINIMUMS = {
     "formulasByKey": 15000,
     "fluidFormulas": 400,
     "modNames": 100,
+    # GTNH 2.9 has about 175,000 GregTech recipes in 138 maps, and NEI
+    # names machines for every map: far fewer means the reflection into
+    # GregTech (Recipes.java) or NEI's catalysts broke.
+    "recipes": 100000,
+    "recipeMapsWithMachines": 100,
 }
 # A tooltip line every GTNH version since the DTPF's has.
 KNOWN_TOOLTIP = "dtpf"

@@ -1412,6 +1412,38 @@ body.private-locked #networkTab {
 .gamedata-label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
 .gamedata-credit { margin-top: 6px; color: var(--muted); font-size: 11px; }
 .gamedata-credit a { color: inherit; }
+#gamedataModal .status-heading { margin-top: 18px; }
+
+/* Pattern check dialog (recipe-check.js): each pattern, then the recipe
+   it matched before and what makes it now. */
+.recipe-check-box { width: min(760px, 94vw); max-height: 88vh; overflow-y: auto; }
+.recipe-check-section { margin-top: 14px; }
+.recipe-check-section > summary { cursor: pointer; }
+.recipe-check-row {
+  padding: 10px 12px;
+  margin-top: 8px;
+  border: 1px solid rgba(128,128,128,0.2);
+  border-radius: 10px;
+  font-size: 13px;
+}
+.recipe-check-pattern { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.recipe-check-name { font-weight: 600; }
+.recipe-check-provider { color: var(--muted); font-size: 12px; }
+.recipe-check-pattern-stacks { margin-top: 4px; }
+.recipe-check-line { margin-top: 4px; color: var(--busy); }
+.recipe-block { margin-top: 8px; }
+.recipe-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.recipe-step { margin-top: 2px; }
+.recipe-step-machine { font-size: 12px; }
+.recipe-step-details { color: var(--muted); margin-left: 6px; }
+.recipe-step-sides { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.recipe-side { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-width: 0; }
+.recipe-arrow { color: var(--muted); }
+.recipe-stack { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+.recipe-stack-icon { width: 20px; height: 20px; flex: none; image-rendering: pixelated; }
+.recipe-stack-amount { color: var(--muted); font-variant-numeric: tabular-nums; }
+.recipe-stack-name { overflow-wrap: anywhere; }
+.recipe-chance { color: var(--muted); font-size: 11px; }
 .admin-token-value { width: 100%; min-height: 70px; resize: vertical; font-family: monospace; font-size: 12px; }
 .user-history-list { max-height: 360px; overflow-y: auto; border: 1px solid rgba(128,128,128,0.2); border-radius: 8px; }
 .user-history-row { padding: 10px 11px; border-bottom: 1px solid rgba(128,128,128,0.15); }

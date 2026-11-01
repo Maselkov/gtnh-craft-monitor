@@ -1,6 +1,7 @@
 // Sign-in state, admin user/token management modals, settings menu.
 
 import { updateScriptsNotice } from './agents.js';
+import { updateRecipeNotice } from './recipe-check.js';
 import { showToast } from './craft-actions.js';
 import {
   clearPins,
@@ -59,6 +60,7 @@ function updateAuthenticationControl() {
   if (AUTH_USER) syncPushSubscription();
   updateGameDataNote();
   updateScriptsNotice();
+  updateRecipeNotice();
   updateTerminalNote();
   const locked = isLocked();
   document.body.classList.toggle('private-locked', locked);

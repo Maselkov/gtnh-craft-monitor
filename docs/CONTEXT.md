@@ -940,6 +940,37 @@ runs it before deploying, which would otherwise run the suite twice.
 Testing's image says `main-<commit>` as its version, which isn't a
 `vX.Y.Z`, so it never auto-updates computers.
 
+**The pattern check compares versions, not a pattern with a recipe.**
+Players write processing patterns partial on purpose: an EBF pattern
+without its gas, a DTPF one without its catalyst, the circuit in the input
+bus, the hot ingot left to a vacuum freezer. Checking each pattern against
+one version's recipes would flag all of those. So gcm/recipes.py matches
+loosely: every pattern output among the recipe's outputs, every pattern
+input among its inputs (ore-dictionary equivalents count, and a recipe's
+stacks of one item are summed first, since GregTech lists 165 as
+64+64+37), and every amount the same multiple of the recipe's. Or through
+one recipe in `FINISHING_MAPS` (only the vacuum freezer: any one-in,
+one-out recipe would let a macerator make chance matches). It then
+asks whether what matched in the old version still matches in the new
+one, in the same map. Any slack in matching applies to both versions alike, so
+it cancels out. Run on one synthetic pattern per recipe of 20,000 from
+2.9.0-RC-1, RC-1 against itself flags nothing, and RC-1 against 2.9.0
+flags 18, all real changes (EBF heat and tier, assembler inputs).
+"Changed" compares what a match relies on without stating: the recipe's
+inputs and outputs the pattern leaves out, the voltage tier and special
+value. A new byproduct is a change too: 2.9.0's bisphenol A recipe makes
+diluted hydrochloric acid where it made water, which fills an LCR whose
+pattern lists only the bisphenol. Enriched fertilizer, which went from the
+LCR (fertilizer items) to the mixers (dusts) in 2.9.0, comes out
+**broken**, not moved: its inputs changed too. "Moved" is the same loose
+match in another map. A pattern's map is the one its provider's name
+names (NEI's catalysts for the map, Recipes.java), else the one its
+provider's other patterns matched alone, else its own single match. Each
+version's recipes are a separate SQLite file (gcm/recipe_index.py,
+~45 MB for 175k recipes), built in a subprocess like the game data index,
+because the check reads only the few recipes the patterns' outputs lead
+to.
+
 ## Test suite (server/tests/)
 
 201 pytest tests across 17 files, covering every endpoint - crafts, CPU

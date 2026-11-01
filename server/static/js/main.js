@@ -27,6 +27,7 @@ import {
   updateNetworkSearchHighlight,
 } from './network.js';
 import { fetchPowerBadge, powerMachineFromUrl, setupPowerActions } from './power.js';
+import { setupRecipeCheckActions } from './recipe-check.js';
 import { fetchStockRules, setupStockActions } from './stock.js';
 import { focusNetworkSearch, pathToTab, refreshActiveTab, setupTabActions, switchTab } from './tabs.js';
 import { setupTheme } from './theme.js';
@@ -44,6 +45,7 @@ setupAuthControls();
 setupTheme();
 setupAdminActions();
 setupGameDataActions();
+setupRecipeCheckActions();
 setupCraftsActions();
 setupCraftHistory();
 setupCraftStats();

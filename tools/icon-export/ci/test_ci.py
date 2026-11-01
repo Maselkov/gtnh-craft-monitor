@@ -150,7 +150,7 @@ def faithful_export(tmp_path, textured_png):
     (tmp_path / "export-report.json").write_text(json.dumps(
         {"by_keyEntries": 50000, "fluids_by_keyEntries": 2000, "aspects_by_keyEntries": 60, "oreNames": 5000,
          "catalogIds": 9000, "tooltipsByKey": 20000, "shiftTooltipsByKey": 500, "fluidInfo": 2000, "modNames": 300,
-         "formulasByKey": 26000, "fluidFormulas": 800,
+         "formulasByKey": 26000, "fluidFormulas": 800, "recipes": 175000, "recipeMapsWithMachines": 138,
          "itemsRendered": 100, "itemsFailed": 0}))
     (tmp_path / "item_info.json").write_text(json.dumps(
         {"tooltips": {"by_key": {"gregtech:gt.blockmachines:1": "Machine Type: Plasma Forge | DTPF"}}}))

@@ -1,0 +1,46 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  amountText, machineText, noticeText, summaryText, versionsToCheck,
+} from '../../static/js/recipe-check.js';
+
+test('picking another version checks it against the one in use', () => {
+  assert.deepEqual(versionsToCheck('2.9.1', '2.9.0', '2.9.0-RC-1'), { from: '2.9.0', to: '2.9.1' });
+});
+
+test('picking the version in use checks the upgrade that led to it', () => {
+  assert.deepEqual(versionsToCheck('2.9.0', '2.9.0', '2.9.0-RC-1'), { from: '2.9.0-RC-1', to: '2.9.0' });
+  assert.equal(versionsToCheck('2.9.0', '2.9.0', null), null);
+  assert.equal(versionsToCheck('2.9.0', null, null), null);
+});
+
+test('amounts: fluids in mB, items as a count, whole', () => {
+  assert.equal(amountText({ kind: 'fluid', size: 1000 }), '1,000 mB');
+  assert.equal(amountText({ kind: 'item', size: 64 }), '64x');
+  assert.equal(amountText({ kind: 'item', size: 0 }), 'not used up');
+  assert.equal(amountText({ kind: 'item', size: null }), '?');
+});
+
+test('a step names its first machine and how many others run it', () => {
+  assert.equal(machineText({ map: 'gt.recipe.vacuumfreezer', machines: ['Vacuum Freezer'] }), 'Vacuum Freezer');
+  assert.equal(machineText({ map: 'm', machines: ['Basic Mixer', 'Advanced Mixer', 'Elite Mixer'] }),
+    'Basic Mixer (or 2 more)');
+  assert.equal(machineText({ map: 'gt.recipe.odd', machines: [] }), 'gt.recipe.odd');
+});
+
+test('the summary counts every status', () => {
+  const text = summaryText({
+    from: '2.9.0-RC-1', to: '2.9.0',
+    counts: { broken: 2, moved: 1, changed: 3, unchecked: 40, crafting: 7, ok: 900 },
+  });
+  assert.equal(text, 'From GTNH 2.9.0-RC-1 to 2.9.0: 2 broken, 1 moved to another machine, '
+    + '3 changed outside the pattern, 40 not checked, 900 unchanged. '
+    + "7 crafting-table patterns aren't checked: AE2 marks those invalid itself.");
+});
+
+test('the notice only names what there is', () => {
+  assert.equal(noticeText({ from: '2.9.0-RC-1', to: '2.9.0', counts: { broken: 1, moved: 0, changed: 0 } }),
+    'GTNH 2.9.0 changed recipes a pattern uses (1 broken), compared with 2.9.0-RC-1.');
+  assert.equal(noticeText({ from: 'a', to: 'b', counts: { broken: 2, moved: 1, changed: 3 } }),
+    'GTNH b changed recipes 6 patterns use (2 broken, 1 moved to another machine, 3 changed), compared with a.');
+});

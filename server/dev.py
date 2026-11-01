@@ -24,6 +24,7 @@ import json
 import math
 import os
 import random
+import re
 import secrets
 import shutil
 import signal
@@ -395,8 +396,90 @@ def install_icons(data_dir):
     digest = hashlib.sha256(open(os.path.join(bundle, "images.zip"), "rb").read()).hexdigest()
     with open(os.path.join(bundle, "data.json"), "w", encoding="utf-8") as f:
         json.dump({"format": 1, "files": {}, "generated_at": "dev", "images": digest}, f)
+    # The same bundle as the version before it, with the recipes it had,
+    # for the pattern check after an upgrade (gcm/recipes.py).
+    before = os.path.join(data_dir, "gamedata", PREVIOUS_VERSION)
+    shutil.rmtree(before, ignore_errors=True)
+    shutil.copytree(bundle, before)
+    write_recipes(os.path.join(bundle, "recipes.json.gz"), recipe_maps(changed=True))
+    write_recipes(os.path.join(before, "recipes.json.gz"), recipe_maps(changed=False))
     with open(os.path.join(data_dir, "gamedata", "selected.json"), "w", encoding="utf-8") as f:
-        json.dump({"version": "dev", "textures": "default", "previous": None}, f)
+        json.dump({"version": "dev", "textures": "default", "previous": PREVIOUS_VERSION}, f)
+
+
+# ---------------------------------------------------------------- recipes
+
+PREVIOUS_VERSION = "dev-before"
+# How "dev"'s recipes differ from PREVIOUS_VERSION's, by the pattern
+# provider whose recipe changes: one pattern broken, one moved and two
+# changed outside the pattern.
+RECIPE_CHANGES = {
+    "Bending Machine T4:EV": {"inputs": [("Inconel-625 Ingot", 2)]},
+    "Lathe T3:HV": {"machine": "Cutting Machine"},
+    "Fluid Extractor": {"eut": 1920},
+    "Electric Implosion Compressor": {"fluids": [("Water", 1000)]},
+}
+
+
+def _machine(provider):
+    """What GregTech calls the machine a provider is named after: "Bending
+    Machine T4:EV" is a Bending Machine."""
+    return re.split(r" T\d| \{", provider)[0]
+
+
+def _recipe_key(name):
+    it = BY_NAME[name]
+    return it["internal"] if it["kind"] == "fluid" else f"{it['mod']}:{it['internal']}:{it['damage']}"
+
+
+def recipe_maps(changed):
+    """{map: {"machines": [names], "recipes": [...]}} with item keys in
+    place of indices: a GregTech recipe for each processing pattern, as
+    the old version had it or, changed, the new one."""
+    maps = {}
+    for provider, crafting, outputs, inputs, *_ in PATTERNS:
+        if crafting or any(BY_NAME[n]["kind"] == "essentia" for n, _ in inputs + outputs):
+            continue
+        change = RECIPE_CHANGES.get(provider, {}) if changed else {}
+        inputs = change.get("inputs", inputs)
+        machine = change.get("machine", _machine(provider))
+        recipe = {"e": change.get("eut", 120), "d": 200}
+        for side, fluid_side, entries in (("i", "f", inputs + change.get("fluids", [])), ("o", "g", outputs)):
+            for name, size in entries:
+                kind = fluid_side if BY_NAME[name]["kind"] == "fluid" else side
+                recipe.setdefault(kind, []).append([_recipe_key(name), size])
+        entry = maps.setdefault(f"gt.recipe.{_slug(machine)}", {"machines": [machine], "recipes": []})
+        entry["recipes"].append(recipe)
+    return maps
+
+
+def write_recipes(path, maps):
+    """A bundle's recipes.json.gz as tools/icon-export's Recipes.java
+    writes it: items and fluids in tables, recipes pointing into them."""
+    tables = {"items": {}, "fluids": {}}
+
+    def index(table, key):
+        return tables[table].setdefault(key, len(tables[table]))
+
+    out = {}
+    for map_name, entry in maps.items():
+        recipes = []
+        for r in entry["recipes"]:
+            recipe = {k: v for k, v in r.items() if k in ("e", "d")}
+            for side, table in (("i", "items"), ("o", "items"), ("f", "fluids"), ("g", "fluids")):
+                if side in r:
+                    recipe[side] = [[index(table, key), size] for key, size in r[side]]
+            recipes.append(recipe)
+        out[map_name] = {"machines": [{"name": m, "key": None} for m in entry["machines"]], "recipes": recipes}
+    names = {_recipe_key(it["name"]): it["name"] for it in CATALOG if it["kind"] != "essentia"}
+    data = {
+        "format": 1,
+        "items": list(tables["items"]), "item_names": [names[k] for k in tables["items"]],
+        "fluids": list(tables["fluids"]), "fluid_names": [names[k] for k in tables["fluids"]],
+        "maps": out,
+    }
+    with gzip.open(path, "wt", encoding="utf-8") as f:
+        json.dump(data, f)
 
 
 # ---------------------------------------------------------------- power and history

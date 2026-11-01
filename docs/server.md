@@ -277,6 +277,15 @@ so it can read icons, item descriptions and the ore dictionary from disk instead
 them in memory. A server with a GTNH 2.9 bundle and a big network uses
 about 55 MB of RAM.
 
+Game data also holds the version's GregTech recipes (`recipes.json.gz`,
+about 2 MB), for the [pattern check](using.md#pattern-check). Checking
+against a version that isn't installed downloads only that file, into
+`DATA_DIR/recipes/`, where each version's recipes are also indexed (about
+45 MB per version, built in a couple of seconds the first time it's
+checked). Only the versions in use, the one before it, and the last one
+checked against are kept there. Game data built before recipes were
+exported can't be compared until it's rebuilt.
+
 To pin the version without the page, set `GTNH_VERSION` (e.g.
 `2.9.0-beta-3`), and optionally `GTNH_TEXTURES=faithful32`; the server
 installs it at startup if it isn't already.
