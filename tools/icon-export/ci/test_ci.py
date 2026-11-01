@@ -76,6 +76,29 @@ def test_manual_version_respects_force_and_pack_url():
                        "pack_url": "https://example.com/p.zip"}]
 
 
+def test_manual_versions_build_in_turn():
+    ours = [release("gtnh-data-2.8.4")]
+    builds = detect.plan(GTNH, ours, lambda url: True,
+                         version=" 2.9.0-RC-1, 2.8.4,")
+    assert [b["version"] for b in builds] == ["2.9.0-RC-1"]
+    builds = detect.plan(GTNH, ours, lambda url: True,
+                         version="2.9.0-RC-1,2.8.4",
+                         force=True)
+    assert [b["version"] for b in builds] == ["2.9.0-RC-1", "2.8.4"]
+
+
+def test_pack_url_needs_a_single_version():
+    with pytest.raises(SystemExit):
+        detect.plan(GTNH, [], version="2.8.4,2.9.0-RC-1",
+                    pack_url="https://example.com/p.zip")
+
+
+def test_manual_versions_fail_if_any_zip_is_missing():
+    with pytest.raises(SystemExit):
+        detect.plan(GTNH, [], lambda url: "9.9.9" not in url,
+                    version="2.8.4,9.9.9")
+
+
 def test_manual_version_without_a_zip_fails():
     with pytest.raises(SystemExit):
         detect.plan(GTNH, [], lambda url: False, version="9.9.9")

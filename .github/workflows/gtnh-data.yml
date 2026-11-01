@@ -18,8 +18,8 @@ name: GTNH data
 # doesn't have to match the GTNH version; the newest one is used.
 #
 # The daily run picks up stable, beta and RC releases that don't have data
-# yet (tools/icon-export/ci/detect.py). Run it by hand to build a specific
-# version, give a pack URL the detection can't guess, or rebuild one.
+# yet (tools/icon-export/ci/detect.py). Run it by hand to build specific
+# versions, give a pack URL the detection can't guess, or rebuild them.
 
 on:
   schedule:
@@ -27,13 +27,13 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "GTNH version, e.g. 2.9.0-beta-3 (blank: build any new releases)"
+        description: "GTNH versions, comma-separated, e.g. 2.9.0, 2.9.0-RC-1 (blank: build any new releases)"
         required: false
       pack_url:
-        description: "MultiMC client zip URL, if it can't be found automatically"
+        description: "MultiMC client zip URL, if it can't be found automatically (one version only)"
         required: false
       force:
-        description: "Rebuild even if this version is already published"
+        description: "Rebuild even if these versions are already published"
         type: boolean
         default: false
 
