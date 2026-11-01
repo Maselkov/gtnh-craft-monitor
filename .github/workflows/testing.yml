@@ -85,7 +85,11 @@ jobs:
     permissions:
       contents: read
       packages: read
-    uses: $/.github/workflows/deploy.yml
+    # Without secrets: inherit the called job reads its environment's
+    # secrets as empty. It only reaches this repo's own deploy.yml, from
+    # the same commit.
+    uses: $/.github/workflows/deploy.yml # zizmor: ignore[secrets-inherit]
+    secrets: inherit
     with:
       environment: testing
       tag: ${{ needs.image.outputs.tag }}
