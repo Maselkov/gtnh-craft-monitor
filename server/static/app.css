@@ -100,6 +100,9 @@ h1 {
 .gamedata-note .note-dismiss {
   margin-left: auto;
 }
+#networkTerminalNote {
+  margin-top: 12px;
+}
 .gamedata-note a, #craftPlanNote a {
   color: var(--accent);
 }
