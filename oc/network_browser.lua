@@ -139,6 +139,11 @@ local CONFIG = {
                                          -- 0 turns it off
   PATTERN_CHUNK_SIZE = 20,  -- patterns per POST: a crafting pattern
                             -- carries its NBT, a few KB with 9 inputs
+  CHUNK_MAX_BYTES = 64 * 1024,  -- and at most this much JSON per POST,
+                                -- for items and patterns alike, though one
+                                -- bigger item still goes: the body is
+                                -- built as one string, and 100 items with
+                                -- big NBT ran a computer out of memory
   CRASH_RESTART_SECONDS = 30,  -- after an error kills the scan loop (see
                                -- service_loop), wait this long and start over
   MAX_CONSECUTIVE_ERRORS = 5,
@@ -234,6 +239,19 @@ local function post_result_subchunk(items, scanToken, first, last)
   end
   return post_scan_chunk("/scan/batch", '{"items":[' .. table.concat(items, ",", first, last)
     .. '],"scan_token":' .. json_encode(scanToken) .. "}")
+end
+
+-- The last index of the chunk of list (JSON strings) that starts at
+-- first: at most maxCount of them, and at most CONFIG.CHUNK_MAX_BYTES
+-- unless the first alone is more.
+local function chunk_end(list, first, n, maxCount)
+  local last, bytes = first, #list[first]
+  while last < n and last - first + 1 < maxCount
+      and bytes + 1 + #list[last + 1] <= CONFIG.CHUNK_MAX_BYTES do
+    last = last + 1
+    bytes = bytes + 1 + #list[last]
+  end
+  return last
 end
 
 -- getItemsInNetworkById() can answer nil (with a reason, as component
@@ -617,9 +635,9 @@ local function run_scan(me)
       pcall(collectgarbage, "collect")
       local subChunkNum = 0
       local n = #encoded  -- sent entries are cleared below, so # won't do after
-      for first = 1, n, CONFIG.RESULT_CHUNK_SIZE do
-        if scanRejected then break end
-        local last = math.min(first + CONFIG.RESULT_CHUNK_SIZE - 1, n)
+      local first = 1
+      while first <= n and not scanRejected do
+        local last = chunk_end(encoded, first, n, CONFIG.RESULT_CHUNK_SIZE)
         subChunkNum = subChunkNum + 1
         set_phase(string.format("Batch %d: POSTing result sub-chunk %d (%d items)...", batchNum, subChunkNum, last - first + 1))
         chunksSent = chunksSent + 1
@@ -634,6 +652,7 @@ local function run_scan(me)
           debug_log("batch POST failed: " .. tostring(postErr))
         end
         for j = first, last do encoded[j] = nil end
+        first = last + 1
         pcall(collectgarbage, "collect")
       end
     else
@@ -856,12 +875,13 @@ local function run_pattern_scan(terminal)
   -- chunk holds patterns as JSON, as the item scan's batches do: a
   -- pattern's tables and hex NBT take far more memory than its JSON,
   -- and each POST waits on the network while the other scripts run.
-  local chunk, chunksSent, errors, total, providers = {}, 0, 0, 0, 0
+  local chunk, chunkBytes, chunksSent, errors, total, providers = {}, 0, 0, 0, 0, 0
   local rejected = false
-  -- Sends chunk's first n patterns (all of them without n).
-  local function flush(n)
-    n = math.min(n or #chunk, #chunk)
-    if n == 0 or rejected then return end
+  -- Sends chunk's first PATTERN_CHUNK_SIZE patterns, or fewer if they'd
+  -- be more than CHUNK_MAX_BYTES.
+  local function flush()
+    if #chunk == 0 or rejected then return end
+    local n = chunk_end(chunk, 1, #chunk, CONFIG.PATTERN_CHUNK_SIZE)
     chunksSent = chunksSent + 1
     set_phase(string.format("Patterns: POSTing chunk %d (%d patterns)...", chunksSent, n))
     local postOk, err, wasRejected = post_scan_chunk("/patterns/batch",
@@ -872,6 +892,7 @@ local function run_pattern_scan(terminal)
       errors = errors + 1
       debug_log("pattern batch POST failed: " .. tostring(err))
     end
+    for j = 1, n do chunkBytes = chunkBytes - #chunk[j] end
     table.move(chunk, n + 1, #chunk + n, 1)
     pcall(collectgarbage, "collect")
   end
@@ -901,6 +922,7 @@ local function run_pattern_scan(terminal)
           local encOk, encoded = pcall(json_encode, simplify_pattern(info.patterns[slot], slot, provider))
           if encOk then
             chunk[#chunk + 1] = encoded
+            chunkBytes = chunkBytes + #encoded
             total = total + 1
           else
             errors = errors + 1
@@ -910,7 +932,10 @@ local function run_pattern_scan(terminal)
         end
       end
       info = nil
-      while #chunk >= CONFIG.PATTERN_CHUNK_SIZE and not rejected do flush(CONFIG.PATTERN_CHUNK_SIZE) end
+      while (#chunk >= CONFIG.PATTERN_CHUNK_SIZE or chunkBytes >= CONFIG.CHUNK_MAX_BYTES)
+          and not rejected do
+        flush()
+      end
       -- Long runs of empty interfaces never reach a POST, the usual
       -- place this thread lets the others run.
       if i % 50 == 0 then os.sleep(0) end
@@ -920,7 +945,7 @@ local function run_pattern_scan(terminal)
     errors = errors + 1
     debug_log("getInterfaces() failed: " .. tostring(list))
   end
-  flush()
+  while #chunk > 0 and not rejected do flush() end
 
   if rejected then
     return false, "pattern scan rejected by server (stale_scan_token)"

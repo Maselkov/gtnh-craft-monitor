@@ -69,6 +69,43 @@ test("a full scan: catalog download, chunked batches, fluids, finish", function(
   t.eq(finish[1].json, { scan_token = "tok-1", chunks_sent = 4, total_errors = 0, interface_terminal = false })
 end)
 
+-- n items whose NBT is tagBytes long, so each one's JSON is about twice
+-- that.
+local function fill_tagged(me, n, tagBytes)
+  for i = 1, n do
+    me.items[i] = ae2.stack("testmod:item" .. i, "Item " .. i, i,
+      { hasTag = true, tag = string.rep("x", tagBytes) })
+  end
+end
+
+test("items with big NBT go in smaller chunks, CHUNK_MAX_BYTES at most", function()
+  local env, me = setup({ config = { CHUNK_MAX_BYTES = 5000 } })
+  fill_tagged(me, 9, 1000)  -- about 2.1KB of JSON each
+  env:start_service("network_browser")
+  env:run({ seconds = 60 })
+
+  local sizes, sent = {}, 0
+  for i, b in ipairs(batches(env)) do
+    sizes[i] = #b.items
+    sent = sent + #b.items
+  end
+  t.eq(sizes, { 2, 2, 2, 2, 1 })
+  t.eq(sent, 9)
+  t.eq(env:requests_to("^/api/network/scan/finish$")[1].json.chunks_sent, 5)
+end)
+
+test("an item bigger than CHUNK_MAX_BYTES still goes, on its own", function()
+  local env, me = setup({ config = { CHUNK_MAX_BYTES = 100 } })
+  fill_tagged(me, 3, 1000)
+  env:start_service("network_browser")
+  env:run({ seconds = 60 })
+  local b = batches(env)
+  t.eq(#b, 3)
+  for _, batch in ipairs(b) do t.eq(#batch.items, 1) end
+  t.eq(env:requests_to("^/api/network/scan/finish$")[1].json, {
+    scan_token = "tok-1", chunks_sent = 3, total_errors = 0, interface_terminal = false })
+end)
+
 test("essentia follows the fluids, in its own chunk", function()
   local env, me = setup()
   fill(me, 250)
@@ -558,6 +595,27 @@ test("after an item scan, every pattern goes to the server in chunks", function(
     { scan_token = "ptok-1", chunks_sent = 2, total_errors = 0 })
 end)
 
+
+test("patterns with big NBT go in smaller chunks, CHUNK_MAX_BYTES at most", function()
+  local env, me = setup({ config = { CHUNK_MAX_BYTES = 5000 } })
+  fill(me, 3)
+  local big = {}
+  for i = 1, 5 do
+    big[i] = fake_terminal.pattern(
+      { [1] = fake_terminal.item("minecraft:log", "Oak Wood", 0, { id = 17 }) },
+      { [1] = fake_terminal.item("minecraft:planks", "Oak Wood Planks", 0, { id = 5 }) },
+      { crafting = true, tag = string.rep("x", 1000) })
+  end
+  fake_terminal.new(env, { fake_terminal.interface("Molecular Assembler", 0, 0, 0, big) })
+  env:start_service("network_browser")
+  env:run({ seconds = 60 })
+
+  local sizes = {}
+  for i, b in ipairs(pattern_batches(env)) do sizes[i] = #b.patterns end
+  t.eq(sizes, { 2, 2, 1 })
+  t.eq(env:requests_to("^/api/network/patterns/finish$")[1].json,
+    { scan_token = "ptok-1", chunks_sent = 3, total_errors = 0 })
+end)
 test("without an interface terminal there are no pattern scans", function()
   local env, me = setup()
   fill(me, 3)

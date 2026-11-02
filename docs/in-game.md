@@ -378,6 +378,7 @@ never sees it.
 | `BATCH_SIZE` | `100` | Most item IDs queried per call; the server's catalog ends calls sooner around [big IDs](how-it-works.md#scanning-the-network). Each call's result is held in memory until it's sent, so lower uses less |
 | `WATCH_BATCH_SIZE` | `1` | Item IDs queried per call when checking stock rules |
 | `RESULT_CHUNK_SIZE` | `100` | Items sent to the server per POST |
+| `CHUNK_MAX_BYTES` | `65536` | Most JSON sent per POST, items or patterns: items with big NBT, like Tinkers' tools, go in smaller chunks. One item bigger than this still goes on its own. Each POST's body is built as one string, so lower uses less memory |
 | `DELAY_BETWEEN_BATCHES_SECONDS` | `0.1` | Pause between batches |
 | `MAX_CONSECUTIVE_ERRORS` | `5` | Batches in a row that may fail before the scan is abandoned |
 | `HTTP_TIMEOUT_SECONDS` | `20` | Give up on a request to the server that stalls this long |
