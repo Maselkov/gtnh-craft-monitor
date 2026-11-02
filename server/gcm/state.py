@@ -137,6 +137,10 @@ cpu_has_monitor = set()
 # few dumps only - this isn't meant to be a permanent log.
 debug_dumps = []
 
+# Paths that have had a body read leniently (gcm/lenient_json.py), which
+# is logged only the first time for each.
+lenient_json_paths = set()
+
 
 def reset():
     """Clears every piece of in-memory state back to a fresh process.
@@ -180,3 +184,4 @@ def reset():
         cpu_ending.clear()
         cpu_has_monitor.clear()
     debug_dumps.clear()
+    lenient_json_paths.clear()

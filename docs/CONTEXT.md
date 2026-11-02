@@ -409,17 +409,28 @@ same way. Both bound what a runaway or hostile script (anyone with the
 API key) can make the server hold in memory or write to history; a
 whole GTNH catalog is ~11k ids, and an item takes ~600 bytes buffered.
 
-**Bodies that aren't quite JSON.** `json.lua` used to escape only `\`,
-`"`, `\n`, `\r` and `\t`, sending other control characters in strings
-raw. Python's parser refuses those, so a label with one made its batch a
-400 - the same batches on every scan, so a player's scans were refused
-as incomplete forever, and Flask logs nothing for a 400. `json.lua` now
-escapes every control character, but scripts already in the field don't,
-so the server (`gcm/lenient_json.py`, the app's JSON provider) reads a
-body that fails to parse a second time, with invalid UTF-8 replaced and
-control characters allowed in strings, and logs a warning with the text
-around the problem either way. Neither change can alter a body's
-structure, only a string's text.
+**Bodies that aren't quite JSON.** Two kinds made Python's parser
+refuse a scan batch, so a 400 - the same batches on every scan, so a
+player's scans were refused as incomplete forever, and Flask logs nothing
+for a 400:
+
+- Raw control characters in strings: `json.lua` used to escape only
+  `\`, `"`, `\n`, `\r` and `\t`. It now escapes every control character,
+  but scripts already in the field don't.
+- Text that isn't UTF-8: one player's game sent every `§` (the
+  formatting-code sign, `§a16k§r ME Storage Cell`) as the single byte
+  0xA7, as cp1252/Latin-1 write it, rather than UTF-8's C2 A7. Presumably
+  Java's default charset on Windows, somewhere between OC and the HTTP
+  request - `json.lua` never sees it, so only the server can fix it.
+
+The server (`gcm/lenient_json.py`, the app's JSON provider) reads a body
+that fails to parse a second time, with any byte that isn't part of
+valid UTF-8 taken as cp1252 and control characters allowed in strings.
+Neither can alter a body's structure, only a string's text. A first
+version replaced such bytes with U+FFFD; cp1252 gives the same names
+other players' games send. A lenient read is logged once per path until
+a restart (it's expected from such a game on every scan), with the text
+around the problem; a body that still won't parse is logged every time.
 
 Separately: `network_snapshot` (in `item_history.db`) is a full mirror
 of the live network state, rewritten wholesale on every real scan (not
