@@ -17,7 +17,7 @@ import re
 from gcm import mctext
 
 MAX_BYTES = 3000
-# The charts' line colour (gcm/charts.py), so the bar matches the image.
+# The charts' line colour (gcm/chart_draw.py), so the bar matches the image.
 ACCENT = 0x5FB3FF
 # Busy CPUs listed on the crafts embed; the rest are a "+N more" line.
 MAX_CPUS = 8

@@ -208,18 +208,16 @@ def _pattern_stacks(entries):
 
 
 class _Matcher:
-    """Matching for one check: caches what the two versions make and
-    each item's ore-dictionary names."""
+    """Matching for one check: caches each item's ore-dictionary names.
+    Not what the versions make: SQLite answers that in microseconds, and
+    keeping every answer took a base's 4,700 patterns to 100,000 parsed
+    recipes - 150 MB, for a check no faster than without them."""
 
     def __init__(self):
-        self._making = {}
         self._ore = {}
 
     def making(self, idx, kind, key):
-        cache_key = (id(idx), kind, key)
-        if cache_key not in self._making:
-            self._making[cache_key] = idx.making(kind, key)
-        return self._making[cache_key]
+        return idx.making(kind, key)
 
     def _ore_names(self, key):
         if key not in self._ore:

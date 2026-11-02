@@ -116,7 +116,8 @@ gcm/gamedata.py     per-GTNH-version game data bundles: list, download,
                     select, and which one icons.py uses
 gcm/gamedata_check.py  whether the game data looks older than the game,
                     for the admins' notice
-gcm/charts.py       matplotlib PNGs for OpenGraph, with cache + rate limit
+gcm/charts.py       OpenGraph chart PNGs, with cache + rate limit
+gcm/chart_draw.py   draws them with matplotlib, in a child process
 gcm/memory.py       hands freed memory back to the OS after each scan
 gcm/routes/*.py     one Flask Blueprint per area: crafts, craft_requests,
                     network, power, users, gamedata, pages
@@ -712,6 +713,15 @@ goes idle) is `finished`, anything more is `incomplete`. That covers
 cancellation and interruption without claiming more certainty than the
 data supports.
 
+**The Crafts tab's statistics are counted by SQLite.** craft_stats.py
+used to read every job in the range into Python and count there; a base
+with 160,000 jobs took 50-70 MB per request for "all time", 14 MB for a
+week, and held the GIL while it counted, so six viewers' requests took
+54 s. store.crafts.ended_stats() groups and sums in SQL and fetches only
+the top items' durations, for their medians: the same answer, no
+memory to speak of, ~7x faster under concurrent requests, ~0.05 s
+slower alone (five scans, no index on occurred_at).
+
 **"No Crafting Monitor" is only said once it's certain.** A CPU with a
 monitor can report a job with no `finalOutput()` for its first poll or
 two. The cause isn't confirmed; most likely AE2 updates the monitor tile
@@ -975,6 +985,11 @@ because the check reads only the few recipes the patterns' outputs lead
 to. Building one takes ~200 MB, more than a hosted server's whole memory
 limit, so as with the game data index, one beside a bundle's recipes
 (`recipes.sqlite`, `app.py index-gamedata` builds it) is used as it is.
+Nor does a check keep what it reads: it used to cache every recipe making
+each output it looked up, for both versions, and a real base's 4,700
+patterns reached 100,000 parsed recipes (one dust alone is made by 2,240)
+- 150 MB, peaking at ~240 MB, for a check no faster than asking SQLite
+each time. That ran after every accepted pattern scan.
 A check that can't run is a notice for admins, not no notice: that would
 read as nothing broken. It indexes what recipes take as well as what they make, so a broken
 pattern whose output nothing makes any more can say whether anything
@@ -1038,10 +1053,28 @@ alive at once, and the heaps of waitress's 8 threads made it worse.
 Both scan/finish routes call malloc_trim(0) once they're done, accepted
 or rejected, which returns every free page. Measured with a replayed
 4,700-pattern base, half its scans rejected: 147 -> 106 MB with 8
-threads, 116 -> 92 MB in one. MALLOC_ARENA_MAX=2 alone saved ~5 MB;
-jemalloc would mean copying a library into an image with no RUN steps.
-In the same vein, recipes.py keeps only the current pattern scan's
-check results (~7 MB each for that base), not the last four scans'.
+threads, 116 -> 92 MB in one. jemalloc would mean copying a library
+into an image with no RUN steps. In the same vein:
+- recipes.py keeps only the current pattern scan's check results (~7 MB
+  each for that base), not the last four scans'.
+- The image sets MALLOC_ARENA_MAX=2: glibc's per-thread heaps each keep
+  their own free memory. ~5 MB on top of the trim; the lock the threads
+  share hardly matters under the GIL. Fewer waitress threads saved the
+  same and would queue the OC computers' minute bursts.
+- Charts are drawn in a child process (gcm/chart_draw.py, `python -I`,
+  the chart as JSON on stdin, the PNG on stdout). Imported in the
+  server, matplotlib and numpy were ~40 MB for good after the first
+  shared link; a child is ~0.3 s a chart, cached and rate-limited, and
+  ~55 MB only while it draws. Web Push stays in the server: its ~16 MB
+  would cost a process per completion.
+- Scans intern their stacks' mod, internal, kind and name
+  (inventory.intern_names()): each JSON batch parses its own copy, and
+  a scan and the one it replaces are alive at once. ~4 MB of a 4,700-
+  pattern list's 10.5, ~2 MB of 15,000 items' 8. On the image's Python
+  (3.14) an interned string is freed once nothing uses it, so names of
+  items gone from the network don't pile up. __slots__ or tuples would
+  save ~7 MB more, for rewriting everything that reads the snapshots as
+  dicts.
 
 ## Test suite (server/tests/)
 
@@ -1451,8 +1484,8 @@ rebuilt when `data.json` or a texture zip's size changes, or its
 `FORMAT` is bumped (2 added the item info); `app.py index-gamedata`
 builds one into a shared bundle.
 
-With that, and matplotlib/numpy (charts) and pywebpush/cryptography
-(Web Push) imported on first use instead of at startup (~70 MB, which
+With that, and pywebpush/cryptography (Web Push) imported on first use
+and matplotlib/numpy (charts) only in a child process (~70 MB, which
 most servers never need), a server with GTNH 2.9 data, a full scan and
 icons served holds ~54 MB instead of ~287 MB (peak ~80 MB instead of
 ~313 MB).

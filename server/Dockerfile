@@ -49,6 +49,11 @@ ARG GCM_SCRIPTS_VERSION=
 ENV GCM_SCRIPTS_VERSION=$GCM_SCRIPTS_VERSION
 ENV PORT=8420
 ENV STALE_AFTER_SECONDS=30
+# glibc gives threads their own malloc heaps, up to 8 per core, and memory
+# freed in one is only reused by its threads. Two shared by all of
+# waitress's threads saved ~5 MB of a big base's ~110; the lock they share
+# hardly matters under the GIL. See gcm/memory.py.
+ENV MALLOC_ARENA_MAX=2
 ENV SESSION_COOKIE_SECURE=1
 
 EXPOSE 8420

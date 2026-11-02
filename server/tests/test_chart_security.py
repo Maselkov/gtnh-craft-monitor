@@ -2,7 +2,7 @@ from io import BytesIO
 
 import pytest
 
-from gcm import charts, config
+from gcm import chart_draw, charts, config
 
 
 def test_power_chart_reuses_cached_png(client, monkeypatch):
@@ -48,27 +48,16 @@ def test_chart_rate_limiter_caps_tracked_clients(client, monkeypatch):
 
 
 def x_of(ts):
-    """Where render_png plots a unix timestamp on the x axis."""
+    """Where the chart plots a unix timestamp on the x axis."""
     import matplotlib.dates
 
-    return matplotlib.dates.date2num(charts.datetime.fromtimestamp(ts))
+    return matplotlib.dates.date2num(chart_draw.datetime.fromtimestamp(ts))
 
 
-def render_axes(monkeypatch, *args, **kwargs):
-    """Render a chart and return its Axes."""
-    import matplotlib.figure
-
-    figures = []
-
-    class CapturingFigure(matplotlib.figure.Figure):
-        def __init__(self, *a, **kw):
-            super().__init__(*a, **kw)
-            figures.append(self)
-
-    # render_png() imports Figure when it runs.
-    monkeypatch.setattr(matplotlib.figure, "Figure", CapturingFigure)
-    charts.render_png(*args, **kwargs)
-    return figures[0].axes[0]
+def render_axes(monkeypatch, rows, stepped, span_seconds=None, now=None):
+    """Draw a chart, in this process, and return its Axes."""
+    fig = chart_draw.figure(rows, stepped, span_seconds, now, charts.WIDTH_PX, charts.HEIGHT_PX)
+    return fig.axes[0]
 
 
 def test_chart_x_axis_spans_the_range_for_one_row(monkeypatch):
@@ -98,3 +87,23 @@ def test_lifetime_chart_starts_at_the_first_row(monkeypatch):
     ax = render_axes(monkeypatch, [(now - 500_000, 5)], stepped=False, now=now)
 
     assert ax.get_xlim() == pytest.approx((x_of(now - 500_000), x_of(now)))
+
+
+def test_charts_are_drawn_in_a_child_process():
+    # So matplotlib's ~40 MB isn't the server's for good after one chart.
+    import subprocess
+    import sys
+
+    code = (
+        "import sys; sys.path.insert(0, '.'); from gcm import charts; "
+        "png = charts.render_png([(1_760_000_000, 5)], stepped=True, span_seconds=86400, now=1_760_003_600).getvalue(); "
+        "assert png.startswith(b'\\x89PNG'), png[:20]; "
+        "assert 'matplotlib' not in sys.modules"
+    )
+    subprocess.run([sys.executable, "-c", code], check=True)
+
+
+def test_a_failed_drawing_is_an_error_not_an_empty_png(monkeypatch):
+    monkeypatch.setattr(charts.chart_draw, "__file__", "/nonexistent/chart_draw.py")
+    with pytest.raises(RuntimeError, match="drawing a chart failed"):
+        charts.render_png([], stepped=False)

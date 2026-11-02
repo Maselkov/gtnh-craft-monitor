@@ -124,18 +124,66 @@ def history(before=None, after=None, limit=50, query="", status=None):
     return events, len(rows) > limit
 
 
-def ended_since(since):
-    """(cpu, item_label, item_icon, status, ended_at, started_at,
-    item_mod, item_internal, item_damage, auto) for every job that
-    ended at or after `since` (None: all of them), oldest first."""
+# craft_stats.py's item: the item, or its name for rows from before
+# items were recorded.
+_ITEM_GROUP = """
+    CASE WHEN COALESCE(item_internal, '') <> '' THEN item_mod ELSE '' END AS gm,
+    CASE WHEN COALESCE(item_internal, '') <> '' THEN item_internal ELSE item_label END AS gi,
+    CASE WHEN COALESCE(item_internal, '') <> '' THEN item_damage END AS gd"""
+
+
+def ended_stats(since, top):
+    """What the Crafts tab's statistics count, over every job that ended
+    at or after `since` (None: all of them), worked out by SQLite: a
+    base's 160,000 jobs read into Python took 70 MB for one request.
+    {first_start, total, incomplete, auto, distinct_items,
+    cpus: [(cpu, count, busy seconds)], items: [{label, mod, internal,
+    damage, icon, count, incomplete, durations}]}: the `top` most made
+    items, most first, then by name. An item's label and fields are its
+    first job's, its icon the latest. Busy time counts from `since`, or
+    from the first job's start."""
+    where, args = ("", ()) if since is None else (" WHERE occurred_at >= ?", (since,))
+    jobs = f"SELECT *, {_ITEM_GROUP} FROM craft_events{where}"
     with db.transaction(db.app_db) as conn:
-        return conn.execute(
-            "SELECT cpu_name, item_label, item_icon, status, occurred_at, started_at, "
-            "item_mod, item_internal, item_damage, auto FROM craft_events"
-            + ("" if since is None else " WHERE occurred_at >= ?")
-            + " ORDER BY id ASC",
-            () if since is None else (since,),
+        total, incomplete, auto, first_start = conn.execute(
+            "SELECT COUNT(*), COALESCE(SUM(status = 'incomplete'), 0), COALESCE(SUM(auto <> 0), 0), "
+            f"MIN(COALESCE(started_at, occurred_at)) FROM craft_events{where}",
+            args,
+        ).fetchone()
+        start = first_start if since is None else since
+        cpus = conn.execute(
+            "SELECT cpu_name, COUNT(*), "
+            "TOTAL(CASE WHEN started_at IS NOT NULL THEN MAX(0.0, occurred_at - MAX(started_at, ?)) END) "
+            f"FROM craft_events{where} GROUP BY cpu_name",
+            (start, *args),
         ).fetchall()
+        groups = (
+            f"WITH j AS ({jobs}), g AS (SELECT gm, gi, gd, COUNT(*) AS n, SUM(status = 'incomplete') AS inc, "
+            "MIN(id) AS first_id, MAX(id) AS last_id FROM j GROUP BY gm, gi, gd), "
+            "t AS (SELECT g.*, f.item_label AS label FROM g JOIN craft_events f ON f.id = g.first_id "
+            "ORDER BY g.n DESC, COALESCE(f.item_label, ''), g.first_id LIMIT ?) "
+        )
+        distinct = conn.execute(f"WITH j AS ({jobs}) SELECT COUNT(*) FROM (SELECT 1 FROM j GROUP BY gm, gi, gd)",
+                                args).fetchone()[0]
+        rows = conn.execute(
+            groups + "SELECT t.first_id, t.n, t.inc, t.label, f.item_mod, f.item_internal, f.item_damage, "
+            "l.item_icon FROM t JOIN craft_events f ON f.id = t.first_id JOIN craft_events l ON l.id = t.last_id "
+            "ORDER BY t.n DESC, COALESCE(t.label, ''), t.first_id",
+            (*args, top),
+        ).fetchall()
+        durations = {}
+        for first_id, seconds in conn.execute(
+            groups + "SELECT t.first_id, j.occurred_at - j.started_at FROM j "
+            "JOIN t ON j.gm IS t.gm AND j.gi IS t.gi AND j.gd IS t.gd "
+            "WHERE j.started_at IS NOT NULL ORDER BY j.id",
+            (*args, top),
+        ):
+            durations.setdefault(first_id, []).append(seconds)
+        items = [{"label": label, "mod": mod, "internal": internal, "damage": damage, "icon": icon,
+                  "count": n, "incomplete": inc, "durations": durations.get(first_id, [])}
+                 for first_id, n, inc, label, mod, internal, damage, icon in rows]
+    return {"first_start": first_start, "total": total, "incomplete": incomplete, "auto": auto,
+            "distinct_items": distinct, "cpus": cpus, "items": items}
 
 
 def completions(user_id, max_age_seconds):
