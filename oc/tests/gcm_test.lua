@@ -290,27 +290,57 @@ local function motd(env)
   return assert(loadfile(oc_env.OC_DIR .. "/motd.lua", "t", env.globals))()
 end
 
-test("the banner shows the installed version and scripts", function()
+-- What the banner put on screen, without the color codes.
+local function screen(env)
+  return (table.concat(env.output):gsub("\27%[%d*m", ""))
+end
+
+local ALL = '{ version = "v1.1.0", components = { "craft", "power", "network" },'
+  .. ' services = { "craft_monitor", "power_monitor", "network_browser" } }'
+
+test("the banner shows the version, and how each script came up", function()
+  local env = github_env()
+  env:write_file("/etc/gcm.cfg", "return " .. ALL)
+  env:write_file("/etc/rc.cfg", 'enabled = {"craft_monitor", "network_browser", "gcm_agent"}')
+  env.rc_loaded.craft_monitor = { is_running = function() return true end }
+  -- Crashed starting: loaded, but its thread is dead.
+  env.rc_loaded.network_browser = { is_running = function() return false end }
+  motd(env)
+  local text = screen(env)
+  t.truthy(text:find("GTNH Craft Monitor", 1, true), text)
+  t.truthy(text:find("v1.1.0", 1, true), text)
+  t.truthy(text:find("craft ✓ power - network ✗", 1, true), text)
+  t.truthy(text:find("OpenOS 1.8.3 (harness)", 1, true), text)
+  t.eq(text:find("readonly", 1, true), nil)
+end)
+
+test("the banner marks an enabled script rc never loaded, or whose is_running errors, as down", function()
+  local env = github_env()
+  env:write_file("/etc/gcm.cfg", "return " .. ALL)
+  env:write_file("/etc/rc.cfg", 'enabled = {"craft_monitor", "power_monitor", "network_browser"}')
+  env.rc_loaded.power_monitor = { is_running = function() error("boom") end }
+  env.rc_loaded.network_browser = { is_running = function() return true end }
+  motd(env)
+  t.truthy(screen(env):find("craft ✗ power ✗ network ✓", 1, true), screen(env))
+end)
+
+test("the banner lists plain names for a gcm.cfg from before services were in it", function()
   local env = github_env()
   env:write_file("/etc/gcm.cfg", 'return { version = "v1.1.0", components = { "craft", "power", "network" } }')
   motd(env)
-  t.truthy(env:printed("GTNH Craft Monitor"))
-  t.truthy(env:printed("v1.1.0"))
-  t.truthy(env:printed("craft, power, network"))
-  t.truthy(env:printed("OpenOS 1.8.3 (harness)"))
-  t.eq(env:printed("readonly"), false)
+  t.truthy(screen(env):find("craft, power, network", 1, true), screen(env))
 end)
 
 test("the banner fits a tier 1 screen", function()
   local env = github_env()
-  env:write_file("/etc/gcm.cfg", 'return { version = "v10.10.10", components = { "craft", "power", "network" } }')
+  env:write_file("/etc/gcm.cfg", "return " .. ALL:gsub("v1.1.0", "v10.10.10"))
+  env:write_file("/etc/rc.cfg", 'enabled = {"craft_monitor", "power_monitor", "network_browser"}')
   env.readonly_home = true
   motd(env)
-  local text = table.concat(env.output):gsub("\27%[%d*m", "")
   local lines = 0
-  for line in text:gmatch("([^\n]*)\n") do
+  for line in screen(env):gmatch("([^\n]*)\n") do
     lines = lines + 1
-    t.truthy(#line <= 50, "too wide for 50 columns: " .. line)
+    t.truthy(utf8.len(line) <= 50, "too wide for 50 columns: " .. line)
   end
   t.truthy(lines <= 10, "takes " .. lines .. " of 16 rows")
   t.truthy(env:printed("/home is readonly"))

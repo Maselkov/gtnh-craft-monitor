@@ -17,20 +17,56 @@ local LOGO = {
   " \\____|\\____|_|  |_|",
 }
 
--- version and components from gcm's own record of the install, or nil.
-local function installed()
-  local file = io.open("/etc/gcm.cfg", "r")
+-- Runs a Lua file in env and returns what it returned, or nil.
+local function read_lua(path, env)
+  local file = io.open(path, "r")
   if not file then
     return nil
   end
   local body = file:read("*a")
   file:close()
-  local chunk = load(body, "=/etc/gcm.cfg", "t", {})
-  local ok, state = pcall(chunk or error)
-  if ok and type(state) == "table" and type(state.components) == "table" then
+  local chunk = load(body, "=" .. path, "t", env)
+  local ok, result = pcall(chunk or error)
+  return ok and result or nil
+end
+
+-- version, components and their services from gcm's own record of the
+-- install, or nil.
+local function installed()
+  local state = read_lua("/etc/gcm.cfg", {})
+  if type(state) == "table" and type(state.components) == "table" then
     return state
   end
   return nil
+end
+
+-- Each script with how it came up, the way gcm_agent tells the web page:
+-- ✓ enabled and running, ✗ enabled but not running (it crashed starting),
+-- - not enabled. rc has started the enabled ones by the time the shell
+-- runs this. Plain names for a gcm.cfg from before services were in it.
+local function scripts(state)
+  local services = state.services
+  if type(services) ~= "table" or #services ~= #state.components then
+    return "\27[37m" .. table.concat(state.components, ", ")
+  end
+  local rcEnv = {}
+  read_lua("/etc/rc.cfg", rcEnv)
+  local enabled = {}
+  for _, name in ipairs(type(rcEnv.enabled) == "table" and rcEnv.enabled or {}) do
+    enabled[name] = true
+  end
+  local okRc, rc = pcall(require, "rc")
+  local loaded = okRc and type(rc) == "table" and rc.loaded or {}
+  local parts = {}
+  for i, name in ipairs(state.components) do
+    local svc = loaded[services[i]]
+    local running = type(svc) == "table" and type(svc.is_running) == "function"
+      and select(2, pcall(svc.is_running)) == true
+    local mark = not enabled[services[i]] and "\27[37m-"
+      or running and "\27[32m✓" or "\27[31m✗"
+    parts[i] = "\27[37m" .. name .. " " .. mark
+  end
+  return table.concat(parts, " ")
 end
 
 local function banner()
@@ -40,7 +76,7 @@ local function banner()
   local info = {
     [2] = "\27[37mGTNH Craft Monitor",
     [3] = state and ("\27[33m" .. tostring(state.version)) or nil,
-    [4] = state and ("\27[37m" .. table.concat(state.components, ", ")) or nil,
+    [4] = state and scripts(state) or nil,
   }
   io.write("\n")
   for i, row in ipairs(LOGO) do
