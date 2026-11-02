@@ -713,6 +713,15 @@ goes idle) is `finished`, anything more is `incomplete`. That covers
 cancellation and interruption without claiming more certainty than the
 data supports.
 
+**The Crafts tab's statistics are counted by SQLite.** craft_stats.py
+used to read every job in the range into Python and count there; a base
+with 160,000 jobs took 50-70 MB per request for "all time", 14 MB for a
+week, and held the GIL while it counted, so six viewers' requests took
+54 s. store.crafts.ended_stats() groups and sums in SQL and fetches only
+the top items' durations, for their medians: the same answer, no
+memory to speak of, ~7x faster under concurrent requests, ~0.05 s
+slower alone (five scans, no index on occurred_at).
+
 **"No Crafting Monitor" is only said once it's certain.** A CPU with a
 monitor can report a job with no `finalOutput()` for its first poll or
 two. The cause isn't confirmed; most likely AE2 updates the monitor tile
@@ -976,6 +985,11 @@ because the check reads only the few recipes the patterns' outputs lead
 to. Building one takes ~200 MB, more than a hosted server's whole memory
 limit, so as with the game data index, one beside a bundle's recipes
 (`recipes.sqlite`, `app.py index-gamedata` builds it) is used as it is.
+Nor does a check keep what it reads: it used to cache every recipe making
+each output it looked up, for both versions, and a real base's 4,700
+patterns reached 100,000 parsed recipes (one dust alone is made by 2,240)
+- 150 MB, peaking at ~240 MB, for a check no faster than asking SQLite
+each time. That ran after every accepted pattern scan.
 A check that can't run is a notice for admins, not no notice: that would
 read as nothing broken. It indexes what recipes take as well as what they make, so a broken
 pattern whose output nothing makes any more can say whether anything

@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 from gcm import commands, db, state, tracking
@@ -732,6 +734,40 @@ class TestCraftStats:
         everything = stats(client, range="all")
         assert everything["total"] == 2
         assert everything["windowSeconds"] == pytest.approx(2 * 86400 + 100, abs=10)
+
+    def test_items_grouped_as_before_items_were_recorded(self, client):
+        # Rows straight into the log: the oldest have only a name.
+        now = time.time()
+        rows = [
+            # cpu, label, icon, status, ended, started, mod, internal, damage
+            ("W01", "Old Gear", "a.png", "finished", now - 900, None, None, None, None),
+            ("W01", "Old Gear", "b.png", "incomplete", now - 800, now - 860, None, None, None),
+            ("W02", "Gear", "c.png", "finished", now - 700, now - 800, "gregtech", "gt.metaitem.01", 1),
+            ("W02", "Renamed Gear", "d.png", "finished", now - 600, now - 640, "gregtech", "gt.metaitem.01", 1),
+            ("W01", "Bolt", None, "finished", now - 500, now - 520, "gregtech", "gt.metaitem.01", 2),
+            ("W01", "Axle", None, "finished", now - 400, None, "gregtech", "gt.metaitem.01", 3),
+        ]
+        with db.transaction(db.app_db) as conn:
+            conn.executemany(
+                "INSERT INTO craft_events (cpu_name, item_label, item_icon, status, occurred_at, started_at, "
+                "item_mod, item_internal, item_damage) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                rows,
+            )
+        data = stats(client, range="all")
+        assert (data["total"], data["incomplete"], data["distinctItems"]) == (6, 1, 4)
+        # Most made first, then by name; an item's name is its first job's.
+        assert [(i["itemName"], i["count"]) for i in data["items"]] == [
+            ("Gear", 2), ("Old Gear", 2), ("Axle", 1), ("Bolt", 1)]
+        gear, old_gear, axle, _ = data["items"]
+        assert (gear["internal"], gear["damage"], gear["medianSeconds"]) == ("gt.metaitem.01", 1, pytest.approx(70))
+        assert gear["icon"].endswith("d.png")  # the latest
+        assert (old_gear["internal"], old_gear["incomplete"], old_gear["medianSeconds"]) == (
+            None, 1, pytest.approx(60))
+        assert axle["medianSeconds"] is None  # never seen starting
+        w01 = next(c for c in data["cpus"] if c["cpu"] == "W01")
+        assert (w01["count"], w01["busySeconds"]) == (4, pytest.approx(80))
+        # "all" starts at the first job's start, or its end if it has none.
+        assert data["windowSeconds"] == pytest.approx(900, abs=2)
 
     def test_unknown_range_is_a_week(self, client):
         assert stats(client, range="decade")["range"] == "week"
