@@ -234,4 +234,99 @@ test("an option without a value is an error", function()
   t.truthy(message:find("--api-key needs a value", 1, true), message)
 end)
 
+-- OpenOS's own /etc/motd, as every computer has it until someone edits it.
+local STOCK_MOTD = assert(io.open(oc_env.OC_DIR .. "/tests/fixtures/openos_motd", "rb")):read("a")
+
+test("install replaces OpenOS's own motd with the banner", function()
+  local env = install_env({ ok = true })
+  env:write_file("/etc/motd", STOCK_MOTD)
+  t.eq(gcm(env, "install", "power", table.unpack(OPTS)), nil)
+  t.eq(env:read_file("/etc/motd"), oc_file("motd.lua"))
+  t.eq(env:exists("/etc/motd.new"), false)
+end)
+
+test("install puts the banner in when there's no motd", function()
+  local env = install_env({ ok = true })
+  t.eq(gcm(env, "install", "power", table.unpack(OPTS)), nil)
+  t.eq(env:read_file("/etc/motd"), oc_file("motd.lua"))
+end)
+
+test("install keeps a motd the player changed, and says so", function()
+  local env = install_env({ ok = true })
+  local changed = STOCK_MOTD .. 'print("my base")\n'
+  env:write_file("/etc/motd", changed)
+  t.eq(gcm(env, "install", "power", table.unpack(OPTS)), nil)
+  t.eq(env:read_file("/etc/motd"), changed)
+  t.truthy(env:printed("Kept your /etc/motd (it's been changed), so no GCM banner."))
+end)
+
+test("update refreshes an earlier banner, and quietly keeps a changed motd", function()
+  local env = github_env()
+  env:write_file("/etc/gcm.cfg", 'return { version = "v1.0.0", components = { "power" } }')
+  env:write_file("/etc/motd", "-- gcm motd\nprint('old banner')\n")
+  t.eq(gcm(env, "update", "--no-reboot"), nil)
+  t.eq(env:read_file("/etc/motd"), oc_file("motd.lua"))
+
+  local changed = github_env()
+  changed:write_file("/etc/gcm.cfg", 'return { version = "v1.0.0", components = { "power" } }')
+  changed:write_file("/etc/motd", "print('mine')\n")
+  t.eq(gcm(changed, "update", "--no-reboot"), nil)
+  t.eq(changed:read_file("/etc/motd"), "print('mine')\n")
+  t.eq(changed:printed("Kept your"), false)
+end)
+
+test("a motd that fails to download leaves the old one, and the install goes on", function()
+  local env = github_env({ ["motd.lua"] = true })
+  env:write_file("/etc/gcm.cfg", 'return { version = "v1.0.0", components = { "power" } }')
+  env:write_file("/etc/motd", STOCK_MOTD)
+  t.eq(gcm(env, "update", "--no-reboot"), nil)
+  t.eq(env:read_file("/etc/motd"), STOCK_MOTD)
+  t.eq(env:exists("/etc/motd.new"), false)
+  t.truthy(env:printed("Couldn't download motd.lua (HTTP 404); /etc/motd is unchanged."))
+  t.eq(state(env).version, "v1.1.0")
+end)
+
+local function motd(env)
+  return assert(loadfile(oc_env.OC_DIR .. "/motd.lua", "t", env.globals))()
+end
+
+test("the banner shows the installed version and scripts", function()
+  local env = github_env()
+  env:write_file("/etc/gcm.cfg", 'return { version = "v1.1.0", components = { "craft", "power", "network" } }')
+  motd(env)
+  t.truthy(env:printed("GTNH Craft Monitor"))
+  t.truthy(env:printed("v1.1.0"))
+  t.truthy(env:printed("craft, power, network"))
+  t.truthy(env:printed("OpenOS 1.8.3 (harness)"))
+  t.eq(env:printed("readonly"), false)
+end)
+
+test("the banner fits a tier 1 screen", function()
+  local env = github_env()
+  env:write_file("/etc/gcm.cfg", 'return { version = "v10.10.10", components = { "craft", "power", "network" } }')
+  env.readonly_home = true
+  motd(env)
+  local text = table.concat(env.output):gsub("\27%[%d*m", "")
+  local lines = 0
+  for line in text:gmatch("([^\n]*)\n") do
+    lines = lines + 1
+    t.truthy(#line <= 50, "too wide for 50 columns: " .. line)
+  end
+  t.truthy(lines <= 10, "takes " .. lines .. " of 16 rows")
+  t.truthy(env:printed("/home is readonly"))
+end)
+
+test("the banner gets by without gcm.cfg, and falls back to one line if it breaks", function()
+  local env = github_env()
+  motd(env)
+  t.truthy(env:printed("GTNH Craft Monitor"))
+  t.truthy(env:printed("OpenOS 1.8.3 (harness)"))
+
+  local broken = github_env()
+  broken.loaded.computer = nil
+  broken.loaded.filesystem = nil
+  motd(broken)
+  t.truthy(broken:printed("OpenOS 1.8.3 (harness)"))
+end)
+
 return suite

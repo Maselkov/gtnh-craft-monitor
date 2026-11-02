@@ -54,4 +54,8 @@ return {
 
   -- Written on first install only. Updates never touch it.
   config = { src = "config.lua", dst = "/home/config.lua" },
+
+  -- The boot banner. Replaces /etc/motd only while that's OpenOS's own
+  -- or an earlier banner, on install and update.
+  motd = { src = "motd.lua", dst = "/etc/motd" },
 }
