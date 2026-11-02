@@ -110,9 +110,9 @@ method and the scan skips it.
 
 If an error escapes the scan loop (most likely the computer running out of
 memory, which the three scripts share), `network_browser.lua` writes it, with
-a stack traceback and free memory, to `network_browser_debug.log` in the
-directory it runs from. It also reports the error to the server, which ends
-the dead scan and shows the error on the Network tab until a scan finishes.
+a stack traceback and free memory, to `/home/network_browser_debug.log`. It
+also reports the error to the server, which ends the dead scan and shows the
+error on the Network tab until a scan finishes.
 Then it starts over after `CRASH_RESTART_SECONDS`. Each line of that log
 records free memory (`mem=`), so a slow leak shows as a falling number.
 Without this, the error was printed to a screen that other scripts keep
@@ -133,7 +133,7 @@ values, so a GregTech material brings back every stack sharing its ID
 (hundreds, for `gt.metaitem.01`), about a full-scan batch on its own. So
 the script asks for one ID per call (`WATCH_BATCH_SIZE`) and keeps only the
 watched stacks. Each call's size and duration go to the script's debug log,
-`network_browser_debug.log`, in the directory it runs from.
+`/home/network_browser_debug.log`.
 
 ## Reading patterns
 

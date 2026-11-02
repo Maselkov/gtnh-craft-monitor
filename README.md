@@ -147,7 +147,7 @@ Then, in game:
 - `rc craft_monitor status` (or `power_monitor`, `network_browser`) says
   whether a script is running.
 - `network_browser.lua` logs errors and its memory use to
-  `network_browser_debug.log` in the directory it runs from.
+  `/home/network_browser_debug.log`.
 - To see what `craft_monitor.lua` reads, set
   `craft_monitor = { DEBUG_DUMP = true }` in `/home/config.lua` and reboot
   (see [Script settings](docs/in-game.md#craft_monitorlua)).

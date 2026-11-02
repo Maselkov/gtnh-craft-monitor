@@ -236,6 +236,13 @@ local function post_result_subchunk(items, scanToken, first, last)
     .. '],"scan_token":' .. json_encode(scanToken) .. "}")
 end
 
+-- getItemsInNetworkById() can answer nil (with a reason, as component
+-- calls that fail softly do) instead of a list; the error that makes it.
+local function not_a_list(result, reason)
+  return "getItemsInNetworkById() returned " .. tostring(result)
+    .. (reason ~= nil and (": " .. tostring(reason)) or "")
+end
+
 local function safe_free_memory()
   local ok, result = pcall(computer.freeMemory)
   if ok then return result end
@@ -359,7 +366,7 @@ end
 -- LAST line ever written is exactly the answer - whatever checkpoint
 -- never got a matching "done"/"failed" line after it is where the hang
 -- actually is.
-local DEBUG_LOG_PATH = "network_browser_debug.log"
+local DEBUG_LOG_PATH = "/home/network_browser_debug.log"
 local DEBUG_LOG_MAX_BYTES = 200000  -- crude single-rotation cap, not a
                                      -- full multi-file scheme - this is
                                      -- for actively debugging one
@@ -563,8 +570,11 @@ local function run_scan(me)
     batchNum = batchNum + 1
 
     set_phase(string.format("Batch %d: calling getItemsInNetworkById() with %d candidate ids...", batchNum, #batch))
-    local ok, result = pcall(me.getItemsInNetworkById, batch)
+    local ok, result, reason = pcall(me.getItemsInNetworkById, batch)
     batch = nil
+    if ok and type(result) ~= "table" then
+      ok, result = false, not_a_list(result, reason)
+    end
     set_phase(string.format("Batch %d: getItemsInNetworkById() returned (ok=%s, %s stacks)", batchNum,
       tostring(ok), ok and type(result) == "table" and tostring(#result) or "?"))
 
@@ -1044,10 +1054,11 @@ local function run_watch(me)
     local batch = {}
     for i = first, math.min(first + CONFIG.WATCH_BATCH_SIZE - 1, #ids) do batch[#batch + 1] = ids[i] end
     local callStart = computer.uptime()
-    local callOk, result = pcall(me.getItemsInNetworkById, batch)
+    local callOk, result, reason = pcall(me.getItemsInNetworkById, batch)
     if not callOk then
       return false, "getItemsInNetworkById() failed: " .. tostring(result)
     end
+    if type(result) ~= "table" then return false, not_a_list(result, reason) end
     -- For judging what this costs on a real network: the call blocks
     -- the computer, and an id shared by many items returns all of them.
     debug_log(string.format("watch: %d ids -> %d stacks in %.2fs (mem=%s)", #batch, #result,
