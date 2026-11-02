@@ -168,6 +168,33 @@ test("gives up after MAX_CONSECUTIVE_ERRORS failed batches", function()
   t.eq(#env:requests_to("^/api/network/scan/finish$"), 0)
 end)
 
+-- nil and a reason, as component calls that fail softly answer, once
+-- after the first `after` calls.
+local function answer_nil_once(me, after)
+  local real = me.proxy.getItemsInNetworkById
+  local calls = 0
+  me.proxy.getItemsInNetworkById = function(ids)
+    calls = calls + 1
+    if calls == (after or 0) + 1 then return nil, "no network" end
+    return real(ids)
+  end
+end
+
+test("a batch answered with nil is an error, not a crash", function()
+  local env, me = setup({ config = { BATCH_SIZE = 2 } })
+  fill(me, 5)
+  answer_nil_once(me)
+  env:start_service("network_browser")
+  env:run({ seconds = 25 })
+  t.eq(#env:requests_to("^/api/network/crashed$"), 0)
+  local finish = env:requests_to("^/api/network/scan/finish$")
+  t.eq(#finish, 1)
+  t.eq(finish[1].json.total_errors, 1)
+  t.eq(#batches(env), 2, "the other two batches still sent")
+  t.truthy(env:read_file("/home/network_browser_debug.log")
+    :find("getItemsInNetworkById() returned nil: no network", 1, true))
+end)
+
 test("a failed catalog download keeps the current catalog", function()
   local env, me = setup({ routes = { ["GET /api/network/catalog"] = { status = 404, body = "not found" } } })
   env:write_file("/home/item_catalog.txt", "testmod:item1\n")
@@ -390,18 +417,29 @@ test("a failed check is skipped, and the next one and the next scan still run", 
   t.eq(#env:requests_to("^/api/network/scan/start$"), 2)
 end)
 
+test("a check answered with nil is skipped, not a crash", function()
+  local env, me = setup({ config = { SCAN_INTERVAL_SECONDS = 200 },
+    routes = { ["GET /api/network/watch"] = IRON_WATCH } })
+  fill_watch(me)
+  answer_nil_once(me, 3)  -- the full scan's 3 calls, then the first check's
+  env:start_service("network_browser")
+  env:run({ seconds = 150 })
+  t.eq(#env:requests_to("^/api/network/crashed$"), 0)
+  t.eq(#levels(env), 1, "the second check got through")
+end)
+
 -- ------------------------------------------------------------- crashes
 
--- getItemsInNetworkById() returning junk once raises an error outside
--- any pcall - standing in for running out of memory, which can strike
--- wherever the script allocates.
+-- getItemsInNetworkById() returning a list that can't be counted once
+-- raises an error outside any pcall - standing in for running out of
+-- memory, which can strike wherever the script allocates.
 local function crash_once(me)
   local real = me.proxy.getItemsInNetworkById
   local crashed = false
   me.proxy.getItemsInNetworkById = function(ids)
     if not crashed then
       crashed = true
-      return 42
+      return setmetatable({}, { __len = function() error("not enough memory") end })
     end
     return real(ids)
   end
@@ -416,10 +454,10 @@ test("an error that kills the scan is logged, reported, and scanning starts over
 
   local reports = env:requests_to("^/api/network/crashed$", "POST")
   t.eq(#reports, 1)
-  t.truthy(reports[1].json.error:find("attempt to get length", 1, true), reports[1].json.error)
-  t.eq(reports[1].json.phase, "Batch 1: getItemsInNetworkById() returned (ok=true, ? stacks)")
+  t.truthy(reports[1].json.error:find("not enough memory", 1, true), reports[1].json.error)
+  t.eq(reports[1].json.phase, "Batch 1: calling getItemsInNetworkById() with 100 candidate ids...")
   t.eq(type(reports[1].json.free_memory), "number")
-  local log = env:read_file("network_browser_debug.log")
+  local log = env:read_file("/home/network_browser_debug.log")
   t.truthy(log:find("CRASHED during", 1, true), "logged")
   t.truthy(log:find("stack traceback", 1, true), "with the traceback")
   t.eq(#env:requests_to("^/api/network/scan/finish$"), 0)
@@ -447,7 +485,7 @@ test("the debug log records free memory", function()
   env.free_memory = 512 * 1024
   env:start_service("network_browser")
   env:run({ seconds = 30 })
-  t.truthy(env:read_file("network_browser_debug.log"):find("mem=512k", 1, true))
+  t.truthy(env:read_file("/home/network_browser_debug.log"):find("mem=512k", 1, true))
 end)
 
 -- ------------------------------------------------------------ patterns
@@ -582,7 +620,7 @@ test("a broken pattern list is reported as an error, tried again, and item scans
   env:run({ seconds = 60 })
   t.eq(env:requests_to("^/api/network/patterns/finish$")[1].json,
     { scan_token = "ptok-1", chunks_sent = 1, total_errors = 1 })
-  t.truthy(env:read_file("network_browser_debug.log"):find("pattern list failed after 1 interfaces", 1, true))
+  t.truthy(env:read_file("/home/network_browser_debug.log"):find("pattern list failed after 1 interfaces", 1, true))
 
   -- Not an hour later: after the next item scan.
   env:run({ seconds = 100 })
@@ -613,7 +651,7 @@ test("a stale pattern scan token stops sending", function()
   env:run({ seconds = 60 })
   t.eq(#pattern_batches(env), 1)
   t.eq(#env:requests_to("^/api/network/patterns/finish$"), 0)
-  t.truthy(env:read_file("network_browser_debug.log"):find("stale_scan_token", 1, true))
+  t.truthy(env:read_file("/home/network_browser_debug.log"):find("stale_scan_token", 1, true))
 end)
 
 return suite

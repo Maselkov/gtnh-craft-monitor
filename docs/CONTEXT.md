@@ -455,6 +455,13 @@ one), and there's no `getCraftingPlan()`/preview method, so a "what's
 missing before I even submit" UI isn't achievable through this API
 surface at all, not just unbuilt.
 
+**A component call can fail without throwing.** A player's scan crashed
+on `#result` after `getItemsInNetworkById()` returned without an error
+but without a list either - presumably `nil` and a reason, which is how
+OC component calls fail softly. A `pcall` only catches the throwing
+kind, so `network_browser.lua` checks the answer is a table too, and
+counts anything else as a failed batch with the reason logged.
+
 **`os.time()` in OpenComputers is NOT a Unix timestamp.** It's
 reimplemented to return in-game seconds since world creation, on the
 game's own clock (pauses when the game pauses, runs faster than real

@@ -253,7 +253,10 @@ def test_a_crashed_scan_is_reported_and_scanning_starts_over(game, client):
         me.items = { ae2.stack("testmod:a", "Thing A", 5) }
         local real, crashed = me.proxy.getItemsInNetworkById, false
         me.proxy.getItemsInNetworkById = function(ids)
-          if not crashed then crashed = true; return 42 end
+          if not crashed then
+            crashed = true
+            return setmetatable({}, { __len = function() error("not enough memory") end })
+          end
           return real(ids)
         end
         env:start_service("network_browser")
@@ -262,7 +265,7 @@ def test_a_crashed_scan_is_reported_and_scanning_starts_over(game, client):
     game.run(10)
     data = client.get("/api/network").get_json()
     assert data["in_progress"] is False
-    assert "attempt to get length" in data["crash"]["error"]
+    assert "not enough memory" in data["crash"]["error"]
 
     game.run(60)  # CRASH_RESTART_SECONDS, then a full scan
     data = client.get("/api/network").get_json()

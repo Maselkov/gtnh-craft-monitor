@@ -44,7 +44,7 @@ GregTech ID, such as `gt.metaitem.01` (see
 [Scanning the network](how-it-works.md#scanning-the-network)).
 `craft_monitor.lua` grows with the crafts running: each report carries
 every busy CPU's lists, so several big crafts at once take room too.
-`network_browser_debug.log` records free memory (`mem=`) at each step and
+`/home/network_browser_debug.log` records free memory (`mem=`) at each step and
 how many stacks each call returned, so the lowest numbers there show how
 close it gets and which call it was.
 
@@ -398,8 +398,8 @@ scanning with the catalog it has. A server without game data sends no
 catalog; the scanner then uses `CATALOG_PATH` if you've put one there, and
 otherwise reports that no version is picked.
 
-If an error stops a scan, the script logs it to `network_browser_debug.log`
-in the directory it runs from; see
+If an error stops a scan, the script logs it to
+`/home/network_browser_debug.log`; see
 [Scanning the network](how-it-works.md#scanning-the-network).
 
 ### gcm_agent.lua
