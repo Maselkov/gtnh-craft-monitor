@@ -6,6 +6,7 @@ itself is in gcm/state.py; the HTTP side is routes/network.py."""
 import hashlib
 import logging
 import secrets
+import sys
 import threading
 import time
 
@@ -55,6 +56,20 @@ def _is_current_scan_locked(token):
     state.network_lock."""
     current = state.network.get("current_scan_token")
     return bool(current) and token == current
+
+
+# A stack's names, kept once each however many stacks and patterns name
+# them: each JSON batch parses its own copy of "gregtech" and
+# "gt.metaitem.01", and a scan and the one it replaces are alive at once.
+# A third of a big base's pattern list, a quarter of its network items.
+INTERNED = ("mod", "internal", "kind", "name")
+
+
+def intern_names(stack):
+    for field in INTERNED:
+        value = stack.get(field)
+        if type(value) is str:
+            stack[field] = sys.intern(value)
 
 
 def assign_variant(item):
@@ -130,6 +145,7 @@ def add_batch(token, items):
     the scan past MAX_SCAN_ITEMS, which ends it."""
     tags = {}
     for it in items:
+        intern_names(it)
         tag = assign_variant(it)
         if tag:
             tags[store.items.key_of(it)] = tag

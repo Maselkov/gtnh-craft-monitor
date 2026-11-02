@@ -23,6 +23,7 @@ entries here. Thaumic essentia comes as an amount with no item id."""
 import logging
 import re
 import secrets
+import sys
 import time
 
 from gcm import config, icons, inventory, nbt, state, store
@@ -251,7 +252,7 @@ def _is_number(v):
 
 def _provider(raw):
     raw = raw if isinstance(raw, dict) else {}
-    provider = {"name": str(raw.get("name") or "?")[:200]}
+    provider = {"name": sys.intern(str(raw.get("name") or "?")[:200])}
     for key in ("x", "y", "z", "dim"):
         if _is_number(raw.get(key)):
             provider[key] = int(raw[key])
@@ -348,6 +349,7 @@ def _entry(raw):
         "name": str(raw.get("name") or internal),
         "size": raw.get("size") if _is_number(raw.get("size")) and raw.get("size") > 0 else 0,
     }
+    inventory.intern_names(entry)
     if kind != "item":
         return entry, set()
 

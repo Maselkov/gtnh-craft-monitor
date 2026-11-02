@@ -43,3 +43,22 @@ def test_a_failing_trim_never_fails_the_scan(client, api_headers, monkeypatch):
 def test_the_real_one_runs(monkeypatch):
     monkeypatch.setattr(memory, "_malloc_trim", memory._UNSET)
     memory.trim()  # glibc here and in the image; a no-op elsewhere
+
+
+def test_scanned_names_are_kept_once(client, api_headers):
+    # Each JSON batch parses its own copy of every name.
+    import json
+
+    from gcm import state
+    from test_patterns_api import NEODYMIUM_PATTERN
+
+    def copy(obj):
+        return json.loads(json.dumps(obj))
+
+    run_scan(client, api_headers, [[copy(ITEM)], [{**copy(ITEM), "damage": 1}]])
+    a, b = state.network["items"]
+    assert a["mod"] is b["mod"] and a["internal"] is b["internal"] and a["name"] is b["name"]
+    run_pattern_scan(client, api_headers, [[copy(NEODYMIUM_PATTERN)], [copy(NEODYMIUM_PATTERN)]])
+    p, q = state.patterns["patterns"]
+    assert p["inputs"][0]["internal"] is q["inputs"][0]["internal"]
+    assert p["provider"]["name"] is q["provider"]["name"]
