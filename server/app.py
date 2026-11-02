@@ -102,6 +102,10 @@ if __name__ == "__main__":
     from waitress import serve
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    # waitress warns whenever a request has to wait for a free thread, even
+    # for a few milliseconds. The OC scripts all report on the same minute
+    # tick, so that's a burst of these once a minute that clears at once.
+    logging.getLogger("waitress.queue").setLevel(logging.ERROR)
     _log_setup_status(logging.getLogger("gcm"))
     retention.start()
     port = int(os.environ.get("PORT", "8420"))
