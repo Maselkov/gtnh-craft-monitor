@@ -4,7 +4,7 @@ startup work happens - importing any gcm module has no side effects."""
 from flask import Flask
 
 from gcm import (
-    agents, auth, backup, bottlenecks, charts, commands, config, db, gamedata, gamedata_check, inventory, job_tree, patterns,
+    agents, auth, backup, bottlenecks, charts, commands, config, db, gamedata, gamedata_check, inventory, job_tree, lenient_json, patterns,
     planner, push, recipes, retention, security, state, store, webhooks,
 )
 from gcm.routes import agent, craft_requests, crafts, network, pages, power, users
@@ -31,6 +31,7 @@ def create_app(data_dir=None, api_key=None):
 
     app = Flask(__name__, root_path=config.SERVER_DIR)
     app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024
+    app.json = lenient_json.LenientJSONProvider(app)
     security.init_app(app)
     for blueprint in (
         crafts.bp,

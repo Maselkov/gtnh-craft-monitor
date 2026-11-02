@@ -167,6 +167,25 @@ def test_network_scan_lands(game, client):
     assert data["needs_terminal"] is True
 
 
+def test_a_label_with_control_characters_is_sent_as_valid_json(game, client, caplog):
+    # A raw one made the server refuse every batch holding it, so the
+    # scan never completed (gcm/lenient_json.py now reads such a batch
+    # anyway, and logs it).
+    game.write_file("/home/item_catalog.txt", "testmod:a\n")
+    game.lua(
+        """
+        me = ae2.new(env)
+        me.items = { ae2.stack("testmod:a", "Odd\\0\\7\\27\\31 Thing", 5) }
+        env:start_service("network_browser")
+        """
+    )
+    game.run(30)
+    assert all(status == 200 for _, _, status in game.requests)
+    names = [i["name"] for i in client.get("/api/network").get_json()["items"]]
+    assert names == ["Odd\x00\x07\x1b\x1f Thing"]
+    assert "leniently" not in caplog.text
+
+
 def test_a_scan_past_the_item_limit_stops_without_finishing(game, client, monkeypatch):
     monkeypatch.setattr(config, "MAX_SCAN_ITEMS", 2)
     game.write_file("/home/item_catalog.txt", "testmod:a\ntestmod:b\ntestmod:c\n")
