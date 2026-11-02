@@ -596,6 +596,11 @@ function Env:_libs()
     local content = env:read_file(p)
     return content and #content or 0
   end
+  -- The filesystem proxy a path is on; env.readonly_home says whether
+  -- that's a read-only one, like a computer still booted from the floppy.
+  function filesystem.get()
+    return { isReadOnly = function() return env.readonly_home == true end }
+  end
 
   local serialization = {
     serialize = function(v, pretty) return M.serialize(v, pretty) end,

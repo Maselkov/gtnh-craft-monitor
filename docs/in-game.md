@@ -170,6 +170,12 @@ doesn't, and writes both to `/home/config.lua`. Without `--server` and
 `--api-key` it asks for them. It can also enable the scripts so they start
 on every boot, and offers to reboot to start them.
 
+It also puts a GCM banner in `/etc/motd`, which OpenOS shows when the
+shell starts: the logo, the installed version and scripts. It only
+replaces OpenOS's own motd or an earlier banner, so if you've written your
+own, it stays, and `gcm update` refreshes the banner the same way. Edit
+the banner's first line and gcm leaves it alone too.
+
 To install specific scripts without being asked, name them:
 
 ```

@@ -145,7 +145,7 @@ jobs:
         run: |
           lua5.3 -e '
             local m = dofile("oc/manifest.lua")
-            local files = { m.config }
+            local files = { m.config, m.motd }
             for _, f in ipairs(m.shared) do files[#files + 1] = f end
             for _, c in ipairs(m.components) do
               for _, f in ipairs(c.files) do files[#files + 1] = f end

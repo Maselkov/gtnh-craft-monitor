@@ -21,6 +21,9 @@ files["oc/gcm_agent.lua"] = rc
 files["oc/network_browser.lua"] = rc
 files["oc/power_monitor.lua"] = rc
 
+-- Installed as /etc/motd, run by OpenOS's profile.lua.
+files["oc/motd.lua"] = { read_globals = { "_OSVERSION" } }
+
 -- The fakes implement whole APIs, so arguments go unused, and their
 -- methods define methods.
 files["oc/tests"] = { unused_args = false, ignore = { "432/self" } }

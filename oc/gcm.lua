@@ -32,6 +32,11 @@ local REPO = "Maselkov/gtnh-craft-monitor"
 local STATE_PATH = "/etc/gcm.cfg"
 local CONNECT_TIMEOUT_SECONDS = 30
 local STALL_TIMEOUT_SECONDS = 30
+-- Length and checksum() of OpenOS's own /etc/motd
+-- (oc/tests/fixtures/openos_motd), which gcm may replace with its banner.
+local STOCK_MOTD_LENGTH = 1558
+local STOCK_MOTD_CHECKSUM = 340181988
+local MOTD_MARKER = "-- gcm motd"
 
 local function raw_url(ref, src)
   return "https://raw.githubusercontent.com/" .. REPO .. "/" .. ref .. "/oc/" .. src
@@ -254,6 +259,51 @@ local function install_files(ref, files)
       error("couldn't move " .. f.dst .. ".new into place: " .. tostring(moveErr), 0)
     end
   end
+end
+
+-- Plain arithmetic rather than bit operators, which Lua 5.2 lacks.
+local function checksum(text)
+  local h = 0
+  for i = 1, #text do
+    h = (h * 31 + text:byte(i)) % 4294967296
+  end
+  return h
+end
+
+-- Puts the GCM banner in /etc/motd when that's still OpenOS's own motd or
+-- an earlier banner, never over one the player changed. quiet skips
+-- saying so, for updates. Releases without a motd in the manifest skip
+-- this, and a failed download only warns.
+local function install_motd(ref, manifest, quiet)
+  local motd = manifest.motd
+  if not motd then
+    return
+  end
+  local file = io.open(motd.dst, "rb")
+  if file then
+    local text = file:read("*a")
+    file:close()
+    local ours = text:sub(1, #MOTD_MARKER) == MOTD_MARKER
+    local stock = #text == STOCK_MOTD_LENGTH and checksum(text) == STOCK_MOTD_CHECKSUM
+    if not (ours or stock) then
+      if not quiet then
+        print("  Kept your " .. motd.dst .. " (it's been changed), so no GCM banner.")
+      end
+      return
+    end
+  end
+  print("  " .. motd.dst)
+  local tmp = motd.dst .. ".new"
+  local downloaded, err = download(raw_url(ref, motd.src), tmp)
+  if not downloaded then
+    filesystem.remove(tmp)
+    print("  Couldn't download " .. motd.src .. " (" .. err .. "); " .. motd.dst .. " is unchanged.")
+    return
+  end
+  if filesystem.exists(motd.dst) then
+    filesystem.remove(motd.dst)
+  end
+  filesystem.rename(tmp, motd.dst)
 end
 
 local function read_state()
@@ -538,6 +588,7 @@ local function cmd_install(args, opts)
 
   print("Installing " .. ref .. ":")
   install_files(ref, files_for(manifest, all))
+  install_motd(ref, manifest)
   local state = { version = ref, components = all, services = services_for(manifest, all),
                   agent_set_up = previous and previous.agent_set_up }
   write_state(state)
@@ -579,6 +630,7 @@ local function cmd_update(opts, no_reboot)
 
   print("Updating " .. state.version .. " -> " .. ref .. ":")
   install_files(ref, files_for(manifest, names))
+  install_motd(ref, manifest, true)
   if not state.agent_set_up then enable_agent() end
   write_state({ version = ref, components = names, services = services_for(manifest, names), agent_set_up = true })
   if no_reboot then
