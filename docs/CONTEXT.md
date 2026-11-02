@@ -117,6 +117,7 @@ gcm/gamedata.py     per-GTNH-version game data bundles: list, download,
 gcm/gamedata_check.py  whether the game data looks older than the game,
                     for the admins' notice
 gcm/charts.py       matplotlib PNGs for OpenGraph, with cache + rate limit
+gcm/memory.py       hands freed memory back to the OS after each scan
 gcm/routes/*.py     one Flask Blueprint per area: crafts, craft_requests,
                     network, power, users, gamedata, pages
 ```
@@ -1026,6 +1027,21 @@ serves previous -> selected, the pair the notice already works out and
 caches; picking another version downloads its recipes and builds a
 ~60 MB index, which stays an admin's call (/api/admin/recipe-check).
 Viewers, who on a public server are anyone, don't see a base's patterns.
+
+**Memory is handed back after every scan (gcm/memory.py).** A hosted
+base has 160 MB, and with a big base's scans the process kept growing
+past it, into swap, without anything leaking. A scan's lists, dicts and
+longer strings come from glibc's malloc, which on free() only returns
+the end of its main heap. So the process stayed the size of its biggest
+moment, the old and new pattern lists and the indexes built from them
+alive at once, and the heaps of waitress's 8 threads made it worse.
+Both scan/finish routes call malloc_trim(0) once they're done, accepted
+or rejected, which returns every free page. Measured with a replayed
+4,700-pattern base, half its scans rejected: 147 -> 106 MB with 8
+threads, 116 -> 92 MB in one. MALLOC_ARENA_MAX=2 alone saved ~5 MB;
+jemalloc would mean copying a library into an image with no RUN steps.
+In the same vein, recipes.py keeps only the current pattern scan's
+check results (~7 MB each for that base), not the last four scans'.
 
 ## Test suite (server/tests/)
 

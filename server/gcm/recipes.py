@@ -667,7 +667,12 @@ def _run(key, pattern_list):
         log.info("Checked %d patterns from %s to %s in %.1fs: %s", len(pattern_list), from_version, to_version,
                  time.monotonic() - started, checked["counts"])
         with _lock:
-            # Only the latest few: a new pattern scan makes the rest stale.
+            # Only the current pattern scan's: _key() never asks for an
+            # older scan's again, and each holds a row per pattern (~7 MB
+            # for a base's 4,700). The latest few of those, for checks
+            # between other versions.
+            for stale in [k for k in _results if k[2] != key[2]]:
+                del _results[stale]
             while len(_results) >= 4:
                 _results.pop(next(iter(_results)))
             _results[key] = checked

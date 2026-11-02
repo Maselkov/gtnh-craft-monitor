@@ -9,7 +9,7 @@ import time
 
 from flask import abort, Blueprint, g, jsonify, request, Response
 
-from gcm import auth, charts, gamedata, icons, inventory, item_info, patterns, planner, state, stock, store
+from gcm import auth, charts, gamedata, icons, inventory, item_info, memory, patterns, planner, state, stock, store
 
 log = logging.getLogger(__name__)
 
@@ -92,6 +92,9 @@ def network_scan_finish():
             stock.evaluate_scan()
         except Exception:
             log.exception("checking stock rules failed (the scan itself succeeded)")
+    # Accepted or not, the replaced snapshot or the discarded buffer was
+    # just freed.
+    memory.trim()
     return jsonify(result)
 
 
@@ -376,11 +379,11 @@ def network_patterns_batch():
 @auth.api_key_required
 def network_patterns_finish():
     payload = request.get_json(silent=True) or {}
-    return jsonify(
-        patterns.finish_scan(
-            payload.get("scan_token"), payload.get("chunks_sent"), payload.get("total_errors")
-        )
+    result = patterns.finish_scan(
+        payload.get("scan_token"), payload.get("chunks_sent"), payload.get("total_errors")
     )
+    memory.trim()  # as scan/finish
+    return jsonify(result)
 
 
 # Signed-in only, unlike the item list: each pattern says where in the
