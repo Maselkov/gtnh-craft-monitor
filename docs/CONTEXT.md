@@ -409,6 +409,18 @@ same way. Both bound what a runaway or hostile script (anyone with the
 API key) can make the server hold in memory or write to history; a
 whole GTNH catalog is ~11k ids, and an item takes ~600 bytes buffered.
 
+**Bodies that aren't quite JSON.** `json.lua` used to escape only `\`,
+`"`, `\n`, `\r` and `\t`, sending other control characters in strings
+raw. Python's parser refuses those, so a label with one made its batch a
+400 - the same batches on every scan, so a player's scans were refused
+as incomplete forever, and Flask logs nothing for a 400. `json.lua` now
+escapes every control character, but scripts already in the field don't,
+so the server (`gcm/lenient_json.py`, the app's JSON provider) reads a
+body that fails to parse a second time, with invalid UTF-8 replaced and
+control characters allowed in strings, and logs a warning with the text
+around the problem either way. Neither change can alter a body's
+structure, only a string's text.
+
 Separately: `network_snapshot` (in `item_history.db`) is a full mirror
 of the live network state, rewritten wholesale on every real scan (not
 change-only, unlike `item_history`) - loaded back into memory once at

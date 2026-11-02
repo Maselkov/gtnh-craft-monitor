@@ -70,6 +70,10 @@ local function is_array(t)
   return true
 end
 
+local JSON_ESCAPES = {
+  ['\\'] = '\\\\', ['"'] = '\\"', ['\n'] = '\\n', ['\r'] = '\\r', ['\t'] = '\\t'
+}
+
 local function json_encode(v, seen)
   seen = seen or {}
   local t = type(v)
@@ -81,9 +85,11 @@ local function json_encode(v, seen)
     if v ~= v or v == math.huge or v == -math.huge then return "0" end
     return tostring(v)
   elseif t == "string" then
-    local s = v:gsub('[\\"\n\r\t]', {
-      ['\\'] = '\\\\', ['"'] = '\\"', ['\n'] = '\\n', ['\r'] = '\\r', ['\t'] = '\\t'
-    })
+    -- Every control character, not just the usual few: a raw one in an
+    -- item's label made the server refuse the whole batch.
+    local s = v:gsub('[\0-\31\\"]', function(c)
+      return JSON_ESCAPES[c] or string.format("\\u%04x", c:byte())
+    end)
     return '"' .. s .. '"'
   elseif t == "table" then
     if seen[v] then return '"<circular>"' end
