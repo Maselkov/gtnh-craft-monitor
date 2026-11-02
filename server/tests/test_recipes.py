@@ -324,6 +324,18 @@ class TestApi:
         finished()
         assert admin.get("/api/recipe-notice").get_json() == {}
 
+    def test_a_new_pattern_scan_drops_the_last_ones_results(self, admin, bundles, monkeypatch):
+        admin.get("/api/admin/recipe-check")
+        finished()
+        lcr, ebf_pattern = patterns.current()[0]
+        monkeypatch.setattr(patterns, "current", lambda: ([lcr, ebf_pattern], 5678.0))
+        admin.get("/api/admin/recipe-check")
+        finished()
+        # Nothing asks for the old scan's check again, and each holds a
+        # row per pattern.
+        assert [k[2] for k in recipes._results] == [5678.0]
+        assert admin.get("/api/admin/recipe-check").get_json()["state"] == "ready"
+
     def test_without_a_pattern_scan(self, admin, bundles, monkeypatch):
         monkeypatch.setattr(patterns, "current", lambda: ([], None))
         for terminal, why in ((False, "no_terminal"), (True, "reading"), (None, "unknown")):
