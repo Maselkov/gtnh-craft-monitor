@@ -227,14 +227,6 @@ def queue(address, action, ref, user_id):
         return _add_locked(address, action, ref, user_id, now), None
 
 
-def _rebooting(cmd, ok, message, rebooting):
-    if rebooting is not None:
-        return rebooting is True
-    # gcm_agent from before it said so: it reboots after a reboot command
-    # and after an update that changed something, and says so.
-    return ok is True and (cmd["action"] == "reboot" or (isinstance(message, str) and message.endswith("rebooting.")))
-
-
 def scripts_behind():
     """The online computers whose scripts are older than this server's
     (config.SCRIPTS_VERSION), for the page's notice: {"version",
@@ -268,7 +260,7 @@ def result(cmd_id, ok, message, version, rebooting=None):
         if cmd is None or cmd["status"] == "done":
             return False
         _finish_locked(cmd, ok is True, message[:300] if isinstance(message, str) else None, now)
-        if _rebooting(cmd, ok, message, rebooting):
+        if rebooting is True:
             agent = _agents.get(cmd["address"])
             cmd.update(awaiting_boot=True, uptime_before=agent and agent["uptime"])
         if isinstance(version, str) and cmd["address"] in _agents:

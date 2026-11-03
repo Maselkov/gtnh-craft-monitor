@@ -141,16 +141,6 @@ class TestCommands:
         assert computers(client)["computers"][0]["command"] is None
         assert command(client, "reboot").status_code == 200
 
-    def test_old_agents_reboot_is_read_from_the_message(self, client, api_headers):
-        beat(client, api_headers)
-        login_as(client, "root", role="admin")
-        command(client, "update", "release")
-        cmd_id = beat(client, api_headers)["id"]
-        client.post(f"/api/agent/commands/{cmd_id}/result",
-                    json={"ok": True, "message": "Updated v1.0.0 -> v1.2.0, rebooting.", "version": "v1.2.0"},
-                    headers=api_headers)
-        assert computers(client)["computers"][0]["command"]["awaiting_boot"] is True
-
     def test_no_reboot_no_waiting_and_hidden_later(self, client, api_headers, monkeypatch):
         beat(client, api_headers)
         login_as(client, "root", role="admin")
@@ -177,7 +167,7 @@ class TestCommands:
         login_as(client, "root", role="admin")
         command(client, "reboot")
         cmd_id = beat(client, api_headers)["id"]
-        client.post(f"/api/agent/commands/{cmd_id}/result", json={"ok": True, "message": "Rebooting."},
+        client.post(f"/api/agent/commands/{cmd_id}/result", json={"ok": True, "message": "Rebooting.", "rebooting": True},
                     headers=api_headers)
         monkeypatch.setattr(agents, "BOOT_TIMEOUT_SECONDS", -1)
         cmd = computers(client)["computers"][0]["command"]
