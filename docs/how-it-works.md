@@ -148,8 +148,12 @@ After a full item scan, at most every `PATTERN_SCAN_INTERVAL_SECONDS`,
 `network_browser.lua` walks that list and posts the patterns in chunks, with
 the same `start` → `batch` × N → `finish` protocol as the item scan
 (`/api/network/patterns/...`). Running after the item scan rather than
-alongside it keeps the two from holding memory at the same time. A failed
-pattern scan is only logged, and is tried again after the next item scan.
+alongside it keeps the two from holding memory at the same time. Each
+interface arrives with all its patterns at once, so the biggest one sets
+how much memory the scan needs: a Large Molecular Assembler's few hundred
+patterns can take a few MB. The script turns them into JSON one at a time,
+letting go of each as it goes, so they aren't held twice. A failed pattern
+scan is only logged, and is tried again after the next item scan.
 
 Each item scan's `scan/finish` also says whether there's a terminal
 (`interface_terminal`: `true` or `false`; left out when pattern scans are

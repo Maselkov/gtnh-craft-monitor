@@ -58,6 +58,14 @@ function M.interface(name, x, y, z, patterns)
   return { name = name, location = { x = x, y = y, z = z, dimId = 0 }, patterns = slots }
 end
 
+-- Tables with a metatable are a test's stand-ins, passed as they are.
+local function copy(v)
+  if type(v) ~= "table" or getmetatable(v) then return v end
+  local out = {}
+  for k, x in pairs(v) do out[k] = copy(x) end
+  return out
+end
+
 local Terminal = {}
 Terminal.__index = Terminal
 
@@ -75,9 +83,11 @@ end
 
 function Terminal:_list()
   if self.failures.getInterfaces then error(self.failures.getInterfaces) end
-  -- A snapshot, as the real one is.
+  -- A snapshot, as the real one is, of fresh tables each call as OC
+  -- converts them: the script may take them apart.
   local snapshot = {}
-  for i, info in ipairs(self.interfaces) do snapshot[i] = info end
+  for i, info in ipairs(self.interfaces) do snapshot[i] = copy(info) end
+  self.last_snapshot = snapshot  -- for tests to see what the script did to it
   local i = 0
   local term = self
   return setmetatable({

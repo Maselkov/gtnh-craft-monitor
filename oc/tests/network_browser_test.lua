@@ -671,6 +671,34 @@ test("a pattern that can't be encoded is an error, and the others are sent", fun
   t.eq(env:requests_to("^/api/network/patterns/finish$")[1].json.total_errors, 1)
 end)
 
+test("each raw pattern is let go once it's encoded", function()
+  local env, me = setup()
+  fill(me, 3)
+  local term
+  local held = {}
+  -- An input that, as it's encoded, notes which slots' raw patterns the
+  -- interface still holds (items have no amount; reading it is the cue).
+  local function spy()
+    return setmetatable(fake_terminal.item("minecraft:log", "Oak Wood", 0, { id = 17 }), { __index = function(_, k)
+      if k ~= "amount" then return nil end
+      local slots = {}
+      for slot in pairs(term.last_snapshot[1].patterns) do slots[#slots + 1] = slot end
+      table.sort(slots)
+      held[#held + 1] = table.concat(slots, ",")
+    end })
+  end
+  local patterns = {}
+  for i = 1, 3 do
+    patterns[i] = fake_terminal.pattern({ [1] = spy() },
+      { [1] = fake_terminal.item("minecraft:planks", "Oak Wood Planks", 0, { id = 5 }) })
+  end
+  term = fake_terminal.new(env, { fake_terminal.interface("Large Molecular Assembler", 0, 0, 0, patterns) })
+  env:start_service("network_browser")
+  env:run({ seconds = 60 })
+  t.eq(held, { "1,2", "2", "" })
+  t.eq(#pattern_batches(env)[1].patterns, 3, "and all of them still sent")
+end)
+
 test("patterns are scanned every PATTERN_SCAN_INTERVAL_SECONDS, not every item scan", function()
   local env, me = setup({ config = { SCAN_INTERVAL_SECONDS = 100, PATTERN_SCAN_INTERVAL_SECONDS = 250,
     WATCH_INTERVAL_SECONDS = 0 } })
