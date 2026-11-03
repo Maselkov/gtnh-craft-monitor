@@ -171,9 +171,7 @@ doesn't, and writes both to `/home/config.lua`. Without `--server` and
 on every boot, and offers to reboot to start them.
 
 It also puts a GCM banner in `/etc/motd`, which OpenOS shows when the
-shell starts: the logo, the installed version, and each script with how it
-came up at boot: ✓ running, ✗ enabled but not running (it crashed
-starting; run `rc <name> start` to see why), `-` not enabled. It only
+shell starts: the logo, the installed version and scripts. It only
 replaces OpenOS's own motd or an earlier banner, so if you've written your
 own, it stays, and `gcm update` refreshes the banner the same way. Edit
 the banner's first line and gcm leaves it alone too.
@@ -194,8 +192,12 @@ touched.
 
 ```
 gcm update     # install the latest release, then offer to reboot
-gcm status     # installed version, installed scripts, latest release
+gcm status     # installed version, whether each script is running, latest release
 ```
+
+`gcm status` lists each script as running, not running (it crashed; `rc
+<name> start` runs it in the shell, so you see why), stopped with `rc`,
+or off (not started on boot).
 
 `gcm update` replaces the scripts and libraries but never
 `/home/config.lua`. Keep your settings there (see
