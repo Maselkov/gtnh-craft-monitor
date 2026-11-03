@@ -100,13 +100,11 @@ The rest:
 
 ### Crafting CPUs
 
-Give each crafting CPU a name, by naming one of its crafting blocks in AE2.
-A CPU without one is shown as `#1`, `#2` and so on, biggest first, because
-AE2 has nothing better to call it. Those numbers follow the CPUs' sizes, so
-they stay put when a CPU goes busy or idle or the game restarts. But two CPUs
-of the same size can swap numbers, and adding or removing storage or
-co-processors renumbers them, so a pin or a history entry on an unnamed CPU
-can end up on another. A name avoids all of that.
+Name each crafting CPU: **Shift + right-click** one of its blocks with
+**Wire Cutters**. An unnamed CPU shows as `#1`, `#2` and so on, biggest
+first. Two of the same size can swap numbers, and resizing a CPU renumbers
+it, so a pin or history entry on an unnamed CPU can end up on another. A
+name avoids that.
 
 Put an AE2 **Crafting Monitor** in each crafting CPU's multiblock. It's
 the only way the scripts can ask a CPU what it's making. A CPU without

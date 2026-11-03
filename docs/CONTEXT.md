@@ -418,8 +418,8 @@ or destroyed CPU is left out, moving everything after it. `storage` and
 `usedStorage`), so the rank doesn't change when a CPU goes busy or idle
 - the rank deliberately ignores busy. CPUs of one size still fall back
 to the list's order, so can swap numbers, and a job running on one when
-that happens is recorded as ended and started again; naming a CPU in AE2
-avoids it.
+that happens is recorded as ended and started again; naming a CPU (Shift +
+right-click with Wire Cutters) avoids it.
 
 **Why a scan was turned away.** The counts alone said that a scan was
 incomplete but not why, and the why only reached `network_browser`'s
