@@ -396,13 +396,13 @@ function handleNetworkCellClick(cell, button) {
   openItemHistory(it);
 }
 
-// A scan normally takes 1-2 minutes - well past that with in_progress
+// A scan can take up to 10 minutes - well past that with in_progress
 // still true is worth flagging directly rather than quietly saying
 // "(new scan in progress)" forever, which is exactly what happened
 // during a real stuck scan: nothing in the UI distinguished a normal
 // few-minutes-long scan from one that would never finish, so old
 // data just sat there looking completely normal.
-const NETWORK_SCAN_STALE_SECONDS = 600;
+const NETWORK_SCAN_STALE_SECONDS = 1800;
 
 // network_browser.lua caught an error that killed its scanning and is
 // starting over (the server keeps the report until a scan finishes).
@@ -430,7 +430,7 @@ export function tickNetworkSourceLine() {
       ? Math.round(Date.now() / 1000 - lastNetworkData.scan_started_at) : 0;
     if (scanAge > NETWORK_SCAN_STALE_SECONDS) {
       stale = true;
-      progressNote = ` — scan may be stuck (running ${Math.round(scanAge / 60)}m, normally 1-2m) - check network_browser.lua`;
+      progressNote = ` — scan may be stuck (running ${Math.round(scanAge / 60)}m, normally up to 10m) - check network_browser.lua`;
     } else {
       progressNote = ' (new scan in progress)';
     }
@@ -685,7 +685,7 @@ function renderNetworkList() {
     networkRenderedCount = 0;
     emptyEl.style.display = lastNetworkData && lastNetworkData.in_progress ? 'none' : 'block';
     if (lastNetworkData && lastNetworkData.in_progress) {
-      listEl.innerHTML = '<div class="network-note">First scan in progress - this can take up to 5 minutes.</div>';
+      listEl.innerHTML = '<div class="network-note">First scan in progress - this can take up to 10 minutes.</div>';
     }
     return;
   }
