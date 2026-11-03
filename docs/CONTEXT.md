@@ -403,11 +403,15 @@ unnamed CPU was the same one: `tracking` skips a job with no name,
 the Ingredients button's `data-cpu=""` made `openIngredientsModal` a
 no-op (`openCpu` was falsy, so nothing was ever drawn), and the tree,
 pinning and cancelling all looked the CPU up by that name. Both sides
-now name such a CPU "#" and its rank by size, biggest first, and mark
-it `unnamed` (the page puts a "?" after it) - the script (`get_cpus()`,
+now name such a CPU "#" and its rank by size among all the CPUs, named
+ones too, biggest first, and mark it `unnamed` (the page puts a "?"
+after it). Among all of them so that naming a CPU, which the "?"
+suggests, doesn't renumber the others; a number some CPU is really
+called is skipped. Both sides do it - the script (`get_cpus()`,
 so a cancel finds the CPU under the name it was reported as) and the
 server (`name_cpus()` in `routes/crafts.py`, for scripts still sending
-it empty); keep the two alike. Not the position in `getCpus()`: the
+it empty); keep the two alike, down to reading sizes as Lua's
+`tonumber()` does. Not the position in `getCpus()`: the
 source says that order is arbitrary. `getCpus()` is a copy of AE2's
 `CraftingGridCache.craftingCPUClusters`, a `HashSet` of
 `CraftingCPUCluster`s, which don't define `hashCode`, so it's in identity-

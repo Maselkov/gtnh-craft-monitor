@@ -86,17 +86,17 @@ local function names_of(post)
   return out
 end
 
-test("CPUs nobody named are numbered by size, biggest first, and flagged", function()
+test("CPUs nobody named are numbered by size among all CPUs, biggest first, and flagged", function()
   local env = t.env({})
   local me = ae2.new(env)
   unnamed_cpu(me, 1000)
   unnamed_cpu(me, 5000, { output = GEAR, duration = 4 })
-  me:add_cpu({ name = "Big" })
+  me:add_cpu({ name = "Big", storage = 65536 })
   env:start_service("craft_monitor")
   env:run({ seconds = 0.5 })
 
   local jobs = crafts_posts(env)[1].jobs
-  t.eq({ jobs[1].name, jobs[2].name, jobs[3].name }, { "#2", "#1", "Big" })
+  t.eq({ jobs[1].name, jobs[2].name, jobs[3].name }, { "#3", "#2", "Big" })
   t.eq({ jobs[1].unnamed, jobs[2].unnamed, jobs[3].unnamed }, { true, true, nil })
   t.eq({ jobs[1].busy, jobs[2].busy }, { false, true })
 
@@ -104,8 +104,33 @@ test("CPUs nobody named are numbered by size, biggest first, and flagged", funct
   env:run({ seconds = 10 })
   local posts = crafts_posts(env)
   local last = posts[#posts]
-  t.eq(names_of(last), { "#2", "#1", "Big" })
+  t.eq(names_of(last), { "#3", "#2", "Big" })
   t.eq(last.jobs[2].busy, false)
+end)
+
+test("naming one CPU doesn't renumber the others", function()
+  local env = t.env({})
+  local me = ae2.new(env)
+  local big = unnamed_cpu(me, 5000)
+  unnamed_cpu(me, 1000, { output = GEAR, duration = 100 })
+  env:start_service("craft_monitor")
+  env:run({ seconds = 0.5 })
+  t.eq(names_of(crafts_posts(env)[1]), { "#1", "#2" })
+
+  big.name = "Big"
+  env:run({ seconds = 10 })
+  local posts = crafts_posts(env)
+  t.eq(names_of(posts[#posts]), { "Big", "#2" })
+end)
+
+test("a number a CPU is really called is skipped", function()
+  local env = t.env({})
+  local me = ae2.new(env)
+  me:add_cpu({ name = "#1", storage = 1000 })
+  unnamed_cpu(me, 5000)
+  env:start_service("craft_monitor")
+  env:run({ seconds = 0.5 })
+  t.eq(names_of(crafts_posts(env)[1]), { "#1", "#2" })
 end)
 
 test("a cancel finds an unnamed CPU by the name it was reported under", function()

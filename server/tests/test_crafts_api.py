@@ -41,18 +41,39 @@ class TestCraftsEndpoint:
         ]
         client.post("/api/crafts", json={"source": "me", "jobs": jobs}, headers=api_headers)
         got = client.get("/api/crafts").get_json()["jobs"]
-        # Biggest first, then more coprocessors, then the order given.
+        # Ranked among all the CPUs: biggest first, then more
+        # coprocessors, then the order given.
         assert [(j["name"], j.get("unnamed")) for j in got] == [
-            ("#3", True), ("#1", True), ("Big", None), ("#2", True), ("#4", True)]
+            ("#4", True), ("#2", True), ("Big", None), ("#3", True), ("#5", True)]
         login_as(client, "alice")
-        tree = client.get("/api/crafts/%231/tree")
+        tree = client.get("/api/crafts/%232/tree")
         assert tree.status_code == 200 and "tree" in tree.get_json()
 
         # The same CPUs in another order get the same numbers.
         client.post("/api/crafts", json={"source": "me", "jobs": list(reversed(jobs))}, headers=api_headers)
         got = {(j["storage"], j.get("coprocessors"), j["name"]) for j in client.get("/api/crafts").get_json()["jobs"]
                if j.get("unnamed")}
-        assert (65536, 1, "#1") in got and (1024, 4, "#2") in got
+        assert (65536, 1, "#2") in got and (1024, 4, "#3") in got
+
+    def test_naming_one_cpu_doesnt_renumber_the_others(self, client, api_headers):
+        def names(jobs):
+            client.post("/api/crafts", json={"source": "me", "jobs": jobs}, headers=api_headers)
+            return [j["name"] for j in client.get("/api/crafts").get_json()["jobs"]]
+
+        assert names([{"name": "", "storage": 5000}, {"name": "", "storage": 1000}]) == ["#1", "#2"]
+        assert names([{"name": "Big", "storage": 5000}, {"name": "", "storage": 1000}]) == ["Big", "#2"]
+
+    def test_a_number_a_cpu_is_really_called_is_skipped(self, client, api_headers):
+        jobs = [{"name": "#1", "storage": 1000}, {"name": "", "storage": 5000}, {"name": "", "storage": 10}]
+        client.post("/api/crafts", json={"source": "me", "jobs": jobs}, headers=api_headers)
+        assert [j["name"] for j in client.get("/api/crafts").get_json()["jobs"]] == ["#1", "#2", "#3"]
+
+    def test_sizes_are_read_as_the_script_reads_them(self, client, api_headers):
+        # tonumber() in Lua: numbers and text of one; anything else is 0.
+        jobs = [{"name": "", "storage": "100"}, {"name": "", "storage": True}, {"name": "", "storage": 50},
+                {"name": "", "storage": "nan"}]
+        client.post("/api/crafts", json={"source": "me", "jobs": jobs}, headers=api_headers)
+        assert [j["name"] for j in client.get("/api/crafts").get_json()["jobs"]] == ["#1", "#3", "#2", "#4"]
 
     def test_a_name_and_flag_from_the_script_are_kept(self, client, api_headers):
         jobs = [{"name": "#1", "unnamed": True, "busy": False}, {"name": "Big", "unnamed": "yes", "busy": False}]

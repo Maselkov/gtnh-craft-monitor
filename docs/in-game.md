@@ -101,10 +101,11 @@ The rest:
 ### Crafting CPUs
 
 Name each crafting CPU: **Shift + right-click** one of its blocks with
-**Wire Cutters**. An unnamed CPU shows as `#1`, `#2` and so on, biggest
-first. Two of the same size can swap numbers, and resizing a CPU renumbers
-it, so a pin or history entry on an unnamed CPU can end up on another. A
-name avoids that.
+**Wire Cutters**. An unnamed CPU shows as `#` and its place by size among
+all your CPUs, biggest first, so naming one doesn't renumber the rest. Two
+of the same size can swap numbers, and resizing a CPU renumbers it, so a pin
+or history entry on an unnamed CPU can end up on another. A name avoids
+that.
 
 Put an AE2 **Crafting Monitor** in each crafting CPU's multiblock. It's
 the only way the scripts can ask a CPU what it's making. A CPU without

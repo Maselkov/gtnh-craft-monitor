@@ -1,6 +1,7 @@
 """Crafting-CPU status from craft_monitor.lua, per-user CPU pins and
 completion notifications, and the Lua debug-dump channel."""
 
+import math
 import secrets
 import time
 
@@ -48,26 +49,44 @@ def debug_get():
         return Response("\n\n".join(parts), mimetype="text/plain")
 
 
+def _cpu_size(v):
+    """A CPU's storage or coprocessors to rank it by, as craft_monitor.lua's
+    tonumber() reads them: a number, or text of one; 0 for anything else."""
+    if isinstance(v, bool):
+        return 0
+    try:
+        n = float(v)
+    except (TypeError, ValueError):
+        return 0
+    return n if math.isfinite(n) else 0
+
+
 def name_cpus(jobs):
     """Gives each CPU nobody has named (AE2 reports an empty name) one,
-    "#" and its rank by size, biggest first, and marks it `unnamed` so
-    the page can say so - as craft_monitor.lua does now, so keep them
-    alike. Unnamed, they were all the same CPU: tracking skipped them and
-    the page couldn't open one's ingredients. Older scripts still send
-    them empty. Size, unlike the list's own order, doesn't change with a
-    restart or a rebuilt CPU, nor when a CPU goes busy or idle; CPUs of
-    one size fall back to that order."""
-    def number(v):
-        return v if isinstance(v, (int, float)) and not isinstance(v, bool) else 0
-
-    for job in jobs or []:
-        if isinstance(job, dict) and job.get("unnamed") is not True:
-            job.pop("unnamed", None)
-    unnamed = [(i, job) for i, job in enumerate(jobs or []) if isinstance(job, dict) and not job.get("name")]
-    unnamed.sort(key=lambda p: (-number(p[1].get("storage")), -number(p[1].get("coprocessors")), p[0]))
-    for rank, (_, job) in enumerate(unnamed, 1):
-        job["name"] = f"#{rank}"
-        job["unnamed"] = True
+    "#" and its rank by size among all the CPUs, biggest first, and marks
+    it `unnamed` so the page can say so - as craft_monitor.lua's
+    get_cpus() does, so keep them alike (its comment says why it's done
+    this way). Unnamed, they were all the same CPU: tracking skipped them
+    and the page couldn't open one's ingredients. Older scripts still
+    send them empty."""
+    taken, ranked = set(), []
+    for i, job in enumerate(jobs or []):
+        if not isinstance(job, dict):
+            continue
+        if job.get("name"):
+            taken.add(job["name"])
+            # Only the script's own flag, on a name it made up.
+            if job.get("unnamed") is not True:
+                job.pop("unnamed", None)
+        ranked.append((-_cpu_size(job.get("storage")), -_cpu_size(job.get("coprocessors")), i, job))
+    ranked.sort(key=lambda r: r[:3])
+    for rank, (*_, job) in enumerate(ranked, 1):
+        if not job.get("name"):
+            n = rank
+            while f"#{n}" in taken:
+                n += 1
+            job["name"], job["unnamed"] = f"#{n}", True
+            taken.add(job["name"])
     return jobs
 
 

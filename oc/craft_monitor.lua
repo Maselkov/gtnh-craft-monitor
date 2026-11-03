@@ -218,46 +218,55 @@ end
 -- held the whole time it runs, in memory the other scripts share.
 local watched, ended = {}, {}
 
--- Returns true when a watched job has ended, so the caller can report
--- it right away.
 -- getCpus(), with a name for each CPU: AE2 gives a CPU nobody has named
 -- an empty one, which would make every unnamed CPU the same one here
 -- and on the page (cancelling, pinning, its ingredients). Such a CPU is
--- called "#" and its rank by size, biggest first, and flagged unnamed.
--- The list's own order is arbitrary (AE2 keeps its CPUs in a HashSet of
--- objects without a hashCode, so it changes with a restart or a rebuilt
--- CPU); size doesn't, and doesn't change when a CPU goes busy or idle.
--- CPUs of the same size are told apart by that arbitrary order. The
--- server (routes/crafts.py name_cpus) does the same, so keep them alike.
+-- called "#" and its rank by size among all the CPUs, biggest first, and
+-- flagged unnamed. All of them, named ones too, so naming one CPU (as
+-- the page suggests) doesn't renumber the others. A number a CPU is
+-- really called is skipped. The list's own order is arbitrary (AE2 keeps
+-- its CPUs in a HashSet of objects without a hashCode, so it changes
+-- with a restart or a rebuilt CPU); size doesn't, and doesn't change
+-- when a CPU goes busy or idle. CPUs of the same size are told apart by
+-- that arbitrary order. The server (routes/crafts.py name_cpus) does the
+-- same, so keep them alike.
 local function get_cpus(me)
   local ok, cpus = pcall(me.getCpus)
   if ok and type(cpus) == "table" then
-    local unnamed = {}
+    local taken, ranked = {}, {}
     for i, row in ipairs(cpus) do
-      if row.name == nil or row.name == "" then unnamed[#unnamed + 1] = { row = row, pos = i } end
+      if row.name == "" then row.name = nil end
+      if row.name then taken[row.name] = true end
+      ranked[i] = { row = row, pos = i }
     end
-    table.sort(unnamed, function(a, b)
+    table.sort(ranked, function(a, b)
       local sa, sb = tonumber(a.row.storage) or 0, tonumber(b.row.storage) or 0
       if sa ~= sb then return sa > sb end
       local ca, cb = tonumber(a.row.coprocessors) or 0, tonumber(b.row.coprocessors) or 0
       if ca ~= cb then return ca > cb end
       return a.pos < b.pos
     end)
-    for rank, u in ipairs(unnamed) do
-      u.row.name = "#" .. rank
-      u.row.unnamed = true
+    for rank, r in ipairs(ranked) do
+      if not r.row.name then
+        local n = rank
+        while taken["#" .. n] do n = n + 1 end
+        r.row.name, r.row.unnamed = "#" .. n, true
+        taken[r.row.name] = true
+      end
     end
   end
   return ok, cpus
 end
 
+-- Returns true when a watched job has ended, so the caller can report
+-- it right away.
 local function watch_cpus(me)
   local ok, cpus = get_cpus(me)
   if not ok then return false end
   local now = computer.uptime()
   local anyEnded = false
   for _, row in ipairs(cpus) do
-    local name = row.name or "(unnamed CPU)"
+    local name = row.name
     if row.busy then
       if row.cpu then
         -- storedItems() skipped: progress ignores it, and it's the
@@ -318,7 +327,7 @@ local function extract_jobs(raw_cpus)
       end
     end
 
-    local name = row.name or "(unnamed CPU)"
+    local name = row.name
     local seen
     if row.busy then
       busy = busy + 1
