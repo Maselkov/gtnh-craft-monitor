@@ -402,11 +402,16 @@ an empty string (the page showed "CPU ?" for all of them), so every
 unnamed CPU was the same one: `tracking` skips a job with no name,
 the Ingredients button's `data-cpu=""` made `openIngredientsModal` a
 no-op (`openCpu` was falsy, so nothing was ever drawn), and the tree,
-pinning and cancelling all looked the CPU up by that name. Both sides
-now name such a CPU after its storage, counted among the CPUs of that
-size only ("68k #1", "68k #2"; more coprocessors first, then the
-list's order), and mark it `unnamed` (the page puts a "?" after it).
-A name some CPU is really called is skipped. The script does it
+pinning and cancelling all looked the CPU up by that name. AE2 also
+lets two CPUs share a name, with the same result. Both sides now give
+each such CPU a made-up name: its storage, after the shared name if
+there is one, numbered among the CPUs with that name and size ("68k
+#1", "Main 64k #2"; more coprocessors first, then the list's order),
+marked `auto_named` (the page puts a "?" after it). Every CPU sharing
+a name gets one, not just the second and later, so none keeps the
+plain name merely by being listed first; when the name stops being
+shared, the one left gets it back. A name some CPU is really called is
+skipped. The script does it
 (`get_cpus()`, so a cancel finds the CPU under the name it was
 reported as) and so does the server (`name_cpus()` in
 `routes/crafts.py`, for scripts still sending it empty); keep the two

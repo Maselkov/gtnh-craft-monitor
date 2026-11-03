@@ -3,6 +3,7 @@ completion notifications, and the Lua debug-dump channel."""
 
 import secrets
 import time
+from collections import Counter
 
 from flask import Blueprint, g, jsonify, request, Response
 
@@ -67,36 +68,43 @@ def _size_label(storage):
 
 
 def name_cpus(jobs):
-    """Gives each CPU nobody has named (AE2 reports an empty name) one
-    after its storage, counted among the CPUs of that size only - "68k
-    #1" - and marks it `unnamed` so the page can say so, as
-    craft_monitor.lua's get_cpus() does, so keep them alike (its comment
-    says why it's done this way). Unnamed, they were all the same CPU:
-    tracking skipped them and the page couldn't open one's ingredients.
-    Older scripts still send them empty - and key each job's last look
-    (last_busy) by that empty name, so every idle unnamed CPU carries the
-    same one, the last busy one's. It's dropped from a job named here:
-    tracking then judges that job's end from the reports alone, as it did
-    before last_busy, rather than from another CPU's lists. jobs is a
-    list of dicts (crafts_post checks)."""
+    """Gives each CPU without a name of its own - none (AE2 reports an
+    empty one) or one another CPU shares - a made-up one, its storage
+    after the shared name if any, numbered within that name and size:
+    "68k #1", "Main 64k #2". Marked `auto_named`, so the page can say so.
+    As craft_monitor.lua's get_cpus() does, so keep them alike (its
+    comment says why it's done this way). Without, several CPUs were the
+    same one: tracking skipped the nameless and merged the rest, and the
+    page couldn't open one's ingredients. Older scripts still send such
+    names - and key each job's last look (last_busy) by the name, so CPUs
+    sharing one carry the same one, the last busy one's. It's dropped
+    from a job named here: tracking then judges that job's end from the
+    reports alone, as it did before last_busy, rather than from another
+    CPU's lists. jobs is a list of dicts (crafts_post checks)."""
+    def own_name(job):
+        name = job.get("name")
+        return name if isinstance(name, str) and name else None
+
+    count = Counter(own_name(job) for job in jobs)
     taken, groups = set(), {}
     for i, job in enumerate(jobs):
-        name = job.get("name")
-        if isinstance(name, str) and name:
+        name = own_name(job)
+        if name is not None and count[name] == 1:
             taken.add(name)
             # Only the script's own flag, on a name it made up.
-            if job.get("unnamed") is not True:
-                job.pop("unnamed", None)
-        else:
-            groups.setdefault(_size_label(job.get("storage")), []).append((i, job))
-    for label, group in groups.items():
+            if job.get("auto_named") is not True:
+                job.pop("auto_named", None)
+            continue
+        label = _size_label(job.get("storage"))
+        groups.setdefault(f"{name} {label}" if name else label, []).append((i, job))
+    for base, group in groups.items():
         group.sort(key=lambda g: (-_cpu_size(g[1].get("storage")), -_cpu_size(g[1].get("coprocessors")), g[0]))
         n = 0
         for _, job in group:
             n += 1
-            while f"{label} #{n}" in taken:
+            while f"{base} #{n}" in taken:
                 n += 1
-            job["name"], job["unnamed"] = f"{label} #{n}", True
+            job["name"], job["auto_named"] = f"{base} #{n}", True
             job.pop("last_busy", None)
     return jobs
 

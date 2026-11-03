@@ -529,7 +529,7 @@ async function main() {
     ] });
     // AE2 reports a CPU nobody named with an empty name.
     await crafts([{ name: '', busy: false, storage: 1024 }, { name: '', busy: false, storage: 65536 }]);
-    await waitFor('each named after its size, with the mark', `card('64k #1')?.querySelector('.cpu-auto')?.title.includes('named after its size')
+    await waitFor('each named after its size, with the mark', `card('64k #1')?.querySelector('.cpu-auto')?.title.includes('its size was added')
       && card('1k #1')?.querySelector('.cpu-auto')`);
     // A link to the docs, as a phone has no hover for the title.
     await waitFor('the mark links to the docs', `card('64k #1').querySelector('.cpu-auto').href.endsWith('in-game.md#crafting-cpus')

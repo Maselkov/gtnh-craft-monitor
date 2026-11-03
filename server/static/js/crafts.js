@@ -45,14 +45,15 @@ export function clearPins() {
 const LS_NOTIFIED_COMPLETION_IDS = 'gtnhCraftMonitor.notifiedCompletionIds';
 
 const MONITOR_DOCS_URL = docsUrl('in-game.md#crafting-cpus');
-// After the name of a CPU nobody named, which craft_monitor.lua's
-// get_cpus() made up from its size (or the server's name_cpus(), for
-// older scripts). A link, so a tap on a phone, where there's no hover
-// for the title, opens the docs that say the same.
-const UNNAMED_CPU_HINT = 'This CPU has no name, so it\'s named after its size. '
-  + 'To name it, Shift + right-click one of its blocks with Wire Cutters: that keeps its pins and history steady.';
-const UNNAMED_CPU_MARK = `<a class="cpu-auto" href="${MONITOR_DOCS_URL}" target="_blank" rel="noopener" `
-  + `title="${UNNAMED_CPU_HINT}" aria-label="Unnamed CPU: ${UNNAMED_CPU_HINT}">?</a>`;
+// After the name of a CPU without one of its own (none, or one another
+// CPU shares), which craft_monitor.lua's get_cpus() made up from its
+// size (or the server's name_cpus(), for older scripts). A link, so a
+// tap on a phone, where there's no hover for the title, opens the docs
+// that say the same.
+const AUTO_NAME_HINT = 'This name is made up: the CPU has none, or shares it with another CPU, so its size was added. '
+  + 'To give it a name of its own, Shift + right-click one of its blocks with Wire Cutters: that keeps its pins and history steady.';
+const AUTO_NAME_MARK = `<a class="cpu-auto" href="${MONITOR_DOCS_URL}" target="_blank" rel="noopener" `
+  + `title="${AUTO_NAME_HINT}" aria-label="Made-up name: ${AUTO_NAME_HINT}">?</a>`;
 
 function loadClaimedIds() {
   try {
@@ -551,7 +552,7 @@ function renderCard(job) {
   return `
     <div class="card">
       <div class="card-top">
-        <span class="card-cpu">CPU ${escapeHtml(job.name || '?')}</span>${job.unnamed ? UNNAMED_CPU_MARK : ''}
+        <span class="card-cpu">CPU ${escapeHtml(job.name || '?')}</span>${job.auto_named ? AUTO_NAME_MARK : ''}
         ${autoBadge}
         <div class="head-right">
           ${pinBtn}

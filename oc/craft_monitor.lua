@@ -237,33 +237,47 @@ local function size_label(storage)
   return string.format("%d%s", n, units[u])
 end
 
--- getCpus(), with a name for each CPU: AE2 gives a CPU nobody has named
--- an empty one, which would make every unnamed CPU the same one here
--- and on the page (cancelling, pinning, its ingredients). Such a CPU is
--- named after its storage and counted among the CPUs of that size only,
--- "68k #1", "68k #2" (more coprocessors first, then the list's order),
--- and flagged unnamed. So a CPU of another size can't take a CPU's name
--- or shift its number; only CPUs of the same size can swap, since the
--- list's own order is arbitrary (AE2 keeps its CPUs in a HashSet of
--- objects without a hashCode), and that can happen whenever AE2 rebuilds
--- it: a restart, or any CPU added or removed (the set can resize). A name
--- a CPU is really called is skipped. The server
+-- getCpus(), with a name of its own for each CPU. AE2 gives a CPU nobody
+-- has named an empty name, and lets two CPUs share one, either of which
+-- would make several CPUs the same one here and on the page (cancelling,
+-- pinning, its ingredients). Such a CPU gets a made-up name, flagged
+-- auto_named: its storage, after the shared name if there is one, then
+-- its number among the CPUs with that same name and size - "68k #1",
+-- "Main 64k #2" - more coprocessors first, then the list's order. Every
+-- CPU sharing a name gets one, so none keeps the plain name just by
+-- being listed first. So a CPU of another size or name can't take a
+-- CPU's name or shift its number; only CPUs of the same name and size can
+-- swap, since the list's own order is arbitrary (AE2 keeps its CPUs in a
+-- HashSet of objects without a hashCode), and that can happen whenever AE2
+-- rebuilds it: a restart, or any CPU added or removed (the set can
+-- resize). A name a CPU is really called is skipped. The server
 -- (routes/crafts.py name_cpus) does the same, so keep them alike.
 local function get_cpus(me)
   local ok, cpus = pcall(me.getCpus)
   if ok and type(cpus) == "table" then
-    local taken, groups = {}, {}
-    for i, row in ipairs(cpus) do
+    local count, taken, groups = {}, {}, {}
+    for _, row in ipairs(cpus) do
       if type(row.name) ~= "string" or row.name == "" then
         row.name = nil
-        local label = size_label(row.storage)
-        groups[label] = groups[label] or {}
-        table.insert(groups[label], { row = row, pos = i })
+      else
+        count[row.name] = (count[row.name] or 0) + 1
+      end
+    end
+    for i, row in ipairs(cpus) do
+      local base
+      if not row.name then
+        base = size_label(row.storage)
+      elseif count[row.name] > 1 then
+        base = row.name .. " " .. size_label(row.storage)
       else
         taken[row.name] = true
       end
+      if base then
+        groups[base] = groups[base] or {}
+        table.insert(groups[base], { row = row, pos = i })
+      end
     end
-    for label, group in pairs(groups) do
+    for base, group in pairs(groups) do
       table.sort(group, function(a, b)
         local sa, sb = cpu_size(a.row.storage), cpu_size(b.row.storage)
         if sa ~= sb then return sa > sb end
@@ -273,8 +287,8 @@ local function get_cpus(me)
       end)
       local n = 0
       for _, g in ipairs(group) do
-        repeat n = n + 1 until not taken[label .. " #" .. n]
-        g.row.name, g.row.unnamed = label .. " #" .. n, true
+        repeat n = n + 1 until not taken[base .. " #" .. n]
+        g.row.name, g.row.auto_named = base .. " #" .. n, true
       end
     end
   end
@@ -372,7 +386,7 @@ local function extract_jobs(raw_cpus)
     -- tables, on a few big crafts, was megabytes.
     local encOk, job = pcall(json_encode, {
       name             = name,
-      unnamed          = row.unnamed,
+      auto_named       = row.auto_named,
       busy             = row.busy and true or false,
       storage          = row.storage,
       coprocessors     = row.coprocessors,

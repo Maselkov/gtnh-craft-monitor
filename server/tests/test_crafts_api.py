@@ -42,7 +42,7 @@ class TestCraftsEndpoint:
         client.post("/api/crafts", json={"source": "me", "jobs": jobs}, headers=api_headers)
         got = client.get("/api/crafts").get_json()["jobs"]
         # Counted within a size: more coprocessors first, then the order given.
-        assert [(j["name"], j.get("unnamed")) for j in got] == [
+        assert [(j["name"], j.get("auto_named")) for j in got] == [
             ("68k #2", True), ("1M #1", True), ("Big", None), ("68k #1", True), ("68k #3", True)]
         login_as(client, "alice")
         tree = client.get("/api/crafts/1M%20%231/tree")
@@ -83,10 +83,28 @@ class TestCraftsEndpoint:
         assert [j["name"] for j in client.get("/api/crafts").get_json()["jobs"]] == ["4k #1", "4k #2", "0k #1"]
 
     def test_a_name_and_flag_from_the_script_are_kept(self, client, api_headers):
-        jobs = [{"name": "4k #1", "unnamed": True, "busy": False}, {"name": "Big", "unnamed": "yes", "busy": False}]
+        jobs = [{"name": "4k #1", "auto_named": True, "busy": False},
+                {"name": "Big", "auto_named": "yes", "busy": False}]
         client.post("/api/crafts", json={"source": "me", "jobs": jobs}, headers=api_headers)
         got = client.get("/api/crafts").get_json()["jobs"]
-        assert got[0]["unnamed"] is True and "unnamed" not in got[1]
+        assert got[0]["auto_named"] is True and "auto_named" not in got[1]
+
+    def test_cpus_sharing_a_name_each_get_it_with_their_size(self, client, api_headers):
+        # AE2 lets two CPUs share a name, which made them one CPU here.
+        shared = {"age": 1, "pending": [], "active": []}
+        jobs = [
+            {"name": "Main", "storage": 65536, "coprocessors": 1, "last_busy": shared},
+            {"name": "Main", "storage": 65536, "coprocessors": 8},
+            {"name": "Main", "storage": 4096},
+            {"name": "Other", "storage": 65536, "last_busy": shared},
+            {"name": "", "storage": 65536},
+        ]
+        client.post("/api/crafts", json={"source": "me", "jobs": jobs}, headers=api_headers)
+        got = client.get("/api/crafts").get_json()["jobs"]
+        assert [(j["name"], j.get("auto_named")) for j in got] == [
+            ("Main 64k #2", True), ("Main 64k #1", True), ("Main 4k #1", True), ("Other", None), ("64k #1", True)]
+        # An older script's last look under the shared name is another CPU's.
+        assert [j["name"] for j in name_cpus([dict(j) for j in jobs]) if "last_busy" in j] == ["Other"]
 
     def test_a_cpu_named_here_drops_its_last_look(self):
         # An older script keys last_busy by the empty name, so every idle
@@ -95,7 +113,7 @@ class TestCraftsEndpoint:
         jobs = name_cpus([
             {"name": "", "busy": False, "storage": 4096, "last_busy": shared},
             {"name": "", "busy": False, "storage": 1048576, "last_busy": shared},
-            {"name": "4k #9", "unnamed": True, "busy": False, "storage": 4096, "last_busy": shared},
+            {"name": "4k #9", "auto_named": True, "busy": False, "storage": 4096, "last_busy": shared},
             {"name": "Big", "busy": False, "last_busy": shared},
         ])
         assert ["last_busy" in j for j in jobs] == [False, False, True, True]

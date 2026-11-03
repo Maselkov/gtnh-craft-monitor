@@ -98,7 +98,7 @@ test("CPUs nobody named are named after their size, and flagged", function()
 
   local jobs = crafts_posts(env)[1].jobs
   t.eq(names_of(crafts_posts(env)[1]), { "68k #1", "68k #2", "1M #1", "Big" })
-  t.eq({ jobs[1].unnamed, jobs[3].unnamed, jobs[4].unnamed }, { true, true, nil })
+  t.eq({ jobs[1].auto_named, jobs[3].auto_named, jobs[4].auto_named }, { true, true, nil })
   t.eq({ jobs[1].busy, jobs[2].busy }, { false, true })
 
   -- Going idle doesn't rename them.
@@ -156,6 +156,36 @@ test("a CPU whose size isn't a usable number is named as 0k, not crashed on", fu
   env:start_service("craft_monitor")
   env:run({ seconds = 0.5 })
   t.eq(names_of(crafts_posts(env)[1]), { "0k #1", "0k #2", "0k #3", "0k #4", "8796093022207k #1" })
+end)
+
+test("CPUs sharing a name each get it with their size and a number", function()
+  local env = t.env({})
+  local me = ae2.new(env)
+  me:add_cpu({ name = "Main", storage = 65536, coprocessors = 1 })
+  me:add_cpu({ name = "Main", storage = 65536, coprocessors = 8 })
+  me:add_cpu({ name = "Main", storage = 4096 })
+  me:add_cpu({ name = "Other", storage = 65536 })
+  unnamed_cpu(me, 65536)
+  env:start_service("craft_monitor")
+  env:run({ seconds = 0.5 })
+  local post = crafts_posts(env)[1]
+  t.eq(names_of(post), { "Main 64k #2", "Main 64k #1", "Main 4k #1", "Other", "64k #1" })
+  t.eq({ post.jobs[1].auto_named, post.jobs[4].auto_named }, { true, nil })
+end)
+
+test("a CPU whose shared name stops being shared gets it back", function()
+  local env = t.env({})
+  local me = ae2.new(env)
+  me:add_cpu({ name = "Main", storage = 65536 })
+  local other = me:add_cpu({ name = "Main", storage = 4096 })
+  env:start_service("craft_monitor")
+  env:run({ seconds = 0.5 })
+  t.eq(names_of(crafts_posts(env)[1]), { "Main 64k #1", "Main 4k #1" })
+
+  other.name = "Small"
+  env:run({ seconds = 10 })
+  local posts = crafts_posts(env)
+  t.eq(names_of(posts[#posts]), { "Main", "Small" })
 end)
 
 test("DEBUG_CPU_FILTER takes an unnamed CPU's name as the page shows it", function()
