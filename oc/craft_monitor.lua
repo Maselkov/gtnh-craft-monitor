@@ -218,10 +218,11 @@ end
 -- held the whole time it runs, in memory the other scripts share.
 local watched, ended = {}, {}
 
--- A CPU's storage or coprocessors: a real, finite number, or 0. NaN
--- would break table.sort's comparison below.
+-- A CPU's storage or coprocessors: a number within +-2^53, or 0. NaN
+-- (which fails both comparisons) would break table.sort's comparison
+-- below, and a float past 2^63 has no integer for size_label's %d.
 local function cpu_size(v)
-  if type(v) == "number" and v == v and v > -math.huge and v < math.huge then return v end
+  if type(v) == "number" and v > -2^53 and v < 2^53 then return v end
   return 0
 end
 
@@ -241,11 +242,12 @@ end
 -- and on the page (cancelling, pinning, its ingredients). Such a CPU is
 -- named after its storage and counted among the CPUs of that size only,
 -- "68k #1", "68k #2" (more coprocessors first, then the list's order),
--- and flagged unnamed. So adding, removing, naming or losing a CPU of
--- another size renumbers nothing; only identical CPUs can swap, since
--- the list's own order is arbitrary (AE2 keeps its CPUs in a HashSet of
--- objects without a hashCode, so it changes with a restart or a rebuilt
--- CPU). A name a CPU is really called is skipped. The server
+-- and flagged unnamed. So a CPU of another size can't take a CPU's name
+-- or shift its number; only CPUs of the same size can swap, since the
+-- list's own order is arbitrary (AE2 keeps its CPUs in a HashSet of
+-- objects without a hashCode), and that can happen whenever AE2 rebuilds
+-- it: a restart, or any CPU added or removed (the set can resize). A name
+-- a CPU is really called is skipped. The server
 -- (routes/crafts.py name_cpus) does the same, so keep them alike.
 local function get_cpus(me)
   local ok, cpus = pcall(me.getCpus)

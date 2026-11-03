@@ -529,12 +529,17 @@ async function main() {
     ] });
     // AE2 reports a CPU nobody named with an empty name.
     await crafts([{ name: '', busy: false, storage: 1024 }, { name: '', busy: false, storage: 65536 }]);
-    const unnamed = (n) => `$$('#root .card').find((c) => c.querySelector('.card-cpu').firstChild.textContent === 'CPU ${n}')`;
-    await waitFor('each named after its size, with the mark', `${unnamed('64k #1')}?.querySelector('.cpu-auto')?.title.includes('named after its size')
-      && ${unnamed('1k #1')}?.querySelector('.cpu-auto')`);
+    await waitFor('each named after its size, with the mark', `card('64k #1')?.querySelector('.cpu-auto')?.title.includes('named after its size')
+      && card('1k #1')?.querySelector('.cpu-auto')`);
+    // Beside the name, not in it, so a long name's ellipsis can't hide it.
+    await waitFor('the mark is shown in full', `(() => {
+      const mark = card('64k #1').querySelector('.card-top > .cpu-auto');
+      const r = mark?.getBoundingClientRect();
+      return r && r.width >= 13 && r.height >= 13;
+    })()`);
     await waitFor('named CPUs have no mark', `card('W02') && !card('W02').querySelector('.cpu-auto')`);
     await crafts([]);
-    await waitFor('gone', `!${unnamed('64k #1')} && !${unnamed('1k #1')}`);
+    await waitFor('gone', `!card('64k #1') && !card('1k #1')`);
   });
 
   step('crafts poll each second, and an unchanged report answers 304', async () => {

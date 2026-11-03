@@ -62,11 +62,18 @@ class TestCraftsEndpoint:
         assert [j["name"] for j in client.get("/api/crafts").get_json()["jobs"]] == ["4k #1", "4k #2", "4k #3"]
 
     def test_sizes_are_read_as_the_script_reads_them(self, client, api_headers):
-        # Real, finite numbers only, as cpu_size() in craft_monitor.lua.
+        # Numbers within +-2^53 only, as cpu_size() in craft_monitor.lua.
         jobs = [{"name": "", "storage": "4096"}, {"name": "", "storage": True}, {"name": "", "storage": 1536 * 1024},
-                {"name": "", "storage": 3 * 1024 ** 3}]
+                {"name": "", "storage": 3 * 1024 ** 3}, {"name": "", "storage": 2 ** 53}]
         client.post("/api/crafts", json={"source": "me", "jobs": jobs}, headers=api_headers)
-        assert [j["name"] for j in client.get("/api/crafts").get_json()["jobs"]] == ["0k #1", "0k #2", "1536k #1", "3G #1"]
+        assert [j["name"] for j in client.get("/api/crafts").get_json()["jobs"]] == [
+            "0k #1", "0k #2", "1536k #1", "3G #1", "0k #3"]
+
+    def test_a_size_too_big_for_a_float_is_0k_not_a_500(self, client, api_headers):
+        jobs = [{"name": "", "storage": 10 ** 400}, {"name": "", "storage": 1e300}, {"name": "", "storage": 4096}]
+        res = client.post("/api/crafts", json={"source": "me", "jobs": jobs}, headers=api_headers)
+        assert res.status_code == 200
+        assert [j["name"] for j in client.get("/api/crafts").get_json()["jobs"]] == ["0k #1", "0k #2", "4k #1"]
 
     def test_a_name_that_isnt_text_is_replaced_not_crashed_on(self, client, api_headers):
         jobs = [{"name": ["x"], "storage": 4096}, {"name": {"a": 1}, "storage": 4096}, {"name": 7}]

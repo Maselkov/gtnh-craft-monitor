@@ -102,10 +102,10 @@ The rest:
 
 Name each crafting CPU: **Shift + right-click** one of its blocks with
 **Wire Cutters**. An unnamed CPU is named after its storage and counted
-among the CPUs of that size: `68k #1`, `68k #2`. CPUs of other sizes don't
-affect it, but two of the same size can swap numbers, and resizing a CPU
-renames it, so a pin or history entry on an unnamed CPU can end up on
-another. A name avoids that.
+among the CPUs of that size: `68k #1`, `68k #2`. Two of the same size can
+swap numbers when AE2 rebuilds its list of CPUs (a restart, or a CPU added
+or removed), and resizing a CPU renames it, so a pin or history entry on an
+unnamed CPU can end up on another. A name avoids that.
 
 Put an AE2 **Crafting Monitor** in each crafting CPU's multiblock. It's
 the only way the scripts can ask a CPU what it's making. A CPU without

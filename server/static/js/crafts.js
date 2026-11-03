@@ -546,7 +546,7 @@ function renderCard(job) {
   return `
     <div class="card">
       <div class="card-top">
-        <span class="card-cpu">CPU ${escapeHtml(job.name || '?')}${job.unnamed ? UNNAMED_CPU_MARK : ''}</span>
+        <span class="card-cpu">CPU ${escapeHtml(job.name || '?')}</span>${job.unnamed ? UNNAMED_CPU_MARK : ''}
         ${autoBadge}
         <div class="head-right">
           ${pinBtn}

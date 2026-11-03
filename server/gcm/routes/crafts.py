@@ -1,7 +1,6 @@
 """Crafting-CPU status from craft_monitor.lua, per-user CPU pins and
 completion notifications, and the Lua debug-dump channel."""
 
-import math
 import secrets
 import time
 
@@ -50,9 +49,10 @@ def debug_get():
 
 
 def _cpu_size(v):
-    """A CPU's storage or coprocessors: a real, finite number, or 0, as
-    craft_monitor.lua's cpu_size() reads them."""
-    if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v):
+    """A CPU's storage or coprocessors: a number within +-2^53, or 0, as
+    craft_monitor.lua's cpu_size() reads them. Compared, not converted, so
+    neither a NaN nor an integer too big for a float gets through."""
+    if isinstance(v, (int, float)) and not isinstance(v, bool) and -(2**53) < v < 2**53:
         return v
     return 0
 

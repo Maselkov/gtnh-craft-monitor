@@ -411,8 +411,10 @@ A name some CPU is really called is skipped. The script does it
 reported as) and so does the server (`name_cpus()` in
 `routes/crafts.py`, for scripts still sending it empty); keep the two
 alike, down to the label (`size_label()` / `_size_label()`: whole KB,
-or MB/GB for an exact number of them) and to reading sizes as real,
-finite numbers only (NaN would also break Lua's `table.sort`).
+or MB/GB for an exact number of them) and to reading sizes as numbers
+within +-2^53 only (NaN would break Lua's `table.sort`, a float past 2^63
+Lua's `%d`, and an integer too big for a float Python's `math.isfinite`).
+`test_oc_scripts.py` runs both on the same CPUs to keep them alike.
 
 Why this way. The position in `getCpus()` won't do: the source says
 that order is arbitrary. `getCpus()` is a copy of AE2's
@@ -423,8 +425,10 @@ inactive or destroyed CPU is left out, moving everything after it. A
 rank by size across all the CPUs (tried first) has the same weakness in
 another form: any bigger CPU added, removed or going inactive shifts
 every smaller one, and ranking only the unnamed ones also shifts them
-when one is named. Counting within a size, nothing but a CPU of the same
-size can move a CPU's number. `storage` and `coprocessors` are fixed
+when one is named. Counting within a size, a CPU of another size can't
+take a CPU's name or shift its number. Same-size CPUs can still swap
+whenever AE2 rebuilds the set - a restart, or any CPU added or removed,
+since a `HashSet` that resizes redistributes its elements. `storage` and `coprocessors` are fixed
 when the crafting blocks are placed (`availableStorage`, `accelerator`;
 a running job uses the separate `usedStorage`), so names don't change
 when a CPU goes busy or idle - deliberately not sorted by busy. CPUs of
