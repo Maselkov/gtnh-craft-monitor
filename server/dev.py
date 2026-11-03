@@ -828,6 +828,7 @@ class FakeComputer:
                          for name in self.services],
             "free_memory": int(self.total_memory * random.uniform(0.2, 0.6)),
             "total_memory": self.total_memory, "uptime": time.time() - self.booted_at,
+            "poll_seconds": TICK_SECONDS,
         })
         if reply.get("command"):
             self.command, self.command_ticks = reply["command"], 0
@@ -880,10 +881,10 @@ class FakeGame:
                 out = random.choice(SMALL_JOBS)
                 cpu.start(out, random_ingredients(random.randint(1, 6), out))
         self.answer_requests()
-        self.call("POST", "/api/crafts", {"source": "me_controller",
+        self.call("POST", "/api/crafts", {"source": "me_controller", "poll_seconds": TICK_SECONDS,
                                           "jobs": [cpu.report() for cpu in self.cpus]})
         stored, trend = power_reading(time.time())
-        self.call("POST", "/api/power", {"stored": stored, "capacity": CAPACITY, **trend})
+        self.call("POST", "/api/power", {"stored": stored, "capacity": CAPACITY, "poll_seconds": TICK_SECONDS, **trend})
         name, capacity, lag = BATTERIES
         stored, trend = power_reading(time.time() - lag, capacity)
         self.call("POST", "/api/power", {"stored": stored, "capacity": capacity, "machine": name, **trend})
@@ -950,7 +951,8 @@ class FakeGame:
             entry = self._scanned(it)
             if entry:
                 items.append(entry)
-        token = self.call("POST", "/api/network/scan/start").get("scan_token")
+        token = self.call("POST", "/api/network/scan/start",
+                          {"scan_interval_seconds": SCAN_EVERY_TICKS * TICK_SECONDS}).get("scan_token")
         self.call("POST", "/api/network/scan/batch", {"scan_token": token, "items": items})
         self.call("POST", "/api/network/scan/finish",
                   {"scan_token": token, "chunks_sent": 1, "total_errors": 0, "interface_terminal": self.terminal})

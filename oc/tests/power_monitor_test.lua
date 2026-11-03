@@ -19,7 +19,7 @@ test("posts stored, capacity and the sensor's trend fields", function()
   env:start_service("power_monitor")
   env:run({ seconds = 1 })
   t.eq(readings(env), { {
-    stored = 4000000000, capacity = 10000000000,
+    stored = 4000000000, capacity = 10000000000, poll_seconds = 60,
     avg_eu_in_5s = 1200, avg_eu_out_5s = 800, avg_eu_in_1h = 1100, time_to_empty_minutes = 10.06,
   } })
 end)
@@ -86,7 +86,7 @@ test("the wireless network is posted once, under WIRELESS_NAME, with several LSC
   env:run({ seconds = 1 })
   local r = readings(env)
   t.eq(#r, 3)
-  t.eq(r[3], { machine = "Team grid", stored = 7000, capacity = 0 })
+  t.eq(r[3], { machine = "Team grid", stored = 7000, capacity = 0, poll_seconds = 60 })
 end)
 
 test("the status screen shows the wireless network without a capacity", function()
@@ -126,7 +126,7 @@ test("falls back to the sensor text when stored > capacity", function()
   machine.stored = 50
   env:start_service("power_monitor")
   env:run({ seconds = 1 })
-  t.eq(readings(env)[1], { stored = 7, capacity = 10 })
+  t.eq(readings(env)[1], { stored = 7, capacity = 10, poll_seconds = 60 })
 end)
 
 test("sends nothing when no reading can be had", function()

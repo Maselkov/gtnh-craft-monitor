@@ -131,10 +131,10 @@ def pending_auto_requests():
     }
 
 
-def _cpu_budget(jobs, received_at):
+def _cpu_budget(jobs, received_at, poll_seconds):
     """How many auto-crafts may start now: idle CPUs past the ones kept
     free, less every request (anyone's) the game hasn't started yet."""
-    if received_at is None or time.time() - received_at > config.STALE_AFTER_SECONDS:
+    if received_at is None or time.time() - received_at > state.stale_after(config.STALE_AFTER_SECONDS, poll_seconds):
         return 0  # no fresh word on which CPUs are idle
     idle = sum(1 for job in jobs if not job.get("busy"))
     waiting = len(commands.craft_requests.select(lambda r: r["status"] == "pending"))
@@ -154,9 +154,10 @@ def _restock(sizes, names, scan_started_at):
     with state.crafts_lock:
         jobs = list(state.crafts["jobs"])
         received_at = state.crafts["received_at"]
+        poll_seconds = state.crafts["poll_seconds"]
     pending = pending_auto_requests()
     just_made = store.crafts.items_ended_since(scan_started_at)
-    budget = _cpu_budget(jobs, received_at)
+    budget = _cpu_budget(jobs, received_at, poll_seconds)
     now = time.time()
 
     for _, current, target in low:

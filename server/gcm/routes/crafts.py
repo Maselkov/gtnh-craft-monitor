@@ -67,6 +67,7 @@ def crafts_post():
         state.crafts["jobs"] = jobs
         state.crafts["source"] = payload.get("source")
         state.crafts["received_at"] = time.time()
+        state.crafts["poll_seconds"] = state.reported_interval(payload.get("poll_seconds"))
     # Once per process: remembers there's a craft_monitor.lua to wait
     # for after a restart, so the page says it's late rather than
     # telling the admin to connect one.
@@ -97,6 +98,7 @@ def crafts_get():
             response = Response(status=304)
         else:
             age = (time.time() - received_at) if received_at else None
+            stale_after = state.stale_after(config.STALE_AFTER_SECONDS, state.crafts["poll_seconds"])
             response = jsonify(
                 {
                     "jobs": state.crafts["jobs"],
@@ -104,8 +106,8 @@ def crafts_get():
                     "ever_reported": received_at is not None
                     or store.settings.load().get("crafts_reported") is True,
                     "age_seconds": age,
-                    "stale": age is None or age > config.STALE_AFTER_SECONDS,
-                    "stale_after_seconds": config.STALE_AFTER_SECONDS,
+                    "stale": age is None or age > stale_after,
+                    "stale_after_seconds": stale_after,
                 }
             )
     response.set_etag(etag)

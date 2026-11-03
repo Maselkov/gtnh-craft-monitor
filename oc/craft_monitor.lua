@@ -351,7 +351,10 @@ local function post_report(source, jobs)
   -- explanation. rc happening to log uncaught exceptions to
   -- /tmp/event.log is what actually surfaced this.
   local encodeOk, body = pcall(function()
-    return '{"source":' .. json_encode(source) .. ',"jobs":[' .. table.concat(jobs, ",") .. "]}"
+    -- poll_seconds: the server waits longer before calling the report
+    -- stale when this is set higher than usual.
+    return '{"source":' .. json_encode(source) .. ',"poll_seconds":' .. json_encode(CONFIG.POLL_SECONDS)
+      .. ',"jobs":[' .. table.concat(jobs, ",") .. "]}"
   end)
   -- Emptied rather than left to the caller: it's the body's size again,
   -- and the request below waits on the network, which is when the other

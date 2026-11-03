@@ -103,7 +103,7 @@ Everything else:
 | Variable | Default | Description |
 |---|---|---|
 | `SESSION_LIFETIME_SECONDS` | `604800` (7 days) | Browser session length. |
-| `STALE_AFTER_SECONDS` | `30` | How old crafting data can get before the page marks it stale. |
+| `STALE_AFTER_SECONDS` | `30` | How old crafting data can get before the page marks it stale, and keep-in-stock crafts wait for a fresh report. A `craft_monitor.lua` set to report less often gets three of its intervals instead, if that's longer. |
 | `VAPID_SUBJECT` | the page's URL | Contact given to push services with each notification: a `mailto:` or `https:` URL. |
 | `AUTOCRAFT_KEEP_IDLE_CPUS` | `1` | Keep-in-stock crafts only start while more crafting CPUs than this are idle; see [Stock rules](using.md#stock-rules). |
 | `AUTOCRAFT_RETRY_SECONDS` | `1800` | How long a keep-in-stock target waits after a failed craft before trying again. |

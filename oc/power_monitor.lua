@@ -331,6 +331,9 @@ local function post_reading(stored, capacity, trend, name)
   local parts = {
     string.format('"stored":%s', json_encode_number(stored)),
     string.format('"capacity":%s', json_encode_number(capacity)),
+    -- The server waits longer before calling a reading late when this
+    -- is set higher than usual.
+    string.format('"poll_seconds":%s', json_encode_number(CONFIG.POLL_SECONDS)),
   }
   if name then
     parts[#parts + 1] = '"machine":' .. json_string(name)

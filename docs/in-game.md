@@ -318,6 +318,10 @@ return {
 Anything not listed keeps the default from the tables below. Changes take
 effect after a reboot.
 
+Each script tells the server how often it reports, so a longer interval
+is fine: the page only calls a feed late, or a computer offline, after
+about three of them go by without a report.
+
 The scripts don't draw to the screen by default (`SHOW_STATUS = false`), and
 they print only when something's wrong (a missing component or card), so
 after boot the screen shows just the shell prompt. `rc <name> status` says

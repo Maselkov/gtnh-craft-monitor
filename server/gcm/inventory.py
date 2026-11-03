@@ -15,15 +15,16 @@ from gcm import charts, config, icons, nbt, rates, state, store
 log = logging.getLogger(__name__)
 
 
-def start_scan():
+def start_scan(scan_interval_seconds=None):
     """Begins a new scan, discarding any unfinished one, and returns its
-    token."""
+    token. scan_interval_seconds: network_browser.lua's, if it said."""
     with state.network_lock:
         state.network_buffer.clear()
         state.network_tag_buffer.clear()
         state.network["in_progress"] = True
         state.network["scan_started_at"] = time.time()
         state.network["chunks_received"] = 0
+        state.network["scan_interval_seconds"] = state.reported_interval(scan_interval_seconds)
         token = secrets.token_hex(8)
         state.network["current_scan_token"] = token
     return token

@@ -2,7 +2,7 @@ import time
 
 import pytest
 
-from gcm import commands, db, state, tracking
+from gcm import commands, config, db, state, tracking
 from conftest import login_as
 
 
@@ -33,6 +33,20 @@ class TestCraftsEndpoint:
         assert data["stale"] is True
         assert data["age_seconds"] is None
         assert data["ever_reported"] is False
+
+    def test_a_slower_craft_monitor_is_waited_for(self, client, api_headers):
+        client.post("/api/crafts", json={"source": "me", "poll_seconds": 60, "jobs": []}, headers=api_headers)
+        state.crafts["received_at"] -= 45
+        data = client.get("/api/crafts").get_json()
+        assert (data["stale"], data["stale_after_seconds"]) == (False, 180)
+        state.crafts["received_at"] -= 140
+        assert client.get("/api/crafts").get_json()["stale"] is True
+
+    @pytest.mark.parametrize("poll_seconds", [None, 5, "60", True, -60, 0, 10 ** 9])
+    def test_short_missing_or_junk_interval_keeps_the_default(self, client, api_headers, poll_seconds):
+        client.post("/api/crafts", json={"source": "me", "poll_seconds": poll_seconds, "jobs": []},
+                    headers=api_headers)
+        assert client.get("/api/crafts").get_json()["stale_after_seconds"] == config.STALE_AFTER_SECONDS
 
     def test_ever_reported_survives_a_restart(self, client, api_headers):
         client.post("/api/crafts", json={"source": "me_controller", "jobs": []}, headers=api_headers)

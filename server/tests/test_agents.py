@@ -70,6 +70,13 @@ class TestHeartbeat:
         login_as(client, "root", role="admin")
         assert computers(client)["computers"][0]["offline"] is True
 
+    @pytest.mark.parametrize("poll_seconds, offline", [(None, True), (600, False)])
+    def test_a_slower_agent_is_given_three_of_its_beats(self, client, api_headers, poll_seconds, offline):
+        beat(client, api_headers, poll_seconds=poll_seconds)
+        agents._agents["comp-1"]["last_seen"] -= 400
+        login_as(client, "root", role="admin")
+        assert computers(client)["computers"][0]["offline"] is offline
+
     def test_main_is_never_behind(self, client, api_headers):
         beat(client, api_headers, version="main")
         login_as(client, "root", role="admin")
@@ -201,6 +208,14 @@ class TestCommands:
         assert (cmd["status"], cmd["ok"]) == ("done", False)
         assert "gcm_agent" in cmd["message"]
         assert beat(client, api_headers) is None  # never handed over late
+
+    @pytest.mark.parametrize("poll_seconds, handed_over", [(None, False), (600, True)])
+    def test_a_slower_agent_has_longer_to_pick_it_up(self, client, api_headers, poll_seconds, handed_over):
+        beat(client, api_headers, poll_seconds=poll_seconds)
+        login_as(client, "root", role="admin")
+        cmd_id = command(client, "reboot").get_json()["id"]
+        agents._commands[cmd_id]["created_at"] -= 400
+        assert (beat(client, api_headers, poll_seconds=poll_seconds) is not None) is handed_over
 
     def test_admins_only(self, client, api_headers):
         beat(client, api_headers)

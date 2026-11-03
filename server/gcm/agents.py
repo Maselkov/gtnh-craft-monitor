@@ -13,9 +13,11 @@ import re
 import threading
 import time
 
-from gcm import config, gamedata, store
+from gcm import config, gamedata, state, store
 
 POLL_SECONDS = 60
+# Both grow with a computer's own POLL_SECONDS, if it's set longer
+# (state.stale_after()).
 OFFLINE_AFTER_SECONDS = 3 * POLL_SECONDS
 # A queued command not fetched by then is dropped: the computer is
 # off, and an update shouldn't happen whenever it comes back.
@@ -99,12 +101,19 @@ def _clean_report(report):
         "free_memory": number(report.get("free_memory")),
         "total_memory": number(report.get("total_memory")),
         "uptime": number(report.get("uptime")),
+        "poll_seconds": state.reported_interval(report.get("poll_seconds")),
     }
+
+
+def _offline_after(agent):
+    return state.stale_after(OFFLINE_AFTER_SECONDS, agent["poll_seconds"])
 
 
 def _expire_locked(now):
     for cmd_id, cmd in list(_commands.items()):
-        if cmd["status"] == "queued" and now - cmd["created_at"] > PICKUP_TIMEOUT_SECONDS:
+        agent = _agents.get(cmd["address"])
+        pickup_timeout = state.stale_after(PICKUP_TIMEOUT_SECONDS, agent and agent["poll_seconds"])
+        if cmd["status"] == "queued" and now - cmd["created_at"] > pickup_timeout:
             _finish_locked(cmd, False, "The computer didn't pick it up - is gcm_agent running?", now)
         elif cmd["status"] == "sent" and now - cmd["sent_at"] > RESULT_TIMEOUT_SECONDS:
             _finish_locked(cmd, False, "No result from the computer - check in game.", now)
@@ -218,7 +227,7 @@ def scripts_behind():
         behind = [
             address for address, agent in sorted(_agents.items())
             if is_behind(agent["version"], version)
-            and now - agent["last_seen"] <= OFFLINE_AFTER_SECONDS
+            and now - agent["last_seen"] <= _offline_after(agent)
             and not _busy_locked(address)
             and not (target and is_behind(agent["version"], target) and (address, target) not in _auto_attempted)
         ]
@@ -266,7 +275,7 @@ def snapshot():
             mine = sorted((c for c in _commands.values() if c["address"] == address), key=lambda c: -c["id"])
             out.append({
                 **agent,
-                "offline": now - agent["last_seen"] > OFFLINE_AFTER_SECONDS,
+                "offline": now - agent["last_seen"] > _offline_after(agent),
                 "command": _public_command(mine[0]) if mine and _still_shown(mine[0], now) else None,
             })
     return out

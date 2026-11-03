@@ -507,7 +507,9 @@ end
 local function run_scan(me)
   scanStartUptime = computer.uptime()
   set_phase("Calling scan/start...")
-  local ok1, result1 = post_json("/scan/start", "{}")
+  -- The server waits longer before calling the last scan stale when the
+  -- interval is set higher than usual.
+  local ok1, result1 = post_json("/scan/start", json_encode({ scan_interval_seconds = CONFIG.SCAN_INTERVAL_SECONDS }))
   if not ok1 then
     debug_log("scan/start FAILED: " .. tostring(result1))
     return false, "scan/start failed: " .. tostring(result1)

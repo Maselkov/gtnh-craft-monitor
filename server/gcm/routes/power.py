@@ -5,7 +5,7 @@ import time
 
 from flask import Blueprint, jsonify, request, Response
 
-from gcm import auth, charts, rates, store
+from gcm import auth, charts, rates, state, store
 
 
 bp = Blueprint("power", __name__)
@@ -67,6 +67,8 @@ def power_post():
         {key: _f(key) for key in TREND_FIELDS},
         machine.strip(),
     )
+    with state.power_lock:
+        state.power_poll_seconds[machine.strip()] = state.reported_interval(payload.get("poll_seconds"))
 
     return jsonify({"ok": True})
 

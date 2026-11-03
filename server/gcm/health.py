@@ -12,7 +12,8 @@ STARTED_AT = time.time()
 
 # A full scan can take 10+ minutes on a big network, and the next one
 # starts 10 minutes after it ends (network_browser.lua): past these,
-# something has stopped.
+# something has stopped. A script set to a longer interval gets longer
+# (state.stale_after()).
 SCAN_STUCK_SECONDS = 1800
 SCAN_STALE_SECONDS = 3600
 # power_monitor.lua reports about once a minute.
@@ -27,13 +28,14 @@ def _crafts(now):
     with state.crafts_lock:
         received_at = state.crafts["received_at"]
         cpus = len(state.crafts["jobs"])
+        poll_seconds = state.crafts["poll_seconds"]
     age = _age(received_at, now)
     return {
         "key": "crafts",
         "label": "Crafting CPUs",
         "script": "craft_monitor.lua",
         "age_seconds": age,
-        "ok": age is not None and age <= config.STALE_AFTER_SECONDS,
+        "ok": age is not None and age <= state.stale_after(config.STALE_AFTER_SECONDS, poll_seconds),
         "cpus": cpus,
     }
 
@@ -43,6 +45,7 @@ def _network(now):
         net = state.network
         updated_at, in_progress, started = net["updated_at"], net["in_progress"], net["scan_started_at"]
         crash, rejected = net["crash"], net["last_rejected"]
+        stale_after = state.stale_after(SCAN_STALE_SECONDS, net["scan_interval_seconds"])
         out = {
             "key": "network",
             "label": "ME network",
@@ -60,7 +63,7 @@ def _network(now):
     stuck = out["scanning_for"] is not None and out["scanning_for"] > SCAN_STUCK_SECONDS
     out["ok"] = (
         out["age_seconds"] is not None
-        and out["age_seconds"] <= SCAN_STALE_SECONDS
+        and out["age_seconds"] <= stale_after
         and not stuck and not crash and not out["rejected"]
     )
     return out
@@ -83,6 +86,8 @@ def _patterns(now):
 
 
 def _power(now):
+    with state.power_lock:
+        intervals = dict(state.power_poll_seconds)
     out = []
     for name, last in store.power.machines():
         age = _age(last, now)
@@ -91,7 +96,7 @@ def _power(now):
             "label": f"Power: {name or 'Main'}",
             "script": "power_monitor.lua",
             "age_seconds": age,
-            "ok": age is not None and age <= POWER_STALE_SECONDS,
+            "ok": age is not None and age <= state.stale_after(POWER_STALE_SECONDS, intervals.get(name)),
         })
     return out
 

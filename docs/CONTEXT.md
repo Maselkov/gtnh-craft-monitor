@@ -1560,8 +1560,15 @@ and the first `gcm update` that brings it enable it (once:
 `agent_set_up` in /etc/gcm.cfg). Every minute it POSTs a heartbeat to
 `/api/agent/heartbeat` (version, components and services from
 /etc/gcm.cfg, each service's `is_running()` via `rc.loaded`, memory,
-uptime); the reply may carry one admin-queued command (gcm/agents.py,
+uptime, POLL_SECONDS); the reply may carry one admin-queued command (gcm/agents.py,
 in memory, handed over once, dropped if not picked up within 3 polls).
+
+Every script sends its interval with what it already posts
+(craft_monitor and power_monitor `poll_seconds`, network_browser
+`scan_interval_seconds` on scan/start, gcm_agent `poll_seconds`), and
+each server limit that assumes one is `state.stale_after()`: the fixed
+default, or three of the reported interval if longer. Older scripts
+send none and get the defaults.
 
 Commands are deliberately only `update` with ref `release` or `main`,
 and `reboot`. The agent runs `/usr/bin/gcm.lua update --no-reboot

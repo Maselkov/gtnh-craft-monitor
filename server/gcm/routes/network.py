@@ -20,6 +20,8 @@ bp = Blueprint("network", __name__)
 @bp.route("/api/network/scan/start", methods=["POST"])
 @auth.api_key_required
 def network_scan_start():
+    payload = request.get_json(silent=True)
+    interval = payload.get("scan_interval_seconds") if isinstance(payload, dict) else None
     # catalog_version tells network_browser.lua to fetch
     # /api/network/catalog when it doesn't have that version's catalog yet.
     # heavy_ids: see inventory.HEAVY_ID_STACKS. Read before start_scan(),
@@ -28,7 +30,7 @@ def network_scan_start():
         {
             "ok": True,
             "heavy_ids": inventory.heavy_ids(),
-            "scan_token": inventory.start_scan(),
+            "scan_token": inventory.start_scan(interval),
             "catalog_version": gamedata.catalog_version(),
         }
     )
