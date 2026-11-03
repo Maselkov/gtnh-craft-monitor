@@ -73,11 +73,14 @@ def name_cpus(jobs):
     craft_monitor.lua's get_cpus() does, so keep them alike (its comment
     says why it's done this way). Unnamed, they were all the same CPU:
     tracking skipped them and the page couldn't open one's ingredients.
-    Older scripts still send them empty."""
+    Older scripts still send them empty - and key each job's last look
+    (last_busy) by that empty name, so every idle unnamed CPU carries the
+    same one, the last busy one's. It's dropped from a job named here:
+    tracking then judges that job's end from the reports alone, as it did
+    before last_busy, rather than from another CPU's lists. jobs is a
+    list of dicts (crafts_post checks)."""
     taken, groups = set(), {}
-    for i, job in enumerate(jobs or []):
-        if not isinstance(job, dict):
-            continue
+    for i, job in enumerate(jobs):
         name = job.get("name")
         if isinstance(name, str) and name:
             taken.add(name)
@@ -94,6 +97,7 @@ def name_cpus(jobs):
             while f"{label} #{n}" in taken:
                 n += 1
             job["name"], job["unnamed"] = f"{label} #{n}", True
+            job.pop("last_busy", None)
     return jobs
 
 
@@ -104,7 +108,10 @@ def crafts_post():
     if not isinstance(payload, dict):
         return jsonify({"error": "invalid payload"}), 400
 
-    jobs = icons.attach_job_icons(name_cpus(payload.get("jobs", [])))
+    jobs = payload.get("jobs") or []
+    if not isinstance(jobs, list) or not all(isinstance(j, dict) for j in jobs):
+        return jsonify({"error": "invalid jobs"}), 400
+    jobs = icons.attach_job_icons(name_cpus(jobs))
 
     # Before storing: it also fills in each job's progress. Outside
     # crafts_lock - tracking has its own lock.

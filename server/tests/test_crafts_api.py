@@ -3,6 +3,7 @@ import time
 import pytest
 
 from gcm import commands, config, db, state, tracking
+from gcm.routes.crafts import name_cpus
 from conftest import login_as
 
 
@@ -86,6 +87,26 @@ class TestCraftsEndpoint:
         client.post("/api/crafts", json={"source": "me", "jobs": jobs}, headers=api_headers)
         got = client.get("/api/crafts").get_json()["jobs"]
         assert got[0]["unnamed"] is True and "unnamed" not in got[1]
+
+    def test_a_cpu_named_here_drops_its_last_look(self):
+        # An older script keys last_busy by the empty name, so every idle
+        # unnamed CPU carries the last busy one's lists.
+        shared = {"age": 1, "pending": [{"name": "Gear", "size": 4}], "active": []}
+        jobs = name_cpus([
+            {"name": "", "busy": False, "storage": 4096, "last_busy": shared},
+            {"name": "", "busy": False, "storage": 1048576, "last_busy": shared},
+            {"name": "4k #9", "unnamed": True, "busy": False, "storage": 4096, "last_busy": shared},
+            {"name": "Big", "busy": False, "last_busy": shared},
+        ])
+        assert ["last_busy" in j for j in jobs] == [False, False, True, True]
+
+    def test_jobs_that_arent_a_list_of_objects_are_refused(self, client, api_headers):
+        for jobs in (5, "x", [1], [{"name": "A"}, None], {"name": "A"}):
+            res = client.post("/api/crafts", json={"source": "me", "jobs": jobs}, headers=api_headers)
+            assert res.status_code == 400, jobs
+        for jobs in (None, []):
+            res = client.post("/api/crafts", json={"source": "me", "jobs": jobs}, headers=api_headers)
+            assert res.status_code == 200, jobs
 
     def test_no_data_yet_is_stale(self, client):
         res = client.get("/api/crafts")

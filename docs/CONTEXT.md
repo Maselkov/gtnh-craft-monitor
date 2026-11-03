@@ -426,15 +426,17 @@ rank by size across all the CPUs (tried first) has the same weakness in
 another form: any bigger CPU added, removed or going inactive shifts
 every smaller one, and ranking only the unnamed ones also shifts them
 when one is named. Counting within a size, a CPU of another size can't
-take a CPU's name or shift its number. Same-size CPUs can still swap
-whenever AE2 rebuilds the set - a restart, or any CPU added or removed,
-since a `HashSet` that resizes redistributes its elements. `storage` and `coprocessors` are fixed
-when the crafting blocks are placed (`availableStorage`, `accelerator`;
-a running job uses the separate `usedStorage`), so names don't change
-when a CPU goes busy or idle - deliberately not sorted by busy. CPUs of
-one size still fall back to the list's order, so can swap numbers, and a
-job running on one when that happens is recorded as ended and started
-again; naming a CPU (Shift + right-click with Wire Cutters) avoids it.
+take a CPU's name or shift its number. `storage` and `coprocessors` are
+fixed when the crafting blocks are placed (`availableStorage`,
+`accelerator`; a running job uses the separate `usedStorage`), so names
+don't change when a CPU goes busy or idle - deliberately not sorted by
+busy, which would move a running job's name whenever another same-size
+CPU finishes. What's left: same-size CPUs fall back to the list's
+order, so they can swap whenever AE2 rebuilds the set (a restart, or any
+CPU added or removed, since a `HashSet` that resizes redistributes its
+elements), and a job running on one then is recorded as ended and
+started again. Naming a CPU (Shift + right-click with Wire Cutters)
+avoids it.
 
 **Why a scan was turned away.** The counts alone said that a scan was
 incomplete but not why, and the why only reached `network_browser`'s

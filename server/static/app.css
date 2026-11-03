@@ -195,8 +195,11 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
   margin-left: -4px;
   border: 1px solid currentColor;
   border-radius: 50%;
+  color: var(--muted);
   font-size: 9px;
+  font-weight: 600;
   line-height: 1;
+  text-decoration: none;
   opacity: 0.7;
   cursor: help;
 }

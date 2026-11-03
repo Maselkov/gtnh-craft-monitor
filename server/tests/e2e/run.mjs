@@ -531,6 +531,9 @@ async function main() {
     await crafts([{ name: '', busy: false, storage: 1024 }, { name: '', busy: false, storage: 65536 }]);
     await waitFor('each named after its size, with the mark', `card('64k #1')?.querySelector('.cpu-auto')?.title.includes('named after its size')
       && card('1k #1')?.querySelector('.cpu-auto')`);
+    // A link to the docs, as a phone has no hover for the title.
+    await waitFor('the mark links to the docs', `card('64k #1').querySelector('.cpu-auto').href.endsWith('in-game.md#crafting-cpus')
+      && card('64k #1').querySelector('.cpu-auto').getAttribute('aria-label').includes('Wire Cutters')`);
     // Beside the name, not in it, so a long name's ellipsis can't hide it.
     await waitFor('the mark is shown in full', `(() => {
       const mark = card('64k #1').querySelector('.card-top > .cpu-auto');

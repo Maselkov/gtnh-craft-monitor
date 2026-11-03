@@ -45,9 +45,14 @@ export function clearPins() {
 const LS_NOTIFIED_COMPLETION_IDS = 'gtnhCraftMonitor.notifiedCompletionIds';
 
 const MONITOR_DOCS_URL = docsUrl('in-game.md#crafting-cpus');
-// After the number of a CPU nobody named: the server numbers it by size.
-const UNNAMED_CPU_MARK = '<span class="cpu-auto" title="This CPU has no name, so it\'s named after its size. '
-  + 'To name it, Shift + right-click one of its blocks with Wire Cutters: that keeps its pins and history steady.">?</span>';
+// After the name of a CPU nobody named, which craft_monitor.lua's
+// get_cpus() made up from its size (or the server's name_cpus(), for
+// older scripts). A link, so a tap on a phone, where there's no hover
+// for the title, opens the docs that say the same.
+const UNNAMED_CPU_HINT = 'This CPU has no name, so it\'s named after its size. '
+  + 'To name it, Shift + right-click one of its blocks with Wire Cutters: that keeps its pins and history steady.';
+const UNNAMED_CPU_MARK = `<a class="cpu-auto" href="${MONITOR_DOCS_URL}" target="_blank" rel="noopener" `
+  + `title="${UNNAMED_CPU_HINT}" aria-label="Unnamed CPU: ${UNNAMED_CPU_HINT}">?</a>`;
 
 function loadClaimedIds() {
   try {
