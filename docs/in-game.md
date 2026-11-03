@@ -28,10 +28,10 @@ Each computer that runs the scripts needs:
 | Hard Disk Drive | Any tier, with OpenOS installed on it |
 | Screen and Keyboard | To install and watch the scripts |
 
-To install OpenOS, put the **OpenOS floppy disk** in a Disk Drive next to
-the computer (a Tier 3 case has one built in), boot from it and run
-`install`, choosing the hard disk. The floppy is read-only, so the scripts
-can't be installed onto it.
+To install OpenOS, put the **OpenOS floppy disk** in a Disk Drive. A Server
+Rack has none built in, so mount one in the rack next to the server. Boot
+from the floppy and run `install`, choosing the hard disk. The floppy is
+read-only, so the scripts can't be installed onto it.
 
 Memory is shared by every script on the computer, and the scripts need
 more of it the bigger your base is. We recommend a **Tier 3 Server** in a
