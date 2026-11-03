@@ -545,6 +545,10 @@ local function run_scan(me)
 
   local totalItems = 0
   local totalErrors = 0
+  -- The last of them, which scan/finish passes on: a refused scan's
+  -- reason then reaches the server's log and Status card, not only this
+  -- computer's debug log, which a busy network rotates within the hour.
+  local lastError
   local consecutiveErrors = 0
   local batchNum = 0
   -- Every sub-chunk this scan ATTEMPTS to send, success or failure alike
@@ -632,7 +636,8 @@ local function run_scan(me)
       if not encOk then
         encoded = {}
         totalErrors = totalErrors + 1
-        debug_log(string.format("Batch %d: encoding %d stacks failed: %s", batchNum, count, tostring(encErr)))
+        lastError = string.format("Batch %d: encoding %d stacks failed: %s", batchNum, count, tostring(encErr))
+        debug_log(lastError)
       end
       pcall(collectgarbage, "collect")
       local subChunkNum = 0
@@ -650,8 +655,9 @@ local function run_scan(me)
           debug_log(string.format("scan rejected by server mid-scan (batch %d, sub-chunk %d) - aborting", batchNum, subChunkNum))
         elseif not postOk then
           totalErrors = totalErrors + 1
-          if CONFIG.SHOW_STATUS then print("[network_browser] batch POST failed: " .. tostring(postErr)) end
-          debug_log("batch POST failed: " .. tostring(postErr))
+          lastError = "batch POST failed: " .. tostring(postErr)
+          if CONFIG.SHOW_STATUS then print("[network_browser] " .. lastError) end
+          debug_log(lastError)
         end
         for j = first, last do encoded[j] = nil end
         first = last + 1
@@ -660,7 +666,8 @@ local function run_scan(me)
     else
       totalErrors = totalErrors + 1
       consecutiveErrors = consecutiveErrors + 1
-      debug_log(string.format("Batch %d errored: %s", batchNum, tostring(result)))
+      lastError = string.format("Batch %d errored: %s", batchNum, tostring(result))
+      debug_log(lastError)
       if consecutiveErrors >= CONFIG.MAX_CONSECUTIVE_ERRORS then
         f:close()
         return false, CONFIG.MAX_CONSECUTIVE_ERRORS .. " consecutive batch errors, last: " .. tostring(result)
@@ -703,8 +710,9 @@ local function run_scan(me)
     set_phase(method .. "() returned (ok=" .. tostring(callOk) .. ")")
     if not callOk then
       totalErrors = totalErrors + 1
-      debug_log(method .. "() failed: " .. tostring(stacks))
-      if CONFIG.SHOW_STATUS then print("[network_browser] " .. method .. "() failed: " .. tostring(stacks)) end
+      lastError = method .. "() failed: " .. tostring(stacks)
+      debug_log(lastError)
+      if CONFIG.SHOW_STATUS then print("[network_browser] " .. lastError) end
       return total
     end
     stacks = stacks or {}
@@ -726,8 +734,9 @@ local function run_scan(me)
           debug_log("scan rejected by server mid-" .. what .. "-scan (stale_scan_token) - aborting")
         elseif not postOk then
           totalErrors = totalErrors + 1
-          if CONFIG.SHOW_STATUS then print("[network_browser] " .. what .. " batch POST failed: " .. tostring(postErr)) end
-          debug_log(what .. " batch POST failed: " .. tostring(postErr))
+          lastError = what .. " batch POST failed: " .. tostring(postErr)
+          if CONFIG.SHOW_STATUS then print("[network_browser] " .. lastError) end
+          debug_log(lastError)
         end
         subChunk = {}
         pcall(collectgarbage, "collect")
@@ -757,7 +766,7 @@ local function run_scan(me)
     terminal = find_interface_terminal() ~= nil
   end
   local finishPayload = json_encode({ scan_token = scanToken, chunks_sent = chunksSent,
-    total_errors = totalErrors, interface_terminal = terminal })
+    total_errors = totalErrors, last_error = lastError, interface_terminal = terminal })
   local ok2, result2 = post_json("/scan/finish", finishPayload)
   if not ok2 then
     debug_log("scan/finish FAILED: " .. tostring(result2))
@@ -878,6 +887,7 @@ local function run_pattern_scan(terminal)
   -- pattern's tables and hex NBT take far more memory than its JSON,
   -- and each POST waits on the network while the other scripts run.
   local chunk, chunkBytes, chunksSent, errors, total, providers = {}, 0, 0, 0, 0, 0
+  local lastError  -- as run_scan()'s
   local rejected = false
   -- Sends chunk's first PATTERN_CHUNK_SIZE patterns, or fewer if they'd
   -- be more than CHUNK_MAX_BYTES.
@@ -892,7 +902,8 @@ local function run_pattern_scan(terminal)
       rejected = true
     elseif not postOk then
       errors = errors + 1
-      debug_log("pattern batch POST failed: " .. tostring(err))
+      lastError = "pattern batch POST failed: " .. tostring(err)
+      debug_log(lastError)
     end
     for j = 1, n do chunkBytes = chunkBytes - #chunk[j] end
     table.move(chunk, n + 1, #chunk + n, 1)
@@ -909,7 +920,8 @@ local function run_pattern_scan(terminal)
       local callOk, info = pcall(list)
       if not callOk then
         errors = errors + 1
-        debug_log("pattern list failed after " .. (i - 1) .. " interfaces: " .. tostring(info))
+        lastError = "pattern list failed after " .. (i - 1) .. " interfaces: " .. tostring(info)
+        debug_log(lastError)
         break
       end
       if info == nil then break end
@@ -928,8 +940,9 @@ local function run_pattern_scan(terminal)
             total = total + 1
           else
             errors = errors + 1
-            debug_log("pattern in slot " .. tostring(slot) .. " of " .. tostring(info.name)
-              .. " couldn't be encoded: " .. tostring(encoded))
+            lastError = "pattern in slot " .. tostring(slot) .. " of " .. tostring(info.name)
+              .. " couldn't be encoded: " .. tostring(encoded)
+            debug_log(lastError)
           end
         end
       end
@@ -945,7 +958,8 @@ local function run_pattern_scan(terminal)
     list = nil
   else
     errors = errors + 1
-    debug_log("getInterfaces() failed: " .. tostring(list))
+    lastError = "getInterfaces() failed: " .. tostring(list)
+    debug_log(lastError)
   end
   while #chunk > 0 and not rejected do flush() end
 
@@ -954,7 +968,7 @@ local function run_pattern_scan(terminal)
   end
   set_phase("Patterns: calling patterns/finish...")
   local finishOk, finishBody = post_json("/patterns/finish",
-    json_encode({ scan_token = token, chunks_sent = chunksSent, total_errors = errors }))
+    json_encode({ scan_token = token, chunks_sent = chunksSent, total_errors = errors, last_error = lastError }))
   if not finishOk then
     return false, "patterns/finish failed: " .. tostring(finishBody)
   end

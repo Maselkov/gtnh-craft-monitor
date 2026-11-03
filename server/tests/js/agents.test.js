@@ -86,6 +86,15 @@ const HEALTH = {
   webhooks: { configured: 2, last: { age_seconds: 120, sent: 1, failed: [{ host: 'bad.test', error: 'refused' }] } },
 };
 
+test('server health: a refused pattern scan says why', () => {
+  const html = renderHealth({ ...HEALTH, feeds: [
+    { key: 'patterns', label: 'Patterns', script: 'network_browser.lua', age_seconds: 4000, ok: false, patterns: 4732,
+      off: null, rejected: { at: 1, reason: 'incomplete (237/237 chunks, 1 errors), last: getInterfaces() failed: no grid' } },
+  ] });
+  assert.match(html, /agent-dot warn"><\/span><span class="health-label">Patterns/);
+  assert.match(html, /last scan turned away: incomplete \(237\/237 chunks, 1 errors\), last: getInterfaces\(\) failed: no grid/);
+});
+
 test('server health: each feed, storage, background jobs', () => {
   const html = renderHealth(HEALTH);
   assert.match(html, /agent-dot running"><\/span><span class="health-label">Crafting CPUs/);

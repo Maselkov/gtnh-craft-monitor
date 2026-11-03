@@ -233,6 +233,32 @@ test("a batch answered with nil is an error, not a crash", function()
     :find("getItemsInNetworkById() returned nil: no network", 1, true))
 end)
 
+test("scan/finish carries the last error, so the server can say why it's refused", function()
+  local posts = 0
+  local env, me = setup({ routes = {
+    ["POST /api/network/scan/batch"] = function()
+      posts = posts + 1
+      if posts == 1 then return { connect_error = "connection reset" } end
+      if posts == 2 then return { status = 400, body = "bad" } end
+      return { ok = true }
+    end,
+  } })
+  fill(me, 250)
+  env:start_service("network_browser")
+  env:run({ seconds = 60 })
+  local finish = env:requests_to("^/api/network/scan/finish$")[1].json
+  t.eq(finish.total_errors, 2)
+  t.truthy(finish.last_error:find("^batch POST failed: .*400"), finish.last_error)
+end)
+
+test("a scan without errors sends no last_error", function()
+  local env, me = setup()
+  fill(me, 3)
+  env:start_service("network_browser")
+  env:run({ seconds = 60 })
+  t.eq(env:requests_to("^/api/network/scan/finish$")[1].json.last_error, nil)
+end)
+
 test("a failed catalog download keeps the current catalog", function()
   local env, me = setup({ routes = { ["GET /api/network/catalog"] = { status = 404, body = "not found" } } })
   env:write_file("/home/item_catalog.txt", "testmod:item1\n")
@@ -677,8 +703,10 @@ test("a broken pattern list is reported as an error, tried again, and item scans
   term.fail_list_at = 2
   env:start_service("network_browser")
   env:run({ seconds = 60 })
-  t.eq(env:requests_to("^/api/network/patterns/finish$")[1].json,
-    { scan_token = "ptok-1", chunks_sent = 1, total_errors = 1 })
+  local finish = env:requests_to("^/api/network/patterns/finish$")[1].json
+  t.eq(finish.chunks_sent, 1)
+  t.eq(finish.total_errors, 1)
+  t.truthy(finish.last_error:find("^pattern list failed after 1 interfaces: .*list broke$"), finish.last_error)
   t.truthy(env:read_file("/home/network_browser_debug.log"):find("pattern list failed after 1 interfaces", 1, true))
 
   -- Not an hour later: after the next item scan.
@@ -695,8 +723,10 @@ test("a failing getInterfaces() finishes the scan with an error", function()
   env:start_service("network_browser")
   env:run({ seconds = 60 })
   t.eq(#pattern_batches(env), 0)
-  t.eq(env:requests_to("^/api/network/patterns/finish$")[1].json,
-    { scan_token = "ptok-1", chunks_sent = 0, total_errors = 1 })
+  local finish = env:requests_to("^/api/network/patterns/finish$")[1].json
+  t.eq(finish.chunks_sent, 0)
+  t.eq(finish.total_errors, 1)
+  t.truthy(finish.last_error:find("^getInterfaces%(%) failed: .*no grid$"), finish.last_error)
 end)
 
 test("a stale pattern scan token stops sending", function()

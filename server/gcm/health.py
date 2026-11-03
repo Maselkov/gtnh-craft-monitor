@@ -71,14 +71,20 @@ def _network(now):
 
 def _patterns(now):
     current, updated_at = patterns.current()
+    rejected = patterns.last_rejected()
+    # Only one turned away since the last scan that was kept, as the
+    # network's.
+    if rejected and updated_at is not None and rejected["at"] <= updated_at:
+        rejected = None
     return {
         "key": "patterns",
         "label": "Patterns",
         "script": "network_browser.lua",
         "age_seconds": _age(updated_at, now),
         "patterns": len(current),
+        "rejected": rejected,
         # Read on demand, not on a schedule: an old reading is fine.
-        "ok": updated_at is not None,
+        "ok": updated_at is not None and not rejected,
         # Said instead of "nothing yet" for a feed that's optional and
         # not set up, with no warning.
         "off": "no ME Interface Terminal connected (optional)" if patterns.terminal_missing() else None,

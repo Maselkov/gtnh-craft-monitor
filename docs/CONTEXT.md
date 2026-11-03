@@ -397,6 +397,20 @@ remaining sub-chunks and fluids, never calling scan/finish at all) the
 moment the server signals a stale token mid-scan - no point continuing
 to send data nobody's listening for.
 
+**Why a scan was turned away.** The counts alone said that a scan was
+incomplete but not why, and the why only reached `network_browser`'s
+debug log in game - which a busy network rotates within the hour (each
+item scan writes several lines per batch against a 200 KB cap), so by
+the time anyone looked, it was gone. `scan/finish` and `patterns/finish`
+now also carry `last_error`, the message of the last error the scan
+counted. The server caps it at 300 characters, as the agents' errors
+(`agents.py`), and puts it in the reason it logs, returns and shows on
+the Status card ("incomplete (121/127 chunks, 6 errors), last: batch
+POST failed: ..."). A refused pattern scan is kept in
+`state.patterns["last_rejected"]` the way the network's is, so the
+Patterns line can say it too. Older scripts send no `last_error`; their
+reason reads as before.
+
 **Scan size limits.** A scan whose buffer would pass `MAX_SCAN_ITEMS`
 (100k; every NBT variant counts) is ended on the spot: buffer cleared,
 token dropped, `last_rejected` set so the Status dialog says why. The

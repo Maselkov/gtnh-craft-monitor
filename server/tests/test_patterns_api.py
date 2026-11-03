@@ -7,7 +7,7 @@ from nbt_fixtures import seed_tag, tag_hex
 from test_network_api import run_scan
 
 
-def run_pattern_scan(client, api_headers, batches, total_errors=0):
+def run_pattern_scan(client, api_headers, batches, total_errors=0, **finish):
     token = client.post("/api/network/patterns/start", headers=api_headers).get_json()["scan_token"]
     for batch in batches:
         client.post(
@@ -17,7 +17,7 @@ def run_pattern_scan(client, api_headers, batches, total_errors=0):
         )
     return client.post(
         "/api/network/patterns/finish",
-        json={"scan_token": token, "chunks_sent": len(batches), "total_errors": total_errors},
+        json={"scan_token": token, "chunks_sent": len(batches), "total_errors": total_errors, **finish},
         headers=api_headers,
     )
 

@@ -175,10 +175,28 @@ def add_batch(token, items):
         return len(state.network_buffer), state.network["chunks_received"]
 
 
-def finish_scan(token, chunks_sent, total_errors):
+def scan_error(v):
+    """The last error a scan's script says it hit, as scan/finish and
+    patterns/finish carry it: text, capped as the agents' errors are, or
+    None (older scripts send none)."""
+    if not isinstance(v, str):
+        return None
+    return v.strip()[:300] or None
+
+
+def incomplete_reason(received, sent, errors, last_error):
+    """Why a scan was turned away, for the log, the script and the
+    Status card."""
+    text = f"incomplete ({received}/{sent} chunks, {errors} errors)"
+    return f"{text}, last: {last_error}" if last_error else text
+
+
+def finish_scan(token, chunks_sent, total_errors, last_error=None):
     """Ends the scan: promotes its buffer to the live snapshot if the
     scan is provably complete, then records history and persists the
-    snapshot. Returns the response body for network_browser.lua."""
+    snapshot. Returns the response body for network_browser.lua.
+    last_error is the script's own account of what went wrong, if it
+    sent one (see scan_error())."""
     with state.network_lock:
         # Primary defense #1: does this scan/finish actually belong to
         # the scan this process currently thinks is active? A structural
@@ -247,24 +265,18 @@ def finish_scan(token, chunks_sent, total_errors):
         ):
             state.network["in_progress"] = False
             state.network["scan_started_at"] = None
-            state.network["last_rejected"] = {
-                "at": time.time(),
-                "reason": f"incomplete ({chunks_received}/{chunks_sent} chunks, {total_errors} errors)",
-            }
+            reason = incomplete_reason(chunks_received, chunks_sent, total_errors, scan_error(last_error))
+            state.network["last_rejected"] = {"at": time.time(), "reason": reason}
             log.warning(
-                "Rejected a network scan as incomplete: chunks_received=%s chunks_sent=%s "
-                "total_errors=%s - keeping the previous snapshot rather than recording "
-                "every missing item as vanished.",
-                chunks_received,
-                chunks_sent,
-                total_errors,
+                "Rejected a network scan as %s - keeping the previous snapshot rather than "
+                "recording every missing item as vanished.",
+                reason,
             )
             return {
                 "ok": True,
                 "item_count": state.network["item_count"],
                 "rejected": True,
-                "reason": f"incomplete scan (received {chunks_received}/{chunks_sent} chunks, "
-                f"{total_errors} errors) - discarded",
+                "reason": f"{reason} - discarded",
             }
 
         old_items = state.network["items"]
