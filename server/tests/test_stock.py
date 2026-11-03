@@ -1,6 +1,6 @@
 import pytest
 
-from gcm import commands, config, push, store
+from gcm import commands, config, push, state, store
 from conftest import login_as
 
 
@@ -230,6 +230,18 @@ class TestRestock:
         set_target(operator)
         scan(operator, api_headers, scanned(IRON, 40))
         assert auto_requests() == []
+
+    @pytest.mark.parametrize("poll_seconds, requested", [(None, 0), (60, 1)])
+    def test_a_slower_craft_monitor_is_waited_for(self, operator, api_headers, poll_seconds, requested):
+        # A report 45s old is stale at the default, not from a script
+        # that reports once a minute.
+        set_target(operator)
+        operator.post("/api/crafts", json={"source": "me_controller", "poll_seconds": poll_seconds,
+                                           "jobs": [{"name": f"I{n}", "busy": False} for n in range(3)]},
+                      headers=api_headers)
+        state.crafts["received_at"] -= 45
+        scan(operator, api_headers, scanned(IRON, 40))
+        assert len(auto_requests()) == requested
 
     def test_disabled_target_does_nothing(self, operator, api_headers):
         set_target(operator, enabled=False)

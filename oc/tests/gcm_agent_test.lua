@@ -68,6 +68,7 @@ test("heartbeat reports version, services and memory", function()
   })
   t.eq(hb.free_memory, 2 * 1024 * 1024)
   t.eq(hb.total_memory, 4 * 1024 * 1024)
+  t.eq(hb.poll_seconds, 60)
 end)
 
 test("polls every POLL_SECONDS and sees a stopped service", function()

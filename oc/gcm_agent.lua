@@ -5,7 +5,8 @@
   and carries out its buttons. Every POLL_SECONDS it POSTs a heartbeat
   to /api/agent/heartbeat: the installed version and components (from
   gcm's /etc/gcm.cfg), whether each script's rc service is running,
-  free memory and uptime. The reply may carry one command:
+  free memory, uptime and POLL_SECONDS (the server waits three of them
+  before calling the computer offline). The reply may carry one command:
 
     { id = n, action = "update", ref = "release" | "main" }
         runs `gcm update --no-reboot` (with --ref=main for "main"),
@@ -176,6 +177,7 @@ local function heartbeat_body()
     free_memory = computer.freeMemory(),
     total_memory = computer.totalMemory(),
     uptime = computer.uptime(),
+    poll_seconds = CONFIG.POLL_SECONDS,
   }
 end
 

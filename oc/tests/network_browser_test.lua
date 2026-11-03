@@ -50,6 +50,7 @@ test("a full scan: catalog download, chunked batches, fluids, finish", function(
   env:start_service("network_browser")
   env:run({ seconds = 60 })
 
+  t.eq(env:requests_to("^/api/network/scan/start$")[1].json, { scan_interval_seconds = 600 })
   t.eq(env:read_file("/home/item_catalog.server.txt"), catalog_of(250))
   t.eq(env:read_file("/home/item_catalog.server.txt.version"), "2.8.0")
 

@@ -43,6 +43,8 @@ def test_craft_report_reaches_the_crafts_endpoint(game, client):
     assert jobs["CPU 1"]["final_output"] == "Titanium Gear"
     assert jobs["CPU 1"]["pending"][0]["size"] == 16
     assert jobs["CPU 2"]["busy"] is False
+    assert data["stale_after_seconds"] == config.STALE_AFTER_SECONDS  # 3 x 5s is under the default
+    assert state.crafts["poll_seconds"] == 5
 
 
 def test_craft_request_round_trip(game, client):
@@ -127,6 +129,7 @@ def test_power_reading_lands(game, client):
     assert latest["stored"] == 4e9
     assert latest["capacity"] == 1e10
     assert latest["avg_eu_in_5s"] == 1200
+    assert state.power_poll_seconds == {"": 60}
 
 
 def test_wireless_network_lands_as_its_own_machine(game, client):
@@ -165,6 +168,7 @@ def test_network_scan_lands(game, client):
     assert sizes == {"Thing A": 5, "Thing B": 7, "Molten Neutronium": 144000}
     # No ME Interface Terminal in this game, so the page suggests one.
     assert data["needs_terminal"] is True
+    assert state.network["scan_interval_seconds"] == 600
 
 
 def test_a_label_with_control_characters_is_sent_as_valid_json(game, client, caplog):
@@ -349,6 +353,7 @@ def test_agent_reports_and_reboots_on_command(game, client, monkeypatch):
     [computer] = client.get("/api/admin/agents").get_json()["computers"]
     assert (computer["address"], computer["version"]) == ("computer-0000", "v1.0.0")
     assert computer["services"] == [{"name": "power_monitor", "running": False, "restarts": 0, "gave_up": False}]
+    assert computer["poll_seconds"] == 60
 
     assert client.post("/api/admin/agents/computer-0000/command", json={"action": "reboot"}).status_code == 200
     game.run(61)

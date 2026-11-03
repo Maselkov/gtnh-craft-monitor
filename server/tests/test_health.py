@@ -1,3 +1,7 @@
+import time
+
+import pytest
+
 from gcm import config, retention, state, store, webhooks
 from conftest import login_as
 from test_item_history_api import IRON, run_scan
@@ -51,6 +55,28 @@ class TestHealth:
         client.post("/api/crafts", json={"source": "me", "jobs": []}, headers=api_headers)
         state.crafts["received_at"] -= config.STALE_AFTER_SECONDS + 1
         assert feed(health(client), "crafts")["ok"] is False
+
+    def test_slower_crafts_report_is_given_longer(self, client, api_headers):
+        client.post("/api/crafts", json={"source": "me", "poll_seconds": 60, "jobs": []}, headers=api_headers)
+        state.crafts["received_at"] -= 2 * 60
+        assert feed(health(client), "crafts")["ok"] is True
+
+    @pytest.mark.parametrize("poll_seconds, ok", [(None, False), (600, True)])
+    def test_slower_power_monitor_is_given_longer(self, client, api_headers, poll_seconds, ok):
+        reading = {"stored": 5, "capacity": 10, "machine": "LSC", "timestamp": time.time() - 400}
+        client.post("/api/power", json={**reading, "poll_seconds": poll_seconds}, headers=api_headers)
+        assert feed(health(client), "power:LSC")["ok"] is ok
+
+    @pytest.mark.parametrize("interval, ok", [(None, False), (3000, True)])
+    def test_slower_network_scans_are_given_longer(self, client, api_headers, interval, ok):
+        token = client.post("/api/network/scan/start", json={"scan_interval_seconds": interval},
+                            headers=api_headers).get_json()["scan_token"]
+        client.post("/api/network/scan/batch", json={"items": [dict(IRON, name="Iron Ingot", size=5)],
+                                                     "scan_token": token}, headers=api_headers)
+        client.post("/api/network/scan/finish", json={"scan_token": token, "chunks_sent": 1, "total_errors": 0},
+                    headers=api_headers)
+        state.network["updated_at"] -= 4000
+        assert feed(health(client), "network")["ok"] is ok
 
     def test_rejected_scan_shows_until_one_is_kept(self, client, api_headers):
         token = client.post("/api/network/scan/start", headers=api_headers).get_json()["scan_token"]

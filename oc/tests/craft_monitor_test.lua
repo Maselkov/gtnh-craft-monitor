@@ -82,6 +82,7 @@ test("a job ending is reported right away, with how it last looked", function()
   -- t=0 and t=5 on the poll interval, then t=7 when the job ended
   -- rather than waiting for t=10.
   t.eq(#reqs, 3)
+  t.eq(reqs[1].json.poll_seconds, 5)
   t.eq(reqs[3].at, 7)
   local job = reqs[3].json.jobs[1]
   t.eq(job.busy, false)

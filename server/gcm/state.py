@@ -9,6 +9,27 @@ Plain data only: nothing here reads or writes the databases."""
 
 import threading
 
+# How many of a script's reports may be missed before its feed counts
+# as stale. Each limit is the larger of its fixed default and this many
+# of the interval the script reported, so a script set to report less
+# often isn't called stale between reports.
+MISSED_REPORTS = 3
+_MAX_INTERVAL_SECONDS = 86400
+
+
+def reported_interval(value):
+    """A script's interval as its payload gave it, in seconds, or None
+    when it sent none (older scripts) or junk."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value) if 0 < value <= _MAX_INTERVAL_SECONDS else None
+
+
+def stale_after(default, interval):
+    """Seconds without a report before a feed is stale: default, or
+    MISSED_REPORTS of the script's interval if that's longer."""
+    return default if interval is None else max(default, MISSED_REPORTS * interval)
+
 
 # Latest crafting-CPU status POSTed by craft_monitor.lua.
 crafts_lock = threading.Lock()
@@ -16,6 +37,7 @@ crafts = {
     "jobs": [],
     "source": None,
     "received_at": None,  # server-side wall clock, for staleness checks
+    "poll_seconds": None,  # craft_monitor.lua's POLL_SECONDS, if it said
 }
 
 
@@ -88,7 +110,16 @@ network = {
     # The token of a scan ended for going past MAX_SCAN_ITEMS, so its
     # scan/finish doesn't replace that reason with "stale scan token".
     "abandoned_scan_token": None,
+    # network_browser.lua's SCAN_INTERVAL_SECONDS, as its last scan/start
+    # said (None from older scripts).
+    "scan_interval_seconds": None,
 }
+
+
+# power_monitor.lua's POLL_SECONDS, by machine name, as each machine's
+# last reading said (gcm/health.py).
+power_lock = threading.Lock()
+power_poll_seconds = {}
 
 
 # The network's patterns, from network_browser.lua's pattern scans
@@ -149,6 +180,7 @@ def reset():
         crafts["jobs"] = []
         crafts["source"] = None
         crafts["received_at"] = None
+        crafts["poll_seconds"] = None
     with network_lock:
         network_buffer.clear()
         network_tag_buffer.clear()
@@ -167,7 +199,10 @@ def reset():
             last_scan_seconds=None,
             last_rejected=None,
             abandoned_scan_token=None,
+            scan_interval_seconds=None,
         )
+    with power_lock:
+        power_poll_seconds.clear()
     with patterns_lock:
         pattern_buffer.clear()
         patterns.update(
