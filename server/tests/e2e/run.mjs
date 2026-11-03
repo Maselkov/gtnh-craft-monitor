@@ -491,6 +491,16 @@ async function main() {
   const steps = [];
   const step = (name, fn) => steps.push({ name, fn });
   const click = (expr) => evaluate(`(${expr}).click(), true`);
+  // Real mouse input, for what el.click() skips: the press and release
+  // go through the browser's own hit testing and click targeting.
+  const mouse = (type, [x, y]) => cdp.send('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 });
+  const centerOf = (expr) => evaluate(`(() => { const r = (${expr}).getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`);
+  // A click on a modal's dimmed backdrop, in its top-left corner, clear
+  // of the dialog box.
+  const clickBackdrop = async () => {
+    await mouse('mousePressed', [5, 5]);
+    await mouse('mouseReleased', [5, 5]);
+  };
 
   step('crafts tab renders the busy CPU', async () => {
     await waitFor('W01 card', `card('W01')?.querySelector('.craft-title').textContent.includes('Iron Ingot')`);
@@ -786,7 +796,7 @@ async function main() {
     await waitFor('closed by button', `!visible($('#cancelConfirmModal'))`);
     await click(`card('W01').querySelector('.cancel-btn')`);
     await waitFor('dialog open again', `visible($('#cancelConfirmModal'))`);
-    await click(`$('#cancelConfirmModal')`);
+    await clickBackdrop();
     await waitFor('closed by backdrop', `!visible($('#cancelConfirmModal'))`);
   });
 
@@ -1059,7 +1069,7 @@ async function main() {
       && $('#networkTab [data-view="list"]').classList.contains('active')`);
     await click(`$$('#networkList .network-cell').find(c => c.textContent.includes('Iron Ingot'))`);
     await waitFor('row opens history', `visible($('#itemHistoryModal')) && $('#itemHistoryName').textContent === 'Iron Ingot'`);
-    await click(`$('#itemHistoryModal')`);
+    await clickBackdrop();
     await waitFor('closed', `!visible($('#itemHistoryModal'))`);
     await click(`$('#networkTab [data-view="grid"]')`);
     await waitFor('grid again', `!$('#networkList').classList.contains('list')`);
@@ -1081,11 +1091,19 @@ async function main() {
     await evaluate(`openItem('Iron Ingot'), true`);
     await click(`$('#itemHistoryCraftBtn')`);
     await waitFor('craft dialog again', `visible($('#craftRequestModal'))`);
-    await click(`$('#craftRequestModal')`);
+    await clickBackdrop();
     await waitFor('closed by backdrop', `!visible($('#craftRequestModal'))`);
     await evaluate(`openItem('Iron Ingot'), true`);
     await click(`$('#itemHistoryCraftBtn')`);
     await waitFor('craft dialog', `visible($('#craftRequestModal')) && $('#craftRequestName').textContent.includes('Iron Ingot')`);
+    // Drag-selecting the amount and letting go over the backdrop keeps
+    // the dialog open.
+    await evaluate(`typeInto('#craftRequestAmount', '123')`);
+    await mouse('mousePressed', await centerOf(`$('#craftRequestAmount')`));
+    await mouse('mouseMoved', [5, 5]);
+    await mouse('mouseReleased', [5, 5]);
+    await evaluate(`new Promise((r) => setTimeout(r, 200))`);
+    await waitFor('still open after a drag out', `visible($('#craftRequestModal'))`);
     await evaluate(`typeInto('#craftRequestAmount', '4+3*2')`);
     await waitFor('amount preview', `/\\b10\\b/.test($('#craftRequestAmountPreview').textContent)`);
     await click(`$('#craftRequestSubmitBtn')`);
@@ -1308,7 +1326,7 @@ async function main() {
     await waitFor('closed by button', `!visible($('#itemHistoryModal')) && location.pathname === '/network'`);
     await evaluate(`openItem('Iron Ingot'), true`);
     await waitFor('history open again', `visible($('#itemHistoryModal'))`);
-    await click(`$('#itemHistoryModal')`);
+    await clickBackdrop();
     await waitFor('closed by backdrop', `!visible($('#itemHistoryModal')) && location.pathname === '/network'`);
   });
 
@@ -1439,7 +1457,7 @@ async function main() {
     await waitFor('closed by button', `!visible($('#userHistoryModal'))`);
     await click(`byText('button', 'History', ${row})`);
     await waitFor('history dialog again', `visible($('#userHistoryModal'))`);
-    await click(`$('#userHistoryModal')`);
+    await clickBackdrop();
     await waitFor('closed by backdrop', `!visible($('#userHistoryModal'))`);
     await click(`byText('button', 'New token', ${row})`);
     await waitFor('new token', `$('#adminTokenValue').value !== ${JSON.stringify(firstToken)}`);
@@ -1453,7 +1471,7 @@ async function main() {
     await click(`$('#settingsBtn')`);
     await click(`$('#adminBtn')`);
     await waitFor('admin dialog again', `visible($('#adminUsersModal'))`);
-    await click(`$('#adminUsersModal')`);
+    await clickBackdrop();
     await waitFor('closed by backdrop', `!visible($('#adminUsersModal'))`);
   });
 
@@ -1644,7 +1662,7 @@ async function main() {
     await click(`$('#gamedataInstallBtn')`);
     await waitFor('installed', `$('#gamedataCurrent').textContent === 'In use: GTNH ${E2E_DATA_VERSION}, Default textures'`);
     await waitFor('listed as in use', `$('#gamedataVersion').selectedOptions[0].textContent.includes('(in use)')`);
-    await click(`$('#gamedataModal')`);
+    await clickBackdrop();
     await waitFor('closed by backdrop, the note gone', `!visible($('#gamedataModal')) && !visible($('#networkGameDataNote'))`);
     await click(`$('#settingsBtn')`);
     await click(`$('#gamedataBtn')`);

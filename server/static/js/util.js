@@ -98,11 +98,19 @@ export function delegateActions(container, actions) {
 }
 
 // Modal overlays close on a click on the dimmed backdrop itself, not on
-// anything inside the dialog.
+// anything inside the dialog. The press has to start on the backdrop
+// too: a drag that starts in a text box and is let go of outside the
+// dialog clicks the overlay as well (a click goes to the closest element
+// holding both ends of it), and mustn't close the dialog.
 export function onBackdropClick(overlayId, close) {
   const overlay = document.getElementById(overlayId);
+  let pressedOnBackdrop = false;
+  overlay.addEventListener('mousedown', (e) => {
+    pressedOnBackdrop = e.target === overlay;
+  });
   overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) close();
+    if (pressedOnBackdrop && e.target === overlay) close();
+    pressedOnBackdrop = false;
   });
 }
 
