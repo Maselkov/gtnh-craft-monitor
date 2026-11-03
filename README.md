@@ -40,10 +40,11 @@ Basically, it's web AE2 for your base.
 
 - A machine with Docker (amd64 or arm64) that the Minecraft server can
   reach over HTTP.
-- In game, an OpenComputers computer (Tier 2 case or better) with a Lua
-  BIOS EEPROM, a CPU and Graphics Card or an APU, at least 2× Tier 2
-  memory (more is better), an **Internet Card**, and a hard disk with
-  OpenOS installed from the OpenOS floppy. See
+- In game, an OpenComputers computer (a Tier 3 server in a Server Rack is
+  best; a Tier 2 case or better works on a small base) with a Lua BIOS
+  EEPROM, a CPU and Graphics Card or an APU, memory (4× Tier 3.5 in a
+  server; at least 2× Tier 2 in a case), an **Internet Card**, and a hard
+  disk with OpenOS installed from the OpenOS floppy. See
   [The computer](docs/in-game.md#the-computer) for details. It also needs
   Adapters connected to it (touching the block, or linked with an MFU):
   - **Crafts and Network tabs:** an Adapter on the ME Controller.
