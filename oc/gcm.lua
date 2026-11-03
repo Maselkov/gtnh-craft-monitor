@@ -640,9 +640,39 @@ local function cmd_update(opts, no_reboot)
   end
 end
 
+-- How a script's rc service is doing, the way gcm_agent tells the web
+-- page: running from rc.loaded and the is_running() each script defines,
+-- started on boot from /etc/rc.cfg.
+local function service_status(name)
+  local rcCfg = {}
+  local chunk = loadfile("/etc/rc.cfg", "t", rcCfg)
+  if chunk then pcall(chunk) end
+  local enabled = false
+  for _, n in ipairs(type(rcCfg.enabled) == "table" and rcCfg.enabled or {}) do
+    if n == name then enabled = true end
+  end
+  local okRc, rc = pcall(require, "rc")
+  local svc = okRc and type(rc) == "table" and rc.loaded and rc.loaded[name]
+  local running = type(svc) == "table" and type(svc.is_running) == "function"
+    and select(2, pcall(svc.is_running)) == true
+  if running then
+    return enabled and "running" or "running, but not started on boot"
+  elseif type(svc) == "table" and svc.stopped_on_purpose == true then
+    return "stopped (`rc " .. name .. " start`)"
+  elseif enabled then
+    return "not running: `rc " .. name .. " start` shows why"
+  end
+  return "off (`rc " .. name .. " enable` starts it on boot)"
+end
+
 local function cmd_status()
   local state = read_state()
-  if state then
+  if state and state.services and #state.services == #state.components then
+    print("Installed:  " .. state.version)
+    for i, name in ipairs(state.components) do
+      print(string.format("  %-9s %s", name, service_status(state.services[i])))
+    end
+  elseif state then
     print("Installed:  " .. state.version)
     print("Components: " .. table.concat(state.components, ", "))
   else

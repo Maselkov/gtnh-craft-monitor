@@ -298,37 +298,53 @@ end
 local ALL = '{ version = "v1.1.0", components = { "craft", "power", "network" },'
   .. ' services = { "craft_monitor", "power_monitor", "network_browser" } }'
 
-test("the banner shows the version, and how each script came up", function()
+test("the banner shows the version and scripts, not whether they're running", function()
   local env = github_env()
   env:write_file("/etc/gcm.cfg", "return " .. ALL)
   env:write_file("/etc/rc.cfg", 'enabled = {"craft_monitor", "network_browser", "gcm_agent"}')
   env.rc_loaded.craft_monitor = { is_running = function() return true end }
-  -- Crashed starting: loaded, but its thread is dead.
-  env.rc_loaded.network_browser = { is_running = function() return false end }
   motd(env)
   local text = screen(env)
   t.truthy(text:find("GTNH Craft Monitor", 1, true), text)
   t.truthy(text:find("v1.1.0", 1, true), text)
-  t.truthy(text:find("craft ✓ power - network ✗", 1, true), text)
+  t.truthy(text:find("craft, power, network", 1, true), text)
   t.truthy(text:find("OpenOS 1.8.3 (harness)", 1, true), text)
   t.eq(text:find("readonly", 1, true), nil)
 end)
 
-test("the banner marks an enabled script rc never loaded, or whose is_running errors, as down", function()
+test("status says how each script's service is doing", function()
   local env = github_env()
   env:write_file("/etc/gcm.cfg", "return " .. ALL)
-  env:write_file("/etc/rc.cfg", 'enabled = {"craft_monitor", "power_monitor", "network_browser"}')
-  env.rc_loaded.power_monitor = { is_running = function() error("boom") end }
-  env.rc_loaded.network_browser = { is_running = function() return true end }
-  motd(env)
-  t.truthy(screen(env):find("craft ✗ power ✗ network ✓", 1, true), screen(env))
+  env:write_file("/etc/rc.cfg", 'enabled = {"craft_monitor", "power_monitor", "gcm_agent"}')
+  env.rc_loaded.craft_monitor = { is_running = function() return true end }
+  -- Crashed: loaded, but its thread is dead.
+  env.rc_loaded.power_monitor = { is_running = function() return false end }
+  t.eq(gcm(env, "status"), nil)
+  t.truthy(env:printed("Installed:  v1.1.0"))
+  t.truthy(env:printed("  craft     running"))
+  t.truthy(env:printed("  power     not running: `rc power_monitor start` shows why"))
+  t.truthy(env:printed("  network   off (`rc network_browser enable` starts it on boot)"))
+  t.truthy(env:printed("Latest:     v1.1.0"))
 end)
 
-test("the banner lists plain names for a gcm.cfg from before services were in it", function()
+test("status tells a script stopped with rc, or started by hand, from a crashed one", function()
   local env = github_env()
-  env:write_file("/etc/gcm.cfg", 'return { version = "v1.1.0", components = { "craft", "power", "network" } }')
-  motd(env)
-  t.truthy(screen(env):find("craft, power, network", 1, true), screen(env))
+  env:write_file("/etc/gcm.cfg", "return " .. ALL)
+  env:write_file("/etc/rc.cfg", 'enabled = {"craft_monitor", "power_monitor"}')
+  env.rc_loaded.craft_monitor = { is_running = function() return false end, stopped_on_purpose = true }
+  env.rc_loaded.power_monitor = { is_running = function() error("boom") end }
+  env.rc_loaded.network_browser = { is_running = function() return true end }
+  t.eq(gcm(env, "status"), nil)
+  t.truthy(env:printed("  craft     stopped (`rc craft_monitor start`)"))
+  t.truthy(env:printed("  power     not running: `rc power_monitor start` shows why"))
+  t.truthy(env:printed("  network   running, but not started on boot"))
+end)
+
+test("status lists plain names for a gcm.cfg from before services were in it", function()
+  local env = github_env()
+  env:write_file("/etc/gcm.cfg", 'return { version = "v1.1.0", components = { "craft", "power" } }')
+  t.eq(gcm(env, "status"), nil)
+  t.truthy(env:printed("Components: craft, power"))
 end)
 
 test("the banner fits a tier 1 screen", function()
