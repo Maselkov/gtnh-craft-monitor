@@ -63,8 +63,8 @@ test("heartbeat reports version, services and memory", function()
   t.eq(hb.version, "v1.0.0")
   t.eq(hb.components, { "craft", "power" })
   t.eq(hb.services, {
-    { name = "craft_monitor", running = false, restarts = 0, gave_up = false },  -- never started
-    { name = "power_monitor", running = true, restarts = 0, gave_up = false },
+    { name = "craft_monitor", running = false, restarts = 0, gave_up = false, stopped_on_purpose = false },  -- never started
+    { name = "power_monitor", running = true, restarts = 0, gave_up = false, stopped_on_purpose = false },
   })
   t.eq(hb.free_memory, 2 * 1024 * 1024)
   t.eq(hb.total_memory, 4 * 1024 * 1024)
@@ -81,7 +81,8 @@ test("polls every POLL_SECONDS and sees a stopped service", function()
   env:run({ seconds = 125 })
   local hbs = heartbeats(env)
   t.eq(#hbs, 3)
-  t.eq(hbs[3].services[2], { name = "power_monitor", running = false, restarts = 0, gave_up = false })
+  t.eq(hbs[3].services[2], { name = "power_monitor", running = false, restarts = 0, gave_up = false,
+    stopped_on_purpose = true })
 end)
 
 test("a service whose thread died counts as stopped", function()
@@ -100,7 +101,7 @@ test("state from before services were recorded maps components to services", fun
   env:write_file("/etc/gcm.cfg", 'return { version = "v0.9.0", components = { "network" } }')
   env:start_service("gcm_agent")
   env:run({ seconds = 1 })
-  t.eq(heartbeats(env)[1].services, { { name = "network_browser", running = false, restarts = 0, gave_up = false } })
+  t.eq(heartbeats(env)[1].services, { { name = "network_browser", running = false, restarts = 0, gave_up = false, stopped_on_purpose = false } })
 end)
 
 test("update to the latest release, report, reboot", function()
@@ -206,7 +207,7 @@ test("auto-restart: a crashed enabled script is restarted after the boot grace",
   t.eq(power.is_running(), true)
   env:run({ seconds = 60 })
   local hb = heartbeats(env)
-  t.eq(hb[#hb].services[2], { name = "power_monitor", running = true, restarts = 1, gave_up = false })
+  t.eq(hb[#hb].services[2], { name = "power_monitor", running = true, restarts = 1, gave_up = false, stopped_on_purpose = false })
 end)
 
 test("auto-restart: gives up after MAX_RESTARTS in an hour, and says so", function()
@@ -218,7 +219,7 @@ test("auto-restart: gives up after MAX_RESTARTS in an hour, and says so", functi
   env:run({ seconds = 125 })
   t.eq(power.is_running(), false)
   local hb = heartbeats(env)
-  t.eq(hb[#hb].services[2], { name = "power_monitor", running = false, restarts = 3, gave_up = true })
+  t.eq(hb[#hb].services[2], { name = "power_monitor", running = false, restarts = 3, gave_up = true, stopped_on_purpose = false })
 end)
 
 test("auto-restart: not a script stopped on purpose, disabled in rc, or with the switch off", function()
@@ -242,6 +243,15 @@ test("auto-restart: not a script stopped on purpose, disabled in rc, or with the
   t.eq(power.is_running(), false)
   local hb = heartbeats(env)
   t.eq(hb[#hb].services[2].gave_up, false)
+end)
+
+test("heartbeat says what a script last died of, and how long ago", function()
+  local env, power = crashing_env({ auto_restart = false })
+  power.last_error = { message = "not enough memory", uptime = 0 }
+  env:run({ seconds = 61 })
+  local hb = heartbeats(env)[2]
+  t.eq(hb.uptime, 60)
+  t.eq(hb.services[2].last_error, { message = "not enough memory", ago = 60 })
 end)
 
 return suite

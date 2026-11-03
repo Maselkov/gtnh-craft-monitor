@@ -64,6 +64,7 @@
 --]]
 
 local component = require("component")
+local computer = require("computer")
 local term = require("term")
 local thread = require("thread")
 
@@ -458,6 +459,21 @@ end
 -- start` itself forever.
 local worker = nil
 
+-- What service_loop died of, if it did: { message, uptime }, kept
+-- until it dies again (start() leaves it), so it outlives gcm_agent's
+-- restart. A global, so it's in rc.loaded[name] like stopped_on_purpose,
+-- where gcm_agent reads it for the page. Re-raised afterwards, so OpenOS
+-- still logs it to /tmp/event.log. Only tostring() in the handler:
+-- running out of memory is the likely error, and network_browser's
+-- traceback (crash_report()) is more than this needs.
+local function run_service_loop()
+  local ok, err = xpcall(service_loop, tostring)
+  if not ok then
+    last_error = { message = tostring(err):sub(1, 300), uptime = computer.uptime() }
+    error(err, 0)
+  end
+end
+
 -- Whether the loop's thread is alive: false after stop(), and also after
 -- it died of an error (running stays true then). gcm_agent reports it.
 function is_running()
@@ -471,7 +487,7 @@ function start()
   end
   running = true
   stopped_on_purpose = false
-  worker = thread.create(service_loop)
+  worker = thread.create(run_service_loop)
   worker:detach()
 end
 

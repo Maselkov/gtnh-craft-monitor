@@ -58,6 +58,19 @@ test('restarted and given-up scripts, and auto-update commands', () => {
   assert.match(html, /Auto: update to the latest release: waiting/);
 });
 
+test('what a script died of, and one stopped on purpose', () => {
+  const now = Date.now() / 1000;
+  const html = renderComputer({ ...COMPUTER, services: [
+    { name: 'craft_monitor', running: true, last_error: { message: 'not enough <memory>', at: now - 120 } },
+    { name: 'power_monitor', running: true, last_error: { message: 'old', at: now - 7200 } },
+    { name: 'network_browser', running: false, stopped_on_purpose: true, last_error: null },
+  ] });
+  assert.match(html, /agent-line agent-command failed">craft_monitor crashed 2m ago: not enough &lt;memory&gt;</);
+  assert.match(html, /<div class="agent-line">power_monitor crashed 2h ago: old</);
+  assert.match(html, /network_browser \(stopped on purpose\)/);
+  assert.doesNotMatch(html, /network_browser crashed/);
+});
+
 const HEALTH = {
   uptime_seconds: 90061, gamedata: '2.7.2',
   feeds: [

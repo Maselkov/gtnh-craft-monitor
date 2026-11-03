@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 from gcm import agents, gamedata
@@ -44,7 +46,8 @@ class TestHeartbeat:
         assert data["latest_release"] == "v1.2.0"  # highest vX.Y.Z, pre-releases skipped
         [c] = data["computers"]
         assert (c["address"], c["version"], c["behind"], c["offline"]) == ("comp-1", "v1.0.0", True, False)
-        assert c["services"] == [{**s, "restarts": 0, "gave_up": False} for s in HEARTBEAT["services"]]
+        assert c["services"] == [{**s, "restarts": 0, "gave_up": False, "stopped_on_purpose": False, "last_error": None}
+                                 for s in HEARTBEAT["services"]]
         assert (c["free_memory"], c["total_memory"]) == (1000, 4000)
         assert c["command"] is None
 
@@ -58,7 +61,13 @@ class TestHeartbeat:
         beat(client, api_headers, services=[{"name": "power_monitor", "running": False, "restarts": 3, "gave_up": True}])
         login_as(client, "root", role="admin")
         [c] = computers(client)["computers"]
-        assert c["services"] == [{"name": "power_monitor", "running": False, "restarts": 3, "gave_up": True}]
+        assert c["services"] == [{"name": "power_monitor", "running": False, "restarts": 3, "gave_up": True,
+                                  "stopped_on_purpose": False, "last_error": None}]
+
+    def test_stopped_on_purpose_reported(self, client, api_headers):
+        beat(client, api_headers, services=[{"name": "power_monitor", "running": False, "stopped_on_purpose": True}])
+        login_as(client, "root", role="admin")
+        assert computers(client)["computers"][0]["services"][0]["stopped_on_purpose"] is True
 
     def test_needs_the_api_key_and_an_address(self, client, api_headers):
         assert client.post("/api/agent/heartbeat", json=HEARTBEAT).status_code == 401
@@ -427,3 +436,41 @@ class TestScriptsNotice:
         beat(client, api_headers)
         scripts_at("v1.1.0", server="v1.1.3", auto_update=True)
         assert self.notice(client)["computers"] == ["comp-1"]
+
+
+def crashed(message="not enough memory", ago=30):
+    return [{"name": "power_monitor", "running": True, "restarts": 1,
+             "last_error": {"message": message, "ago": ago}}]
+
+
+def last_error(client):
+    return computers(client)["computers"][0]["services"][0]["last_error"]
+
+
+class TestLastError:
+    def test_dated_by_how_long_ago_and_capped(self, client, api_headers):
+        before = time.time()
+        beat(client, api_headers, services=crashed("x" * 1000, ago=30))
+        login_as(client, "root", role="admin")
+        err = last_error(client)
+        assert len(err["message"]) == 300
+        assert before - 30 <= err["at"] <= time.time() - 30
+
+    @pytest.mark.parametrize("junk", ["boom", {"message": "boom"}, {"ago": 5}, {"message": 5, "ago": 5},
+                                      {"message": "boom", "ago": "5"}])
+    def test_junk_dropped(self, client, api_headers, junk):
+        beat(client, api_headers, services=[{"name": "power_monitor", "running": True, "last_error": junk}])
+        login_as(client, "root", role="admin")
+        assert last_error(client) is None
+
+    def test_kept_after_a_reboot_until_replaced_or_a_day_old(self, client, api_headers):
+        beat(client, api_headers, services=crashed("first"))
+        rebooted = [{"name": "power_monitor", "running": True}]
+        beat(client, api_headers, services=rebooted, uptime=1)
+        login_as(client, "root", role="admin")
+        assert last_error(client)["message"] == "first"
+        beat(client, api_headers, services=crashed("second", ago=0))
+        assert last_error(client)["message"] == "second"
+        agents._agents["comp-1"]["services"][0]["last_error"]["at"] -= agents.ERROR_SHOWN_SECONDS + 1
+        beat(client, api_headers, services=rebooted)
+        assert last_error(client) is None

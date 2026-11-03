@@ -1488,7 +1488,8 @@ async function main() {
   step('admin: Status shows the server; lists computers; update one and see the result', async () => {
     const heartbeat = {
       address: 'abcdef12-0000-4000-8000-000000000001', version: 'v1.1.0', components: ['craft'],
-      services: [{ name: 'craft_monitor', running: true }], free_memory: 1048576, total_memory: 4194304, uptime: 3600,
+      services: [{ name: 'craft_monitor', running: true, last_error: { message: 'not enough memory', ago: 60 } }],
+      free_memory: 1048576, total_memory: 4194304, uptime: 3600,
     };
     await game(base, '/api/agent/heartbeat', heartbeat);
     await click(`$('#settingsBtn')`);
@@ -1501,7 +1502,8 @@ async function main() {
     await waitFor('computer listed', `visible($('#agentsModal'))
       && $('#agentsList').textContent.includes('Computer abcdef12')
       && $('#agentsList').textContent.includes('update available: v1.2.0')
-      && $('#agentsList').textContent.includes('craft_monitor')`);
+      && $('#agentsList').textContent.includes('craft_monitor')
+      && $$('#agentsList .agent-command.failed').some(l => l.textContent === 'craft_monitor crashed 1m ago: not enough memory')`);
     // The checkboxes: auto-restart on by default and saved on the server;
     // auto-update needs a server that knows its release, which this one doesn't.
     await waitFor('settings loaded', `$('#autoRestartToggle').checked && !$('#autoRestartToggle').disabled

@@ -294,4 +294,15 @@ test("without an ME component it says so and doesn't start", function()
   t.eq(#env.requests, 0)
 end)
 
+test("a crash is kept in last_error", function()
+  local env = t.env()
+  local me = ae2.new(env)
+  me.proxy.getCpus = function() return 5 end  -- not a list: reading it throws
+  local svc = env:start_service("craft_monitor")
+  env:run({ seconds = 1, allow_errors = true })
+  t.eq(svc.is_running(), false)
+  t.truthy(svc.last_error and svc.last_error.message ~= "", "last_error set")
+  t.eq(svc.last_error.uptime, 0)
+end)
+
 return suite

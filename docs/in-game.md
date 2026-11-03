@@ -232,8 +232,11 @@ Two checkboxes there apply to every computer:
   `rc <name> enable` stops on its own, usually after a crash, the agent
   starts it again within a minute. It waits 2 minutes after boot so rc can
   start the scripts first, and gives up on a script after 3 restarts in an
-  hour; the card shows how many times each one was restarted. A script you
-  stop with `rc <name> stop` stays stopped; `rc <name> disable` keeps it
+  hour; the card shows how many times each one was restarted. When
+  `craft_monitor` or `power_monitor` crashes, the card also says why
+  ("power_monitor crashed 12m ago: not enough memory"), for a day, even
+  across a reboot. A script you stop with `rc <name> stop` stays stopped
+  and the card says "stopped on purpose"; `rc <name> disable` keeps it
   off after reboots too. The agent remembers the setting while the server
   is unreachable.
 - **Update computers when the server updates** (off by default): a

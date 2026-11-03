@@ -6,7 +6,10 @@
   to /api/agent/heartbeat: the installed version and components (from
   gcm's /etc/gcm.cfg), whether each script's rc service is running,
   free memory, uptime and POLL_SECONDS (the server waits three of them
-  before calling the computer offline). The reply may carry one command:
+  before calling the computer offline). Each service also says whether
+  its stop() was called (stopped_on_purpose) and what its loop last died
+  of (last_error, which craft_monitor and power_monitor keep). The reply
+  may carry one command:
 
     { id = n, action = "update", ref = "release" | "main" }
         runs `gcm update --no-reboot` (with --ref=main for "main"),
@@ -164,9 +167,16 @@ local function heartbeat_body()
   local services = {}
   for _, name in ipairs(service_names(state)) do
     local running, restarts = service_running(name), recent_restarts(name)
+    local svc = loaded_service(name)
+    local err = svc and type(svc.last_error) == "table" and svc.last_error
     services[#services + 1] = {
       name = name, running = running, restarts = restarts,
       gave_up = auto_restart and not running and restarts >= CONFIG.MAX_RESTARTS,
+      stopped_on_purpose = svc ~= nil and svc.stopped_on_purpose == true,
+      -- How long ago, not its uptime: the server has no use for this
+      -- computer's clock.
+      last_error = err and type(err.uptime) == "number"
+        and { message = tostring(err.message), ago = computer.uptime() - err.uptime } or nil,
     }
   end
   return {
