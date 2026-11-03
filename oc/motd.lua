@@ -17,20 +17,78 @@ local LOGO = {
   " \\____|\\____|_|  |_|",
 }
 
--- version and components from gcm's own record of the install, or nil.
-local function installed()
-  local file = io.open("/etc/gcm.cfg", "r")
+-- Runs a Lua file in env and returns what it returned, or nil.
+local function read_lua(path, env)
+  local file = io.open(path, "r")
   if not file then
     return nil
   end
   local body = file:read("*a")
   file:close()
-  local chunk = load(body, "=/etc/gcm.cfg", "t", {})
-  local ok, state = pcall(chunk or error)
-  if ok and type(state) == "table" and type(state.components) == "table" then
+  local chunk = load(body, "=" .. path, "t", env)
+  local ok, result = pcall(chunk or error)
+  return ok and result or nil
+end
+
+-- version, components and their services from gcm's own record of the
+-- install, or nil.
+local function installed()
+  local state = read_lua("/etc/gcm.cfg", {})
+  if type(state) == "table" and type(state.components) == "table" then
     return state
   end
   return nil
+end
+
+-- How long the banner waits for the enabled scripts to be running. OpenOS
+-- gives the init signal that rc starts them on one second at the end of
+-- boot (lib/core/boot.lua); on a computer with many components that runs
+-- out, and init waits for the next event pull. The sleep below is that
+-- pull, so rc starts them right here instead of at the first keypress.
+local STARTUP_WAIT_SECONDS = 3
+
+-- Whether rc has loaded the service and its is_running() says so.
+local function running(name)
+  local okRc, rc = pcall(require, "rc")
+  local svc = okRc and type(rc) == "table" and rc.loaded and rc.loaded[name]
+  return type(svc) == "table" and type(svc.is_running) == "function"
+    and select(2, pcall(svc.is_running)) == true
+end
+
+-- Each script with how it came up, the way gcm_agent tells the web page:
+-- ✓ enabled and running, ✗ enabled but not running (it crashed starting),
+-- - not enabled. Plain names for a gcm.cfg from before services were in
+-- it.
+local function scripts(state)
+  local services = state.services
+  if type(services) ~= "table" or #services ~= #state.components then
+    return "\27[37m" .. table.concat(state.components, ", ")
+  end
+  local rcEnv = {}
+  read_lua("/etc/rc.cfg", rcEnv)
+  local enabled = {}
+  for _, name in ipairs(type(rcEnv.enabled) == "table" and rcEnv.enabled or {}) do
+    enabled[name] = true
+  end
+  -- Stops waiting as soon as every enabled one is up, so only a script
+  -- that's really down costs the whole wait.
+  local computer = require("computer")
+  local deadline = computer.uptime() + STARTUP_WAIT_SECONDS
+  while true do
+    local waiting = false
+    for _, service in ipairs(services) do
+      if enabled[service] and not running(service) then waiting = true end
+    end
+    if not waiting or computer.uptime() >= deadline then break end
+    os.sleep(0.1)
+  end
+  local parts = {}
+  for i, name in ipairs(state.components) do
+    local mark = not enabled[services[i]] and "\27[37m-"
+      or running(services[i]) and "\27[32m✓" or "\27[31m✗"
+    parts[i] = "\27[37m" .. name .. " " .. mark
+  end
+  return table.concat(parts, " ")
 end
 
 local function banner()
@@ -40,9 +98,7 @@ local function banner()
   local info = {
     [2] = "\27[37mGTNH Craft Monitor",
     [3] = state and ("\27[33m" .. tostring(state.version)) or nil,
-    -- Not whether they're running: at boot the shell runs this before
-    -- rc has started them. `gcm status` says.
-    [4] = state and ("\27[37m" .. table.concat(state.components, ", ")) or nil,
+    [4] = state and scripts(state) or nil,
   }
   io.write("\n")
   for i, row in ipairs(LOGO) do
