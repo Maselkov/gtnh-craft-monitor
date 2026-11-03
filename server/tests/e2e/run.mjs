@@ -1028,7 +1028,9 @@ async function main() {
     await waitFor('iron', `${focused}.startsWith('Iron Ingot')`);
     await key('c');
     await waitFor('craft dialog, no stray c typed', `visible($('#craftRequestModal')) && $('#craftRequestName').textContent === 'Iron Ingot'
-      && !$('#craftRequestAmount').value.includes('c')`);
+      && !$('#craftRequestAmount').value.includes('c') && document.activeElement === $('#craftRequestAmount')`);
+    await key('5');
+    await waitFor('typed over the 1', `$('#craftRequestAmount').value === '5'`);
     await key('Escape');
     await waitFor('closed, back on iron', `!visible($('#craftRequestModal')) && ${focused}.startsWith('Iron Ingot')`);
     await key('ArrowUp');
