@@ -46,7 +46,7 @@ const LS_NOTIFIED_COMPLETION_IDS = 'gtnhCraftMonitor.notifiedCompletionIds';
 
 const MONITOR_DOCS_URL = docsUrl('in-game.md#crafting-cpus');
 // After the number of a CPU nobody named: the server numbers it by size.
-const UNNAMED_CPU_MARK = '<span class="cpu-auto" title="This CPU has no name, so it\'s numbered by its size. '
+const UNNAMED_CPU_MARK = '<span class="cpu-auto" title="This CPU has no name, so it\'s named after its size. '
   + 'To name it, Shift + right-click one of its blocks with Wire Cutters: that keeps its pins and history steady.">?</span>';
 
 function loadClaimedIds() {

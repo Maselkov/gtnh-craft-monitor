@@ -519,7 +519,7 @@ async function main() {
     await waitFor('gone', `!card('M01') && !card('M02')`);
   });
 
-  step('a CPU nobody named is numbered by size, with a (?) saying so', async () => {
+  step('a CPU nobody named is named after its size, with a (?) saying so', async () => {
     const crafts = (jobs) => game(base, '/api/crafts', { source: 'me_controller', jobs: [
       { name: 'W01', busy: true, final_output: 'Iron Ingot', final_output_mod: 'minecraft',
         final_output_internal: 'iron_ingot', final_output_damage: 0,
@@ -529,12 +529,12 @@ async function main() {
     ] });
     // AE2 reports a CPU nobody named with an empty name.
     await crafts([{ name: '', busy: false, storage: 1024 }, { name: '', busy: false, storage: 65536 }]);
-    const unnamed = (n) => `$$('#root .card').find((c) => c.querySelector('.card-cpu').firstChild.textContent === 'CPU #${n}')`;
-    await waitFor('the bigger one is #1, with the mark', `${unnamed(1)}?.querySelector('.cpu-auto')?.title.includes('numbered by its size')
-      && ${unnamed(1)}.textContent.includes('65536') && ${unnamed(2)}.textContent.includes('1024')`);
+    const unnamed = (n) => `$$('#root .card').find((c) => c.querySelector('.card-cpu').firstChild.textContent === 'CPU ${n}')`;
+    await waitFor('each named after its size, with the mark', `${unnamed('64k #1')}?.querySelector('.cpu-auto')?.title.includes('named after its size')
+      && ${unnamed('1k #1')}?.querySelector('.cpu-auto')`);
     await waitFor('named CPUs have no mark', `card('W02') && !card('W02').querySelector('.cpu-auto')`);
     await crafts([]);
-    await waitFor('gone', `!${unnamed(1)} && !${unnamed(2)}`);
+    await waitFor('gone', `!${unnamed('64k #1')} && !${unnamed('1k #1')}`);
   });
 
   step('crafts poll each second, and an unchanged report answers 304', async () => {

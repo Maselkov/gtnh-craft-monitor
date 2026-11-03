@@ -403,27 +403,34 @@ unnamed CPU was the same one: `tracking` skips a job with no name,
 the Ingredients button's `data-cpu=""` made `openIngredientsModal` a
 no-op (`openCpu` was falsy, so nothing was ever drawn), and the tree,
 pinning and cancelling all looked the CPU up by that name. Both sides
-now name such a CPU "#" and its rank by size among all the CPUs, named
-ones too, biggest first, and mark it `unnamed` (the page puts a "?"
-after it). Among all of them so that naming a CPU, which the "?"
-suggests, doesn't renumber the others; a number some CPU is really
-called is skipped. Both sides do it - the script (`get_cpus()`,
-so a cancel finds the CPU under the name it was reported as) and the
-server (`name_cpus()` in `routes/crafts.py`, for scripts still sending
-it empty); keep the two alike, down to reading sizes as Lua's
-`tonumber()` does. Not the position in `getCpus()`: the
-source says that order is arbitrary. `getCpus()` is a copy of AE2's
+now name such a CPU after its storage, counted among the CPUs of that
+size only ("68k #1", "68k #2"; more coprocessors first, then the
+list's order), and mark it `unnamed` (the page puts a "?" after it).
+A name some CPU is really called is skipped. The script does it
+(`get_cpus()`, so a cancel finds the CPU under the name it was
+reported as) and so does the server (`name_cpus()` in
+`routes/crafts.py`, for scripts still sending it empty); keep the two
+alike, down to the label (`size_label()` / `_size_label()`: whole KB,
+or MB/GB for an exact number of them) and to reading sizes as real,
+finite numbers only (NaN would also break Lua's `table.sort`).
+
+Why this way. The position in `getCpus()` won't do: the source says
+that order is arbitrary. `getCpus()` is a copy of AE2's
 `CraftingGridCache.craftingCPUClusters`, a `HashSet` of
-`CraftingCPUCluster`s, which don't define `hashCode`, so it's in identity-
-hash order and changes with a restart or a rebuilt CPU; and an inactive
-or destroyed CPU is left out, moving everything after it. `storage` and
-`coprocessors` are fixed when the crafting blocks are placed
-(`availableStorage`, `accelerator`; a running job uses the separate
-`usedStorage`), so the rank doesn't change when a CPU goes busy or idle
-- the rank deliberately ignores busy. CPUs of one size still fall back
-to the list's order, so can swap numbers, and a job running on one when
-that happens is recorded as ended and started again; naming a CPU (Shift +
-right-click with Wire Cutters) avoids it.
+`CraftingCPUCluster`s, which don't define `hashCode`, so it's in
+identity-hash order and changes with a restart or a rebuilt CPU; and an
+inactive or destroyed CPU is left out, moving everything after it. A
+rank by size across all the CPUs (tried first) has the same weakness in
+another form: any bigger CPU added, removed or going inactive shifts
+every smaller one, and ranking only the unnamed ones also shifts them
+when one is named. Counting within a size, nothing but a CPU of the same
+size can move a CPU's number. `storage` and `coprocessors` are fixed
+when the crafting blocks are placed (`availableStorage`, `accelerator`;
+a running job uses the separate `usedStorage`), so names don't change
+when a CPU goes busy or idle - deliberately not sorted by busy. CPUs of
+one size still fall back to the list's order, so can swap numbers, and a
+job running on one when that happens is recorded as ended and started
+again; naming a CPU (Shift + right-click with Wire Cutters) avoids it.
 
 **Why a scan was turned away.** The counts alone said that a scan was
 incomplete but not why, and the why only reached `network_browser`'s

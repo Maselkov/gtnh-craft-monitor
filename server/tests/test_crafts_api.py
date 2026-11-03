@@ -27,56 +27,55 @@ class TestCraftsEndpoint:
         assert data["jobs"][0]["name"] == "W01"
         assert data["stale"] is False
 
-    def test_a_cpu_nobody_named_is_numbered_by_size_and_marked(self, client, api_headers):
+    def test_a_cpu_nobody_named_is_named_after_its_size_and_marked(self, client, api_headers):
         # AE2 reports an unnamed CPU's name as empty, which made every one
         # of them the same CPU: untracked, and the page couldn't open one's
-        # ingredients or tree. Size, unlike the order they come in, stays
-        # put when a CPU goes busy or idle, or after a restart.
+        # ingredients or tree.
         jobs = [
-            {"name": "", "busy": False, "storage": 1024, "coprocessors": 1},
-            {"name": "", "busy": True, "final_output": "Neutronium Ingot", "storage": 65536, "coprocessors": 1},
-            {"name": "Big", "busy": False, "storage": 999999},
-            {"busy": False, "storage": 1024, "coprocessors": 4},
-            {"name": "", "busy": False, "storage": 1024, "coprocessors": 1},
+            {"name": "", "busy": False, "storage": 69632, "coprocessors": 1},
+            {"name": "", "busy": True, "final_output": "Neutronium Ingot", "storage": 1048576},
+            {"name": "Big", "busy": False, "storage": 69632},
+            {"busy": False, "storage": 69632, "coprocessors": 4},
+            {"name": "", "busy": False, "storage": 69632, "coprocessors": 1},
         ]
         client.post("/api/crafts", json={"source": "me", "jobs": jobs}, headers=api_headers)
         got = client.get("/api/crafts").get_json()["jobs"]
-        # Ranked among all the CPUs: biggest first, then more
-        # coprocessors, then the order given.
+        # Counted within a size: more coprocessors first, then the order given.
         assert [(j["name"], j.get("unnamed")) for j in got] == [
-            ("#4", True), ("#2", True), ("Big", None), ("#3", True), ("#5", True)]
+            ("68k #2", True), ("1M #1", True), ("Big", None), ("68k #1", True), ("68k #3", True)]
         login_as(client, "alice")
-        tree = client.get("/api/crafts/%232/tree")
+        tree = client.get("/api/crafts/1M%20%231/tree")
         assert tree.status_code == 200 and "tree" in tree.get_json()
 
-        # The same CPUs in another order get the same numbers.
-        client.post("/api/crafts", json={"source": "me", "jobs": list(reversed(jobs))}, headers=api_headers)
-        got = {(j["storage"], j.get("coprocessors"), j["name"]) for j in client.get("/api/crafts").get_json()["jobs"]
-               if j.get("unnamed")}
-        assert (65536, 1, "#2") in got and (1024, 4, "#3") in got
-
-    def test_naming_one_cpu_doesnt_renumber_the_others(self, client, api_headers):
+    def test_naming_adding_or_losing_another_size_renames_nothing(self, client, api_headers):
         def names(jobs):
             client.post("/api/crafts", json={"source": "me", "jobs": jobs}, headers=api_headers)
             return [j["name"] for j in client.get("/api/crafts").get_json()["jobs"]]
 
-        assert names([{"name": "", "storage": 5000}, {"name": "", "storage": 1000}]) == ["#1", "#2"]
-        assert names([{"name": "Big", "storage": 5000}, {"name": "", "storage": 1000}]) == ["Big", "#2"]
+        assert names([{"name": "", "storage": 1048576}, {"name": "", "storage": 4096}]) == ["1M #1", "4k #1"]
+        assert names([{"name": "Big", "storage": 1048576}, {"name": "", "storage": 4096}]) == ["Big", "4k #1"]
+        assert names([{"name": "", "storage": 4096}, {"name": "", "storage": 2097152}]) == ["4k #1", "2M #1"]
 
-    def test_a_number_a_cpu_is_really_called_is_skipped(self, client, api_headers):
-        jobs = [{"name": "#1", "storage": 1000}, {"name": "", "storage": 5000}, {"name": "", "storage": 10}]
+    def test_a_name_a_cpu_is_really_called_is_skipped(self, client, api_headers):
+        jobs = [{"name": "4k #1", "storage": 1}, {"name": "", "storage": 4096}, {"name": "", "storage": 4096}]
         client.post("/api/crafts", json={"source": "me", "jobs": jobs}, headers=api_headers)
-        assert [j["name"] for j in client.get("/api/crafts").get_json()["jobs"]] == ["#1", "#2", "#3"]
+        assert [j["name"] for j in client.get("/api/crafts").get_json()["jobs"]] == ["4k #1", "4k #2", "4k #3"]
 
     def test_sizes_are_read_as_the_script_reads_them(self, client, api_headers):
-        # tonumber() in Lua: numbers and text of one; anything else is 0.
-        jobs = [{"name": "", "storage": "100"}, {"name": "", "storage": True}, {"name": "", "storage": 50},
-                {"name": "", "storage": "nan"}]
+        # Real, finite numbers only, as cpu_size() in craft_monitor.lua.
+        jobs = [{"name": "", "storage": "4096"}, {"name": "", "storage": True}, {"name": "", "storage": 1536 * 1024},
+                {"name": "", "storage": 3 * 1024 ** 3}]
         client.post("/api/crafts", json={"source": "me", "jobs": jobs}, headers=api_headers)
-        assert [j["name"] for j in client.get("/api/crafts").get_json()["jobs"]] == ["#1", "#3", "#2", "#4"]
+        assert [j["name"] for j in client.get("/api/crafts").get_json()["jobs"]] == ["0k #1", "0k #2", "1536k #1", "3G #1"]
+
+    def test_a_name_that_isnt_text_is_replaced_not_crashed_on(self, client, api_headers):
+        jobs = [{"name": ["x"], "storage": 4096}, {"name": {"a": 1}, "storage": 4096}, {"name": 7}]
+        res = client.post("/api/crafts", json={"source": "me", "jobs": jobs}, headers=api_headers)
+        assert res.status_code == 200
+        assert [j["name"] for j in client.get("/api/crafts").get_json()["jobs"]] == ["4k #1", "4k #2", "0k #1"]
 
     def test_a_name_and_flag_from_the_script_are_kept(self, client, api_headers):
-        jobs = [{"name": "#1", "unnamed": True, "busy": False}, {"name": "Big", "unnamed": "yes", "busy": False}]
+        jobs = [{"name": "4k #1", "unnamed": True, "busy": False}, {"name": "Big", "unnamed": "yes", "busy": False}]
         client.post("/api/crafts", json={"source": "me", "jobs": jobs}, headers=api_headers)
         got = client.get("/api/crafts").get_json()["jobs"]
         assert got[0]["unnamed"] is True and "unnamed" not in got[1]

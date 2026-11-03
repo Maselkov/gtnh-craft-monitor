@@ -218,40 +218,61 @@ end
 -- held the whole time it runs, in memory the other scripts share.
 local watched, ended = {}, {}
 
+-- A CPU's storage or coprocessors: a real, finite number, or 0. NaN
+-- would break table.sort's comparison below.
+local function cpu_size(v)
+  if type(v) == "number" and v == v and v > -math.huge and v < math.huge then return v end
+  return 0
+end
+
+-- A storage size as a CPU's name shows it: whole KB, or MB/GB when it's
+-- an exact number of them (69632 -> "68k", 1048576 -> "1M").
+local function size_label(storage)
+  local n, units = math.floor(cpu_size(storage) / 1024), { "k", "M", "G" }
+  local u = 1
+  while u < #units and n >= 1024 and n % 1024 == 0 do
+    n, u = n // 1024, u + 1
+  end
+  return string.format("%d%s", n, units[u])
+end
+
 -- getCpus(), with a name for each CPU: AE2 gives a CPU nobody has named
 -- an empty one, which would make every unnamed CPU the same one here
 -- and on the page (cancelling, pinning, its ingredients). Such a CPU is
--- called "#" and its rank by size among all the CPUs, biggest first, and
--- flagged unnamed. All of them, named ones too, so naming one CPU (as
--- the page suggests) doesn't renumber the others. A number a CPU is
--- really called is skipped. The list's own order is arbitrary (AE2 keeps
--- its CPUs in a HashSet of objects without a hashCode, so it changes
--- with a restart or a rebuilt CPU); size doesn't, and doesn't change
--- when a CPU goes busy or idle. CPUs of the same size are told apart by
--- that arbitrary order. The server (routes/crafts.py name_cpus) does the
--- same, so keep them alike.
+-- named after its storage and counted among the CPUs of that size only,
+-- "68k #1", "68k #2" (more coprocessors first, then the list's order),
+-- and flagged unnamed. So adding, removing, naming or losing a CPU of
+-- another size renumbers nothing; only identical CPUs can swap, since
+-- the list's own order is arbitrary (AE2 keeps its CPUs in a HashSet of
+-- objects without a hashCode, so it changes with a restart or a rebuilt
+-- CPU). A name a CPU is really called is skipped. The server
+-- (routes/crafts.py name_cpus) does the same, so keep them alike.
 local function get_cpus(me)
   local ok, cpus = pcall(me.getCpus)
   if ok and type(cpus) == "table" then
-    local taken, ranked = {}, {}
+    local taken, groups = {}, {}
     for i, row in ipairs(cpus) do
-      if row.name == "" then row.name = nil end
-      if row.name then taken[row.name] = true end
-      ranked[i] = { row = row, pos = i }
+      if type(row.name) ~= "string" or row.name == "" then
+        row.name = nil
+        local label = size_label(row.storage)
+        groups[label] = groups[label] or {}
+        table.insert(groups[label], { row = row, pos = i })
+      else
+        taken[row.name] = true
+      end
     end
-    table.sort(ranked, function(a, b)
-      local sa, sb = tonumber(a.row.storage) or 0, tonumber(b.row.storage) or 0
-      if sa ~= sb then return sa > sb end
-      local ca, cb = tonumber(a.row.coprocessors) or 0, tonumber(b.row.coprocessors) or 0
-      if ca ~= cb then return ca > cb end
-      return a.pos < b.pos
-    end)
-    for rank, r in ipairs(ranked) do
-      if not r.row.name then
-        local n = rank
-        while taken["#" .. n] do n = n + 1 end
-        r.row.name, r.row.unnamed = "#" .. n, true
-        taken[r.row.name] = true
+    for label, group in pairs(groups) do
+      table.sort(group, function(a, b)
+        local sa, sb = cpu_size(a.row.storage), cpu_size(b.row.storage)
+        if sa ~= sb then return sa > sb end
+        local ca, cb = cpu_size(a.row.coprocessors), cpu_size(b.row.coprocessors)
+        if ca ~= cb then return ca > cb end
+        return a.pos < b.pos
+      end)
+      local n = 0
+      for _, g in ipairs(group) do
+        repeat n = n + 1 until not taken[label .. " #" .. n]
+        g.row.name, g.row.unnamed = label .. " #" .. n, true
       end
     end
   end
@@ -349,7 +370,7 @@ local function extract_jobs(raw_cpus)
     -- tables, on a few big crafts, was megabytes.
     local encOk, job = pcall(json_encode, {
       name             = name,
-      unnamed          = row.unnamed and true or nil,
+      unnamed          = row.unnamed,
       busy             = row.busy and true or false,
       storage          = row.storage,
       coprocessors     = row.coprocessors,
@@ -833,7 +854,9 @@ local function service_loop()
   end
 
   if CONFIG.DEBUG_DUMP then
-    local raw = me.getCpus()
+    -- get_cpus(), so DEBUG_CPU_FILTER takes the names the page shows.
+    local cpusOk, raw = get_cpus(me)
+    if not cpusOk then error(raw, 0) end
     print("[craft_monitor] getCpus() returned " .. tostring(#raw) .. " CPU(s).")
     print("[craft_monitor] Sending dumps to the server - check " .. CONFIG.URL:gsub("/api/crafts$", "/api/debug") .. " in a browser once this finishes.")
     for i, row in ipairs(raw) do

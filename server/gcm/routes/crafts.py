@@ -50,43 +50,50 @@ def debug_get():
 
 
 def _cpu_size(v):
-    """A CPU's storage or coprocessors to rank it by, as craft_monitor.lua's
-    tonumber() reads them: a number, or text of one; 0 for anything else."""
-    if isinstance(v, bool):
-        return 0
-    try:
-        n = float(v)
-    except (TypeError, ValueError):
-        return 0
-    return n if math.isfinite(n) else 0
+    """A CPU's storage or coprocessors: a real, finite number, or 0, as
+    craft_monitor.lua's cpu_size() reads them."""
+    if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v):
+        return v
+    return 0
+
+
+def _size_label(storage):
+    """A storage size as a CPU's name shows it, as craft_monitor.lua's
+    size_label(): whole KB, or MB/GB when it's an exact number of them."""
+    n, unit = int(_cpu_size(storage) // 1024), 0
+    while unit < 2 and n >= 1024 and n % 1024 == 0:
+        n, unit = n // 1024, unit + 1
+    return f"{n}{'kMG'[unit]}"
 
 
 def name_cpus(jobs):
-    """Gives each CPU nobody has named (AE2 reports an empty name) one,
-    "#" and its rank by size among all the CPUs, biggest first, and marks
-    it `unnamed` so the page can say so - as craft_monitor.lua's
-    get_cpus() does, so keep them alike (its comment says why it's done
-    this way). Unnamed, they were all the same CPU: tracking skipped them
-    and the page couldn't open one's ingredients. Older scripts still
-    send them empty."""
-    taken, ranked = set(), []
+    """Gives each CPU nobody has named (AE2 reports an empty name) one
+    after its storage, counted among the CPUs of that size only - "68k
+    #1" - and marks it `unnamed` so the page can say so, as
+    craft_monitor.lua's get_cpus() does, so keep them alike (its comment
+    says why it's done this way). Unnamed, they were all the same CPU:
+    tracking skipped them and the page couldn't open one's ingredients.
+    Older scripts still send them empty."""
+    taken, groups = set(), {}
     for i, job in enumerate(jobs or []):
         if not isinstance(job, dict):
             continue
-        if job.get("name"):
-            taken.add(job["name"])
+        name = job.get("name")
+        if isinstance(name, str) and name:
+            taken.add(name)
             # Only the script's own flag, on a name it made up.
             if job.get("unnamed") is not True:
                 job.pop("unnamed", None)
-        ranked.append((-_cpu_size(job.get("storage")), -_cpu_size(job.get("coprocessors")), i, job))
-    ranked.sort(key=lambda r: r[:3])
-    for rank, (*_, job) in enumerate(ranked, 1):
-        if not job.get("name"):
-            n = rank
-            while f"#{n}" in taken:
+        else:
+            groups.setdefault(_size_label(job.get("storage")), []).append((i, job))
+    for label, group in groups.items():
+        group.sort(key=lambda g: (-_cpu_size(g[1].get("storage")), -_cpu_size(g[1].get("coprocessors")), g[0]))
+        n = 0
+        for _, job in group:
+            n += 1
+            while f"{label} #{n}" in taken:
                 n += 1
-            job["name"], job["unnamed"] = f"#{n}", True
-            taken.add(job["name"])
+            job["name"], job["unnamed"] = f"{label} #{n}", True
     return jobs
 
 
