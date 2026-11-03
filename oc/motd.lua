@@ -40,10 +40,22 @@ local function installed()
   return nil
 end
 
+-- How long the banner waits for the enabled scripts to be running. In
+-- the game they aren't yet when the shell first runs this at boot.
+local STARTUP_WAIT_SECONDS = 3
+
+-- Whether rc has loaded the service and its is_running() says so.
+local function running(name)
+  local okRc, rc = pcall(require, "rc")
+  local svc = okRc and type(rc) == "table" and rc.loaded and rc.loaded[name]
+  return type(svc) == "table" and type(svc.is_running) == "function"
+    and select(2, pcall(svc.is_running)) == true
+end
+
 -- Each script with how it came up, the way gcm_agent tells the web page:
 -- ✓ enabled and running, ✗ enabled but not running (it crashed starting),
--- - not enabled. rc has started the enabled ones by the time the shell
--- runs this. Plain names for a gcm.cfg from before services were in it.
+-- - not enabled. Plain names for a gcm.cfg from before services were in
+-- it.
 local function scripts(state)
   local services = state.services
   if type(services) ~= "table" or #services ~= #state.components then
@@ -55,15 +67,22 @@ local function scripts(state)
   for _, name in ipairs(type(rcEnv.enabled) == "table" and rcEnv.enabled or {}) do
     enabled[name] = true
   end
-  local okRc, rc = pcall(require, "rc")
-  local loaded = okRc and type(rc) == "table" and rc.loaded or {}
+  -- Stops waiting as soon as every enabled one is up, so only a script
+  -- that's really down costs the whole wait.
+  local computer = require("computer")
+  local deadline = computer.uptime() + STARTUP_WAIT_SECONDS
+  while true do
+    local waiting = false
+    for _, service in ipairs(services) do
+      if enabled[service] and not running(service) then waiting = true end
+    end
+    if not waiting or computer.uptime() >= deadline then break end
+    os.sleep(0.1)
+  end
   local parts = {}
   for i, name in ipairs(state.components) do
-    local svc = loaded[services[i]]
-    local running = type(svc) == "table" and type(svc.is_running) == "function"
-      and select(2, pcall(svc.is_running)) == true
     local mark = not enabled[services[i]] and "\27[37m-"
-      or running and "\27[32m✓" or "\27[31m✗"
+      or running(services[i]) and "\27[32m✓" or "\27[31m✗"
     parts[i] = "\27[37m" .. name .. " " .. mark
   end
   return table.concat(parts, " ")

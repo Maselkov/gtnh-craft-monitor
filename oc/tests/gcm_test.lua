@@ -324,6 +324,29 @@ test("the banner marks an enabled script rc never loaded, or whose is_running er
   t.truthy(screen(env):find("craft ✗ power ✗ network ✓", 1, true), screen(env))
 end)
 
+test("the banner waits for scripts rc hasn't started yet, but no longer than it needs", function()
+  local env = github_env()
+  env:write_file("/etc/gcm.cfg", "return " .. ALL)
+  env:write_file("/etc/rc.cfg", 'enabled = {"craft_monitor", "power_monitor", "network_browser"}')
+  local start = env.now
+  -- How the game boots: the shell runs the motd before the scripts are up.
+  for _, name in ipairs({ "craft_monitor", "power_monitor", "network_browser" }) do
+    env.rc_loaded[name] = { is_running = function() return env.now >= start + 1 end }
+  end
+  motd(env)
+  t.truthy(screen(env):find("craft ✓ power ✓ network ✓", 1, true), screen(env))
+  t.truthy(env.now - start < 1.5, "waited " .. (env.now - start) .. "s")
+
+  -- One that never comes up costs the whole wait, then shows as down.
+  local down = github_env()
+  down:write_file("/etc/gcm.cfg", "return " .. ALL)
+  down:write_file("/etc/rc.cfg", 'enabled = {"craft_monitor"}')
+  start = down.now
+  motd(down)
+  t.truthy(screen(down):find("craft ✗ power - network -", 1, true), screen(down))
+  t.truthy(down.now - start >= 3 and down.now - start < 3.5, "waited " .. (down.now - start) .. "s")
+end)
+
 test("the banner lists plain names for a gcm.cfg from before services were in it", function()
   local env = github_env()
   env:write_file("/etc/gcm.cfg", 'return { version = "v1.1.0", components = { "craft", "power", "network" } }')
