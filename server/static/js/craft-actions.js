@@ -28,7 +28,8 @@ export function openCraftRequestModal(it) {
   } else {
     iconEl.style.display = 'none';
   }
-  document.getElementById('craftRequestAmount').value = 1;
+  const amountInput = document.getElementById('craftRequestAmount');
+  amountInput.value = 1;
   document.getElementById('craftRequestAmountPreview').style.display = 'none';
   const errorEl = document.getElementById('craftRequestError');
   errorEl.style.display = 'none';
@@ -36,6 +37,12 @@ export function openCraftRequestModal(it) {
   btn.disabled = false;
   btn.textContent = 'Request';
   document.getElementById('craftRequestModal').style.display = 'flex';
+  // Ready to type the amount over the 1. Not on touch devices, where
+  // the on-screen keyboard would cover the plan before it's asked for.
+  if (!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches)) {
+    amountInput.focus();
+    amountInput.select();
+  }
   openCraftPlan(it, 1);
 }
 
