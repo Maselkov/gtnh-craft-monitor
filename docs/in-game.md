@@ -171,10 +171,13 @@ doesn't, and writes both to `/home/config.lua`. Without `--server` and
 on every boot, and offers to reboot to start them.
 
 It also puts a GCM banner in `/etc/motd`, which OpenOS shows when the
-shell starts: the logo, the installed version and scripts. It only
-replaces OpenOS's own motd or an earlier banner, so if you've written your
-own, it stays, and `gcm update` refreshes the banner the same way. Edit
-the banner's first line and gcm leaves it alone too.
+shell starts: the logo, the installed version, and each script with how it
+came up at boot: ✓ running, ✗ enabled but not running (see `gcm status`
+below), `-` not enabled. The scripts can still be starting when the shell
+first runs it, so it waits up to 3 seconds for them. It only replaces
+OpenOS's own motd or an earlier banner, so if you've written your own, it
+stays, and `gcm update` refreshes the banner the same way. Edit the
+banner's first line and gcm leaves it alone too.
 
 To install specific scripts without being asked, name them:
 
