@@ -19,31 +19,41 @@ Each computer that runs the scripts needs:
 
 | Part | Requirement |
 |---|---|
-| Computer Case | Tier 2 or better, so it takes Tier 2 memory |
+| Server in a Server Rack (best), or a Computer Case | A Tier 3 server holds 4 memory sticks; a case is the fallback for small bases (Tier 2 or better, so it takes Tier 2 memory) |
 | EEPROM | **Lua BIOS** |
 | CPU | Any tier, or an **APU** in its place (an APU has graphics built in, so no Graphics Card is needed) |
 | Graphics Card | Any tier; not needed with an APU |
-| Memory | At least **2× Tier 2**; more or higher tiers are better, see below |
+| Memory | **4× Tier 3.5** in a Tier 3 server; a case needs at least **2× Tier 2**. More and higher tiers are better, see below |
 | Internet Card | Required: it's how the scripts reach the server |
 | Hard Disk Drive | Any tier, with OpenOS installed on it |
 | Screen and Keyboard | To install and watch the scripts |
 
-To install OpenOS, put the **OpenOS floppy disk** in a Disk Drive next to
-the computer (a Tier 3 case has one built in), boot from it and run
-`install`, choosing the hard disk. The floppy is read-only, so the scripts
-can't be installed onto it.
+To install OpenOS, put the **OpenOS floppy disk** in a Disk Drive. A Server
+Rack has none built in, so mount one in the rack next to the server. Boot
+from the floppy and run `install`, choosing the hard disk. The floppy is
+read-only, so the scripts can't be installed onto it.
 
-Memory is shared by every script on the computer. `network_browser.lua`
-uses the most, and grows with the size of your ME network: on a large
-network give it Tier 3 or 3.5 memory, or a computer of its own. If two
-sticks still aren't enough on a big base, use a **Server** in a **Server
-Rack** instead of a case: a Tier 2 server holds 3 memory sticks and a
-Tier 3 server 4, where a case holds 2. It takes the same parts otherwise.
-The most a scan holds at once is usually every stored stack of one big
-GregTech ID, such as `gt.metaitem.01` (see
-[Scanning the network](how-it-works.md#scanning-the-network)).
-`craft_monitor.lua` grows with the crafts running: each report carries
-every busy CPU's lists, so several big crafts at once take room too.
+Memory is shared by every script on the computer, and the scripts need
+more of it the bigger your base is. We recommend a **Tier 3 Server** in a
+**Server Rack** with four Tier 3.5 memory sticks: it holds twice what the
+best case can, and it takes the same parts otherwise. A Tier 2 server holds
+3 sticks, and a **Computer Case** holds 2, which is enough for a small base
+but not a big one.
+
+If the Status dialog says a scan ran out of memory ("not enough memory"),
+the computer is too small for your base: move to a server, or if you
+already have one, give `network_browser.lua` a computer of its own.
+
+What takes the room:
+
+- `network_browser.lua` uses the most. A scan holds every stored stack of
+  one big GregTech ID at once, such as `gt.metaitem.01` (see
+  [Scanning the network](how-it-works.md#scanning-the-network)), and reading
+  patterns holds all of the biggest interface's patterns at once, which
+  can be a few MB for a Large Molecular Assembler.
+- `craft_monitor.lua` grows with the crafts running: each report carries
+  every busy CPU's lists, so several big crafts at once take room too.
+
 `/home/network_browser_debug.log` records free memory (`mem=`) at each step and
 how many stacks each call returned, so the lowest numbers there show how
 close it gets and which call it was.
