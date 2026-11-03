@@ -244,7 +244,7 @@ local function url_path(url)
 end
 
 -- What a handler may return:
---   status        HTTP status (default 200)
+--   status        HTTP status (default 200); 400 and up fails the read
 --   body          response body (default "")
 --   chunks        the body pre-split, instead of body (default: 1KB pieces)
 --   chunk_delay   seconds between chunks arriving
@@ -299,6 +299,11 @@ function Env:_internet_card()
       function handle.read()
         if closed then return nil, "connection closed" end
         if res.connect_error then return nil, res.connect_error end
+        -- As a real player's log showed: an error status fails the read,
+        -- body unread, so a request() iterator raises it.
+        if (res.status or 200) >= 400 and env.now >= connect_at then
+          return nil, "Server returned HTTP response code: " .. res.status .. " for URL: " .. url
+        end
         if env.now < next_at then return "" end
         if res.stall_after and next_chunk > res.stall_after then return "" end
         if next_chunk > #chunks then return nil end

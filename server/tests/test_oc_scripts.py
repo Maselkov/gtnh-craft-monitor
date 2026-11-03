@@ -326,6 +326,32 @@ def test_pattern_scan_lands_with_crafting_counts(game, client):
     }
 
 
+def test_a_refused_pattern_scan_says_why_on_the_status_card(game, client):
+    game.write_file("/home/item_catalog.txt", "testmod:a\n")
+    game.lua(
+        """
+        me = ae2.new(env)
+        me.items = { ae2.stack("testmod:a", "Thing A", 5) }
+        local melt = terminal.pattern(
+          { [1] = terminal.item("gregtech:gt.metaitem.01", "Neodymium Ingot", 16, { damage = 11067 }) },
+          { [1] = terminal.fluid("molten.neodymium", "Molten Neodymium", 2304) })
+        local term = terminal.new(env, {
+          terminal.interface("A", 0, 0, 0, { melt }),
+          terminal.interface("B", 0, 0, 1, { melt }),
+        })
+        term.fail_list_at = 2
+        env:start_service("network_browser")
+        """
+    )
+    game.run(30)
+    login_as(client, "root", role="admin")
+    feeds = client.get("/api/admin/health").get_json()["feeds"]
+    patterns = next(f for f in feeds if f["key"] == "patterns")
+    assert patterns["rejected"]["reason"].startswith(
+        "incomplete (1/1 chunks, 1 errors), last: pattern list failed after 1 interfaces: "
+    )
+
+
 def test_several_power_machines_land_separately(game, client, api_key):
     game.lua(
         """

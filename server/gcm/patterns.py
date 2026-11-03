@@ -71,11 +71,11 @@ def add_batch(token, raw_patterns):
         return len(state.pattern_buffer), state.patterns["chunks_received"]
 
 
-def finish_scan(token, chunks_sent, total_errors):
+def finish_scan(token, chunks_sent, total_errors, last_error=None):
     """Ends the scan, replacing the last one only if every chunk arrived
     and nothing failed - a partial scan would make patterns look gone.
     Returns the response body for network_browser.lua, shaped like the
-    item scan's."""
+    item scan's; last_error as there."""
     with state.patterns_lock:
         if not _is_current_scan_locked(token):
             state.patterns["in_progress"] = False
@@ -85,16 +85,10 @@ def finish_scan(token, chunks_sent, total_errors):
         received = state.patterns["chunks_received"]
         if chunks_sent is None or total_errors != 0 or received != chunks_sent:
             state.pattern_buffer.clear()
-            log.warning(
-                "Rejected a pattern scan as incomplete: chunks_received=%s chunks_sent=%s total_errors=%s",
-                received, chunks_sent, total_errors,
-            )
-            return {
-                "ok": True,
-                "rejected": True,
-                "reason": f"incomplete scan (received {received}/{chunks_sent} chunks, "
-                f"{total_errors} errors) - discarded",
-            }
+            reason = inventory.incomplete_reason(received, chunks_sent, total_errors, inventory.scan_error(last_error))
+            state.patterns["last_rejected"] = {"at": time.time(), "reason": reason}
+            log.warning("Rejected a pattern scan as %s", reason)
+            return {"ok": True, "rejected": True, "reason": f"{reason} - discarded"}
         patterns = list(state.pattern_buffer)
         state.pattern_buffer.clear()
         updated_at = time.time()
@@ -146,6 +140,12 @@ def current():
     replaced, never changed in place, by each scan."""
     with state.patterns_lock:
         return state.patterns["patterns"], state.patterns["updated_at"]
+
+
+def last_rejected():
+    """{at, reason} of the last pattern scan turned away, or None."""
+    with state.patterns_lock:
+        return state.patterns["last_rejected"]
 
 
 def note_terminal(found):

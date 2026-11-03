@@ -137,6 +137,8 @@ patterns = {
     # last network scan said: None until one does (older scripts, or
     # pattern scans turned off).
     "terminal": None,
+    # {at, reason} of the last scan turned away as incomplete.
+    "last_rejected": None,
 }
 
 
@@ -212,6 +214,7 @@ def reset():
             current_scan_token=None,
             chunks_received=0,
             terminal=None,
+            last_rejected=None,
         )
     with tracking_lock:
         cpu_last_busy.clear()

@@ -5,7 +5,8 @@ import pytest
 from gcm import config, retention, state, store, webhooks
 from conftest import login_as
 from test_item_history_api import IRON, run_scan
-from test_network_api import run_scan as run_batched_scan
+from test_network_api import ITEM, run_scan as run_batched_scan
+from test_patterns_api import run_pattern_scan
 
 
 def health(client):
@@ -87,6 +88,36 @@ class TestHealth:
         assert "incomplete" in network["rejected"]["reason"]
         run_scan(client, api_headers, [dict(IRON, name="Iron Ingot", size=5)])
         assert feed(health(client), "network")["rejected"] is None
+
+    def test_a_rejected_scan_says_the_scripts_last_error(self, client, api_headers, caplog):
+        res = run_batched_scan(client, api_headers, [[ITEM]], total_errors=2,
+                               last_error="batch POST failed: Server returned HTTP response code: 400")
+        assert res.get_json()["reason"] == (
+            "incomplete (1/1 chunks, 2 errors), last: batch POST failed: "
+            "Server returned HTTP response code: 400 - discarded"
+        )
+        reason = feed(health(client), "network")["rejected"]["reason"]
+        assert reason.endswith(", last: batch POST failed: Server returned HTTP response code: 400")
+        assert reason in caplog.text
+
+    def test_a_scripts_last_error_is_capped_and_junk_ignored(self, client, api_headers):
+        run_batched_scan(client, api_headers, [[ITEM]], total_errors=1, last_error="x" * 1000)
+        assert feed(health(client), "network")["rejected"]["reason"].endswith(", last: " + "x" * 300)
+        for junk in ({"message": "no"}, 42, "   "):
+            run_batched_scan(client, api_headers, [[ITEM]], total_errors=1, last_error=junk)
+            assert feed(health(client), "network")["rejected"]["reason"] == "incomplete (1/1 chunks, 1 errors)"
+
+    def test_a_rejected_pattern_scan_shows_until_one_is_kept(self, client, api_headers):
+        run_pattern_scan(client, api_headers, [], total_errors=1,
+                         last_error="pattern list failed after 12 interfaces: list broke")
+        patterns = feed(health(client), "patterns")
+        assert patterns["ok"] is False
+        assert patterns["rejected"]["reason"] == (
+            "incomplete (0/0 chunks, 1 errors), last: pattern list failed after 12 interfaces: list broke"
+        )
+        run_pattern_scan(client, api_headers, [])
+        patterns = feed(health(client), "patterns")
+        assert patterns["rejected"] is None and patterns["ok"] is True
 
     def test_storage_lists_each_database(self, client):
         storage = health(client)["storage"]

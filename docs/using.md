@@ -160,8 +160,12 @@ in-game computers are listed under it (see
   `STALE_AFTER_SECONDS`, power after 5 minutes, the network after an hour
   or a scan running over 30 minutes, or after three of the script's own
   intervals if it's set to report less often), crashed, or had its last
-  scan turned away as incomplete. A grey dot on Patterns means there's no ME Interface
-  Terminal, which is optional.
+  scan turned away as incomplete. A turned-away scan says how many of its
+  chunks arrived, how many errors the scanner hit, and the last of those
+  errors (older scripts don't send it), so a scan that keeps being turned
+  away can usually be explained from here, without the in-game debug log.
+  A grey dot on Patterns means there's no ME Interface Terminal, which is
+  optional.
 - the size of each database and the free space where they're kept.
 - when stock history was last thinned, and how many rows that removed.
 - how many browsers get push notifications, and how the last webhook post

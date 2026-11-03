@@ -84,7 +84,8 @@ def network_scan_batch():
 def network_scan_finish():
     payload = request.get_json(silent=True) or {}
     result = inventory.finish_scan(
-        payload.get("scan_token"), payload.get("chunks_sent"), payload.get("total_errors")
+        payload.get("scan_token"), payload.get("chunks_sent"), payload.get("total_errors"),
+        payload.get("last_error"),
     )
     if result.get("ok") and not result.get("rejected"):
         patterns.note_terminal(payload.get("interface_terminal"))
@@ -382,7 +383,8 @@ def network_patterns_batch():
 def network_patterns_finish():
     payload = request.get_json(silent=True) or {}
     result = patterns.finish_scan(
-        payload.get("scan_token"), payload.get("chunks_sent"), payload.get("total_errors")
+        payload.get("scan_token"), payload.get("chunks_sent"), payload.get("total_errors"),
+        payload.get("last_error"),
     )
     memory.trim()  # as scan/finish
     return jsonify(result)
