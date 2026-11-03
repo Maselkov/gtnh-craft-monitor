@@ -400,7 +400,7 @@ test("the banner fits a tier 1 screen", function()
     lines = lines + 1
     t.truthy(utf8.len(line) <= 50, "too wide for 50 columns: " .. line)
   end
-  t.truthy(lines <= 10, "takes " .. lines .. " of 16 rows")
+  t.truthy(lines <= 9, "takes " .. lines .. " of 16 rows")
   t.truthy(env:printed("/home is readonly"))
 end)
 

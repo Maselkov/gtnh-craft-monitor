@@ -100,7 +100,6 @@ local function banner()
     [3] = state and ("\27[33m" .. tostring(state.version)) or nil,
     [4] = state and scripts(state) or nil,
   }
-  io.write("\n")
   for i, row in ipairs(LOGO) do
     io.write("\27[36m", row)
     if info[i] then
