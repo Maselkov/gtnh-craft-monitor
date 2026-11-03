@@ -27,6 +27,23 @@ class TestCraftsEndpoint:
         assert data["jobs"][0]["name"] == "W01"
         assert data["stale"] is False
 
+    def test_a_cpu_nobody_named_gets_a_name_from_its_position(self, client, api_headers):
+        # AE2 reports an unnamed CPU's name as empty, which made every one
+        # of them the same CPU: untracked, and the page couldn't open one's
+        # ingredients or tree.
+        jobs = [
+            {"name": "", "busy": False},
+            {"name": "", "busy": True, "final_output": "Neutronium Ingot"},
+            {"name": "Big", "busy": False},
+            {"busy": False},
+        ]
+        client.post("/api/crafts", json={"source": "me", "jobs": jobs}, headers=api_headers)
+        names = [j["name"] for j in client.get("/api/crafts").get_json()["jobs"]]
+        assert names == ["#1", "#2", "Big", "#4"]
+        login_as(client, "alice")
+        tree = client.get("/api/crafts/%232/tree")
+        assert tree.status_code == 200 and "tree" in tree.get_json()
+
     def test_no_data_yet_is_stale(self, client):
         res = client.get("/api/crafts")
         data = res.get_json()

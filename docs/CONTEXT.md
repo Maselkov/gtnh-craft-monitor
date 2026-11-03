@@ -397,6 +397,19 @@ remaining sub-chunks and fluids, never calling scan/finish at all) the
 moment the server signals a stale token mid-scan - no point continuing
 to send data nobody's listening for.
 
+**CPUs nobody named.** AE2 reports an unnamed crafting CPU's name as
+an empty string (the page showed "CPU ?" for all of them), so every
+unnamed CPU was the same one: `tracking` skips a job with no name,
+the Ingredients button's `data-cpu=""` made `openIngredientsModal` a
+no-op (`openCpu` was falsy, so nothing was ever drawn), and the tree,
+pinning and cancelling all looked the CPU up by that name. Both sides
+now name such a CPU "#" and its position in `getCpus()` - the script
+(`get_cpus()`, so a cancel finds the CPU under the name it was reported
+as) and the server (`name_cpus()` in `routes/crafts.py`, for scripts
+still sending it empty). The position isn't stable if CPUs are added or
+removed, so a pin or history entry on an unnamed CPU can end up on
+another after that; naming a CPU in AE2 avoids it.
+
 **Why a scan was turned away.** The counts alone said that a scan was
 incomplete but not why, and the why only reached `network_browser`'s
 debug log in game - which a busy network rotates within the hour (each

@@ -220,8 +220,22 @@ local watched, ended = {}, {}
 
 -- Returns true when a watched job has ended, so the caller can report
 -- it right away.
-local function watch_cpus(me)
+-- getCpus(), with a name for each CPU: AE2 gives a CPU nobody has named
+-- an empty one, which would make every unnamed CPU the same one here
+-- and on the page (cancelling, pinning, its ingredients). It's called
+-- "#" and its position in the list.
+local function get_cpus(me)
   local ok, cpus = pcall(me.getCpus)
+  if ok and type(cpus) == "table" then
+    for i, row in ipairs(cpus) do
+      if row.name == nil or row.name == "" then row.name = "#" .. i end
+    end
+  end
+  return ok, cpus
+end
+
+local function watch_cpus(me)
+  local ok, cpus = get_cpus(me)
   if not ok then return false end
   local now = computer.uptime()
   local anyEnded = false
@@ -482,7 +496,7 @@ local function busy_map(cpus)
 end
 
 local function snapshot_cpu_busy(me)
-  local ok, cpus = pcall(me.getCpus)
+  local ok, cpus = get_cpus(me)
   if not ok then return {} end
   return busy_map(cpus)
 end
@@ -634,7 +648,7 @@ local function run_craft_request_loop(me)
     if cancelResp and cancelResp.requests and #cancelResp.requests > 0 then
       -- One getCpus() for all of them - each call blocks the computer
       -- for a server tick.
-      local cpusOk, cpus = pcall(me.getCpus)
+      local cpusOk, cpus = get_cpus(me)
       for _, cancelData in ipairs(cancelResp.requests) do
         local cpuProxy, findErr
         if cpusOk then
@@ -683,7 +697,7 @@ local function run_craft_request_loop(me)
       local computingOk, computing = pcall(entry.status.isComputing)
       if computingOk and not computing then planned[reqId] = entry end
     end
-    local cpusOk, cpus = pcall(me.getCpus)
+    local cpusOk, cpus = get_cpus(me)
     if not cpusOk then cpus = {} end
     local busyNow = busy_map(cpus)
     for name in pairs(claimed) do
@@ -862,7 +876,7 @@ local function service_loop()
   end
 
   while running do
-    local ok, raw = pcall(me.getCpus)
+    local ok, raw = get_cpus(me)
     local errors, cpus, busy = {}, 0, 0
     local post_ok, post_err = false, "getCpus() failed"
 

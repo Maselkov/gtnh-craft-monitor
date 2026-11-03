@@ -109,6 +109,7 @@ function FakeME:add_cpu(opts)
 end
 
 function FakeME:cpu(name)
+  if type(name) == "table" then return name end  -- a CPU, as add_cpu() gave it
   for _, c in ipairs(self.cpus) do
     if c.name == name then return c end
   end
@@ -268,7 +269,7 @@ function FakeME:update()
     if kind == "plan" then
       self:_finish_planning(target)
     else
-      self:end_job(target.name, "finished")
+      self:end_job(target, "finished")
     end
   end
 end
@@ -306,7 +307,7 @@ function FakeME:_cpu_proxy(cpu)
       return copy(cpu.job.output)
     end),
     cancel = method("cancel", function()
-      return me:end_job(cpu.name, "cancelled")
+      return me:end_job(cpu, "cancelled")
     end),
   }
 end

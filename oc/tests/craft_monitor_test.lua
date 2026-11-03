@@ -72,6 +72,43 @@ test("reports every CPU, with the busy one's job", function()
   t.eq(idle.pending, {})
 end)
 
+-- AE2 gives a CPU nobody has named an empty name.
+local function unnamed_cpu(me, job)
+  local cpu = me:add_cpu({ name = "tmp" })
+  if job then me:start_job("tmp", job) end
+  cpu.name = ""
+  return cpu
+end
+
+test("CPUs nobody named get a name each, from their position", function()
+  local env, me = t.env({}), nil
+  me = ae2.new(env)
+  unnamed_cpu(me)
+  unnamed_cpu(me, { output = GEAR, duration = 100 })
+  me:add_cpu({ name = "Big" })
+  env:start_service("craft_monitor")
+  env:run({ seconds = 0.5 })
+
+  local jobs = crafts_posts(env)[1].jobs
+  t.eq({ jobs[1].name, jobs[2].name, jobs[3].name }, { "#1", "#2", "Big" })
+  t.eq({ jobs[1].busy, jobs[2].busy }, { false, true })
+end)
+
+test("a cancel finds an unnamed CPU by the name it was reported under", function()
+  local env, me = t.env({ routes = {
+    ["GET /api/craft/cancel/pending"] = queue({
+      { id = 9, cpu_name = "#2", expected_output = { mod = "gregtech", internal = "gt.metaitem.01", damage = 32600 } },
+    }),
+  } }), nil
+  me = ae2.new(env)
+  unnamed_cpu(me)
+  local busy = unnamed_cpu(me, { output = GEAR, duration = 100 })
+  env:start_service("craft_monitor")
+  env:run({ seconds = 3 })
+  t.eq(env:requests_to("^/api/craft/cancel/9/result$")[1].json, { success = true })
+  t.eq(busy.job, nil)
+end)
+
 test("a job ending is reported right away, with how it last looked", function()
   local env, me = setup()
   me:start_job("CPU 1", { output = GEAR, pending = { sized(GEAR, 10) }, duration = 7 })

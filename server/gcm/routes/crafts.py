@@ -48,6 +48,17 @@ def debug_get():
         return Response("\n\n".join(parts), mimetype="text/plain")
 
 
+def name_cpus(jobs):
+    """Gives each CPU nobody has named (AE2 reports an empty name) one,
+    "#" and its position, as craft_monitor.lua does now: unnamed, they
+    were all the same CPU - tracking skipped them and the page couldn't
+    open one's ingredients. Older scripts still send them empty."""
+    for i, job in enumerate(jobs or [], 1):
+        if isinstance(job, dict) and not job.get("name"):
+            job["name"] = f"#{i}"
+    return jobs
+
+
 @bp.route("/api/crafts", methods=["POST"])
 @auth.api_key_required
 def crafts_post():
@@ -55,7 +66,7 @@ def crafts_post():
     if not isinstance(payload, dict):
         return jsonify({"error": "invalid payload"}), 400
 
-    jobs = icons.attach_job_icons(payload.get("jobs", []))
+    jobs = icons.attach_job_icons(name_cpus(payload.get("jobs", [])))
 
     # Before storing: it also fills in each job's progress. Outside
     # crafts_lock - tracking has its own lock.
