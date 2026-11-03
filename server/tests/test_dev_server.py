@@ -25,6 +25,9 @@ def test_tick_reports_crafts_power_and_a_scan(game, client):
 
     jobs = {j["name"]: j for j in client.get("/api/crafts").get_json()["jobs"]}
     assert jobs["M00"]["busy"] and jobs["M00"]["final_output"] == "Dangote Distillus"
+    # Two CPUs nobody named, named after their size as the script does.
+    assert jobs["4k #1"]["unnamed"] is True and jobs["4k #1"]["coprocessors"] == 4
+    assert jobs["4k #2"]["unnamed"] is True and "unnamed" not in jobs["M00"]
     assert len(jobs["M00"]["pending"]) + len(jobs["M00"]["active"]) >= 20
     assert not jobs["B01"]["busy"]
 

@@ -63,6 +63,7 @@ os.environ["GCM_SCRIPTS_VERSION"] = "v1.1.0"
 os.environ["GCM_VERSION"] = "v1.1.0"
 
 from gcm import bottlenecks, create_app, db, icons, patterns, store  # noqa: E402
+from gcm.routes.crafts import name_cpus  # noqa: E402
 
 API_KEY = "dev-" + secrets.token_hex(24)
 TICK_SECONDS = 2
@@ -641,7 +642,11 @@ def backfill_history(days=7):
 
 class Cpu:
     def __init__(self, name, storage, coprocessors, monitor=True):
-        self.name, self.storage, self.coprocessors = name, storage, coprocessors
+        # name is what AE2 calls it: "" for a CPU nobody named, which
+        # FakeGame.name_cpus() names after its size, as craft_monitor.lua
+        # does, so the page shows one with its (?).
+        self.ae2_name, self.storage, self.coprocessors = name, storage, coprocessors
+        self.name, self.unnamed = name, False
         # Without a Crafting Monitor, finalOutput() gives nothing. With
         # one, a job's first report can still come without it.
         self.monitor = monitor
@@ -746,13 +751,14 @@ class Cpu:
         return {"active": active, "pending": pending, "stored": stored}
 
     def report(self):
+        named = {"name": self.name, **({"unnamed": True} if self.unnamed else {})}
         if not self.job:
-            idle = {"name": self.name, "busy": False, "storage": self.storage,
+            idle = {**named, "busy": False, "storage": self.storage,
                     "coprocessors": self.coprocessors}
             if self.last_look:
                 idle["last_busy"], self.last_look = self.last_look, None
             return idle
-        report = {"name": self.name, "busy": True, "storage": self.storage,
+        report = {**named, "busy": True, "storage": self.storage,
                   "coprocessors": self.coprocessors, **self._lists()}
         reports = self.job.get("reports", 0)
         self.job["reports"] = reports + 1
@@ -846,7 +852,8 @@ class FakeGame:
         self.terminal = terminal
         self.cpus = [Cpu("M00", 131072, 256), Cpu("a00", 16384, 16), Cpu("a01", 16384, 16),
                      Cpu("a02", 16384, 16, monitor=False), Cpu("a03", 16384, 16), Cpu("B01", 65536, 64),
-                     Cpu("T00", 65536, 64), Cpu("T01", 65536, 64)]
+                     Cpu("T00", 65536, 64), Cpu("T01", 65536, 64), Cpu("", 4096, 4), Cpu("", 4096, 1)]
+        self.name_cpus()
         self.cpus[0].start(BIG_JOB[0], random_ingredients(BIG_JOB[1], BIG_JOB[0]))
         self.cpus[-2].start_chain(*CHAIN_JOB)
         self.cpus[-1].start_chain(*BOLT_JOB)
@@ -884,6 +891,7 @@ class FakeGame:
             elif cpu.job is None and cpu.name not in ("B01", "T00", "T01") and cpu.idle_ticks >= 8 and random.random() < 0.1:
                 out = random.choice(SMALL_JOBS)
                 cpu.start(out, random_ingredients(random.randint(1, 6), out))
+        self.name_cpus()
         self.answer_requests()
         self.call("POST", "/api/crafts", {"source": "me_controller", "poll_seconds": TICK_SECONDS,
                                           "jobs": [cpu.report() for cpu in self.cpus]})
@@ -902,6 +910,14 @@ class FakeGame:
         for computer in self.computers:
             computer.tick(self)
         self.ticks += 1
+
+    def name_cpus(self):
+        """Names the CPUs nobody named after their size ("4k #1"), as
+        craft_monitor.lua's get_cpus() does before each look."""
+        named = name_cpus([{"name": c.ae2_name, "storage": c.storage, "coprocessors": c.coprocessors}
+                           for c in self.cpus])
+        for cpu, job in zip(self.cpus, named, strict=True):
+            cpu.name, cpu.unnamed = job["name"], job.get("unnamed") is True
 
     def answer_requests(self):
         for req in self.call("GET", "/api/craft/requests/pending").get("requests", []):
