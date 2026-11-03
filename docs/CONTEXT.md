@@ -1588,10 +1588,9 @@ Commands are deliberately only `update` with ref `release` or `main`,
 and `reboot`. The agent runs `/usr/bin/gcm.lua update --no-reboot
 [--ref=main]` through loadfile() (so gcm's error message comes back as
 its second return value), reports the result, and reboots if the
-version changed. A result about to reboot says `rebooting = true`
-(older agents: inferred from the message); the server keeps the command
-`awaiting_boot` until a heartbeat with a lower uptime than the one it
-was handed over at, then stamps `back_at`, and fails it after 3 polls
+version changed. A result about to reboot says `rebooting = true`; the
+server keeps the command `awaiting_boot` until a heartbeat with a lower
+uptime than the one it was handed over at, then stamps `back_at`, and fails it after 3 polls
 without one. A successful command leaves the card 10 minutes after it's
 over; a failed one stays for the day. gcm downloads from its own hard-coded repository, so a
 compromised server can trigger a real release, main, or a reboot, and
