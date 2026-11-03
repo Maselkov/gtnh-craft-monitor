@@ -27,22 +27,38 @@ class TestCraftsEndpoint:
         assert data["jobs"][0]["name"] == "W01"
         assert data["stale"] is False
 
-    def test_a_cpu_nobody_named_gets_a_name_from_its_position(self, client, api_headers):
+    def test_a_cpu_nobody_named_is_numbered_by_size_and_marked(self, client, api_headers):
         # AE2 reports an unnamed CPU's name as empty, which made every one
         # of them the same CPU: untracked, and the page couldn't open one's
-        # ingredients or tree.
+        # ingredients or tree. Size, unlike the order they come in, stays
+        # put when a CPU goes busy or idle, or after a restart.
         jobs = [
-            {"name": "", "busy": False},
-            {"name": "", "busy": True, "final_output": "Neutronium Ingot"},
-            {"name": "Big", "busy": False},
-            {"busy": False},
+            {"name": "", "busy": False, "storage": 1024, "coprocessors": 1},
+            {"name": "", "busy": True, "final_output": "Neutronium Ingot", "storage": 65536, "coprocessors": 1},
+            {"name": "Big", "busy": False, "storage": 999999},
+            {"busy": False, "storage": 1024, "coprocessors": 4},
+            {"name": "", "busy": False, "storage": 1024, "coprocessors": 1},
         ]
         client.post("/api/crafts", json={"source": "me", "jobs": jobs}, headers=api_headers)
-        names = [j["name"] for j in client.get("/api/crafts").get_json()["jobs"]]
-        assert names == ["#1", "#2", "Big", "#4"]
+        got = client.get("/api/crafts").get_json()["jobs"]
+        # Biggest first, then more coprocessors, then the order given.
+        assert [(j["name"], j.get("unnamed")) for j in got] == [
+            ("#3", True), ("#1", True), ("Big", None), ("#2", True), ("#4", True)]
         login_as(client, "alice")
-        tree = client.get("/api/crafts/%232/tree")
+        tree = client.get("/api/crafts/%231/tree")
         assert tree.status_code == 200 and "tree" in tree.get_json()
+
+        # The same CPUs in another order get the same numbers.
+        client.post("/api/crafts", json={"source": "me", "jobs": list(reversed(jobs))}, headers=api_headers)
+        got = {(j["storage"], j.get("coprocessors"), j["name"]) for j in client.get("/api/crafts").get_json()["jobs"]
+               if j.get("unnamed")}
+        assert (65536, 1, "#1") in got and (1024, 4, "#2") in got
+
+    def test_a_name_and_flag_from_the_script_are_kept(self, client, api_headers):
+        jobs = [{"name": "#1", "unnamed": True, "busy": False}, {"name": "Big", "unnamed": "yes", "busy": False}]
+        client.post("/api/crafts", json={"source": "me", "jobs": jobs}, headers=api_headers)
+        got = client.get("/api/crafts").get_json()["jobs"]
+        assert got[0]["unnamed"] is True and "unnamed" not in got[1]
 
     def test_no_data_yet_is_stale(self, client):
         res = client.get("/api/crafts")

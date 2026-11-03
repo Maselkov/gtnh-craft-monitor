@@ -222,13 +222,30 @@ local watched, ended = {}, {}
 -- it right away.
 -- getCpus(), with a name for each CPU: AE2 gives a CPU nobody has named
 -- an empty one, which would make every unnamed CPU the same one here
--- and on the page (cancelling, pinning, its ingredients). It's called
--- "#" and its position in the list.
+-- and on the page (cancelling, pinning, its ingredients). Such a CPU is
+-- called "#" and its rank by size, biggest first, and flagged unnamed.
+-- The list's own order is arbitrary (AE2 keeps its CPUs in a HashSet of
+-- objects without a hashCode, so it changes with a restart or a rebuilt
+-- CPU); size doesn't, and doesn't change when a CPU goes busy or idle.
+-- CPUs of the same size are told apart by that arbitrary order. The
+-- server (routes/crafts.py name_cpus) does the same, so keep them alike.
 local function get_cpus(me)
   local ok, cpus = pcall(me.getCpus)
   if ok and type(cpus) == "table" then
+    local unnamed = {}
     for i, row in ipairs(cpus) do
-      if row.name == nil or row.name == "" then row.name = "#" .. i end
+      if row.name == nil or row.name == "" then unnamed[#unnamed + 1] = { row = row, pos = i } end
+    end
+    table.sort(unnamed, function(a, b)
+      local sa, sb = tonumber(a.row.storage) or 0, tonumber(b.row.storage) or 0
+      if sa ~= sb then return sa > sb end
+      local ca, cb = tonumber(a.row.coprocessors) or 0, tonumber(b.row.coprocessors) or 0
+      if ca ~= cb then return ca > cb end
+      return a.pos < b.pos
+    end)
+    for rank, u in ipairs(unnamed) do
+      u.row.name = "#" .. rank
+      u.row.unnamed = true
     end
   end
   return ok, cpus
@@ -323,6 +340,7 @@ local function extract_jobs(raw_cpus)
     -- tables, on a few big crafts, was megabytes.
     local encOk, job = pcall(json_encode, {
       name             = name,
+      unnamed          = row.unnamed and true or nil,
       busy             = row.busy and true or false,
       storage          = row.storage,
       coprocessors     = row.coprocessors,

@@ -403,12 +403,23 @@ unnamed CPU was the same one: `tracking` skips a job with no name,
 the Ingredients button's `data-cpu=""` made `openIngredientsModal` a
 no-op (`openCpu` was falsy, so nothing was ever drawn), and the tree,
 pinning and cancelling all looked the CPU up by that name. Both sides
-now name such a CPU "#" and its position in `getCpus()` - the script
-(`get_cpus()`, so a cancel finds the CPU under the name it was reported
-as) and the server (`name_cpus()` in `routes/crafts.py`, for scripts
-still sending it empty). The position isn't stable if CPUs are added or
-removed, so a pin or history entry on an unnamed CPU can end up on
-another after that; naming a CPU in AE2 avoids it.
+now name such a CPU "#" and its rank by size, biggest first, and mark
+it `unnamed` (the page puts a "?" after it) - the script (`get_cpus()`,
+so a cancel finds the CPU under the name it was reported as) and the
+server (`name_cpus()` in `routes/crafts.py`, for scripts still sending
+it empty); keep the two alike. Not the position in `getCpus()`: the
+source says that order is arbitrary. `getCpus()` is a copy of AE2's
+`CraftingGridCache.craftingCPUClusters`, a `HashSet` of
+`CraftingCPUCluster`s, which don't define `hashCode`, so it's in identity-
+hash order and changes with a restart or a rebuilt CPU; and an inactive
+or destroyed CPU is left out, moving everything after it. `storage` and
+`coprocessors` are fixed when the crafting blocks are placed
+(`availableStorage`, `accelerator`; a running job uses the separate
+`usedStorage`), so the rank doesn't change when a CPU goes busy or idle
+- the rank deliberately ignores busy. CPUs of one size still fall back
+to the list's order, so can swap numbers, and a job running on one when
+that happens is recorded as ended and started again; naming a CPU in AE2
+avoids it.
 
 **Why a scan was turned away.** The counts alone said that a scan was
 incomplete but not why, and the why only reached `network_browser`'s

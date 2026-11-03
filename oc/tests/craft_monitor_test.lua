@@ -73,36 +73,50 @@ test("reports every CPU, with the busy one's job", function()
 end)
 
 -- AE2 gives a CPU nobody has named an empty name.
-local function unnamed_cpu(me, job)
-  local cpu = me:add_cpu({ name = "tmp" })
+local function unnamed_cpu(me, storage, job)
+  local cpu = me:add_cpu({ name = "tmp", storage = storage })
   if job then me:start_job("tmp", job) end
   cpu.name = ""
   return cpu
 end
 
-test("CPUs nobody named get a name each, from their position", function()
-  local env, me = t.env({}), nil
-  me = ae2.new(env)
-  unnamed_cpu(me)
-  unnamed_cpu(me, { output = GEAR, duration = 100 })
+local function names_of(post)
+  local out = {}
+  for i, j in ipairs(post.jobs) do out[i] = j.name end
+  return out
+end
+
+test("CPUs nobody named are numbered by size, biggest first, and flagged", function()
+  local env = t.env({})
+  local me = ae2.new(env)
+  unnamed_cpu(me, 1000)
+  unnamed_cpu(me, 5000, { output = GEAR, duration = 4 })
   me:add_cpu({ name = "Big" })
   env:start_service("craft_monitor")
   env:run({ seconds = 0.5 })
 
   local jobs = crafts_posts(env)[1].jobs
-  t.eq({ jobs[1].name, jobs[2].name, jobs[3].name }, { "#1", "#2", "Big" })
+  t.eq({ jobs[1].name, jobs[2].name, jobs[3].name }, { "#2", "#1", "Big" })
+  t.eq({ jobs[1].unnamed, jobs[2].unnamed, jobs[3].unnamed }, { true, true, nil })
   t.eq({ jobs[1].busy, jobs[2].busy }, { false, true })
+
+  -- Going idle doesn't renumber them: size doesn't change.
+  env:run({ seconds = 10 })
+  local posts = crafts_posts(env)
+  local last = posts[#posts]
+  t.eq(names_of(last), { "#2", "#1", "Big" })
+  t.eq(last.jobs[2].busy, false)
 end)
 
 test("a cancel finds an unnamed CPU by the name it was reported under", function()
-  local env, me = t.env({ routes = {
+  local env = t.env({ routes = {
     ["GET /api/craft/cancel/pending"] = queue({
-      { id = 9, cpu_name = "#2", expected_output = { mod = "gregtech", internal = "gt.metaitem.01", damage = 32600 } },
+      { id = 9, cpu_name = "#1", expected_output = { mod = "gregtech", internal = "gt.metaitem.01", damage = 32600 } },
     }),
-  } }), nil
-  me = ae2.new(env)
-  unnamed_cpu(me)
-  local busy = unnamed_cpu(me, { output = GEAR, duration = 100 })
+  } })
+  local me = ae2.new(env)
+  unnamed_cpu(me, 1000)
+  local busy = unnamed_cpu(me, 5000, { output = GEAR, duration = 100 })
   env:start_service("craft_monitor")
   env:run({ seconds = 3 })
   t.eq(env:requests_to("^/api/craft/cancel/9/result$")[1].json, { success = true })

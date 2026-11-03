@@ -50,12 +50,24 @@ def debug_get():
 
 def name_cpus(jobs):
     """Gives each CPU nobody has named (AE2 reports an empty name) one,
-    "#" and its position, as craft_monitor.lua does now: unnamed, they
-    were all the same CPU - tracking skipped them and the page couldn't
-    open one's ingredients. Older scripts still send them empty."""
-    for i, job in enumerate(jobs or [], 1):
-        if isinstance(job, dict) and not job.get("name"):
-            job["name"] = f"#{i}"
+    "#" and its rank by size, biggest first, and marks it `unnamed` so
+    the page can say so - as craft_monitor.lua does now, so keep them
+    alike. Unnamed, they were all the same CPU: tracking skipped them and
+    the page couldn't open one's ingredients. Older scripts still send
+    them empty. Size, unlike the list's own order, doesn't change with a
+    restart or a rebuilt CPU, nor when a CPU goes busy or idle; CPUs of
+    one size fall back to that order."""
+    def number(v):
+        return v if isinstance(v, (int, float)) and not isinstance(v, bool) else 0
+
+    for job in jobs or []:
+        if isinstance(job, dict) and job.get("unnamed") is not True:
+            job.pop("unnamed", None)
+    unnamed = [(i, job) for i, job in enumerate(jobs or []) if isinstance(job, dict) and not job.get("name")]
+    unnamed.sort(key=lambda p: (-number(p[1].get("storage")), -number(p[1].get("coprocessors")), p[0]))
+    for rank, (_, job) in enumerate(unnamed, 1):
+        job["name"] = f"#{rank}"
+        job["unnamed"] = True
     return jobs
 
 

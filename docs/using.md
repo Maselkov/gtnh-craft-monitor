@@ -14,7 +14,9 @@
 ## Crafts tab
 
 One card per crafting CPU, updated within a second of each report from the
-game. A busy card shows:
+game. A CPU's card is titled with its name. One that nobody has named in AE2
+is called `#1`, `#2` and so on, biggest first, with a **?** that says so (see
+[Crafting CPUs](in-game.md#crafting-cpus)). A busy card shows:
 
 - **Output item** — needs an AE2 **Crafting Monitor** block in that CPU's
   multiblock. Without one, the card shows "Unknown output" and a link to
