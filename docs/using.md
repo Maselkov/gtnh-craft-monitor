@@ -158,7 +158,7 @@ in-game computers are listed under it (see
   each power machine), with how long ago it last reported. A green dot
   means it's current; amber means it's late (crafts after
   `STALE_AFTER_SECONDS`, power after 5 minutes, the network after an hour
-  or a scan running over 30 minutes, or after three of the script's own
+  or a scan running over 10 minutes, or after three of the script's own
   intervals if it's set to report less often), crashed, or had its last
   scan turned away as incomplete. A turned-away scan says how many of its
   chunks arrived, how many errors the scanner hit, and the last of those

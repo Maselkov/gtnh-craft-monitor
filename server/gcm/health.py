@@ -10,11 +10,11 @@ from gcm import agents, config, gamedata, patterns, retention, state, store, web
 
 STARTED_AT = time.time()
 
-# A full scan can take 10+ minutes on a big network, and the next one
+# A full scan takes up to 5 minutes, and the next one
 # starts 10 minutes after it ends (network_browser.lua): past these,
 # something has stopped. A script set to a longer interval gets longer
 # (state.stale_after()).
-SCAN_STUCK_SECONDS = 1800
+SCAN_STUCK_SECONDS = 600
 SCAN_STALE_SECONDS = 3600
 # power_monitor.lua reports about once a minute.
 POWER_STALE_SECONDS = 300
