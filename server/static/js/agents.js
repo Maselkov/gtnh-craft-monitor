@@ -354,8 +354,6 @@ async function copyConnect() {
 
 async function sendCommand(el) {
   const [action, ref] = el.dataset.cmd.split(':');
-  const label = COMMAND_LABELS[el.dataset.cmd]();
-  if (!confirm(`${label}: computer ${el.dataset.address.slice(0, 8)}? Its scripts stop while it reboots.`)) return;
   try {
     const res = await fetch(`/api/admin/agents/${encodeURIComponent(el.dataset.address)}/command`, {
       method: 'POST',
