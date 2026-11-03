@@ -352,7 +352,8 @@ def test_agent_reports_and_reboots_on_command(game, client, monkeypatch):
     login_as(client, "root", role="admin")
     [computer] = client.get("/api/admin/agents").get_json()["computers"]
     assert (computer["address"], computer["version"]) == ("computer-0000", "v1.0.0")
-    assert computer["services"] == [{"name": "power_monitor", "running": False, "restarts": 0, "gave_up": False}]
+    assert computer["services"] == [{"name": "power_monitor", "running": False, "restarts": 0, "gave_up": False,
+                                     "stopped_on_purpose": False, "last_error": None}]
     assert computer["poll_seconds"] == 60
 
     assert client.post("/api/admin/agents/computer-0000/command", json={"action": "reboot"}).status_code == 200
@@ -383,6 +384,20 @@ def test_agent_restarts_a_crashed_script_unless_turned_off(game, client, monkeyp
     crash()
     game.run(125)
     assert game.lua("return power.is_running()") is False
+
+
+def test_agent_reports_what_a_script_died_of(game, client, monkeypatch):
+    monkeypatch.setattr(agents, "latest_release", lambda: ("v1.0.0", None))
+    game.write_file("/etc/gcm.cfg", 'return { version = "v1.0.0", components = { "power" }, services = { "power_monitor" } }')
+    # A sensor line that isn't text makes power_monitor's loop throw.
+    game.lua('gt.new(env, { sensor = { {} } }); env:start_service("power_monitor")')
+    game.lua("env:run({ seconds = 1, allow_errors = true })")
+    game.lua('env:start_service("gcm_agent")')
+    game.run(1)
+    login_as(client, "root", role="admin")
+    [service] = client.get("/api/admin/agents").get_json()["computers"][0]["services"]
+    assert service["running"] is False and service["stopped_on_purpose"] is False
+    assert "attempt to" in service["last_error"]["message"]
 
 
 def test_install_checks_the_key_with_the_server(game, api_key):

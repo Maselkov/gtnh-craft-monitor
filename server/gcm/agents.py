@@ -31,6 +31,9 @@ BOOT_TIMEOUT_SECONDS = 3 * POLL_SECONDS
 # RETENTION_SECONDS, so they aren't missed.
 COMMAND_SHOWN_SECONDS = 600
 RETENTION_SECONDS = 86400
+# How long what a script last died of stays on its card once the
+# computer stops reporting it (a reboot clears it in game).
+ERROR_SHOWN_SECONDS = 86400
 LATEST_TTL_SECONDS = 3600
 LATEST_ERROR_TTL_SECONDS = 300
 
@@ -80,12 +83,18 @@ def save_settings(changes):
     return None
 
 
-def _clean_report(report):
+def _clean_report(report, now):
     def text(v, limit=64):
         return v[:limit] if isinstance(v, str) else None
 
     def number(v):
         return v if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+
+    def error(v):
+        # The computer says how long ago, as its clock isn't ours.
+        if not isinstance(v, dict) or text(v.get("message")) is None or number(v.get("ago")) is None:
+            return None
+        return {"message": text(v["message"], 300), "at": now - max(0, v["ago"])}
 
     services = report.get("services")
     return {
@@ -94,7 +103,8 @@ def _clean_report(report):
         if isinstance(report.get("components"), list) else [],
         "services": [
             {"name": text(s.get("name")), "running": s.get("running") is True,
-             "restarts": number(s.get("restarts")) or 0, "gave_up": s.get("gave_up") is True}
+             "restarts": number(s.get("restarts")) or 0, "gave_up": s.get("gave_up") is True,
+             "stopped_on_purpose": s.get("stopped_on_purpose") is True, "last_error": error(s.get("last_error"))}
             for s in (services if isinstance(services, list) else [])[:16]
             if isinstance(s, dict) and isinstance(s.get("name"), str)
         ],
@@ -165,6 +175,18 @@ def _auto_update_target():
     return version if cached_latest_release() == version else None
 
 
+def _keep_errors(prev, agent, now):
+    """Carries a script's last_error over from the previous heartbeat when
+    this one has none: a reboot clears it in game, and a crash is often
+    followed by an update or a reboot from this page. Lost if the server
+    restarted in between too."""
+    before = {s["name"]: s["last_error"] for s in (prev or {}).get("services", []) if s["last_error"]}
+    for s in agent["services"]:
+        kept = before.get(s["name"])
+        if not s["last_error"] and kept and now - kept["at"] <= ERROR_SHOWN_SECONDS:
+            s["last_error"] = kept
+
+
 def heartbeat(address, report):
     """Records a heartbeat; returns the command to hand over, or None.
     Each command is handed over once: running an update twice is
@@ -173,7 +195,9 @@ def heartbeat(address, report):
     now = time.time()
     with _lock:
         _expire_locked(now)
-        agent = _agents[address] = {**_clean_report(report), "address": address, "last_seen": now}
+        prev = _agents.get(address)
+        agent = _agents[address] = {**_clean_report(report, now), "address": address, "last_seen": now}
+        _keep_errors(prev, agent, now)
         for cmd in _commands.values():
             if cmd["address"] == address and cmd.get("awaiting_boot") and _came_back(cmd, agent["uptime"], now):
                 cmd.update(awaiting_boot=False, back_at=now)

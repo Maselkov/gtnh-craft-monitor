@@ -32,7 +32,20 @@ function commandLabel(cmd) {
 function serviceLabel(s) {
   if (s.gave_up) return ' (stopped, gave up restarting)';
   const restarted = s.restarts ? ` (restarted ${s.restarts}× this hour)` : '';
-  return s.running ? restarted : ` (stopped)${restarted}`;
+  // gcm_agent leaves a script stopped with rc alone.
+  return s.running ? restarted : ` (${s.stopped_on_purpose ? 'stopped on purpose' : 'stopped'})${restarted}`;
+}
+
+// What each script's loop last died of, as the computer reported it (the
+// server keeps it for a day, through reboots). Red while it's under an
+// hour old or the script is still down.
+function crashLines(services) {
+  const now = Date.now() / 1000;
+  return services.filter(s => s.last_error).map((s) => {
+    const failed = !s.running || now - s.last_error.at < 3600;
+    return `<div class="agent-line${failed ? ' agent-command failed' : ''}">${escapeHtml(s.name)} crashed ${
+      formatRelativeTime(s.last_error.at)}: ${escapeHtml(s.last_error.message)}</div>`;
+  }).join('');
 }
 
 function commandLine(cmd) {
@@ -77,6 +90,7 @@ export function renderComputer(c, latest, scriptsVersion) {
       <div><span class="agent-name">Computer ${escapeHtml(c.address.slice(0, 8))}</span>${c.offline ? '<span class="status-badge incomplete">Offline</span>' : ''}</div>
       <div class="agent-line">${version}${behind}</div>
       <div class="agent-services">${services}</div>
+      ${crashLines(c.services)}
       ${memoryLine(c)}
       <div class="agent-line">Last seen ${formatRelativeTime(c.last_seen)}${c.uptime != null ? ` &middot; up ${formatDuration(c.uptime)}` : ''}</div>
       ${commandLine(c.command)}

@@ -823,8 +823,12 @@ class FakeComputer:
             "address": self.address, "version": self.version,
             "components": [name.split("_")[0] for name in self.services],
             # network_browser falls over now and then, and gcm_agent restarts it.
+            # power_monitor ran out of memory a while ago and was restarted.
             "services": [{"name": name, "running": name != "network_browser" or random.random() < 0.9,
-                          "restarts": int(name == "network_browser")}
+                          "restarts": int(name in ("network_browser", "power_monitor")),
+                          **({"last_error": {"message": "not enough memory",
+                                             "ago": time.time() - self.booted_at - 300}}
+                             if name == "power_monitor" else {})}
                          for name in self.services],
             "free_memory": int(self.total_memory * random.uniform(0.2, 0.6)),
             "total_memory": self.total_memory, "uptime": time.time() - self.booted_at,

@@ -1616,6 +1616,18 @@ Only services in /etc/rc.cfg's `enabled`, not in the first 2 minutes of
 uptime (rc is still starting them), at most 3 an hour each, counted on
 `computer.uptime()` and forgotten on reboot.
 
+Why a script stopped: craft_monitor and power_monitor run their loop
+through xpcall and keep what it died of in the global `last_error`
+({message, uptime}; start() leaves it, so it outlives the restart),
+then re-raise so OpenOS still logs it to /tmp/event.log. Without this
+the thread dies silently and only /tmp/event.log knows why.
+network_browser catches its own crashes and carries on, so it doesn't.
+The heartbeat sends it as {message, ago} (the server has no use for the
+computer's clock), with `stopped_on_purpose`. A reboot clears the
+globals, so the server carries a service's last error over from the
+previous heartbeat for up to a day (agents._keep_errors()); it's lost
+only if the server restarted in between too.
+
 Auto-update uses the plain `update:release` command, which every agent
 since the first understands; an exact `--ref=<tag>` would be refused by
 exactly the old agents that need updating. So it fires only while the

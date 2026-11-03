@@ -200,4 +200,21 @@ test("one machine failing to read doesn't stop the others", function()
   t.eq(r[1].machine, "B")
 end)
 
+test("a crash is kept in last_error until the next one, and still logged", function()
+  local env = t.env()
+  local machine = gt.new(env, { sensor = { {} } })  -- a line that isn't text: reading it throws
+  local power = env:start_service("power_monitor")
+  env:run({ seconds = 1, allow_errors = true })
+  t.eq(power.is_running(), false)
+  t.eq(#env.thread_errors, 1, "re-raised, so OpenOS logs it")
+  t.truthy(power.last_error.message:find("attempt to", 1, true), power.last_error.message)
+  local at = power.last_error.uptime
+  machine.sensor = nil
+  env:run({ seconds = 10 })
+  power.start()
+  env:run({ seconds = 1 })
+  t.eq(power.is_running(), true)
+  t.eq(power.last_error.uptime, at, "kept across start()")
+end)
+
 return suite
