@@ -397,6 +397,52 @@ remaining sub-chunks and fluids, never calling scan/finish at all) the
 moment the server signals a stale token mid-scan - no point continuing
 to send data nobody's listening for.
 
+**CPUs nobody named.** AE2 reports an unnamed crafting CPU's name as
+an empty string (the page showed "CPU ?" for all of them), so every
+unnamed CPU was the same one: `tracking` skips a job with no name,
+the Ingredients button's `data-cpu=""` made `openIngredientsModal` a
+no-op (`openCpu` was falsy, so nothing was ever drawn), and the tree,
+pinning and cancelling all looked the CPU up by that name. AE2 also
+lets two CPUs share a name, with the same result. Both sides now give
+each such CPU a made-up name: its storage, after the shared name if
+there is one, numbered among the CPUs with that name and size ("68k
+#1", "Main 64k #2"; more coprocessors first, then the list's order),
+marked `auto_named` (the page puts a "?" after it). Every CPU sharing
+a name gets one, not just the second and later, so none keeps the
+plain name merely by being listed first; when the name stops being
+shared, the one left gets it back. A name some CPU is really called is
+skipped. The script does it
+(`get_cpus()`, so a cancel finds the CPU under the name it was
+reported as) and so does the server (`name_cpus()` in
+`routes/crafts.py`, for scripts still sending it empty); keep the two
+alike, down to the label (`size_label()` / `_size_label()`: whole KB,
+or MB/GB for an exact number of them) and to reading sizes as numbers
+within +-2^53 only (NaN would break Lua's `table.sort`, a float past 2^63
+Lua's `%d`, and an integer too big for a float Python's `math.isfinite`).
+`test_oc_scripts.py` runs both on the same CPUs to keep them alike.
+
+Why this way. The position in `getCpus()` won't do: the source says
+that order is arbitrary. `getCpus()` is a copy of AE2's
+`CraftingGridCache.craftingCPUClusters`, a `HashSet` of
+`CraftingCPUCluster`s, which don't define `hashCode`, so it's in
+identity-hash order and changes with a restart or a rebuilt CPU; and an
+inactive or destroyed CPU is left out, moving everything after it. A
+rank by size across all the CPUs (tried first) has the same weakness in
+another form: any bigger CPU added, removed or going inactive shifts
+every smaller one, and ranking only the unnamed ones also shifts them
+when one is named. Counting within a size, a CPU of another size can't
+take a CPU's name or shift its number. `storage` and `coprocessors` are
+fixed when the crafting blocks are placed (`availableStorage`,
+`accelerator`; a running job uses the separate `usedStorage`), so names
+don't change when a CPU goes busy or idle - deliberately not sorted by
+busy, which would move a running job's name whenever another same-size
+CPU finishes. What's left: same-size CPUs fall back to the list's
+order, so they can swap whenever AE2 rebuilds the set (a restart, or any
+CPU added or removed, since a `HashSet` that resizes redistributes its
+elements), and a job running on one then is recorded as ended and
+started again. Naming a CPU (Shift + right-click with Wire Cutters)
+avoids it.
+
 **Why a scan was turned away.** The counts alone said that a scan was
 incomplete but not why, and the why only reached `network_browser`'s
 debug log in game - which a busy network rotates within the hour (each

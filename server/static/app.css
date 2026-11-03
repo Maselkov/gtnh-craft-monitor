@@ -183,6 +183,26 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The (?) after the name of a CPU nobody named: beside .card-cpu, not in
+   it, so a long name's ellipsis can't cut it off. */
+.cpu-auto {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  margin-left: -4px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+  opacity: 0.7;
+  cursor: help;
+}
 /* Without min-width the title side can't shrink below its longest
    word, and a long name pushes whatever is beside it out of the card. */
 .card-head-main {

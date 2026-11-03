@@ -519,6 +519,32 @@ async function main() {
     await waitFor('gone', `!card('M01') && !card('M02')`);
   });
 
+  step('a CPU nobody named is named after its size, with a (?) saying so', async () => {
+    const crafts = (jobs) => game(base, '/api/crafts', { source: 'me_controller', jobs: [
+      { name: 'W01', busy: true, final_output: 'Iron Ingot', final_output_mod: 'minecraft',
+        final_output_internal: 'iron_ingot', final_output_damage: 0,
+        active: [{ name: 'Iron Ingot', size: 3 }], pending: [{ name: 'Iron Ore', size: 6 }], stored: [] },
+      { name: 'W02', busy: false },
+      ...jobs,
+    ] });
+    // AE2 reports a CPU nobody named with an empty name.
+    await crafts([{ name: '', busy: false, storage: 1024 }, { name: '', busy: false, storage: 65536 }]);
+    await waitFor('each named after its size, with the mark', `card('64k #1')?.querySelector('.cpu-auto')?.title.includes('its size was added')
+      && card('1k #1')?.querySelector('.cpu-auto')`);
+    // A link to the docs, as a phone has no hover for the title.
+    await waitFor('the mark links to the docs', `card('64k #1').querySelector('.cpu-auto').href.endsWith('in-game.md#crafting-cpus')
+      && card('64k #1').querySelector('.cpu-auto').getAttribute('aria-label').includes('Wire Cutters')`);
+    // Beside the name, not in it, so a long name's ellipsis can't hide it.
+    await waitFor('the mark is shown in full', `(() => {
+      const mark = card('64k #1').querySelector('.card-top > .cpu-auto');
+      const r = mark?.getBoundingClientRect();
+      return r && r.width >= 13 && r.height >= 13;
+    })()`);
+    await waitFor('named CPUs have no mark', `card('W02') && !card('W02').querySelector('.cpu-auto')`);
+    await crafts([]);
+    await waitFor('gone', `!card('64k #1') && !card('1k #1')`);
+  });
+
   step('crafts poll each second, and an unchanged report answers 304', async () => {
     const polls = `performance.getEntriesByType('resource').filter((e) => new URL(e.name).pathname === '/api/crafts').length`;
     const before = await evaluate(polls);

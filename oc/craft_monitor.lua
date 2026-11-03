@@ -218,15 +218,92 @@ end
 -- held the whole time it runs, in memory the other scripts share.
 local watched, ended = {}, {}
 
+-- A CPU's storage or coprocessors: a number within +-2^53, or 0. NaN
+-- (which fails both comparisons) would break table.sort's comparison
+-- below, and a float past 2^63 has no integer for size_label's %d.
+local function cpu_size(v)
+  if type(v) == "number" and v > -2^53 and v < 2^53 then return v end
+  return 0
+end
+
+-- A storage size as a CPU's name shows it: whole KB, or MB/GB when it's
+-- an exact number of them (69632 -> "68k", 1048576 -> "1M").
+local function size_label(storage)
+  local n, units = math.floor(cpu_size(storage) / 1024), { "k", "M", "G" }
+  local u = 1
+  while u < #units and n >= 1024 and n % 1024 == 0 do
+    n, u = n // 1024, u + 1
+  end
+  return string.format("%d%s", n, units[u])
+end
+
+-- getCpus(), with a name of its own for each CPU. AE2 gives a CPU nobody
+-- has named an empty name, and lets two CPUs share one, either of which
+-- would make several CPUs the same one here and on the page (cancelling,
+-- pinning, its ingredients). Such a CPU gets a made-up name, flagged
+-- auto_named: its storage, after the shared name if there is one, then
+-- its number among the CPUs with that same name and size - "68k #1",
+-- "Main 64k #2" - more coprocessors first, then the list's order. Every
+-- CPU sharing a name gets one, so none keeps the plain name just by
+-- being listed first. So a CPU of another size or name can't take a
+-- CPU's name or shift its number; only CPUs of the same name and size can
+-- swap, since the list's own order is arbitrary (AE2 keeps its CPUs in a
+-- HashSet of objects without a hashCode), and that can happen whenever AE2
+-- rebuilds it: a restart, or any CPU added or removed (the set can
+-- resize). A name a CPU is really called is skipped. The server
+-- (routes/crafts.py name_cpus) does the same, so keep them alike.
+local function get_cpus(me)
+  local ok, cpus = pcall(me.getCpus)
+  if ok and type(cpus) == "table" then
+    local count, taken, groups = {}, {}, {}
+    for _, row in ipairs(cpus) do
+      if type(row.name) ~= "string" or row.name == "" then
+        row.name = nil
+      else
+        count[row.name] = (count[row.name] or 0) + 1
+      end
+    end
+    for i, row in ipairs(cpus) do
+      local base
+      if not row.name then
+        base = size_label(row.storage)
+      elseif count[row.name] > 1 then
+        base = row.name .. " " .. size_label(row.storage)
+      else
+        taken[row.name] = true
+      end
+      if base then
+        groups[base] = groups[base] or {}
+        table.insert(groups[base], { row = row, pos = i })
+      end
+    end
+    for base, group in pairs(groups) do
+      table.sort(group, function(a, b)
+        local sa, sb = cpu_size(a.row.storage), cpu_size(b.row.storage)
+        if sa ~= sb then return sa > sb end
+        local ca, cb = cpu_size(a.row.coprocessors), cpu_size(b.row.coprocessors)
+        if ca ~= cb then return ca > cb end
+        return a.pos < b.pos
+      end)
+      local n = 0
+      for _, g in ipairs(group) do
+        repeat n = n + 1 until not taken[base .. " #" .. n]
+        g.row.name, g.row.auto_named = base .. " #" .. n, true
+      end
+    end
+  end
+  return ok, cpus
+end
+
 -- Returns true when a watched job has ended, so the caller can report
 -- it right away.
 local function watch_cpus(me)
-  local ok, cpus = pcall(me.getCpus)
+  local ok, cpus = get_cpus(me)
   if not ok then return false end
   local now = computer.uptime()
   local anyEnded = false
   for _, row in ipairs(cpus) do
-    local name = row.name or "(unnamed CPU)"
+    local name = row.name
     if row.busy then
       if row.cpu then
         -- storedItems() skipped: progress ignores it, and it's the
@@ -287,7 +364,7 @@ local function extract_jobs(raw_cpus)
       end
     end
 
-    local name = row.name or "(unnamed CPU)"
+    local name = row.name
     local seen
     if row.busy then
       busy = busy + 1
@@ -309,6 +386,7 @@ local function extract_jobs(raw_cpus)
     -- tables, on a few big crafts, was megabytes.
     local encOk, job = pcall(json_encode, {
       name             = name,
+      auto_named       = row.auto_named,
       busy             = row.busy and true or false,
       storage          = row.storage,
       coprocessors     = row.coprocessors,
@@ -482,7 +560,7 @@ local function busy_map(cpus)
 end
 
 local function snapshot_cpu_busy(me)
-  local ok, cpus = pcall(me.getCpus)
+  local ok, cpus = get_cpus(me)
   if not ok then return {} end
   return busy_map(cpus)
 end
@@ -634,7 +712,7 @@ local function run_craft_request_loop(me)
     if cancelResp and cancelResp.requests and #cancelResp.requests > 0 then
       -- One getCpus() for all of them - each call blocks the computer
       -- for a server tick.
-      local cpusOk, cpus = pcall(me.getCpus)
+      local cpusOk, cpus = get_cpus(me)
       for _, cancelData in ipairs(cancelResp.requests) do
         local cpuProxy, findErr
         if cpusOk then
@@ -683,7 +761,7 @@ local function run_craft_request_loop(me)
       local computingOk, computing = pcall(entry.status.isComputing)
       if computingOk and not computing then planned[reqId] = entry end
     end
-    local cpusOk, cpus = pcall(me.getCpus)
+    local cpusOk, cpus = get_cpus(me)
     if not cpusOk then cpus = {} end
     local busyNow = busy_map(cpus)
     for name in pairs(claimed) do
@@ -792,7 +870,9 @@ local function service_loop()
   end
 
   if CONFIG.DEBUG_DUMP then
-    local raw = me.getCpus()
+    -- get_cpus(), so DEBUG_CPU_FILTER takes the names the page shows.
+    local cpusOk, raw = get_cpus(me)
+    if not cpusOk then error(raw, 0) end
     print("[craft_monitor] getCpus() returned " .. tostring(#raw) .. " CPU(s).")
     print("[craft_monitor] Sending dumps to the server - check " .. CONFIG.URL:gsub("/api/crafts$", "/api/debug") .. " in a browser once this finishes.")
     for i, row in ipairs(raw) do
@@ -862,7 +942,7 @@ local function service_loop()
   end
 
   while running do
-    local ok, raw = pcall(me.getCpus)
+    local ok, raw = get_cpus(me)
     local errors, cpus, busy = {}, 0, 0
     local post_ok, post_err = false, "getCpus() failed"
 

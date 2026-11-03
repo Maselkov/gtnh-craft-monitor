@@ -7,6 +7,7 @@ import pytest
 
 from conftest import login_as
 from gcm import agents, config, nbt, state
+from gcm.routes.crafts import name_cpus
 from nbt_fixtures import tag_hex
 from oc_game import OcGame, lua_string, find_lua
 
@@ -45,6 +46,32 @@ def test_craft_report_reaches_the_crafts_endpoint(game, client):
     assert jobs["CPU 2"]["busy"] is False
     assert data["stale_after_seconds"] == config.STALE_AFTER_SECONDS  # 3 x 5s is under the default
     assert state.crafts["poll_seconds"] == 5
+
+
+def test_the_script_and_the_server_make_up_cpu_names_alike(game, client):
+    # Both make up a name for a CPU without one of its own (craft_monitor
+    # .lua's get_cpus(), routes/crafts.py's name_cpus()): the server for
+    # scripts that still send the empty or shared name. They must agree,
+    # or a cancel from the page can't find the CPU.
+    cpus = [("", 69632, 1), ("", 69632, 4), ("Big", 69632, 1), ("", 1048576, 1), ("4k #1", 4096, 1),
+            ("", 4096, 1), ("", 4096, 2), ("", 1e300, 1), ("", 1536 * 1024, 1), ("", 0, 1),
+            ("Main", 65536, 1), ("Main", 65536, 8), ("Main", 4096, 1), ("Main 4k #1", 4096, 1)]
+    added = "\n".join(
+        f'me:add_cpu({{ name = "tmp", storage = {storage!r}, coprocessors = {co} }}).name = {lua_string(name)}'
+        for name, storage, co in cpus
+    )
+    game.lua(f"""
+        me = ae2.new(env)
+        {added}
+        env:start_service("craft_monitor")
+        """)
+    game.run(1)
+    from_script = [j["name"] for j in client.get("/api/crafts").get_json()["jobs"]]
+    from_server = [j["name"] for j in name_cpus(
+        [{"name": name, "storage": storage, "coprocessors": co} for name, storage, co in cpus])]
+    assert from_script == from_server == [
+        "68k #2", "68k #1", "Big", "1M #1", "4k #1", "4k #3", "4k #2", "0k #1", "1536k #1", "0k #2",
+        "Main 64k #2", "Main 64k #1", "Main 4k #2", "Main 4k #1"]
 
 
 def test_craft_request_round_trip(game, client):

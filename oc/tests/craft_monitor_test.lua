@@ -72,6 +72,149 @@ test("reports every CPU, with the busy one's job", function()
   t.eq(idle.pending, {})
 end)
 
+-- AE2 gives a CPU nobody has named an empty name.
+local function unnamed_cpu(me, storage, job)
+  local cpu = me:add_cpu({ name = "tmp", storage = storage })
+  if job then me:start_job("tmp", job) end
+  cpu.name = ""
+  return cpu
+end
+
+local function names_of(post)
+  local out = {}
+  for i, j in ipairs(post.jobs) do out[i] = j.name end
+  return out
+end
+
+test("CPUs nobody named are named after their size, and flagged", function()
+  local env = t.env({})
+  local me = ae2.new(env)
+  unnamed_cpu(me, 69632)
+  unnamed_cpu(me, 69632, { output = GEAR, duration = 4 })
+  unnamed_cpu(me, 1048576)
+  me:add_cpu({ name = "Big", storage = 69632 })
+  env:start_service("craft_monitor")
+  env:run({ seconds = 0.5 })
+
+  local jobs = crafts_posts(env)[1].jobs
+  t.eq(names_of(crafts_posts(env)[1]), { "68k #1", "68k #2", "1M #1", "Big" })
+  t.eq({ jobs[1].auto_named, jobs[3].auto_named, jobs[4].auto_named }, { true, true, nil })
+  t.eq({ jobs[1].busy, jobs[2].busy }, { false, true })
+
+  -- Going idle doesn't rename them.
+  env:run({ seconds = 10 })
+  local posts = crafts_posts(env)
+  local last = posts[#posts]
+  t.eq(names_of(last), { "68k #1", "68k #2", "1M #1", "Big" })
+  t.eq(last.jobs[2].busy, false)
+end)
+
+test("within a size, more coprocessors come first", function()
+  local env = t.env({})
+  local me = ae2.new(env)
+  unnamed_cpu(me, 4096).coprocessors = 1
+  unnamed_cpu(me, 4096).coprocessors = 8
+  env:start_service("craft_monitor")
+  env:run({ seconds = 0.5 })
+  t.eq(names_of(crafts_posts(env)[1]), { "4k #2", "4k #1" })
+end)
+
+test("naming, adding or losing a CPU of another size renames nothing", function()
+  local env = t.env({})
+  local me = ae2.new(env)
+  local big = unnamed_cpu(me, 1048576)
+  unnamed_cpu(me, 4096, { output = GEAR, duration = 100 })
+  env:start_service("craft_monitor")
+  env:run({ seconds = 0.5 })
+  t.eq(names_of(crafts_posts(env)[1]), { "1M #1", "4k #1" })
+
+  big.name = "Big"
+  me:add_cpu({ name = "", storage = 2097152 })
+  env:run({ seconds = 10 })
+  local posts = crafts_posts(env)
+  t.eq(names_of(posts[#posts]), { "Big", "4k #1", "2M #1" })
+end)
+
+test("a name a CPU is really called is skipped", function()
+  local env = t.env({})
+  local me = ae2.new(env)
+  me:add_cpu({ name = "4k #1", storage = 1000 })
+  unnamed_cpu(me, 4096)
+  env:start_service("craft_monitor")
+  env:run({ seconds = 0.5 })
+  t.eq(names_of(crafts_posts(env)[1]), { "4k #1", "4k #2" })
+end)
+
+test("a CPU whose size isn't a usable number is named as 0k, not crashed on", function()
+  local env = t.env({})
+  local me = ae2.new(env)
+  unnamed_cpu(me, 0 / 0)
+  unnamed_cpu(me, "4096")
+  unnamed_cpu(me, 1e300)  -- past 2^63: no integer for %d
+  unnamed_cpu(me, 2 ^ 53)
+  unnamed_cpu(me, 2 ^ 53 - 1024)
+  env:start_service("craft_monitor")
+  env:run({ seconds = 0.5 })
+  t.eq(names_of(crafts_posts(env)[1]), { "0k #1", "0k #2", "0k #3", "0k #4", "8796093022207k #1" })
+end)
+
+test("CPUs sharing a name each get it with their size and a number", function()
+  local env = t.env({})
+  local me = ae2.new(env)
+  me:add_cpu({ name = "Main", storage = 65536, coprocessors = 1 })
+  me:add_cpu({ name = "Main", storage = 65536, coprocessors = 8 })
+  me:add_cpu({ name = "Main", storage = 4096 })
+  me:add_cpu({ name = "Other", storage = 65536 })
+  unnamed_cpu(me, 65536)
+  env:start_service("craft_monitor")
+  env:run({ seconds = 0.5 })
+  local post = crafts_posts(env)[1]
+  t.eq(names_of(post), { "Main 64k #2", "Main 64k #1", "Main 4k #1", "Other", "64k #1" })
+  t.eq({ post.jobs[1].auto_named, post.jobs[4].auto_named }, { true, nil })
+end)
+
+test("a CPU whose shared name stops being shared gets it back", function()
+  local env = t.env({})
+  local me = ae2.new(env)
+  me:add_cpu({ name = "Main", storage = 65536 })
+  local other = me:add_cpu({ name = "Main", storage = 4096 })
+  env:start_service("craft_monitor")
+  env:run({ seconds = 0.5 })
+  t.eq(names_of(crafts_posts(env)[1]), { "Main 64k #1", "Main 4k #1" })
+
+  other.name = "Small"
+  env:run({ seconds = 10 })
+  local posts = crafts_posts(env)
+  t.eq(names_of(posts[#posts]), { "Main", "Small" })
+end)
+
+test("DEBUG_CPU_FILTER takes an unnamed CPU's name as the page shows it", function()
+  local env = t.env({ config = { craft_monitor = { DEBUG_DUMP = true, DEBUG_CPU_FILTER = "4k #2" } } })
+  local me = ae2.new(env)
+  unnamed_cpu(me, 4096)
+  unnamed_cpu(me, 4096, { output = GEAR, duration = 100 })
+  env:start_service("craft_monitor")
+  env:run({ seconds = 5 })
+  local tags = {}
+  for _, r in ipairs(env:requests_to("^/api/debug$", "POST")) do tags[#tags + 1] = r.json.tag end
+  t.eq(tags, { "cpu-4k #2" })
+end)
+
+test("a cancel finds an unnamed CPU by the name it was reported under", function()
+  local env = t.env({ routes = {
+    ["GET /api/craft/cancel/pending"] = queue({
+      { id = 9, cpu_name = "4k #2", expected_output = { mod = "gregtech", internal = "gt.metaitem.01", damage = 32600 } },
+    }),
+  } })
+  local me = ae2.new(env)
+  unnamed_cpu(me, 4096)
+  local busy = unnamed_cpu(me, 4096, { output = GEAR, duration = 100 })
+  env:start_service("craft_monitor")
+  env:run({ seconds = 3 })
+  t.eq(env:requests_to("^/api/craft/cancel/9/result$")[1].json, { success = true })
+  t.eq(busy.job, nil)
+end)
+
 test("a job ending is reported right away, with how it last looked", function()
   local env, me = setup()
   me:start_job("CPU 1", { output = GEAR, pending = { sized(GEAR, 10) }, duration = 7 })

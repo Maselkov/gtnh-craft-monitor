@@ -3,6 +3,7 @@ completion notifications, and the Lua debug-dump channel."""
 
 import secrets
 import time
+from collections import Counter
 
 from flask import Blueprint, g, jsonify, request, Response
 
@@ -48,6 +49,66 @@ def debug_get():
         return Response("\n\n".join(parts), mimetype="text/plain")
 
 
+def _cpu_size(v):
+    """A CPU's storage or coprocessors: a number within +-2^53, or 0, as
+    craft_monitor.lua's cpu_size() reads them. Compared, not converted, so
+    neither a NaN nor an integer too big for a float gets through."""
+    if isinstance(v, (int, float)) and not isinstance(v, bool) and -(2**53) < v < 2**53:
+        return v
+    return 0
+
+
+def _size_label(storage):
+    """A storage size as a CPU's name shows it, as craft_monitor.lua's
+    size_label(): whole KB, or MB/GB when it's an exact number of them."""
+    n, unit = int(_cpu_size(storage) // 1024), 0
+    while unit < 2 and n >= 1024 and n % 1024 == 0:
+        n, unit = n // 1024, unit + 1
+    return f"{n}{'kMG'[unit]}"
+
+
+def name_cpus(jobs):
+    """Gives each CPU without a name of its own - none (AE2 reports an
+    empty one) or one another CPU shares - a made-up one, its storage
+    after the shared name if any, numbered within that name and size:
+    "68k #1", "Main 64k #2". Marked `auto_named`, so the page can say so.
+    As craft_monitor.lua's get_cpus() does, so keep them alike (its
+    comment says why it's done this way). Without, several CPUs were the
+    same one: tracking skipped the nameless and merged the rest, and the
+    page couldn't open one's ingredients. Older scripts still send such
+    names - and key each job's last look (last_busy) by the name, so CPUs
+    sharing one carry the same one, the last busy one's. It's dropped
+    from a job named here: tracking then judges that job's end from the
+    reports alone, as it did before last_busy, rather than from another
+    CPU's lists. jobs is a list of dicts (crafts_post checks)."""
+    def own_name(job):
+        name = job.get("name")
+        return name if isinstance(name, str) and name else None
+
+    count = Counter(own_name(job) for job in jobs)
+    taken, groups = set(), {}
+    for i, job in enumerate(jobs):
+        name = own_name(job)
+        if name is not None and count[name] == 1:
+            taken.add(name)
+            # Only the script's own flag, on a name it made up.
+            if job.get("auto_named") is not True:
+                job.pop("auto_named", None)
+            continue
+        label = _size_label(job.get("storage"))
+        groups.setdefault(f"{name} {label}" if name else label, []).append((i, job))
+    for base, group in groups.items():
+        group.sort(key=lambda g: (-_cpu_size(g[1].get("storage")), -_cpu_size(g[1].get("coprocessors")), g[0]))
+        n = 0
+        for _, job in group:
+            n += 1
+            while f"{base} #{n}" in taken:
+                n += 1
+            job["name"], job["auto_named"] = f"{base} #{n}", True
+            job.pop("last_busy", None)
+    return jobs
+
+
 @bp.route("/api/crafts", methods=["POST"])
 @auth.api_key_required
 def crafts_post():
@@ -55,7 +116,10 @@ def crafts_post():
     if not isinstance(payload, dict):
         return jsonify({"error": "invalid payload"}), 400
 
-    jobs = icons.attach_job_icons(payload.get("jobs", []))
+    jobs = payload.get("jobs") or []
+    if not isinstance(jobs, list) or not all(isinstance(j, dict) for j in jobs):
+        return jsonify({"error": "invalid jobs"}), 400
+    jobs = icons.attach_job_icons(name_cpus(jobs))
 
     # Before storing: it also fills in each job's progress. Outside
     # crafts_lock - tracking has its own lock.

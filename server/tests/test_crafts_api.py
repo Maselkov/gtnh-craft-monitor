@@ -3,6 +3,7 @@ import time
 import pytest
 
 from gcm import commands, config, db, state, tracking
+from gcm.routes.crafts import name_cpus
 from conftest import login_as
 
 
@@ -26,6 +27,104 @@ class TestCraftsEndpoint:
         assert len(data["jobs"]) == 1
         assert data["jobs"][0]["name"] == "W01"
         assert data["stale"] is False
+
+    def test_a_cpu_nobody_named_is_named_after_its_size_and_marked(self, client, api_headers):
+        # AE2 reports an unnamed CPU's name as empty, which made every one
+        # of them the same CPU: untracked, and the page couldn't open one's
+        # ingredients or tree.
+        jobs = [
+            {"name": "", "busy": False, "storage": 69632, "coprocessors": 1},
+            {"name": "", "busy": True, "final_output": "Neutronium Ingot", "storage": 1048576},
+            {"name": "Big", "busy": False, "storage": 69632},
+            {"busy": False, "storage": 69632, "coprocessors": 4},
+            {"name": "", "busy": False, "storage": 69632, "coprocessors": 1},
+        ]
+        client.post("/api/crafts", json={"source": "me", "jobs": jobs}, headers=api_headers)
+        got = client.get("/api/crafts").get_json()["jobs"]
+        # Counted within a size: more coprocessors first, then the order given.
+        assert [(j["name"], j.get("auto_named")) for j in got] == [
+            ("68k #2", True), ("1M #1", True), ("Big", None), ("68k #1", True), ("68k #3", True)]
+        login_as(client, "alice")
+        tree = client.get("/api/crafts/1M%20%231/tree")
+        assert tree.status_code == 200 and "tree" in tree.get_json()
+
+    def test_naming_adding_or_losing_another_size_renames_nothing(self, client, api_headers):
+        def names(jobs):
+            client.post("/api/crafts", json={"source": "me", "jobs": jobs}, headers=api_headers)
+            return [j["name"] for j in client.get("/api/crafts").get_json()["jobs"]]
+
+        assert names([{"name": "", "storage": 1048576}, {"name": "", "storage": 4096}]) == ["1M #1", "4k #1"]
+        assert names([{"name": "Big", "storage": 1048576}, {"name": "", "storage": 4096}]) == ["Big", "4k #1"]
+        assert names([{"name": "", "storage": 4096}, {"name": "", "storage": 2097152}]) == ["4k #1", "2M #1"]
+
+    def test_a_name_a_cpu_is_really_called_is_skipped(self, client, api_headers):
+        jobs = [{"name": "4k #1", "storage": 1}, {"name": "", "storage": 4096}, {"name": "", "storage": 4096}]
+        client.post("/api/crafts", json={"source": "me", "jobs": jobs}, headers=api_headers)
+        assert [j["name"] for j in client.get("/api/crafts").get_json()["jobs"]] == ["4k #1", "4k #2", "4k #3"]
+
+    def test_sizes_are_read_as_the_script_reads_them(self, client, api_headers):
+        # Numbers within +-2^53 only, as cpu_size() in craft_monitor.lua.
+        jobs = [{"name": "", "storage": "4096"}, {"name": "", "storage": True}, {"name": "", "storage": 1536 * 1024},
+                {"name": "", "storage": 3 * 1024 ** 3}, {"name": "", "storage": 2 ** 53}]
+        client.post("/api/crafts", json={"source": "me", "jobs": jobs}, headers=api_headers)
+        assert [j["name"] for j in client.get("/api/crafts").get_json()["jobs"]] == [
+            "0k #1", "0k #2", "1536k #1", "3G #1", "0k #3"]
+
+    def test_a_size_too_big_for_a_float_is_0k_not_a_500(self, client, api_headers):
+        jobs = [{"name": "", "storage": 10 ** 400}, {"name": "", "storage": 1e300}, {"name": "", "storage": 4096}]
+        res = client.post("/api/crafts", json={"source": "me", "jobs": jobs}, headers=api_headers)
+        assert res.status_code == 200
+        assert [j["name"] for j in client.get("/api/crafts").get_json()["jobs"]] == ["0k #1", "0k #2", "4k #1"]
+
+    def test_a_name_that_isnt_text_is_replaced_not_crashed_on(self, client, api_headers):
+        jobs = [{"name": ["x"], "storage": 4096}, {"name": {"a": 1}, "storage": 4096}, {"name": 7}]
+        res = client.post("/api/crafts", json={"source": "me", "jobs": jobs}, headers=api_headers)
+        assert res.status_code == 200
+        assert [j["name"] for j in client.get("/api/crafts").get_json()["jobs"]] == ["4k #1", "4k #2", "0k #1"]
+
+    def test_a_name_and_flag_from_the_script_are_kept(self, client, api_headers):
+        jobs = [{"name": "4k #1", "auto_named": True, "busy": False},
+                {"name": "Big", "auto_named": "yes", "busy": False}]
+        client.post("/api/crafts", json={"source": "me", "jobs": jobs}, headers=api_headers)
+        got = client.get("/api/crafts").get_json()["jobs"]
+        assert got[0]["auto_named"] is True and "auto_named" not in got[1]
+
+    def test_cpus_sharing_a_name_each_get_it_with_their_size(self, client, api_headers):
+        # AE2 lets two CPUs share a name, which made them one CPU here.
+        shared = {"age": 1, "pending": [], "active": []}
+        jobs = [
+            {"name": "Main", "storage": 65536, "coprocessors": 1, "last_busy": shared},
+            {"name": "Main", "storage": 65536, "coprocessors": 8},
+            {"name": "Main", "storage": 4096},
+            {"name": "Other", "storage": 65536, "last_busy": shared},
+            {"name": "", "storage": 65536},
+        ]
+        client.post("/api/crafts", json={"source": "me", "jobs": jobs}, headers=api_headers)
+        got = client.get("/api/crafts").get_json()["jobs"]
+        assert [(j["name"], j.get("auto_named")) for j in got] == [
+            ("Main 64k #2", True), ("Main 64k #1", True), ("Main 4k #1", True), ("Other", None), ("64k #1", True)]
+        # An older script's last look under the shared name is another CPU's.
+        assert [j["name"] for j in name_cpus([dict(j) for j in jobs]) if "last_busy" in j] == ["Other"]
+
+    def test_a_cpu_named_here_drops_its_last_look(self):
+        # An older script keys last_busy by the empty name, so every idle
+        # unnamed CPU carries the last busy one's lists.
+        shared = {"age": 1, "pending": [{"name": "Gear", "size": 4}], "active": []}
+        jobs = name_cpus([
+            {"name": "", "busy": False, "storage": 4096, "last_busy": shared},
+            {"name": "", "busy": False, "storage": 1048576, "last_busy": shared},
+            {"name": "4k #9", "auto_named": True, "busy": False, "storage": 4096, "last_busy": shared},
+            {"name": "Big", "busy": False, "last_busy": shared},
+        ])
+        assert ["last_busy" in j for j in jobs] == [False, False, True, True]
+
+    def test_jobs_that_arent_a_list_of_objects_are_refused(self, client, api_headers):
+        for jobs in (5, "x", [1], [{"name": "A"}, None], {"name": "A"}):
+            res = client.post("/api/crafts", json={"source": "me", "jobs": jobs}, headers=api_headers)
+            assert res.status_code == 400, jobs
+        for jobs in (None, []):
+            res = client.post("/api/crafts", json={"source": "me", "jobs": jobs}, headers=api_headers)
+            assert res.status_code == 200, jobs
 
     def test_no_data_yet_is_stale(self, client):
         res = client.get("/api/crafts")
