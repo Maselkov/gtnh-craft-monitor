@@ -930,9 +930,17 @@ local function run_pattern_scan(terminal)
         local slots = sorted_keys(info.patterns)
         if #slots > 0 then providers = providers + 1 end
         -- The whole interface is encoded before any of it is sent, so
-        -- its raw patterns aren't held through a POST.
+        -- its raw patterns aren't held through a POST, and each raw one
+        -- is let go once it's encoded: they take two to three times the
+        -- JSON's memory, and holding both for a Large Molecular
+        -- Assembler's few hundred patterns ran a computer out of memory
+        -- (a raw 250 is 0.6-3MB, their JSON 0.3-2MB). Lua's emergency
+        -- collection gets the freed ones back when it's tight.
         for _, slot in ipairs(slots) do
-          local encOk, encoded = pcall(json_encode, simplify_pattern(info.patterns[slot], slot, provider))
+          local raw = info.patterns[slot]
+          info.patterns[slot] = nil
+          local encOk, encoded = pcall(json_encode, simplify_pattern(raw, slot, provider))
+          raw = nil
           if encOk then
             chunk[#chunk + 1] = encoded
             chunkBytes = chunkBytes + #encoded
