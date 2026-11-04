@@ -75,7 +75,7 @@ export function escapeHtml(s) {
 }
 
 // Clicks on any [data-action] element inside container - including
-// elements added later by an innerHTML re-render - call
+// elements a redraw adds or changes later - call
 // actions[name](element, event). Arguments travel as data-*
 // attributes, escaped with escapeHtml like any other attribute value,
 // never spliced into JS source inside an HTML attribute.
@@ -219,7 +219,7 @@ function updateKey(node) {
   return null;
 }
 
-// What makes an <img> an icon, here and in the selectors above.
+// What makes an <img> an icon: the one test for it in this file.
 function iconSrc(node) {
   if (node.nodeType !== Node.ELEMENT_NODE || node.tagName !== 'IMG') return null;
   const src = node.getAttribute('src');
@@ -281,18 +281,28 @@ function applyChildren(parent, from, matchOf, leftovers) {
   const wanted = sources.map(node => {
     const match = matchOf.get(node);
     if (!match) return node;
-    if (match.nodeType === Node.ELEMENT_NODE) updateAttributes(match, node);
+    if (match.nodeType === Node.ELEMENT_NODE) {
+      // A style set through the DOM belongs to what the element was: one
+      // matched only by position that now has another class drops it.
+      if (!updateKey(node) && !iconSrc(node) && match.getAttribute('class') !== node.getAttribute('class')) {
+        match.removeAttribute('style');
+      }
+      updateAttributes(match, node);
+    }
     else if (match.nodeValue !== node.nodeValue) match.nodeValue = node.nodeValue;
     return match;
   });
   const keep = new Set(wanted);
-  // Into order, moving only what's out of place: a node that's going is
-  // stepped over, not moved past, so dropping one moves none after it.
-  let ref = parent.firstChild;
-  for (const node of wanted) {
-    while (ref && ref !== node && !keep.has(ref)) ref = ref.nextSibling;
-    if (ref === node) ref = ref.nextSibling;
-    else moveInto(parent, node, ref);
+  // Into order with the fewest moves: the longest run of nodes already in
+  // the right order among themselves stays put, and every other node goes
+  // in before the next one after it. Nodes that are going are left where
+  // they are (removed last), so dropping one moves nothing.
+  const staying = inOrderAlready(parent, wanted);
+  let next = null;
+  for (let i = wanted.length - 1; i >= 0; i--) {
+    const node = wanted[i];
+    if (!staying.has(node)) moveInto(parent, node, next);
+    next = node;
   }
   leftovers.push([parent, keep]);
   // A kept element takes the new one's children; a new element is its own
@@ -303,37 +313,38 @@ function applyChildren(parent, from, matchOf, leftovers) {
   }
 }
 
-// parent.insertBefore(node, ref), keeping focus inside node: moveBefore
-// moves a node without taking it out of the page (which loses focus) where
-// the browser has it, and focus is put back by hand where it doesn't.
-function moveInto(parent, node, ref) {
-  if (typeof parent.moveBefore === 'function' && parent.isConnected && node.isConnected) {
-    try {
-      parent.moveBefore(node, ref);
-      return;
-    } catch (e) { /* not movable that way: insertBefore below */ }
+// Of wanted, the nodes already children of parent whose current order is
+// the longest increasing run: these needn't move. O(n log n).
+function inOrderAlready(parent, wanted) {
+  const index = new Map();
+  let i = 0;
+  for (const child of parent.childNodes) index.set(child, i++);
+  const present = wanted.filter(node => index.has(node));
+  const tails = [];  // tails[k]: position in present of the smallest tail of a run k+1 long
+  const prev = new Array(present.length).fill(-1);
+  for (let j = 0; j < present.length; j++) {
+    const at = index.get(present[j]);
+    let lo = 0;
+    let hi = tails.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (index.get(present[tails[mid]]) < at) lo = mid + 1;
+      else hi = mid;
+    }
+    if (lo > 0) prev[j] = tails[lo - 1];
+    tails[lo] = j;
   }
-  const active = document.activeElement;
-  const hadFocus = active && active !== document.body && node.contains && node.contains(active) ? active : null;
-  parent.insertBefore(node, ref);
-  if (hadFocus && document.activeElement !== hadFocus) hadFocus.focus({ preventScroll: true });
+  const run = new Set();
+  for (let j = tails.length ? tails[tails.length - 1] : -1; j >= 0; j = prev[j]) run.add(present[j]);
+  return run;
 }
 
-// A progress bar's width, set through the DOM (the Content-Security-Policy
-// blocks inline styles). A bar a redraw kept slides to its new width (its
-// CSS transition), but never back: a lower width is a new job on the same
-// CPU, not lost progress, so it jumps there.
-export function setProgressWidth(bar, percent) {
-  const width = `${Number(percent)}%`;
-  if (bar.style.width === width) return;
-  if (parseFloat(bar.style.width) > Number(percent)) {
-    bar.style.transition = 'none';
-    bar.style.width = width;
-    void bar.offsetWidth;  // the jump takes effect before the transition is back
-    bar.style.transition = '';
-  } else {
-    bar.style.width = width;
-  }
+// parent.insertBefore(node, ref), but a node already in the page moves with
+// moveBefore, which doesn't take it out of the page on the way: focus, a
+// press in progress and a selection inside it all carry on.
+function moveInto(parent, node, ref) {
+  if (typeof parent.moveBefore === 'function' && parent.isConnected && node.isConnected) parent.moveBefore(node, ref);
+  else parent.insertBefore(node, ref);
 }
 
 function updateAttributes(el, from) {

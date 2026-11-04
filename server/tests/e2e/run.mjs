@@ -893,13 +893,20 @@ async function main() {
     if (result) throw new Error(result);
     // Lists in sections, as the Crafts tab draws them.
     const sections = await evaluate(`(async () => {
-      const { updateHtml } = await import('/static/js/util.js');
+      const { updateHtml: update } = await import('/static/js/util.js');
       const el = document.body.appendChild(document.createElement('div'));
       const img = (src) => '<img is="adopt-count-img" src="/icons?path=' + src + '">';
       const card = (id, src) => '<div data-id="' + id + '">' + img(src) + '<button>' + id + '</button></div>';
       const section = (id, cards) => '<section data-id="' + id + '"><div class="grid">' + cards.join('') + '</div></section>';
       const byId = (id) => el.querySelector('[data-id="' + id + '"]');
       const fail = [];
+      // Whatever was kept or moved, the result is exactly the new markup.
+      const updateHtml = (target, html) => {
+        update(target, html);
+        const t = document.createElement('template');
+        t.innerHTML = html;
+        if (target.innerHTML !== t.innerHTML) fail.push('the result differs from the markup: ' + html.slice(0, 80));
+      };
       // Kept nodes taken out of the page and put back (a move) lose focus.
       let moved = new Set();
       const watch = new MutationObserver((rs) => { for (const r of rs) for (const n of r.removedNodes) moved.add(n); });
@@ -937,6 +944,34 @@ async function main() {
       if (byId('c3') !== c3 || c3.querySelector('img') !== y3) fail.push('a card moving section was rebuilt');
       if (document.activeElement !== c3.querySelector('button')) fail.push('a card moving section lost focus');
 
+      // A rotated list moves only the one node that changed place.
+      const moves = [];
+      const proto = Element.prototype;
+      const real = { moveBefore: proto.moveBefore, insertBefore: Node.prototype.insertBefore };
+      proto.moveBefore = function (node, ref) { if (el.contains(this)) moves.push(node); return real.moveBefore.call(this, node, ref); };
+      Node.prototype.insertBefore = function (node, ref) { if (el.contains(this)) moves.push(node); return real.insertBefore.call(this, node, ref); };
+      try {
+        updateHtml(el, section('active', [card('r1', 'x.png'), card('r2', 'x.png'), card('r3', 'y.png')]));
+        const r1 = byId('r1');
+        moves.length = 0;
+        updateHtml(el, section('active', [card('r2', 'x.png'), card('r3', 'y.png'), card('r1', 'x.png')]));
+        if (moves.length !== 1 || moves[0] !== r1) fail.push('rotating a list moved ' + moves.length + ' nodes, not just the one');
+      } finally {
+        proto.moveBefore = real.moveBefore;
+        Node.prototype.insertBefore = real.insertBefore;
+      }
+      // A card moving into another section as its old one goes: the card
+      // is kept, and nothing of the old section stays behind.
+      updateHtml(el, section('a', [card('m1', 'x.png'), card('m2', 'y.png')]) + section('b', [card('m3', 'z.png')]));
+      const [m1, m3] = [byId('m1'), byId('m3')];
+      updateHtml(el, section('b', [card('m1', 'x.png'), card('m3', 'z.png')]));
+      if (byId('m1') !== m1 || byId('m3') !== m3 || byId('a') || byId('m2')) fail.push('a move between sections left or lost something');
+      // The same key at two depths: each stays at its own.
+      updateHtml(el, '<div data-id="k"><div data-id="k">in</div></div>');
+      const [k1, k2] = el.querySelectorAll('[data-id="k"]');
+      updateHtml(el, '<div data-id="k"><div data-id="k">in</div></div>');
+      const [k1b, k2b] = el.querySelectorAll('[data-id="k"]');
+      if (k1b !== k1 || k2b !== k2) fail.push('a key repeated at two depths was moved or rebuilt');
       // Repeated keys (CPUs without a name): each keeps its own card.
       updateHtml(el, section('active', [card('cpu:', 'x.png'), card('cpu:', 'y.png')]));
       const [n1, n2] = el.querySelectorAll('[data-id="cpu:"]');
@@ -951,7 +986,7 @@ async function main() {
     })()`);
     if (sections) throw new Error(sections);
     const actions = await evaluate(`(async () => {
-      const { updateHtml, setProgressWidth } = await import('/static/js/util.js');
+      const { updateHtml } = await import('/static/js/util.js');
       const el = document.body.appendChild(document.createElement('div'));
       const fail = [];
       // A button going doesn't turn the next one into its action.
@@ -980,17 +1015,27 @@ async function main() {
       updateHtml(el, '<div data-id="a"><div data-id="b">b</div></div>');
       if (el.querySelector('[data-id="a"]') !== inner || el.querySelector('[data-id="b"]') !== outer
         || outer.parentElement !== inner) fail.push('keyed elements swapping nesting were rebuilt');
-      // A bar slides up, and jumps down (a new job on the same CPU).
-      el.innerHTML = '<div class="progress-track"><div class="progress-fill"></div></div>';
+      // A bar is keyed by its job: the same job's bar is kept and slides,
+      // a new job on the CPU gets a new bar, which doesn't animate in.
+      const barHtml = (job) => '<div class="progress-track"><div class="progress-fill" data-id="job:' + job + '"></div></div>';
+      updateHtml(el, barHtml(1));
       const bar = el.querySelector('.progress-fill');
-      setProgressWidth(bar, 10);
+      bar.style.width = '10%';
       void bar.offsetWidth;
-      setProgressWidth(bar, 100);
-      if (!bar.getAnimations().length) fail.push('a bar going up did not slide');
-      await new Promise(r => setTimeout(r, 500));
-      setProgressWidth(bar, 3);
-      const want = bar.parentElement.getBoundingClientRect().width * 0.03;
-      if (bar.getAnimations().length || Math.abs(bar.getBoundingClientRect().width - want) > 1) fail.push('a bar going down slid back');
+      updateHtml(el, barHtml(1));
+      if (el.querySelector('.progress-fill') !== bar) fail.push("a job's bar was not kept");
+      bar.style.width = '100%';
+      if (!bar.getAnimations().length) fail.push("a job's bar did not slide on");
+      updateHtml(el, barHtml(2));
+      const next = el.querySelector('.progress-fill');
+      next.style.width = '3%';
+      if (next === bar || next.getAnimations().length) fail.push("a new job's bar slid from the old one");
+      // A style set through the DOM stays with an element of the same class,
+      // and is dropped by one matched by position that changes class.
+      updateHtml(el, '<div class="a"></div>');
+      el.firstChild.style.width = '40%';
+      updateHtml(el, '<div class="b"></div>');
+      if (el.firstChild.getAttribute('style')) fail.push('a style stayed on an element that changed class');
       el.remove();
       return fail.join('; ');
     })()`);

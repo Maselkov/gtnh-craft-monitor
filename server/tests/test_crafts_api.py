@@ -491,8 +491,20 @@ class TestCardTiming:
         post_job(client, api_headers, busy=False)
         idle = w01(client)
         assert idle["running_seconds"] is None and idle["eta_seconds"] is None
+        assert idle["started_at"] is None
         post_job(client, api_headers, "Rotor", pending=plates(3))
         assert w01(client)["started_known"] is True
+
+    def test_started_at_names_the_job(self, client, api_headers):
+        # The same across a job's reports; another job on the CPU, another.
+        post_job(client, api_headers, "Gear", pending=plates(3))
+        first = w01(client)["started_at"]
+        post_job(client, api_headers, "Gear", pending=plates(2))
+        assert w01(client)["started_at"] == first
+        post_job(client, api_headers, busy=False)
+        time.sleep(0.01)
+        post_job(client, api_headers, "Rotor", pending=plates(3))
+        assert w01(client)["started_at"] not in (None, first)
 
 
 class TestJobEnd:

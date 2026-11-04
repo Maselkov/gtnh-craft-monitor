@@ -11,7 +11,7 @@ import { nameText } from './description.js';
 import { craftsBadge, setTabBadge } from './tab-badges.js';
 import {
   delegateActions, docsUrl, escapeHtml, formatDuration, formatRelativeTime, iconClass, iconUrl, PIN_ICON,
-  setProgressWidth, updateHtml,
+  updateHtml,
 } from './util.js';
 
 // Toggle-open state of the idle-CPU section, which has to survive the
@@ -505,7 +505,7 @@ function renderCard(job) {
   // of being decided independently per-field.
   const hasProgress = job.busy && job.progress_percent != null;
   const progressBar = hasProgress ? `
-    <div class="progress-track"><div class="progress-fill" data-progress="${escapeHtml(job.progress_percent)}"></div></div>
+    <div class="progress-track"><div class="progress-fill" data-id="job:${escapeHtml(job.started_at)}" data-progress="${escapeHtml(job.progress_percent)}"></div></div>
     <div class="progress-label">${progressLabel(job)}</div>
   ` : '';
 
@@ -595,6 +595,12 @@ export function render(data) {
   banner.classList.toggle('show', isStale());
 
   const root = document.getElementById('root');
+  // Whether the Idle CPUs section is open, from the page itself: the
+  // markup below sets it, and the redraw would undo a click otherwise.
+  // Read before any redraw, including the one with no CPUs at all, which
+  // drops the section.
+  const shownIdle = root.querySelector('details.idle-group');
+  if (shownIdle) idleSectionOpen = shownIdle.open;
   const jobs = data.jobs || [];
   setTabBadge('crafts', craftsBadge(jobs, completedPins));
 
@@ -646,11 +652,6 @@ export function render(data) {
     </section>
   ` : (pinnedJobs.length === 0 ? `<div class="empty">No CPUs currently crafting.</div>` : '');
 
-  // The section as it is now: a click opens it at once, but the toggle
-  // event that records it comes a moment later, after this redraw if
-  // one falls in between, and the markup would shut it again.
-  const shownIdle = root.querySelector('details.idle-group');
-  if (shownIdle) idleSectionOpen = shownIdle.open;
   const idleSection = idleJobs.length > 0 ? `
     <details class="idle-group" data-id="idle" ${idleSectionOpen ? 'open' : ''}>
       <summary>Idle CPUs (${idleJobs.length})</summary>
@@ -663,10 +664,10 @@ export function render(data) {
   // the markup, which the Content-Security-Policy blocks. Done in the
   // same task as the redraw: a new bar's first computed width is already
   // right, so it doesn't animate in from 0, while a bar the redraw kept
-  // slides on to the new one (and jumps back for a new job:
-  // setProgressWidth).
+  // slides on to the new one. Each bar is keyed by its job (started_at),
+  // so a new job on the same CPU gets a new bar instead of sliding.
   for (const bar of root.querySelectorAll('.progress-fill[data-progress]')) {
-    setProgressWidth(bar, bar.dataset.progress);
+    bar.style.width = `${Number(bar.dataset.progress)}%`;
   }
   refreshIngredientsModal(data);
 }

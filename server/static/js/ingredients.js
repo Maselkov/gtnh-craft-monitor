@@ -12,7 +12,7 @@ import { nameHtml, nameText } from './description.js';
 import { itemMatchesSearch, parseSearchQuery } from './search.js';
 import {
   bindFilterInput, delegateActions, escapeHtml, formatQty, iconClass, iconUrl, onBackdropClick,
-  setProgressWidth, updateHtml,
+  updateHtml,
 } from './util.js';
 
 let openCpu = null;       // CPU name the modal is showing, null when closed
@@ -129,10 +129,12 @@ function renderHead(job) {
   const progress = document.getElementById('ingredientsProgress');
   if (job.progress_percent != null) {
     updateHtml(progress, `
-      <div class="progress-track"><div class="progress-fill"></div></div>
+      <div class="progress-track"><div class="progress-fill" data-id="job:${escapeHtml(job.started_at)}"></div></div>
       <div class="progress-label">${escapeHtml(job.progress_percent)}% &middot; ${escapeHtml(job.steps_done ?? '?')}/${escapeHtml(job.steps_total ?? '?')} steps done</div>
     `);
-    setProgressWidth(progress.querySelector('.progress-fill'), job.progress_percent);
+    // Through the DOM: the Content-Security-Policy blocks inline styles.
+    // Keyed by its job, as on the cards.
+    progress.querySelector('.progress-fill').style.width = `${Number(job.progress_percent)}%`;
   } else {
     updateHtml(progress, '');
   }

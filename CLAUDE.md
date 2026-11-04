@@ -73,6 +73,8 @@ matching edits in `server/tests/e2e/run.mjs`.
   Give each item of a redrawn list a `data-id` (or `data-key`), and
   each section that can appear or go one too, so a reorder or a move to
   another list moves items instead of rebuilding them. A `style` set
-  through the DOM is kept; any other attribute follows the markup.
+  through the DOM is kept; any other attribute follows the markup, so
+  state the user changes on a redrawn element (a `<details>` opened) is
+  read back from the page before building the markup.
 - New `static/js` modules are only imported, never run on import;
   `main.js` calls their setup functions.
