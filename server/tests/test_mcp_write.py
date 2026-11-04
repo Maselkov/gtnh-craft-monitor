@@ -6,7 +6,8 @@ import time
 
 import pytest
 
-from gcm import commands, stock, store
+from conftest import login_as
+from gcm import commands, stock, store, tracking
 from gcm.mcp import tools
 from test_mcp import IRON_KEY, call, make_token, modern, ok
 from test_network_api import run_scan
@@ -31,6 +32,8 @@ def operator():
 @pytest.fixture()
 def network(client, api_headers):
     run_scan(client, api_headers, [[scanned(IRON, 500), scanned(GOLD, 40, craftable=False)]])
+    # The game reporting: requests are refused while it's silent.
+    cpus(client, api_headers, idle=2)
 
 
 def tool_names(client, token):
@@ -119,6 +122,7 @@ class TestRequestCraft:
         planks = pattern_item("planks", "Oak Wood Planks", size=0, item_id=5, isCraftable=True)
         run_scan(client, api_headers, [[log, planks]], interface_terminal=True)
         run_pattern_scan(client, api_headers, [[PLANKS_PATTERN]])
+        cpus(client, api_headers, idle=2)
 
         held = ok(client, operator, "request_craft", item=PLANKS_KEY, amount=16)
         assert held["queued"] is False
@@ -126,7 +130,8 @@ class TestRequestCraft:
         assert commands.craft_requests.select(lambda r: True) == []
 
         assert ok(client, operator, "request_craft", item=PLANKS_KEY, amount=4)["queued"] is True
-        forced = ok(client, operator, "request_craft", item=PLANKS_KEY, amount=16, force=True)
+        forced = ok(client, operator, "request_craft", item=PLANKS_KEY, amount=16, force=True,
+                    allow_duplicate=True)
         assert forced["queued"] and "force" in forced["plan_note"]
 
     def test_only_craftable_items(self, client, operator, network):
@@ -200,3 +205,69 @@ class TestCancelCraft:
         assert "not currently busy" in call(client, operator, "cancel_craft", cpu="I0")[0]
         assert "unknown" in call(client, operator, "cancel_craft", cpu="Z9")[0]
         assert call(client, operator, "cancel_craft", cpu="I0", job_id="nonsense")[1] is True
+
+
+class TestGuardrails:
+    def test_no_second_craft_while_one_is_waiting(self, client, operator, network):
+        first = ok(client, operator, "request_craft", item=IRON_KEY, amount=8)
+        assert first["queued"]
+        again = ok(client, operator, "request_craft", item=IRON_KEY, amount=8)
+        assert again["queued"] is False
+        assert again["already"] == ["a request for 8 is waiting for the game"]
+        assert ok(client, operator, "request_craft", item=IRON_KEY, amount=8, allow_duplicate=True)["queued"]
+
+    def test_nor_while_a_cpu_makes_it(self, client, operator, api_headers, network):
+        cpus(client, api_headers, idle=1, busy=[IRON])
+        held = ok(client, operator, "request_craft", item=IRON_KEY, amount=8)
+        assert held["queued"] is False and held["already"][0].startswith("a crafting CPU is making it now")
+
+    def test_nor_while_its_target_refills_it(self, client, operator, network, monkeypatch):
+        monkeypatch.setattr(stock, "pending_auto_requests", lambda: {IRON_KEY: {}})
+        held = ok(client, operator, "request_craft", item=IRON_KEY, amount=8)
+        assert held["already"] == ["its keep-in-stock target has asked for a refill"]
+
+    def test_refused_while_the_game_is_silent(self, client, operator, api_headers, monkeypatch):
+        run_scan(client, api_headers, [[scanned(IRON, 500)]])
+        answer, is_error = call(client, operator, "request_craft", item=IRON_KEY, amount=8)
+        assert is_error and "hasn't reported since the server started" in answer
+        cpus(client, api_headers, idle=1, busy=[GOLD])
+        real_time = time.time
+        monkeypatch.setattr(time, "time", lambda: real_time() + 600)
+        answer, is_error = call(client, operator, "request_craft", item=IRON_KEY, amount=8)
+        assert is_error and "hasn't reported for 10 min" in answer
+        answer, is_error = call(client, operator, "cancel_craft", cpu="B0", job_id="minecraft|gold_ingot|0")
+        assert is_error and "expire unanswered" in answer
+        assert commands.craft_requests.select(lambda r: True) == []
+
+
+class TestAttribution:
+    def test_current_crafts_says_who_started_each_job(self, client, operator, network, api_headers):
+        req_id = ok(client, operator, "request_craft", item=IRON_KEY, amount=8)["request_id"]
+        client.get("/api/craft/requests/pending", headers=api_headers)
+        client.post(f"/api/craft/requests/{req_id}/result", json={"status": "accepted", "cpu_name": "I0"},
+                    headers=api_headers)
+        tracking.start_requested_job("olive", "I1", "Gold Ingot", None, time.time(), auto=True)
+        jobs = [
+            {"name": "I0", "busy": True, "final_output": "Iron Ingot", "final_output_mod": "minecraft",
+             "final_output_internal": "iron_ingot", "final_output_damage": 0},
+            {"name": "I1", "busy": True, "final_output": "Gold Ingot", "final_output_mod": "minecraft",
+             "final_output_internal": "gold_ingot", "final_output_damage": 0},
+            {"name": "X9", "busy": True, "final_output": "Stone", "final_output_mod": "minecraft",
+             "final_output_internal": "stone", "final_output_damage": 0},
+        ]
+        client.post("/api/crafts", json={"source": "me", "jobs": jobs}, headers=api_headers)
+        started = {c["cpu"]: c["started_by"] for c in ok(client, operator, "current_crafts")["busy_cpus"]}
+        assert started == {"I0": "olive", "I1": "a keep-in-stock target", "X9": None}
+        # Not on what the (possibly public) page gets.
+        assert all("requested_by" not in j for j in client.get("/api/crafts").get_json()["jobs"])
+
+    def test_history_says_the_assistant_did_it(self, client, operator, network, api_headers):
+        ok(client, operator, "request_craft", item=IRON_KEY, amount=8)
+        cpus(client, api_headers, idle=0, busy=[GOLD])
+        ok(client, operator, "cancel_craft", cpu="B0", job_id="minecraft|gold_ingot|0")
+        login_as(client, "ada", role="admin")
+        client.post("/api/craft/request", json={"label": "Gold Ingot", "mod": "minecraft",
+                                                "internal": "gold_ingot", "damage": 0, "amount": 1})
+        events = client.get("/api/admin/users/olive/history").get_json()["events"]
+        assert sorted((e["type"], e["source"]) for e in events) == [("cancel", "assistant"), ("request", "assistant")]
+        assert client.get("/api/admin/users/ada/history").get_json()["events"][0]["source"] == "manual"

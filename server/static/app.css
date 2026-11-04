@@ -326,6 +326,10 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
   background: color-mix(in srgb, var(--accent) 20%, transparent);
   color: var(--accent);
 }
+.status-badge.assistant {
+  background: rgba(128,128,128,0.2);
+  color: var(--text);
+}
 .status-badge.incomplete {
   background: color-mix(in srgb, var(--stale) 20%, transparent);
   color: var(--stale);

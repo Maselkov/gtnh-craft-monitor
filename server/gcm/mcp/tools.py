@@ -18,8 +18,8 @@ import math
 import time
 
 from gcm import (
-    auth, bottlenecks, commands, craft_stats, inventory, item_info, patterns, planner, rates,
-    mctext, search, state, stock, store,
+    auth, bottlenecks, commands, config, craft_stats, inventory, item_info, patterns, planner, rates,
+    mctext, search, state, stock, store, tracking,
 )
 
 log = logging.getLogger(__name__)
@@ -328,6 +328,17 @@ def inventory_changes(user, args):
 # ---------------------------------------------------------------------
 # Crafting
 
+def _started_by(cpu):
+    """Who asked for the job on a CPU, as far as the server knows."""
+    who = tracking.started_by(cpu)
+    if who is None:
+        return None
+    kind, user_id = who
+    if kind == "auto":
+        return "a keep-in-stock target"
+    return store.users.display_name(user_id) or "a deleted user"
+
+
 def current_crafts(user, args):
     with state.crafts_lock:
         jobs = list(state.crafts["jobs"])
@@ -341,6 +352,7 @@ def current_crafts(user, args):
             "cpu": job.get("name"),
             "making": job.get("final_output"),
             "job_id": _job_id(job),
+            "started_by": _started_by(job.get("name")),
             "progress_percent": job.get("progress_percent"),
             "steps_done": job.get("steps_done"),
             "steps_total": job.get("steps_total"),
@@ -675,11 +687,57 @@ def remove_stock_target(user, args):
     return {"removed": True, "item": key}
 
 
+def _game_silence():
+    """How long craft_monitor.lua has been silent, in seconds, when that's
+    longer than the page calls stale (None while it reports): a request
+    or cancel then expires unanswered."""
+    with state.crafts_lock:
+        received_at = state.crafts["received_at"]
+        poll_seconds = state.crafts["poll_seconds"]
+    if received_at is None:
+        return float("inf")
+    silent = time.time() - received_at
+    return silent if silent > state.stale_after(config.STALE_AFTER_SECONDS, poll_seconds) else None
+
+
+def _require_game(what):
+    silent = _game_silence()
+    if silent is None:
+        return
+    since = "hasn't reported since the server started" if silent == float("inf") else (
+        f"hasn't reported for {round(silent / 60)} min" if silent >= 90 else f"hasn't reported for {int(silent)} s")
+    raise ToolError(f"craft_monitor.lua {since}, so the game wouldn't see {what} and it would expire "
+                    "unanswered. Check the computer running it in the game.")
+
+
+def _already_underway(key, mod, internal, damage):
+    """What's already getting the base this item: pending requests for
+    it, a keep-in-stock refill on its way, or busy CPUs making it."""
+    found = []
+    pending = commands.craft_requests.select(
+        lambda r: r["status"] == "pending" and r.get("source") != "auto" and store.items.item_key(
+            r.get("mod"), r.get("internal"), r.get("damage"), r.get("kind"), r.get("variant")) == key
+    )
+    for r in pending:
+        found.append(f"a request for {_amount(r['amount'], r.get('kind'))} is waiting for the game")
+    if key in stock.pending_auto_requests():
+        found.append("its keep-in-stock target has asked for a refill")
+    identity = {"mod": mod, "internal": internal, "damage": damage}
+    with state.crafts_lock:
+        jobs = list(state.crafts["jobs"])
+    for job in jobs:
+        output = commands.output_identity(job)
+        if job.get("busy") and output and commands.same_output(output, identity):
+            found.append(f"a crafting CPU is making it now ({job.get('progress_percent') or 0}% done)")
+    return found
+
+
 def request_craft(user, args):
     _require_operator(user, "request crafts")
     key = _arg(args, "item", "string", required=True)
     amount = _arg(args, "amount", "integer", required=True, minimum=1, maximum=10**12)
     force = _arg(args, "force", "boolean", False)
+    allow_duplicate = _arg(args, "allow_duplicate", "boolean", False)
     mod, internal, damage, kind, variant = _parse_key(key)
     item = _network_item(key)
     if item is None:
@@ -690,6 +748,18 @@ def request_craft(user, args):
     error = commands.craft_request_error(label, internal, amount, kind, variant)
     if error:
         raise ToolError(error)
+    _require_game("the request")
+
+    # Asked twice (a retry, or two people at once) is a double craft.
+    underway = _already_underway(key, mod, internal, damage)
+    if underway and not allow_duplicate:
+        return {
+            "queued": False,
+            "item": key, "name": label, "amount": amount, "unit": _unit(kind),
+            "already": underway,
+            "note": ("Not started: the base is already getting this item. Tell the user. Only call again with "
+                     "allow_duplicate=true if they want another craft on top."),
+        }
 
     # The plan first: a request AE2 can't cover just fails in-game, so
     # say what's missing instead, unless asked to go ahead anyway.
@@ -712,6 +782,7 @@ def request_craft(user, args):
 
     req_id = commands.queue_craft(
         user["id"], label, mod, internal, damage, amount, kind, variant, item.get("variant_name"),
+        source="assistant",
     )
     out = {
         "queued": True,
@@ -758,7 +829,8 @@ def cancel_craft(user, args):
             job = next((j for j in state.crafts["jobs"] if j.get("name") == cpu), None)
         if job is not None and job.get("busy") and _job_id(job):
             raise ToolError("Pass the job_id current_crafts gave for this CPU, so only that job is cancelled.")
-    req_id, error = commands.request_cancel(user["id"], cpu, shown)
+    _require_game("the cancel")
+    req_id, error = commands.request_cancel(user["id"], cpu, shown, source="assistant")
     if error:
         raise ToolError(error[0])
     return {
@@ -1022,6 +1094,8 @@ TOOLS = [
                        "description": "How many items, or mB for a fluid (1000 mB is a bucket)."},
             "force": {"type": "boolean", "default": False,
                       "description": "Start even though the plan says ingredients are missing."},
+            "allow_duplicate": {"type": "boolean", "default": False,
+                                "description": "Start even though the base is already getting this item."},
         }, ["item", "amount"]),
         "annotations": GAME_CHANGES,
         "operator": True,

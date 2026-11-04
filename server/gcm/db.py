@@ -702,6 +702,12 @@ def _app_mcp_calls(conn):
     conn.execute("CREATE INDEX idx_mcp_calls_at ON mcp_calls (at)")
 
 
+def _app_cancel_source(conn):
+    # Who made a cancel, as craft_request_history.source says for requests:
+    # "manual" on the page, "assistant" through /mcp.
+    conn.execute("ALTER TABLE craft_cancel_history ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'")
+
+
 APP_MIGRATIONS = [
     _app_baseline,
     _app_drop_orphaned_user_rows,
@@ -716,6 +722,7 @@ APP_MIGRATIONS = [
     _app_cancel_items,
     _app_oauth,
     _app_mcp_calls,
+    _app_cancel_source,
 ]
 POWER_MIGRATIONS = [_power_baseline, _power_machines, _power_drop_impossible_times]
 ITEM_HISTORY_MIGRATIONS = [

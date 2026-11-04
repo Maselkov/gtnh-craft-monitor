@@ -512,14 +512,23 @@ What it can change:
 
 `request_craft` works out the crafting plan first. If ingredients are
 missing it doesn't start, and tells the assistant what's missing; it only
-starts anyway when asked to again with `force`. There's no fixed limit on the
-amount, since what's sensible depends on the item. Instead, the tools tell
-the assistant to confirm the item and amount with you, and apps such as
-Claude ask before running anything that changes the game. `cancel_craft`
-only cancels the job the assistant saw: if the CPU has started another one
-since, nothing happens. Requests and cancels show in your
-[history](server.md#user-accounts) like ones made on the page, and an
-accepted request pins its CPU for you.
+starts anyway when asked to again with `force`. It also doesn't start when
+the base is already getting the item (a request waiting for the game, a CPU
+making it, a keep-in-stock refill on its way), unless asked again with
+`allow_duplicate`, so a retry can't make a second craft. There's no fixed
+limit on the amount, since what's sensible depends on the item. Instead, the
+tools tell the assistant to confirm the item and amount with you, and apps
+such as Claude ask before running anything that changes the game.
+
+`cancel_craft` only cancels the job the assistant saw: if the CPU has
+started another one since, nothing happens. `current_crafts` says who asked
+for each job the server started (a user, or a keep-in-stock target), so the
+assistant can ask before cancelling someone else's. While `craft_monitor.lua`
+isn't reporting, both refuse, since the game would never see them.
+
+Requests and cancels show in your [history](server.md#user-accounts) like
+ones made on the page, marked **Assistant**, and an accepted request pins
+its CPU for you.
 
 Answers are only as fresh as the game's last report, the same as the page's.
 
