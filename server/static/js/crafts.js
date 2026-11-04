@@ -101,11 +101,6 @@ export function setupCraftsActions() {
     'acknowledge': (el) => acknowledgePin(el.dataset.completionId),
     'acknowledge-all': () => acknowledgeAllPins(),
   });
-  // Remembers whether the idle section is open so the 3s re-render can
-  // restore it. toggle doesn't bubble, so catch it on the way down.
-  root.addEventListener('toggle', (e) => {
-    if (e.target.matches('details.idle-group')) idleSectionOpen = e.target.open;
-  }, true);
 }
 
 async function togglePin(name) {

@@ -964,6 +964,22 @@ async function main() {
       // Nor one coming: the new one is new.
       updateHtml(el, '<button data-action="toggle-pin">Pin</button><button data-action="cancel-craft">Cancel</button>');
       if (el.querySelector('[data-action="cancel-craft"]') !== cancel || document.activeElement !== cancel) fail.push('a new button took over the cancel button');
+      // An element appearing among whitespace-separated siblings (a card's
+      // AUTO badge): the element after it, and its focused button, stay.
+      updateHtml(el, '<div class="top">\\n  <span>CPU A</span>\\n  <div class="right"><button data-action="toggle-pin">Pin</button></div>\\n</div>');
+      const right = el.querySelector('.right');
+      const pin = right.querySelector('button');
+      pin.focus();
+      updateHtml(el, '<div class="top">\\n  <span>CPU A</span>\\n  <span class="badge">AUTO</span>\\n  <div class="right"><button data-action="toggle-pin">Pin</button></div>\\n</div>');
+      if (el.querySelector('.right') !== right || right.querySelector('button') !== pin) fail.push('an element after a new one was rebuilt');
+      if (document.activeElement !== pin) fail.push('focus after a new element was lost');
+      // Keyed elements that swap nesting are both kept.
+      updateHtml(el, '<div data-id="b"><div data-id="a">a</div></div>');
+      const outer = el.querySelector('[data-id="b"]');
+      const inner = el.querySelector('[data-id="a"]');
+      updateHtml(el, '<div data-id="a"><div data-id="b">b</div></div>');
+      if (el.querySelector('[data-id="a"]') !== inner || el.querySelector('[data-id="b"]') !== outer
+        || outer.parentElement !== inner) fail.push('keyed elements swapping nesting were rebuilt');
       // A bar slides up, and jumps down (a new job on the same CPU).
       el.innerHTML = '<div class="progress-track"><div class="progress-fill"></div></div>';
       const bar = el.querySelector('.progress-fill');

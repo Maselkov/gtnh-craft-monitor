@@ -165,21 +165,6 @@ export function bindFilterInput(input, onChange) {
 // otherwise a button appearing or going would turn the next one into a
 // different action, keeping a focus or a click meant for the old one.
 export function updateHtml(el, html) {
-  try {
-    updateInPlace(el, html);
-  } catch (e) {
-    // Markup this can't map onto what's there (an element moving into its
-    // own descendant): the page is still right, just not kept. Anything
-    // else is a bug here, not to be hidden by the fallback.
-    if (!(e instanceof DOMException && e.name === 'HierarchyRequestError')) throw e;
-    console.error('redraw: replacing instead of updating', e);
-    const tpl = document.createElement('template');
-    tpl.innerHTML = html;
-    el.replaceChildren(document.importNode(tpl.content, true));
-  }
-}
-
-function updateInPlace(el, html) {
   const tpl = document.createElement('template');
   tpl.innerHTML = html;
   const fresh = document.importNode(tpl.content, true);
@@ -254,7 +239,10 @@ function matchChildren(oldParent, newParent, keyed, matchOf, claimed) {
     const key = src ? null : updateKey(node);
     return { node, src, key, kind: src || key ? null : nodeKind(node) };
   }) : [];
-  let scan = 0;  // where to look on from for the next unkeyed match
+  // Where to look on from for the next unkeyed match, per kind: one cursor
+  // for all would let the whitespace after a new element skip past an old
+  // element of another kind still waiting for its match.
+  const scan = new Map();
   for (const node of newParent.childNodes) {
     let match = null;
     const src = iconSrc(node);
@@ -262,17 +250,19 @@ function matchChildren(oldParent, newParent, keyed, matchOf, claimed) {
     if (src) {
       match = old.find(o => !claimed.has(o.node) && o.src === src)?.node || null;
     } else if (key) {
-      // A repeated key takes the next one; the same parent first. Never
-      // an element holding where this goes, which can't move into itself.
-      const usable = (keyed.get(key) || []).filter(o => !claimed.has(o) && !(oldParent && o.contains(oldParent)));
-      match = usable.find(o => o.parentNode === oldParent) || usable[0] || null;
+      // A repeated key takes the next one in page order. Moving any of them
+      // here is safe: applying goes top-down, so where this goes is already
+      // in its final place, and never inside the element moving there.
+      const list = keyed.get(key);
+      while (list && list.length && claimed.has(list[0])) list.shift();
+      match = (list && list.shift()) || null;
     } else {
       const kind = nodeKind(node);
-      for (let i = scan; i < old.length; i++) {
+      for (let i = scan.get(kind) || 0; i < old.length; i++) {
         const o = old[i];
         if (o.kind === kind && !claimed.has(o.node)) {
           match = o.node;
-          scan = i + 1;
+          scan.set(kind, i + 1);
           break;
         }
       }
