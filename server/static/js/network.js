@@ -333,15 +333,20 @@ export function setupNetworkTooltipEvents() {
   });
   // Escape closing a dialog opened from the grid puts focus back on the
   // item. The dialogs close in craft-actions.js's own Escape handler;
-  // capturing sees one still open before it runs.
+  // capturing sees one still open before it runs. The item dialog
+  // closes with a Back, so it's only gone once the popstate comes.
   const dialogOpen = () => [...document.querySelectorAll('.modal-overlay')].some(m => m.style.display !== 'none');
+  const refocus = () => {
+    if (!openedFromKeyboard || dialogOpen()) return;  // only the top one closed
+    openedFromKeyboard = false;
+    const tabStop = listEl.querySelector('.network-cell[tabindex="0"]');
+    if (tabStop && activeTab === 'network') tabStop.focus();
+  };
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape' || !openedFromKeyboard || !dialogOpen()) return;
     setTimeout(() => {
-      if (dialogOpen()) return;  // only the top one closed
-      openedFromKeyboard = false;
-      const tabStop = listEl.querySelector('.network-cell[tabindex="0"]');
-      if (tabStop && activeTab === 'network') tabStop.focus();
+      if (dialogOpen()) window.addEventListener('popstate', () => setTimeout(refocus, 0), { once: true });
+      else refocus();
     }, 0);
   }, true);
 

@@ -1,13 +1,16 @@
 // Tab switching and URL <-> tab mapping.
 
 import { fetchCraftRequests } from './craft-actions.js';
+import { lastData } from './crafts.js';
 import {
-  closeItemHistory,
+  hideItemHistory,
   NETWORK_ITEM_PATH_PREFIX,
+  openItemHistory,
   parseItemUrlPath,
   setPendingItemFromUrl,
   tryOpenItemFromUrl,
 } from './history.js';
+import { hideIngredientsModal, ingredientsCpu, openIngredientsModal } from './ingredients.js';
 import { fetchNetwork, fetchNetworkPins, tickNetworkSourceLine } from './network.js';
 import { fetchPower, powerMachineFromUrl, powerPath, tickPowerSourceLine } from './power.js';
 import { fetchStockRules } from './stock.js';
@@ -35,6 +38,11 @@ function tabToPath(tab) {
 
 export function switchTab(tab, pushUrl) {
   if (pushUrl === undefined) pushUrl = true;
+  // A dialog belongs to the tab it was opened over.
+  if (tab !== activeTab) {
+    hideItemHistory();
+    hideIngredientsModal();
+  }
   activeTab = tab;
   document.getElementById('tabBtnCrafts').classList.toggle('active', tab === 'crafts');
   document.getElementById('tabBtnPower').classList.toggle('active', tab === 'power');
@@ -42,13 +50,6 @@ export function switchTab(tab, pushUrl) {
   document.getElementById('craftsTab').style.display = tab === 'crafts' ? '' : 'none';
   document.getElementById('powerTab').style.display = tab === 'power' ? '' : 'none';
   document.getElementById('networkTab').style.display = tab === 'network' ? '' : 'none';
-
-  // Leaving the network tab (or switching tabs generally) always
-  // closes any open item-history popup - it doesn't make sense for
-  // it to keep showing over a different tab's content.
-  if (tab !== 'network') {
-    closeItemHistory(false);
-  }
 
   if (pushUrl) {
     history.pushState({ view: tab }, '', tabToPath(tab));
@@ -96,26 +97,37 @@ export function refreshActiveTab() {
   }
 }
 
+// Back or Forward landed on a history entry: show its tab and the
+// dialogs it had open. An entry the page pushed says which (tab; cpu
+// for the ingredients dialog; item for the item dialog, which may be
+// over any tab); one it didn't - the page's first, or a link typed in -
+// goes by the URL alone.
+function applyHistoryState(state) {
+  state = state || {};
+  const tab = state.tab || pathToTab(location.pathname);
+  if (tab === 'power') powerMachineFromUrl();
+  switchTab(tab, false);  // reacting to a nav that already happened - don't push another
+
+  if (state.cpu) {
+    if (ingredientsCpu() !== state.cpu) openIngredientsModal(state.cpu, lastData, false);
+  } else {
+    hideIngredientsModal();
+  }
+
+  if (state.view === 'item' && state.item) {
+    openItemHistory(state.item, false);
+    return;
+  }
+  hideItemHistory();
+  const parsed = (tab === 'network') ? parseItemUrlPath(location.pathname) : null;
+  if (parsed) {
+    setPendingItemFromUrl(parsed);
+    tryOpenItemFromUrl();
+  }
+}
+
 export function setupTabActions() {
-  window.addEventListener('popstate', () => {
-    const tab = pathToTab(location.pathname);
-    if (tab === 'power') powerMachineFromUrl();
-    switchTab(tab, false);  // reacting to a nav that already happened - don't push another
-    // Explicit close/open here, not left to switchTab()'s own side
-    // effect - that only closes the popup when LEAVING the network
-    // tab entirely (tab !== 'network'), but both /network and
-    // /network/item/... map to the SAME tab, so navigating back from
-    // an item page to the bare network page never triggered it: the
-    // tab never "changed" from switchTab's point of view, even though
-    // the popup very much needs to close.
-    const parsed = (tab === 'network') ? parseItemUrlPath(location.pathname) : null;
-    if (parsed) {
-      setPendingItemFromUrl(parsed);
-      tryOpenItemFromUrl();
-    } else {
-      closeItemHistory(false);
-    }
-  });
+  window.addEventListener('popstate', (e) => applyHistoryState(e.state));
 
   document.addEventListener('keydown', onSlashKey);
   delegateActions(document, {
