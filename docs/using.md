@@ -534,11 +534,31 @@ Requests and cancels show in your [history](server.md#user-accounts) like
 ones made on the page, marked **Assistant**, and an accepted request pins
 its CPU for you.
 
+`search_items` uses the [search syntax](#search). When a plain query finds
+nothing, it tries again allowing for words joined or split differently
+("inconel625") and small typos ("tungstenstel"), and says the results are
+approximate.
+
 `find_recipes` and `game_item` read the game data of the GTNH version set on
 the Game data page, so they need one set. They cover GregTech machine
 recipes, not crafting-table ones.
 
 Answers are only as fresh as the game's last report, the same as the page's.
+
+### Ready-made prompts
+
+The server also offers prompts: requests worded to get a thorough answer to
+a common question, which you pick instead of typing. In Claude Code they're
+slash commands (`/mcp__gtnh__base_report`, with your server's name in place
+of `gtnh`). Other apps that support MCP prompts list them with the
+connector.
+
+| Prompt | What you get |
+|---|---|
+| `base_report` | Power, crafting, what's running low and what needs attention |
+| `slow_craft` | Why a job is slow: the machine holding it up and where it is (give a CPU, or leave it out for the longest-running job) |
+| `restock_check` | What's running low, how each item is kept up now, and what the assistant would do, without changing anything |
+| `update_check` | After a GTNH update: the patterns it broke, by machine, with what to change (operators) |
 
 ### What the assistant is told
 

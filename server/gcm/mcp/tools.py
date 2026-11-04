@@ -12,9 +12,11 @@ tools take that, never a name, so a request can't land on the wrong one
 of several items called alike."""
 
 import datetime
+import difflib
 import json
 import logging
 import math
+import re
 import time
 
 from gcm import (
@@ -218,11 +220,50 @@ def search_items(user, args):
         ):
             found.append(item)
     found.sort(key=lambda it: (_rank(it, query), len(mctext.plain(it.get("name") or "")), -(it.get("size") or 0)))
-    return {
+    approximate = False
+    if not found and all(kind in ("text", "or") and not negate for kind, negate, _ in terms):
+        found = _approximate(items, query, craftable_only)
+        approximate = bool(found)
+    out = {
         "scanned_at": _iso(scanned_at),
         "matches": len(found),
         "items": [_item_summary(it) for it in found[:limit]],
     }
+    if approximate:
+        out["approximate"] = True
+        out["note"] = "Nothing matched exactly; these are close. Check it's the item meant before using it."
+    return out
+
+
+_SQUASH = re.compile(r"[\s\-_'.]+")
+APPROXIMATE_WORD_RATIO = 0.8
+
+
+def _words(text):
+    return [w for w in re.split(r"[\s\-_]+", mctext.plain(text or "").lower()) if w]
+
+
+def _approximate(items, query, craftable_only):
+    """Items close to a query nothing matched: its words joined or split
+    differently ("inconel625" for "Inconel-625"), or misspelt
+    ("tungstenstel"). Best first."""
+    query_words = _words(query)
+    squashed_words = [_SQUASH.sub("", w) for w in query_words]
+    scored = []
+    for item in items:
+        if craftable_only and not item.get("isCraftable"):
+            continue
+        name = mctext.plain(item.get("name") or "").lower()
+        if all(w in _SQUASH.sub("", name) for w in squashed_words):
+            scored.append((0, item))
+            continue
+        name_words = _words(name)
+        ratios = [max((difflib.SequenceMatcher(None, w, n).ratio() for n in name_words), default=0)
+                  for w in query_words]
+        if ratios and min(ratios) >= APPROXIMATE_WORD_RATIO:
+            scored.append((1 - sum(ratios) / len(ratios), item))
+    scored.sort(key=lambda s: (s[0], len(s[1].get("name") or "")))
+    return [item for _, item in scored]
 
 
 def get_item(user, args):

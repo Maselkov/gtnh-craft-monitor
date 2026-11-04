@@ -25,7 +25,7 @@ import binascii
 import json
 
 from gcm import config
-from gcm.mcp import instructions, tools
+from gcm.mcp import instructions, prompts, tools
 
 MODERN_VERSIONS = ["2026-07-28"]
 LEGACY_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26"]
@@ -100,7 +100,7 @@ def handle(message, headers, user):
         version = requested if requested in LEGACY_VERSIONS else LEGACY_VERSIONS[0]
         return 200, _result(msg_id, {
             "protocolVersion": version,
-            "capabilities": {"tools": {"listChanged": False}},
+            "capabilities": {"tools": {"listChanged": False}, "prompts": {"listChanged": False}},
             "serverInfo": server_info(),
             "instructions": instructions.build(user),
         })
@@ -131,7 +131,7 @@ def handle(message, headers, user):
     if method == "server/discover":
         return 200, _modern_result(msg_id, {
             "supportedVersions": SUPPORTED_VERSIONS,
-            "capabilities": {"tools": {}},
+            "capabilities": {"tools": {}, "prompts": {}},
             "instructions": instructions.build(user),
             # Per user and live (who's connected, the base's state).
             "ttlMs": 300000,
@@ -144,6 +144,15 @@ def handle(message, headers, user):
         if modern:
             # Per user: viewers aren't offered operators' tools.
             result.update({"ttlMs": 3600000, "cacheScope": "private"})
+    elif method == "prompts/list":
+        result = {"prompts": prompts.listing(user)}
+        if modern:
+            result.update({"ttlMs": 3600000, "cacheScope": "private"})
+    elif method == "prompts/get":
+        try:
+            result = prompts.get(params.get("name"), params.get("arguments"), user)
+        except prompts.PromptError as e:
+            return 200, error(msg_id, INVALID_PARAMS, str(e))
     elif method == "tools/call":
         name = params.get("name")
         if not isinstance(name, str):
@@ -168,7 +177,7 @@ def _header_mismatch(method, params, headers):
         return "Header mismatch: Mcp-Method header is missing"
     if header_method != method:
         return f"Header mismatch: Mcp-Method header value '{header_method}' does not match body value '{method}'"
-    if method == "tools/call":
+    if method in ("tools/call", "prompts/get"):
         raw = headers.get("Mcp-Name")
         if raw is None:
             return "Header mismatch: Mcp-Name header is missing"

@@ -116,7 +116,7 @@ class TestLegacy:
                                    "params": {"protocolVersion": "2025-06-18", "capabilities": {}}})
         result = res.get_json()["result"]
         assert result["protocolVersion"] == "2025-06-18"
-        assert result["capabilities"] == {"tools": {"listChanged": False}}
+        assert result["capabilities"] == {"tools": {"listChanged": False}, "prompts": {"listChanged": False}}
         assert result["serverInfo"]["name"] == "gtnh-craft-monitor"
         assert "search_items" in result["instructions"]
 
@@ -156,7 +156,7 @@ class TestModern:
         result = modern(client, token, "server/discover").get_json()["result"]
         assert result["resultType"] == "complete"
         assert result["supportedVersions"][0] == MODERN and "2025-06-18" in result["supportedVersions"]
-        assert result["capabilities"] == {"tools": {}}
+        assert result["capabilities"] == {"tools": {}, "prompts": {}}
         assert result["_meta"]["io.modelcontextprotocol/serverInfo"]["name"] == "gtnh-craft-monitor"
 
     def test_tools_list_is_cacheable_and_in_a_fixed_order(self, client, token):
@@ -203,7 +203,7 @@ class TestModern:
         assert res.get_json()["error"]["data"]["supported"] == protocol.SUPPORTED_VERSIONS
 
     def test_an_unknown_method_is_404(self, client, token):
-        res = modern(client, token, "prompts/list")
+        res = modern(client, token, "resources/list")
         assert res.status_code == 404 and res.get_json()["error"]["code"] == protocol.METHOD_NOT_FOUND
 
     def test_an_unknown_tool_is_invalid_params(self, client, token):

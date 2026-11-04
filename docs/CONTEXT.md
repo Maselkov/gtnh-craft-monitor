@@ -881,6 +881,18 @@ pattern index (`planner.index().candidates`), in AE2's order.
 the check the page's notice asks for, so it answers "preparing" while
 recipes download or index.
 
+**MCP prompts are tool recipes, not knowledge.** `gcm/mcp/prompts.py`
+returns a single user message per prompt that names the tools to call,
+in order, and how to lay out the answer: the base report, a slow craft,
+a restock check that checks for existing automation before suggesting
+anything, and the update check (operators, as its tool is). A test
+checks that every tool a prompt names exists. `prompts/get` checks
+`Mcp-Name` like `tools/call` in modern requests. `search_items` falls
+back to approximate matching only when a plain query (no NEI prefixes)
+finds nothing: words with spaces, hyphens and dots removed, then each
+query word close (difflib ratio 0.8) to a word of the name. The results
+are flagged `approximate`.
+
 ### Assistant behaviour checks
 
 Run these by hand, with Claude Code or claude.ai connected to `dev.py`,
