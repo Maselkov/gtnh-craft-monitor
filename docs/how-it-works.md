@@ -25,6 +25,10 @@ verified against the GTNH OpenComputers source and live testing.
 └───────────────────────────┘
 ```
 
+AI assistants reach the same data through `/mcp`, an MCP endpoint
+([AI assistants](using.md#ai-assistants)). Its tools call the code the
+page's routes do, with the signed-in user's role.
+
 The game always initiates the connection: scripts POST their readings and
 poll the server for pending craft requests and cancellations. The server
 never connects into the game.

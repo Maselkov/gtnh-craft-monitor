@@ -12,6 +12,9 @@ Every route declares its policy with exactly one decorator below
     @auth.viewer_required    the base's data: anyone, or on a private
                              server (is_private()) any signed-in user;
                              g.user is the user or None
+    @auth.bearer_required    an access token in an Authorization: Bearer
+                             header, not a session (/mcp); g.user is the
+                             token's user
     @auth.public             no check, deliberately
     @auth.custom_check       checked inside the view - say why there
 
@@ -142,6 +145,25 @@ def _check_login():
     return None
 
 
+def bearer_user():
+    """The user an Authorization: Bearer header's access token signs in,
+    or None."""
+    header = request.headers.get("Authorization", "")
+    scheme, _, token = header.partition(" ")
+    if scheme.lower() != "bearer" or not token.strip():
+        return None
+    return store.users.token_user(token.strip())
+
+
+def _check_bearer():
+    g.user = bearer_user()
+    if not g.user:
+        response = jsonify({"error": "authentication required"})
+        response.headers["WWW-Authenticate"] = 'Bearer realm="gtnh-craft-monitor"'
+        return response, 401
+    return None
+
+
 def _check_viewer():
     g.user = session_user()
     if not g.user and is_private():
@@ -168,5 +190,6 @@ login_required = _policy("login", _check_login)
 viewer_required = _policy("viewer", _check_viewer)
 operator_required = _policy("operator", _check_operator)
 admin_required = _policy("admin", _check_admin)
+bearer_required = _policy("bearer", _check_bearer)
 public = _policy("public")
 custom_check = _policy("custom")

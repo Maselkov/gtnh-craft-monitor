@@ -28,6 +28,7 @@ PUBLIC_ENDPOINTS = {
     "users.auth_session_get",
     "users.auth_login_post",
     "users.auth_logout_post",
+    "mcp.mcp_other",  # only ever answers 405
 }
 
 

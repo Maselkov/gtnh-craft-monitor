@@ -115,6 +115,27 @@ def sign_in(token, session_lifetime_seconds):
     return user, session_token
 
 
+def token_user(token):
+    """The user an access token signs in, for a request that carries it
+    as a bearer token rather than trading it for a session (/mcp), or
+    None for a bad or revoked token or a disabled user."""
+    with db.transaction(db.app_db) as conn:
+        access_token = find_access_token(conn, token)
+        if not access_token:
+            return None
+        row = conn.execute(
+            "SELECT id, display_name, role FROM users WHERE id = ? AND disabled_at IS NULL",
+            (access_token["user_id"],),
+        ).fetchone()
+        if not row:
+            return None
+        conn.execute(
+            "UPDATE access_tokens SET last_used_at = ? WHERE id = ?",
+            (time.time(), access_token["id"]),
+        )
+    return {"id": row[0], "display_name": row[1], "role": row[2], "access_token_id": access_token["id"]}
+
+
 def session_user(session_token):
     """The user behind a live session cookie, with that session's
     details, or None."""

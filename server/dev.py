@@ -1063,6 +1063,7 @@ def run(args, data_dir):
     url = f"http://{'127.0.0.1' if args.host == '0.0.0.0' else args.host}:{args.port}/"
     print(f"\n  GTNH Monitor dev server: {url}\n"
           f"  Admin access token:      {token}\n"
+          f"  MCP endpoint:            {url}mcp (Authorization: Bearer <the token>)\n"
           f"  Data directory:          {data_dir}{'' if args.data_dir else ' (deleted on exit)'}\n",
           flush=True)
     if args.open:

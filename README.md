@@ -31,6 +31,9 @@ Basically, it's web AE2 for your base.
   to another machine, or needing a different fluid, circuit or coil.
 - **[Webhooks](docs/using.md#webhooks)** — finished pinned crafts and failed
   auto-crafts posted to a Discord channel or any other webhook.
+- **[AI assistants](docs/using.md#ai-assistants)** — an MCP endpoint, so
+  Claude or another AI assistant can answer questions about the base: what's
+  running low, why a craft is slow, what a craft needs.
 - **[Accounts](docs/server.md#user-accounts)** — per-user tokens with
   viewer, operator, and admin roles, and a
   [private](docs/server.md#private-servers) setting so only signed-in
@@ -176,7 +179,7 @@ docker compose exec gtnh-craft-monitor python app.py new-token "Your name"
 - [In-game setup](docs/in-game.md) — requirements, installing and updating
   the scripts, their settings
 - [Using the web page](docs/using.md) — every tab, search syntax, crafting,
-  stock rules, notifications, webhooks
+  stock rules, notifications, webhooks, AI assistants
 - [How it works](docs/how-it-works.md) — how the pieces connect, and what
   the scripts read from AE2 and GregTech, and why
 - [Icon export](tools/icon-export/README.md) — building game data for

@@ -7,7 +7,7 @@ from gcm import (
     agents, auth, backup, bottlenecks, charts, commands, config, db, gamedata, gamedata_check, inventory, job_tree, lenient_json, patterns,
     planner, push, recipes, retention, security, state, store, webhooks,
 )
-from gcm.routes import agent, craft_requests, crafts, network, pages, power, users
+from gcm.routes import agent, craft_requests, crafts, mcp, network, pages, power, users
 from gcm.routes import backup as backup_routes
 from gcm.routes import gamedata as gamedata_routes
 from gcm.routes import push as push_routes
@@ -44,6 +44,7 @@ def create_app(data_dir=None, api_key=None):
         push_routes.bp,
         agent.bp,
         backup_routes.bp,
+        mcp.bp,
         pages.bp,
     ):
         app.register_blueprint(blueprint)

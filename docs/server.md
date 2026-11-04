@@ -140,6 +140,9 @@ which is only appropriate on a trusted LAN. To expose it to the internet:
 5. Use an `https://` `SERVER_URL` in `/home/config.lua` so the API key isn't sent
    in cleartext.
 
+Proxy the whole site, not just the page: AI assistants use `/mcp` (see
+[AI assistants](using.md#ai-assistants)).
+
 The server accepts up to 500 open connections. A proxy keeps idle
 connections to it open for reuse, and opening a page full of icons can make
 it open many at once. If the server log says `total open connections reached
