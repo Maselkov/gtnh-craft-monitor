@@ -46,7 +46,9 @@ INSTRUCTIONS = (
     "AE2 ME network, crafting CPUs and power storage, as reported by OpenComputers scripts in the game. "
     "Start with search_items to find an item's key; the other item tools take that key, never a name. "
     "Amounts are items, or mB (millibuckets, the game's litres) for fluids. Data is as fresh as the "
-    "game's last report: say when it is old."
+    "game's last report: say when it is old. request_craft, cancel_craft and the keep-in-stock target "
+    "tools change what happens in the game: say exactly what you're about to do (item, amount, CPU) "
+    "and get the user's OK before calling them."
 )
 
 
@@ -148,10 +150,9 @@ def handle(message, headers, user):
     if method == "ping":
         result = {}
     elif method == "tools/list":
-        result = {"tools": tools.listing()}
+        result = {"tools": tools.listing(user)}
         if modern:
-            # The same list for everyone, but per-user once there are
-            # tools only some roles may use.
+            # Per user: viewers aren't offered operators' tools.
             result.update({"ttlMs": 3600000, "cacheScope": "private"})
     elif method == "tools/call":
         name = params.get("name")

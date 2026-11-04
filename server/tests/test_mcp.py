@@ -164,10 +164,12 @@ class TestModern:
         assert result["resultType"] == "complete"
         assert result["ttlMs"] > 0 and result["cacheScope"] == "private"
         names = [t["name"] for t in result["tools"]]
-        assert names == [t["name"] for t in tools.TOOLS] and len(set(names)) == len(names)
+        # A viewer's list: everything but the operators' tools.
+        assert names == [t["name"] for t in tools.TOOLS if not t.get("operator")]
+        assert len(set(names)) == len(names)
         for tool in result["tools"]:
             assert tool["inputSchema"]["type"] == "object" and tool["description"]
-            assert tool["annotations"]["readOnlyHint"] is True
+            assert "handler" not in tool and "operator" not in tool
 
     def test_headers_must_match_the_body(self, client, token):
         cases = [
@@ -338,7 +340,10 @@ class TestPowerTool:
         assert ok(client, token, "power", machine="(unnamed)")["latest"]["capacity"] == 10000
 
 
-def test_numbers_are_compacted():
+def test_numbers_are_compacted_and_names_plain():
     assert tools._compact_numbers({"a": 3780.0, "b": 0.019050925, "c": 2575050689.29, "d": [1.5]}) == {
         "a": 3780, "b": 0.0191, "c": 2575050689, "d": [1.5]
+    }
+    assert tools._compact_numbers({"making": "\u00a7a16k\u00a7r ME Storage Component"}) == {
+        "making": "16k ME Storage Component"
     }
