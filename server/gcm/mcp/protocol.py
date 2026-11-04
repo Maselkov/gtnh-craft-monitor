@@ -157,10 +157,9 @@ def handle(message, headers, user):
         name = params.get("name")
         if not isinstance(name, str):
             return 200, error(msg_id, INVALID_PARAMS, "params.name must be a tool name")
-        try:
-            answer, is_error = tools.call(name, params.get("arguments"), user)
-        except KeyError:
+        if not tools.exists(name):
             return 200, error(msg_id, INVALID_PARAMS, f"Unknown tool: {name}")
+        answer, is_error = tools.call(name, params.get("arguments"), user)
         result = {"content": [{"type": "text", "text": _compact_json(answer)}], "isError": is_error}
     else:
         return (404 if modern else 200), error(msg_id, METHOD_NOT_FOUND, f"Method not found: {method}")
