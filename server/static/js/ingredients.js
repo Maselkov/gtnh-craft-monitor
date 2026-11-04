@@ -166,7 +166,18 @@ function renderGrid(job) {
   }
 }
 
-export function openIngredientsModal(cpuName, data) {
+// The CPU whose dialog is open, or null - kept in the history entries
+// pushed while it's open, so Back can step through them.
+export function ingredientsCpu() {
+  return openCpu;
+}
+
+// Opening it pushes a history entry at the same URL, so Back closes it
+// rather than leaving the page (applyHistoryState in tabs.js);
+// pushUrl false when it's reopened by a Forward.
+export function openIngredientsModal(cpuName, data, pushUrl) {
+  if (pushUrl === undefined) pushUrl = true;
+  if (pushUrl) history.pushState({ view: 'ingredients', tab: 'crafts', cpu: cpuName }, '');
   openCpu = cpuName;
   // Cleared first: if the CPU went idle since its card was drawn, the
   // refresh below keeps what's here, which would be another CPU's grid.
@@ -186,7 +197,19 @@ export function openIngredientsModal(cpuName, data) {
   refreshIngredientsModal(data);
 }
 
+// Closing it by hand goes back past the entry it pushed; the popstate
+// that follows hides it.
 export function closeIngredientsModal() {
+  const state = history.state;
+  if (state && state.view === 'ingredients' && state.cpu === openCpu) {
+    history.back();
+    return;
+  }
+  hideIngredientsModal();
+}
+
+export function hideIngredientsModal() {
+  if (!openCpu) return;
   openCpu = null;
   hideJobTree();
   hoveredKey = null;

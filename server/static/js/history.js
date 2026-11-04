@@ -10,6 +10,7 @@ import {
   toggleNetworkItemPin,
 } from './network.js';
 import { hideStockPanel, showStockPanel, stockThresholdsFor } from './stock.js';
+import { ingredientsCpu } from './ingredients.js';
 import { activeTab, switchTab } from './tabs.js';
 import {
   delegateActions, escapeHtml, formatDuration, formatQty, formatRate, iconClass, iconUrl, onBackdropClick,
@@ -183,16 +184,12 @@ export function tryOpenItemFromUrl() {
 export function openItemHistory(it, pushUrl) {
   if (pushUrl === undefined) pushUrl = true;
 
-  // Item history is a "subpart" of the Network tab's URL space even
-  // when opened from elsewhere (e.g. a crafting card's ingredient
-  // link) - switching the visible tab to match keeps a click and a
-  // fresh page load of the same /network/item/... URL showing the
-  // same thing, rather than the URL silently disagreeing with what's
-  // actually on screen.
-  if (activeTab !== 'network') {
-    switchTab('network', false);
-  }
-
+  // Opens over whatever tab it's clicked on - a crafting card's or the
+  // ingredients dialog's item stays on the Crafts tab, the ingredients
+  // dialog under it. Its URL is still /network/item/..., so it can be
+  // shared and a reload opens it; the history entry remembers the tab
+  // (and ingredients dialog) it was opened over, so Back and the close
+  // button return there (see applyHistoryState in tabs.js).
   itemHistoryTarget = it;
   itemHistoryRange = 'day';
   document.querySelectorAll('#itemHistoryRangeButtons .range-btn').forEach(btn => {
@@ -224,14 +221,28 @@ export function openItemHistory(it, pushUrl) {
   document.getElementById('itemHistoryModal').style.display = 'flex';
 
   if (pushUrl) {
-    history.pushState({ view: 'item' }, '', itemUrlPath(it));
+    history.pushState({ view: 'item', tab: activeTab, cpu: ingredientsCpu(), item: it }, '', itemUrlPath(it));
   }
 
   fetchItemHistory();
 }
 
-export function closeItemHistory(pushUrl) {
-  if (pushUrl === undefined) pushUrl = true;
+// Closing it by hand: when the page pushed its history entry, that's a
+// Back, so the entry doesn't stay behind for Back to reopen - the
+// popstate that follows hides it (applyHistoryState in tabs.js). A
+// page loaded on the item's URL has no entry before it to go back to.
+export function closeItemHistory() {
+  if (history.state && history.state.view === 'item') {
+    history.back();
+    return;
+  }
+  hideItemHistory();
+  if (activeTab === 'network') {
+    history.pushState({ view: 'network' }, '', '/network');
+  }
+}
+
+export function hideItemHistory() {
   document.getElementById('itemHistoryModal').style.display = 'none';
   itemHistoryTarget = null;
   itemHistoryData = null;
@@ -239,9 +250,6 @@ export function closeItemHistory(pushUrl) {
   if (itemHistoryChart) {
     itemHistoryChart.destroy();
     itemHistoryChart = null;
-  }
-  if (pushUrl && activeTab === 'network') {
-    history.pushState({ view: 'network' }, '', '/network');
   }
 }
 
@@ -327,7 +335,9 @@ function renderItemHistoryInfo() {
 
 // Closes the dialog and searches the network for an ore name.
 function searchOreName(name) {
-  closeItemHistory();
+  hideItemHistory();
+  if (activeTab === 'network') history.pushState({ view: 'network' }, '', '/network');
+  else switchTab('network');
   const input = document.getElementById('networkSearch');
   input.value = '$' + name;
   input.dispatchEvent(new Event('input', { bubbles: true }));

@@ -1244,6 +1244,11 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
   justify-content: center;
   z-index: 2000;
 }
+/* Opened from the item dialog, which can be over the ingredients dialog:
+   above both, though it comes first in the page. */
+#craftRequestModal {
+  z-index: 2001;
+}
 .modal-box {
   background: var(--card);
   border: 1px solid rgba(128,128,128,0.3);

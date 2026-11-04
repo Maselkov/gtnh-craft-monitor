@@ -33,7 +33,8 @@ their size added, such as `Main 64k #1`, each with a **?** that says so (see
   Since steps can take very different times, take it as a guess.
 - **Ingredients (N)** — opens a grid of everything the job holds, is crafting
   and is waiting on, laid out like AE2's crafting status screen. It stays
-  live while open. With an
+  live while open. Click an item to open its stock history over the grid;
+  the browser's Back button closes the top dialog. With an
   [ME Interface Terminal](in-game.md#me-interface-terminal) connected,
   switch it to **Tree** to see the job step by step:
   each step shows how much of it is made, steps being crafted are green
@@ -62,7 +63,7 @@ their size added, such as `Main 64k #1`, each with a **?** that says so (see
 Below the cards, **Recent crafts** lists every job that ended on any CPU,
 newest first and grouped by day. Each row shows the CPU, how long the job ran,
 and an Incomplete badge if it stopped early. Click an item's name to open its
-stock history. Jobs that were already running when the server started show no
+stock history without leaving the Crafts tab. Jobs that were already running when the server started show no
 duration, since their start wasn't seen. The list is kept permanently in
 `data/app.db`. The filter box above it takes the same syntax as the
 [Network tab's search](#search), and **Incomplete** and **Auto** show only

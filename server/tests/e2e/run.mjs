@@ -782,6 +782,42 @@ async function main() {
     await waitFor('closed', `!visible($('#ingredientsModal'))`);
   });
 
+  step('an ingredient opens its item over the dialog; Back closes one at a time', async () => {
+    // An ingredient with an item id, which is what makes it a link.
+    await game(base, '/api/crafts', { source: 'me_controller', jobs: [
+      { name: 'W01', busy: true, final_output: 'Iron Ingot', final_output_mod: 'minecraft',
+        final_output_internal: 'iron_ingot', final_output_damage: 0,
+        active: [{ name: 'Iron Ingot', size: 3 }],
+        pending: [{ name: 'Iron Ore', mod: 'minecraft', internal: 'iron_ore', damage: 0, size: 6 }], stored: [] },
+      { name: 'W02', busy: false },
+    ] });
+    await waitFor('W01 card', `card('W01')?.querySelector('.ingredients-btn')`);
+    await click(`card('W01').querySelector('.ingredients-btn')`);
+    await waitFor('dialog open', `visible($('#ingredientsModal')) && $$('#ingredientsGrid .ingredient-cell').length === 2
+      && $$('#ingredientsGrid .ingredient-cell').find(c => c.dataset.internal === 'iron_ore')`);
+    await click(`$$('#ingredientsGrid .ingredient-cell').find(c => c.dataset.name === 'Iron Ore')`);
+    await waitFor('item over the dialog, still on crafts', `visible($('#itemHistoryModal')) && $('#itemHistoryName').textContent === 'Iron Ore'
+      && visible($('#ingredientsModal')) && visible($('#craftsTab')) && $('#tabBtnCrafts').classList.contains('active')
+      && location.pathname.startsWith('/network/item/')`);
+    await evaluate(`history.back(), true`);
+    await waitFor('item closed, dialog still open', `!visible($('#itemHistoryModal')) && visible($('#ingredientsModal'))
+      && visible($('#craftsTab')) && !location.pathname.startsWith('/network')`);
+    await evaluate(`history.back(), true`);
+    await waitFor('dialog closed, still on crafts', `!visible($('#ingredientsModal')) && visible($('#craftsTab'))`);
+    await evaluate(`history.forward(), true`);
+    await waitFor('forward reopens the dialog', `visible($('#ingredientsModal')) && $$('#ingredientsGrid .ingredient-cell').length === 2`);
+    await evaluate(`history.forward(), true`);
+    await waitFor('and the item over it', `visible($('#itemHistoryModal')) && visible($('#ingredientsModal')) && visible($('#craftsTab'))`);
+    // Closing by hand steps back too, so Back has nothing left to reopen.
+    await click(`$('#itemHistoryModal .history-close-btn')`);
+    await waitFor('item closed by its button', `!visible($('#itemHistoryModal')) && visible($('#ingredientsModal'))
+      && !location.pathname.startsWith('/network')`);
+    await click(`$('#ingredientsModal [data-action="close-ingredients"]')`);
+    await waitFor('dialog closed by its button', `!visible($('#ingredientsModal')) && visible($('#craftsTab'))
+      && (history.state === null || history.state.view !== 'ingredients')`);
+    await postCrafts(base, true);
+  });
+
   step('a redraw keeps icon <img>s, so animated ones carry on', async () => {
     // Kept isn't enough: an <img> moved through another document (a
     // template's content) restarts all the same. adoptedCallback counts
@@ -880,13 +916,13 @@ async function main() {
     await evaluate(`typeInto('#craftHistoryFilter', ''), true`);
     await waitFor('unfiltered', `$$('#craftHistoryList .history-row').length === 25
       && !$('#craftHistoryList').textContent.includes('No crafts match.')`);
-    // Item history belongs to the Network tab, wherever it's opened from.
+    // An item opens over the Crafts tab, and closing it stays there.
     await click(`$('#craftHistoryList .item-history-link')`);
-    await waitFor('item history open', `visible($('#itemHistoryModal')) && $('#itemHistoryName').textContent === 'Iron Ingot'`);
+    await waitFor('item history open', `visible($('#itemHistoryModal')) && $('#itemHistoryName').textContent === 'Iron Ingot'
+      && visible($('#craftsTab')) && location.pathname.startsWith('/network/item/')`);
     await click(`$('#itemHistoryModal .history-close-btn')`);
-    await waitFor('item history closed', `!visible($('#itemHistoryModal'))`);
-    await click(`$('#tabBtnCrafts')`);
-    await waitFor('crafts tab', `visible($('#craftsTab'))`);
+    await waitFor('item history closed', `!visible($('#itemHistoryModal')) && visible($('#craftsTab'))
+      && !location.pathname.startsWith('/network')`);
     await click(`$('#craftHistory summary')`);
     await waitFor('section closed', `!$('#craftHistory').open`);
   });
