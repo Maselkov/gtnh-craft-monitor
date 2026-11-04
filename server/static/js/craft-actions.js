@@ -311,7 +311,7 @@ function renderCraftRequests() {
       ? `<button class="craft-request-dismiss" data-action="dismiss-request" data-request-id="${escapeHtml(r.id)}" title="Dismiss">&times;</button>`
       : '';
     return `
-      <div class="craft-request-card${isFailed ? ' failed' : ''}">
+      <div class="craft-request-card${isFailed ? ' failed' : ''}" data-id="${escapeHtml(r.id)}">
         ${icon}
         <div class="craft-request-info">
           <div class="craft-request-name">${escapeHtml(nameText(r.label))}${r.variant_name ? ' (' + escapeHtml(nameText(r.variant_name)) + ')' : ''} ×${r.amount}</div>

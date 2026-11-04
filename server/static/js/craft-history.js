@@ -147,7 +147,7 @@ function renderRow(e) {
   const took = e.startedAt != null ? ` &middot; took ${formatDuration(e.finishedAt - e.startedAt)}` : '';
   const when = new Date(e.finishedAt * 1000).toLocaleString();
   return `
-    <div class="history-row">
+    <div class="history-row" data-id="${escapeHtml(e.id)}">
       ${icon}
       <div class="history-row-main">
         <div class="history-row-name">${title}${badge}</div>

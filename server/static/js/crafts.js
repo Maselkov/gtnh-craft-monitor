@@ -550,7 +550,7 @@ function renderCard(job) {
     : '';
 
   return `
-    <div class="card">
+    <div class="card" data-id="cpu:${escapeHtml(job.name || '')}">
       <div class="card-top">
         <span class="card-cpu">CPU ${escapeHtml(job.name || '?')}</span>${job.auto_named ? AUTO_NAME_MARK : ''}
         ${autoBadge}
@@ -583,7 +583,7 @@ function renderCompletedCard(entry) {
     ? '<span class="status-badge incomplete">Incomplete</span>'
     : '';
   return `
-    <div class="card completed-card">
+    <div class="card completed-card" data-id="done:${escapeHtml(entry.id)}">
       <div class="card-head">
         <div class="card-head-main">
           <div class="craft-title">${icon}<span>${title}</span></div>

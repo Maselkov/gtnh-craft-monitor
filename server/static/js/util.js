@@ -132,29 +132,145 @@ export function bindFilterInput(input, onChange) {
   });
 }
 
-// el.innerHTML = html, but each icon <img> already in el is kept and moved
-// into the new markup in place of a new one with the same src. A new <img>
-// starts an animated icon over from its first frame, so redrawing
-// every second or so made them stutter; a moved one keeps going. Only
-// within this document, though: a template's content is a document of its
-// own, and an <img> moved through one restarts too - hence importNode.
+// el.innerHTML = html, done by updating what's already there: an element
+// that's still wanted stays the same element, and only the text and
+// attributes that differ change. Replacing everything on every redraw (the
+// Crafts tab's is every 3s) lost a click pressed during it, a text
+// selection and keyboard focus.
+//
+// Elements are matched to the new markup by their key (id, data-key or
+// data-id: give each item of a list one, so a reordered list moves its
+// items rather than rewriting each in place), otherwise by position among
+// their siblings of the same tag.
+//
+// Icons: a new <img> starts an animated icon over from its first frame, and
+// so does changing an <img>'s src. So an icon <img> is never given another
+// src: the new markup's icon takes an <img> already showing that src, in
+// the same parent first, else from anywhere in el (moved, which keeps it
+// going), and only an icon not shown before gets a new <img>. Moves stay
+// within this document: a template's content is a document of its own,
+// and an <img> moved through one restarts too - hence importNode.
+//
+// The style attribute is left alone: the markup can't carry one (the
+// Content-Security-Policy), so any there was set through the DOM after a
+// redraw, such as a progress bar's width.
 export function setHtmlKeepingIcons(el, html) {
-  const old = new Map();
+  const icons = new Map();  // src -> icon <img>s in el, not yet given a place
   for (const img of el.querySelectorAll('img[src^="/icons?"]')) {
     const src = img.getAttribute('src');
-    if (!old.has(src)) old.set(src, []);
-    old.get(src).push(img);
+    if (!icons.has(src)) icons.set(src, []);
+    icons.get(src).push(img);
   }
+  const placed = new Set();
+  const takeIcon = (src, preferred) => {
+    if (preferred && !placed.has(preferred)) {
+      placed.add(preferred);
+      return preferred;
+    }
+    for (const img of icons.get(src) || []) {
+      if (!placed.has(img)) {
+        placed.add(img);
+        return img;
+      }
+    }
+    return null;
+  };
   const tpl = document.createElement('template');
   tpl.innerHTML = html;
-  const content = document.importNode(tpl.content, true);
-  for (const img of content.querySelectorAll('img[src^="/icons?"]')) {
-    const kept = old.get(img.getAttribute('src'))?.shift();
+  updateChildren(el, document.importNode(tpl.content, true), takeIcon);
+}
+
+const UPDATE_KEYS = ['id', 'data-key', 'data-id'];
+
+function updateKey(node) {
+  if (node.nodeType !== Node.ELEMENT_NODE) return null;
+  for (const name of UPDATE_KEYS) {
+    if (node.hasAttribute(name)) return `${node.tagName} ${name}=${node.getAttribute(name)}`;
+  }
+  return null;
+}
+
+function iconSrc(node) {
+  if (node.nodeType !== Node.ELEMENT_NODE || node.tagName !== 'IMG') return null;
+  const src = node.getAttribute('src');
+  return src && src.startsWith('/icons?') ? src : null;
+}
+
+function updateAttributes(el, from) {
+  for (const { name, value } of from.attributes) {
+    if (name !== 'style' && el.getAttribute(name) !== value) el.setAttribute(name, value);
+  }
+  for (const { name } of [...el.attributes]) {
+    if (name !== 'style' && !from.hasAttribute(name)) el.removeAttribute(name);
+  }
+}
+
+// A new subtree going in: its icons take <img>s already showing them.
+function withKeptIcons(node, takeIcon) {
+  const imgs = iconSrc(node) ? [node] : (node.querySelectorAll ? [...node.querySelectorAll('img[src^="/icons?"]')] : []);
+  for (const img of imgs) {
+    const kept = takeIcon(img.getAttribute('src'));
     if (!kept) continue;
-    kept.className = img.className;
+    updateAttributes(kept, img);
+    if (img === node) return kept;
     img.replaceWith(kept);
   }
-  el.replaceChildren(content);
+  return node;
+}
+
+function updateChildren(parent, from, takeIcon) {
+  const old = [...parent.childNodes];
+  const keyed = new Map();
+  for (const node of old) {
+    const key = updateKey(node);
+    if (key && !keyed.has(key)) keyed.set(key, node);
+  }
+  const claimed = new Set();
+  const stillHere = (node) => node.parentNode === parent && !claimed.has(node);
+  let scan = 0;  // where to look on from for the next unkeyed match
+  const wanted = [];
+  for (const node of [...from.childNodes]) {
+    let match = null;
+    const src = iconSrc(node);
+    const key = src ? null : updateKey(node);
+    if (src) {
+      const same = old.find(o => iconSrc(o) === src && stillHere(o));
+      match = takeIcon(src, same);
+      if (match) {
+        claimed.add(match);
+        updateAttributes(match, node);
+      }
+    } else if (key) {
+      const candidate = keyed.get(key);
+      if (candidate && stillHere(candidate)) match = candidate;
+    } else {
+      for (let i = scan; i < old.length; i++) {
+        const o = old[i];
+        if (!stillHere(o) || updateKey(o) || iconSrc(o)) continue;
+        if (o.nodeType === node.nodeType && o.nodeName === node.nodeName) {
+          match = o;
+          scan = i + 1;
+          break;
+        }
+      }
+    }
+    if (match && !src) {
+      claimed.add(match);
+      if (match.nodeType === Node.ELEMENT_NODE) {
+        updateAttributes(match, node);
+        updateChildren(match, node, takeIcon);
+      } else if (match.nodeValue !== node.nodeValue) {
+        match.nodeValue = node.nodeValue;
+      }
+    }
+    wanted.push(match || withKeptIcons(node, takeIcon));
+  }
+  // Into order, moving only what's out of place, then drop the rest.
+  for (let i = 0; i < wanted.length; i++) {
+    const at = parent.childNodes[i];
+    if (at !== wanted[i]) parent.insertBefore(wanted[i], at || null);
+  }
+  while (parent.childNodes.length > wanted.length) parent.lastChild.remove();
 }
 
 // <img data-remove-on-error> removes itself when it fails to load (an
