@@ -801,19 +801,23 @@ routes/oauth.py, store/oauth.py) answers 401 with a pointer to its
 protected resource metadata (RFC 9728), which names this server as the
 authorization server (RFC 8414). Clients register themselves (RFC 7591,
 public clients only; Claude registers on every new connection, so unused
-registrations are dropped after a day and capped per hour). A Client ID
-Metadata Document isn't supported: Claude falls back to registering when
-the metadata doesn't advertise one. The consent page signs in with the
-user's existing access token, so there's no new credential; it's plain
-HTML with its own CSP, whose `form-action` allows the app's callback
-origin, as Chrome applies `form-action` to the redirect after a POST.
-PKCE is S256 only. Loopback redirect URIs match on any port (RFC 8252),
-as Claude Code picks a free port each time. Access tokens last an hour
-and refresh tokens 30 days; refresh tokens rotate, and one used twice
-revokes its grant (it was copied). A grant remembers the login token the
-user consented with, so revoking that token, **New token** or deleting
-the user ends it too. `PUBLIC_URL`, when set, is the issuer and resource
-URL: behind a proxy the request's own host may not be what clients use.
+registrations are dropped after a day, and capped per hour, per address
+and in all). A Client ID Metadata Document isn't supported: Claude falls
+back to registering when the metadata doesn't advertise one. The consent
+page signs in with the user's existing access token, so there's no new
+credential, and only takes POSTs from its own page (Origin,
+Sec-Fetch-Site), against login CSRF; it's plain HTML with its own CSP,
+whose `form-action` allows the app's callback origin, as Chrome applies
+`form-action` to the redirect after a POST. PKCE is S256 only. Loopback
+redirect URIs match on any port (RFC 8252), as Claude Code picks a free
+port each time. Access tokens last an hour and refresh tokens 30 days;
+refresh tokens rotate, and one used again more than 30 s after its first
+use revokes its grant (it was copied); sooner is a retry or two requests
+refreshing at once, and gets tokens. A grant remembers the login token
+the user consented with, so revoking that token, **New token** or
+deleting the user ends it too. `PUBLIC_URL`, when set, is the issuer and
+resource URL: behind a proxy the request's own host may not be what
+clients use.
 
 **Progress % counts steps, not time.** The server computes it
 (`gcm/progress.py`, called from `tracking.process_jobs`), not
