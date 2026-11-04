@@ -764,8 +764,10 @@ async function main() {
     await waitFor('the page under it does not scroll', `getComputedStyle(document.documentElement).overflowY === 'hidden'`);
     await waitFor('crafting cell first', `$('#ingredientsGrid .ingredient-cell').classList.contains('crafting')
       && $('#ingredientsGrid .ingredient-cell').textContent.includes('Crafting: 3')`);
+    await evaluate(`window.ingBar = $('#ingredientsProgress .progress-fill'), true`);
     await sleep(3500);  // the crafts tab re-renders every 3s
     await waitFor('still open after re-render', `visible($('#ingredientsModal')) && $$('#ingredientsGrid .ingredient-cell').length === 2`);
+    await waitFor('the same progress bar', `window.ingBar && $('#ingredientsProgress .progress-fill') === window.ingBar`);
     // The filter box keeps what it matches through the next refresh.
     await evaluate(`typeInto('#ingredientsFilter', 'ore'), true`);
     await waitFor('filtered to the ore', `$$('#ingredientsGrid .ingredient-cell').length === 1
@@ -878,7 +880,7 @@ async function main() {
     // template's content) restarts all the same. adoptedCallback counts
     // those trips.
     const kept = await evaluate(`(async () => {
-      const { setHtmlKeepingIcons } = await import('/static/js/util.js');
+      const { updateHtml } = await import('/static/js/util.js');
       customElements.define('adopt-count-img', class extends HTMLImageElement {
         adoptedCallback() { window.__adopted++; }
       }, { extends: 'img' });
@@ -886,20 +888,252 @@ async function main() {
       const el = document.body.appendChild(document.createElement('div'));
       const img = (cls, src) => '<img is="adopt-count-img" class="' + cls + '" src="/icons?path=' + src + '">';
       const html = (cls) => img(cls, 'a.png') + img('', 'b.png') + img('', 'a.png') + '<span>x</span>';
-      setHtmlKeepingIcons(el, html('one'));
+      updateHtml(el, html('one'));
       const [a1, b, a2] = el.querySelectorAll('img');
       window.__adopted = 0;
-      setHtmlKeepingIcons(el, '<i>y</i>' + html('two'));
+      updateHtml(el, '<i>y</i>' + html('two'));
       const now = el.querySelectorAll('img');
       el.remove();
       return now[0] === a1 && now[1] === b && now[2] === a2 && a1.className === 'two'
         && el.firstChild.tagName === 'I' && el.textContent === 'yx' && window.__adopted === 0;
     })()`);
-    if (!kept) throw new Error('icon <img>s were not kept across setHtmlKeepingIcons');
+    if (!kept) throw new Error('icon <img>s were not kept across updateHtml');
+  });
+
+  step('a redraw updates in place: items, icons, focus, selection and clicks survive it', async () => {
+    const result = await evaluate(`(async () => {
+      const { updateHtml } = await import('/static/js/util.js');
+      const el = document.body.appendChild(document.createElement('div'));
+      const img = (src) => '<img is="adopt-count-img" src="/icons?path=' + src + '">';
+      const item = (id, src, text) => '<div data-id="' + id + '">' + img(src) + '<span>' + text + '</span><button>b' + id + '</button></div>';
+      updateHtml(el, item('a', 'x.png', 'one') + item('b', 'y.png', 'two'));
+      const [a, b] = el.children;
+      const [ax, by] = el.querySelectorAll('img');
+      a.querySelector('span').style.width = '40%';
+      // Any src set on an <img> already in the page restarts its animation.
+      let srcChanges = 0;
+      const watch = new MutationObserver((rs) => { srcChanges += rs.filter(r => r.target.isConnected && r.oldValue !== null).length; });
+      watch.observe(el, { subtree: true, attributes: true, attributeFilter: ['src'], attributeOldValue: true });
+      window.__adopted = 0;
+      const fail = [];
+      // Reordered: the same items move, with their icons.
+      updateHtml(el, item('b', 'y.png', 'two') + item('a', 'x.png', 'one'));
+      if (el.children[0] !== b || el.children[1] !== a) fail.push('reorder replaced the items');
+      if (b.querySelector('img') !== by || a.querySelector('img') !== ax) fail.push('reorder replaced the icons');
+      // The icons swap items: each moves, none is given the other's src.
+      updateHtml(el, item('b', 'x.png', 'two') + item('a', 'y.png', 'one'));
+      if (b.querySelector('img') !== ax || a.querySelector('img') !== by) fail.push('swapped icons were not moved');
+      // Text changes in place; a style set through the DOM stays.
+      const span = a.querySelector('span');
+      updateHtml(el, item('b', 'x.png', 'two') + item('a', 'y.png', 'uno'));
+      if (a.querySelector('span') !== span || span.textContent !== 'uno') fail.push('text was not updated in place');
+      if (span.style.width !== '40%') fail.push('the style set through the DOM was dropped');
+      // Focus, and a selection in text that didn't change, carry on.
+      a.querySelector('button').focus();
+      getSelection().selectAllChildren(b.querySelector('span'));
+      updateHtml(el, item('b', 'x.png', 'two') + item('a', 'y.png', 'one'));
+      if (document.activeElement !== a.querySelector('button')) fail.push('focus was lost');
+      if (getSelection().toString() !== 'two') fail.push('the selection was lost');
+      getSelection().removeAllRanges();
+      // A new item's new icon is a new <img>; the others are untouched.
+      updateHtml(el, item('c', 'z.png', 'three') + item('b', 'x.png', 'two') + item('a', 'y.png', 'one'));
+      if (el.children[1] !== b || el.children[2] !== a || el.querySelectorAll('img').length !== 3) fail.push('a new item disturbed the others');
+      await new Promise(r => setTimeout(r, 0));
+      watch.disconnect();
+      if (srcChanges) fail.push(srcChanges + ' src change(s) on kept <img>s');
+      if (window.__adopted) fail.push(window.__adopted + ' <img>(s) moved through another document');
+      window.redrawTarget = el;
+      return fail.join('; ');
+    })()`);
+    if (result) throw new Error(result);
+    // Lists in sections, as the Crafts tab draws them.
+    const sections = await evaluate(`(async () => {
+      const { updateHtml: update } = await import('/static/js/util.js');
+      const el = document.body.appendChild(document.createElement('div'));
+      const img = (src) => '<img is="adopt-count-img" src="/icons?path=' + src + '">';
+      const card = (id, src) => '<div data-id="' + id + '">' + img(src) + '<button>' + id + '</button></div>';
+      const section = (id, cards) => '<section data-id="' + id + '"><div class="grid">' + cards.join('') + '</div></section>';
+      const byId = (id) => el.querySelector('[data-id="' + id + '"]');
+      const fail = [];
+      // Whatever was kept or moved, the result is exactly the new markup.
+      const updateHtml = (target, html) => {
+        update(target, html);
+        const t = document.createElement('template');
+        t.innerHTML = html;
+        if (target.innerHTML !== t.innerHTML) fail.push('the result differs from the markup: ' + html.slice(0, 80));
+      };
+      // Kept nodes taken out of the page and put back (a move) lose focus.
+      let moved = new Set();
+      const watch = new MutationObserver((rs) => { for (const r of rs) for (const n of r.removedNodes) moved.add(n); });
+      watch.observe(el, { subtree: true, childList: true });
+      const settle = async () => { await new Promise(r => setTimeout(r, 0)); const m = moved; moved = new Set(); return m; };
+
+      // c2 first: the old code gave a new card the first free <img>
+      // showing its icon, in page order - c2's.
+      updateHtml(el, section('active', [card('c2', 'x.png'), card('c1', 'x.png'), card('c3', 'y.png')]));
+      const [c1, c2, c3] = ['c1', 'c2', 'c3'].map(byId);
+      const [x2, x1, y3] = el.querySelectorAll('img');
+      const active = byId('active');
+      await settle();
+      window.__adopted = 0;
+
+      // c1 finishes: a Finished section appears above, with a card for the
+      // same item. The Active section and the cards in it stay put, c2
+      // keeps its own icon, and the finished card takes c1's.
+      updateHtml(el, section('finished', [card('done1', 'x.png')]) + section('active', [card('c2', 'x.png'), card('c3', 'y.png')]));
+      let m = await settle();
+      if (byId('active') !== active || byId('c2') !== c2 || byId('c3') !== c3) fail.push('a section appearing replaced the one after it');
+      if (m.has(active) || m.has(c2) || m.has(c3)) fail.push('a section appearing moved the one after it');
+      if (c2.querySelector('img') !== x2) fail.push("the finished card took the icon of a card that stayed");
+      if (byId('done1').querySelector('img') !== x1) fail.push("the finished card didn't take the finished CPU's icon");
+
+      // The first card of a list goes: none after it moves.
+      updateHtml(el, section('finished', [card('done1', 'x.png')]) + section('active', [card('c3', 'y.png')]));
+      m = await settle();
+      if (byId('c3') !== c3 || m.has(c3)) fail.push('removing the first card moved the next');
+
+      // c3 is pinned with its button focused: it moves to a new Pinned
+      // section, the same element, and keeps focus.
+      c3.querySelector('button').focus();
+      updateHtml(el, section('finished', [card('done1', 'x.png')]) + section('pinned', [card('c3', 'y.png')]));
+      if (byId('c3') !== c3 || c3.querySelector('img') !== y3) fail.push('a card moving section was rebuilt');
+      if (document.activeElement !== c3.querySelector('button')) fail.push('a card moving section lost focus');
+
+      // A rotated list moves only the one node that changed place.
+      const moves = [];
+      const proto = Element.prototype;
+      const real = { moveBefore: proto.moveBefore, insertBefore: Node.prototype.insertBefore };
+      proto.moveBefore = function (node, ref) { if (el.contains(this)) moves.push(node); return real.moveBefore.call(this, node, ref); };
+      Node.prototype.insertBefore = function (node, ref) { if (el.contains(this)) moves.push(node); return real.insertBefore.call(this, node, ref); };
+      try {
+        updateHtml(el, section('active', [card('r1', 'x.png'), card('r2', 'x.png'), card('r3', 'y.png')]));
+        const r1 = byId('r1');
+        moves.length = 0;
+        updateHtml(el, section('active', [card('r2', 'x.png'), card('r3', 'y.png'), card('r1', 'x.png')]));
+        if (moves.length !== 1 || moves[0] !== r1) fail.push('rotating a list moved ' + moves.length + ' nodes, not just the one');
+      } finally {
+        proto.moveBefore = real.moveBefore;
+        Node.prototype.insertBefore = real.insertBefore;
+      }
+      // A card moving into another section as its old one goes: the card
+      // is kept, and nothing of the old section stays behind.
+      updateHtml(el, section('a', [card('m1', 'x.png'), card('m2', 'y.png')]) + section('b', [card('m3', 'z.png')]));
+      const [m1, m3] = [byId('m1'), byId('m3')];
+      updateHtml(el, section('b', [card('m1', 'x.png'), card('m3', 'z.png')]));
+      if (byId('m1') !== m1 || byId('m3') !== m3 || byId('a') || byId('m2')) fail.push('a move between sections left or lost something');
+      // The same key at two depths: each stays at its own.
+      updateHtml(el, '<div data-id="k"><div data-id="k">in</div></div>');
+      const [k1, k2] = el.querySelectorAll('[data-id="k"]');
+      updateHtml(el, '<div data-id="k"><div data-id="k">in</div></div>');
+      const [k1b, k2b] = el.querySelectorAll('[data-id="k"]');
+      if (k1b !== k1 || k2b !== k2) fail.push('a key repeated at two depths was moved or rebuilt');
+      // Repeated keys (CPUs without a name): each keeps its own card.
+      updateHtml(el, section('active', [card('cpu:', 'x.png'), card('cpu:', 'y.png')]));
+      const [n1, n2] = el.querySelectorAll('[data-id="cpu:"]');
+      updateHtml(el, section('active', [card('cpu:', 'x.png'), card('cpu:', 'y.png')]));
+      const [n1b, n2b] = el.querySelectorAll('[data-id="cpu:"]');
+      if (n1b !== n1 || n2b !== n2) fail.push('cards sharing a key were rebuilt');
+
+      watch.disconnect();
+      if (window.__adopted) fail.push(window.__adopted + ' <img>(s) moved through another document');
+      el.remove();
+      return fail.join('; ');
+    })()`);
+    if (sections) throw new Error(sections);
+    const actions = await evaluate(`(async () => {
+      const { updateHtml } = await import('/static/js/util.js');
+      const el = document.body.appendChild(document.createElement('div'));
+      const fail = [];
+      // A button going doesn't turn the next one into its action.
+      updateHtml(el, '<button data-action="toggle-pin">Pin</button><button data-action="cancel-craft">Cancel</button>');
+      const cancel = el.querySelector('[data-action="cancel-craft"]');
+      cancel.focus();
+      updateHtml(el, '<button data-action="cancel-craft">Cancel</button>');
+      if (el.querySelector('button') !== cancel || document.activeElement !== cancel) fail.push('the cancel button became another');
+      if (el.querySelector('[data-action="toggle-pin"]')) fail.push('the pin button stayed');
+      // Nor one coming: the new one is new.
+      updateHtml(el, '<button data-action="toggle-pin">Pin</button><button data-action="cancel-craft">Cancel</button>');
+      if (el.querySelector('[data-action="cancel-craft"]') !== cancel || document.activeElement !== cancel) fail.push('a new button took over the cancel button');
+      // An element appearing among whitespace-separated siblings (a card's
+      // AUTO badge): the element after it, and its focused button, stay.
+      updateHtml(el, '<div class="top">\\n  <span>CPU A</span>\\n  <div class="right"><button data-action="toggle-pin">Pin</button></div>\\n</div>');
+      const right = el.querySelector('.right');
+      const pin = right.querySelector('button');
+      pin.focus();
+      updateHtml(el, '<div class="top">\\n  <span>CPU A</span>\\n  <span class="badge">AUTO</span>\\n  <div class="right"><button data-action="toggle-pin">Pin</button></div>\\n</div>');
+      if (el.querySelector('.right') !== right || right.querySelector('button') !== pin) fail.push('an element after a new one was rebuilt');
+      if (document.activeElement !== pin) fail.push('focus after a new element was lost');
+      // Keyed elements that swap nesting are both kept.
+      updateHtml(el, '<div data-id="b"><div data-id="a">a</div></div>');
+      const outer = el.querySelector('[data-id="b"]');
+      const inner = el.querySelector('[data-id="a"]');
+      updateHtml(el, '<div data-id="a"><div data-id="b">b</div></div>');
+      if (el.querySelector('[data-id="a"]') !== inner || el.querySelector('[data-id="b"]') !== outer
+        || outer.parentElement !== inner) fail.push('keyed elements swapping nesting were rebuilt');
+      // A bar is keyed by its job: the same job's bar is kept and slides,
+      // a new job on the CPU gets a new bar, which doesn't animate in.
+      const barHtml = (job) => '<div class="progress-track"><div class="progress-fill" data-id="job:' + job + '"></div></div>';
+      updateHtml(el, barHtml(1));
+      const bar = el.querySelector('.progress-fill');
+      bar.style.width = '10%';
+      void bar.offsetWidth;
+      updateHtml(el, barHtml(1));
+      if (el.querySelector('.progress-fill') !== bar) fail.push("a job's bar was not kept");
+      bar.style.width = '100%';
+      if (!bar.getAnimations().length) fail.push("a job's bar did not slide on");
+      updateHtml(el, barHtml(2));
+      const next = el.querySelector('.progress-fill');
+      next.style.width = '3%';
+      if (next === bar || next.getAnimations().length) fail.push("a new job's bar slid from the old one");
+      // A style set through the DOM stays with an element of the same class,
+      // and is dropped by one matched by position that changes class.
+      updateHtml(el, '<div class="a"></div>');
+      el.firstChild.style.width = '40%';
+      updateHtml(el, '<div class="b"></div>');
+      if (el.firstChild.getAttribute('style')) fail.push('a style stayed on an element that changed class');
+      el.remove();
+      return fail.join('; ');
+    })()`);
+    if (actions) throw new Error(actions);
+    // A click whose press and release straddle a redraw still lands, with
+    // real mouse events.
+    const box = await evaluate(`(async () => {
+      const { updateHtml } = await import('/static/js/util.js');
+      const el = window.redrawTarget;
+      el.style.position = 'fixed'; el.style.left = '0'; el.style.top = '0'; el.style.zIndex = '9999';
+      updateHtml(el, '<button data-id="go">Go 1</button>');
+      window.clicks = 0;
+      el.addEventListener('click', (e) => { if (e.target.closest('button')) window.clicks++; });
+      const r = el.querySelector('button').getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    })()`);
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: box.x, y: box.y, button: 'left', clickCount: 1 });
+    await evaluate(`import('/static/js/util.js').then(m => { m.updateHtml(window.redrawTarget, '<button data-id="go">Go 2</button>'); return true; })`);
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: box.x, y: box.y, button: 'left', clickCount: 1 });
+    await waitFor('the click landed', `window.clicks === 1 && window.redrawTarget.textContent === 'Go 2'`);
+    await evaluate(`window.redrawTarget.remove(), true`);
+    // On the page: a card is the same element after the tab's redraw.
+    // A report with other numbers, so the redraw shows: same card, new text.
+    await evaluate(`window.w01 = card('W01'), window.w01btn = card('W01').querySelector('.ingredients-btn'),
+      window.w01text = card('W01').textContent, true`);
+    await postCrafts(base, true, true);
+    await waitFor('redrawn in place', `card('W01').textContent !== window.w01text && card('W01') === window.w01
+      && card('W01').querySelector('.ingredients-btn') === window.w01btn`);
+    await evaluate(`window.w01text = card('W01').textContent, true`);
+    await postCrafts(base, true);
+    await waitFor('back to the usual numbers, still in place', `card('W01').textContent !== window.w01text && card('W01') === window.w01`);
   });
 
   step('expand idle CPUs; stays open across a refresh', async () => {
-    await click(`$('details.idle-group summary')`);
+    // A redraw straight after the click, before its toggle event: still open.
+    // The page's own crafts.js: modules carry the page's ?v= (pages.py).
+    await evaluate(`(async () => {
+      const v = new URL(document.querySelector('script[type="module"]').src).search;
+      const crafts = await import('/static/js/crafts.js' + v);
+      $('details.idle-group summary').click();
+      crafts.render(crafts.lastData);
+      return true;
+    })()`);
     await waitFor('open', `$('details.idle-group').open`);
     await sleep(3500);
     await waitFor('still open after re-render', `$('details.idle-group').open`);
@@ -1162,6 +1396,21 @@ async function main() {
     await waitFor('closed, back on iron', `!visible($('#craftRequestModal')) && ${focused}.startsWith('Iron Ingot')`);
     await key('ArrowUp');
     await waitFor('top row: up to the search', `document.activeElement === $('#networkSearch')`);
+    // Escape closes the dialog and focus is back on the cell at once; a key
+    // pressed straight after (here, the move ↑ makes to the search) isn't
+    // undone by a later refocus.
+    await key('ArrowDown');
+    await waitFor('iron again', `${focused}.startsWith('Iron Ingot')`);
+    await key('c');
+    await waitFor('craft dialog again', `visible($('#craftRequestModal'))`);
+    const kept = await evaluate(`(async () => {
+      document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      await Promise.resolve();
+      $('#networkSearch').focus();
+      await new Promise(r => setTimeout(r, 100));
+      return document.activeElement === $('#networkSearch');
+    })()`);
+    if (!kept) throw new Error('focus moved on right after Escape was taken back');
   });
 
   step('"/" jumps to the network search from another tab', async () => {

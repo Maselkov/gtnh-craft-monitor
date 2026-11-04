@@ -60,10 +60,21 @@ matching edits in `server/tests/e2e/run.mjs`.
   (`el.style.width = ...`), and wire clicks with `data-action` attributes
   and `delegateActions()` (`static/js/util.js`). Action names are unique
   page-wide.
-- The crafts tab re-renders `#root` from scratch every 3s, and on each
-  new game report; UI state that must survive (open sections, scroll)
-  lives outside it or is restored. Markup with icons that's redrawn on a
-  timer goes through `setHtmlKeepingIcons()` (`util.js`), not
-  `innerHTML`: a new `<img>` restarts an animated icon.
+- The crafts tab re-renders `#root` every 3s, and on each new game
+  report; UI state that must survive (open sections, scroll) lives
+  outside it or is restored. New or changed markup that's redrawn on a
+  timer goes through `updateHtml()` (`util.js`), not `innerHTML`: it
+  updates the elements in place, so clicks, focus, selections and
+  animated icons (restarted by a new `<img>` or a changed `src`) survive
+  it. The Crafts tab, the ingredients dialog, recent crafts and craft
+  requests use it; the Power tab and the stock-rules list still set
+  `innerHTML`, and the job tree (`job-tree.js`) updates its own nodes
+  between rebuilds.
+  Give each item of a redrawn list a `data-id` (or `data-key`), and
+  each section that can appear or go one too, so a reorder or a move to
+  another list moves items instead of rebuilding them. A `style` set
+  through the DOM is kept; any other attribute follows the markup, so
+  state the user changes on a redrawn element (a `<details>` opened) is
+  read back from the page before building the markup.
 - New `static/js` modules are only imported, never run on import;
   `main.js` calls their setup functions.

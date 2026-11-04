@@ -11,11 +11,11 @@ import { nameText } from './description.js';
 import { craftsBadge, setTabBadge } from './tab-badges.js';
 import {
   delegateActions, docsUrl, escapeHtml, formatDuration, formatRelativeTime, iconClass, iconUrl, PIN_ICON,
-  setHtmlKeepingIcons,
+  updateHtml,
 } from './util.js';
 
 // Toggle-open state of the idle-CPU section, which has to survive the
-// 3s auto-refresh (it rebuilds the DOM from scratch).
+// 3s auto-refresh (the markup sets open or not, and the redraw follows it).
 let idleSectionOpen = false;
 
 // pinnedCpus and completedPins are now just local caches of what the
@@ -101,11 +101,6 @@ export function setupCraftsActions() {
     'acknowledge': (el) => acknowledgePin(el.dataset.completionId),
     'acknowledge-all': () => acknowledgeAllPins(),
   });
-  // Remembers whether the idle section is open so the 3s re-render can
-  // restore it. toggle doesn't bubble, so catch it on the way down.
-  root.addEventListener('toggle', (e) => {
-    if (e.target.matches('details.idle-group')) idleSectionOpen = e.target.open;
-  }, true);
 }
 
 async function togglePin(name) {
@@ -510,7 +505,7 @@ function renderCard(job) {
   // of being decided independently per-field.
   const hasProgress = job.busy && job.progress_percent != null;
   const progressBar = hasProgress ? `
-    <div class="progress-track"><div class="progress-fill" data-progress="${escapeHtml(job.progress_percent)}"></div></div>
+    <div class="progress-track"><div class="progress-fill" data-id="job:${escapeHtml(job.started_at)}" data-progress="${escapeHtml(job.progress_percent)}"></div></div>
     <div class="progress-label">${progressLabel(job)}</div>
   ` : '';
 
@@ -550,7 +545,7 @@ function renderCard(job) {
     : '';
 
   return `
-    <div class="card">
+    <div class="card" data-id="cpu:${escapeHtml(job.name || '')}">
       <div class="card-top">
         <span class="card-cpu">CPU ${escapeHtml(job.name || '?')}</span>${job.auto_named ? AUTO_NAME_MARK : ''}
         ${autoBadge}
@@ -583,7 +578,7 @@ function renderCompletedCard(entry) {
     ? '<span class="status-badge incomplete">Incomplete</span>'
     : '';
   return `
-    <div class="card completed-card">
+    <div class="card completed-card" data-id="done:${escapeHtml(entry.id)}">
       <div class="card-head">
         <div class="card-head-main">
           <div class="craft-title">${icon}<span>${title}</span></div>
@@ -600,6 +595,12 @@ export function render(data) {
   banner.classList.toggle('show', isStale());
 
   const root = document.getElementById('root');
+  // Whether the Idle CPUs section is open, from the page itself: the
+  // markup below sets it, and the redraw would undo a click otherwise.
+  // Read before any redraw, including the one with no CPUs at all, which
+  // drops the section.
+  const shownIdle = root.querySelector('details.idle-group');
+  if (shownIdle) idleSectionOpen = shownIdle.open;
   const jobs = data.jobs || [];
   setTabBadge('crafts', craftsBadge(jobs, completedPins));
 
@@ -615,7 +616,7 @@ export function render(data) {
   // first thing you see.
   const sortedCompleted = completedPins.slice().sort((a, b) => b.finishedAt - a.finishedAt);
   const completedSection = sortedCompleted.length > 0 ? `
-    <section class="group">
+    <section class="group" data-id="finished">
       <div class="group-heading completed-heading">
         <span>&#10003; Finished (${sortedCompleted.length})</span>
         <button class="ack-all-btn" data-action="acknowledge-all">Acknowledge all</button>
@@ -625,7 +626,7 @@ export function render(data) {
   ` : '';
 
   if (jobs.length === 0) {
-    setHtmlKeepingIcons(root, completedSection + (neverReported(data)
+    updateHtml(root, completedSection + (neverReported(data)
       ? connectNoteHtml('No crafting CPUs reported yet - is craft_monitor.lua running on a computer?')
       : '<div class="empty">No crafting CPUs reported yet.</div>'));
     refreshIngredientsModal(data);
@@ -638,31 +639,33 @@ export function render(data) {
   const idleJobs = unpinned.filter(j => !j.busy);
 
   const pinnedSection = pinnedJobs.length > 0 ? `
-    <section class="group">
+    <section class="group" data-id="pinned">
       <div class="group-heading">${PIN_ICON} Pinned (${pinnedJobs.length})</div>
       <div class="grid">${pinnedJobs.map(renderCard).join('')}</div>
     </section>
   ` : '';
 
   const activeSection = activeJobs.length > 0 ? `
-    <section class="group">
+    <section class="group" data-id="active">
       <div class="group-heading">Active (${activeJobs.length})</div>
       <div class="grid">${activeJobs.map(renderCard).join('')}</div>
     </section>
   ` : (pinnedJobs.length === 0 ? `<div class="empty">No CPUs currently crafting.</div>` : '');
 
   const idleSection = idleJobs.length > 0 ? `
-    <details class="idle-group" ${idleSectionOpen ? 'open' : ''}>
+    <details class="idle-group" data-id="idle" ${idleSectionOpen ? 'open' : ''}>
       <summary>Idle CPUs (${idleJobs.length})</summary>
       <div class="grid">${idleJobs.map(renderCard).join('')}</div>
     </details>
   ` : '';
 
-  setHtmlKeepingIcons(root, completedSection + pinnedSection + activeSection + idleSection);
+  updateHtml(root, completedSection + pinnedSection + activeSection + idleSection);
   // Widths are set through the DOM rather than an inline style attribute in
   // the markup, which the Content-Security-Policy blocks. Done in the
-  // same task as the innerHTML, so the new bars' first computed width
-  // is already right and the width transition doesn't animate.
+  // same task as the redraw: a new bar's first computed width is already
+  // right, so it doesn't animate in from 0, while a bar the redraw kept
+  // slides on to the new one. Each bar is keyed by its job (started_at),
+  // so a new job on the same CPU gets a new bar instead of sliding.
   for (const bar of root.querySelectorAll('.progress-fill[data-progress]')) {
     bar.style.width = `${Number(bar.dataset.progress)}%`;
   }

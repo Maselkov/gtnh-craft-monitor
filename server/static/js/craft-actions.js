@@ -11,7 +11,7 @@ import { closeItemHistory } from './history.js';
 import { closeIngredientsModal } from './ingredients.js';
 import { closeRecipeCheck } from './recipe-check.js';
 import { closeWebhooksModal } from './webhooks.js';
-import { delegateActions, escapeHtml, iconClass, iconUrl, onBackdropClick, setHtmlKeepingIcons } from './util.js';
+import { delegateActions, escapeHtml, iconClass, iconUrl, onBackdropClick, updateHtml } from './util.js';
 
 // ---------- Craft request modal ----------
 let craftRequestTarget = null;
@@ -299,7 +299,7 @@ function renderCraftRequests() {
     el.innerHTML = '';
     return;
   }
-  setHtmlKeepingIcons(el, craftRequests.map(r => {
+  updateHtml(el, craftRequests.map(r => {
     const icon = r.icon
       ? `<img class="${iconClass('craft-request-icon', r.icon)}" src="${iconUrl(r.icon)}" alt="" loading="lazy" data-remove-on-error>`
       : '';
@@ -311,7 +311,7 @@ function renderCraftRequests() {
       ? `<button class="craft-request-dismiss" data-action="dismiss-request" data-request-id="${escapeHtml(r.id)}" title="Dismiss">&times;</button>`
       : '';
     return `
-      <div class="craft-request-card${isFailed ? ' failed' : ''}">
+      <div class="craft-request-card${isFailed ? ' failed' : ''}" data-id="${escapeHtml(r.id)}">
         ${icon}
         <div class="craft-request-info">
           <div class="craft-request-name">${escapeHtml(nameText(r.label))}${r.variant_name ? ' (' + escapeHtml(nameText(r.variant_name)) + ')' : ''} ×${r.amount}</div>

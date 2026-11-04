@@ -322,7 +322,7 @@ def process_jobs(jobs):
                 _update_progress(entry, job, now)
             else:
                 job["progress_percent"] = None
-                job["running_seconds"] = job["eta_seconds"] = None
+                job["running_seconds"] = job["eta_seconds"] = job["started_at"] = None
 
             state.cpu_last_busy[name] = busy
     bottlenecks.account(now)
@@ -374,6 +374,9 @@ def _update_progress(entry, job, sampled_at):
     # As of this report - the page adds how old the report is, so its own
     # clock never has to agree with the server's.
     job["running_seconds"] = max(0.0, sampled_at - entry["started_at"])
+    # Which job this is, for the page: a new one on the same CPU gets a new
+    # progress bar rather than the old one sliding to its numbers.
+    job["started_at"] = entry["started_at"]
     job["started_known"] = entry["seen_from_start"]
     job["eta_seconds"] = job_eta(entry)
     if entry.get("auto"):

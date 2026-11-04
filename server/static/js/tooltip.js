@@ -55,8 +55,8 @@ export function showTooltip(html, x = lastX, y = lastY) {
 }
 
 // Event delegation on the (stable) container, not per-cell listeners -
-// grids replace their inner content wholesale on every render, so
-// per-cell listeners would just be discarded each time anyway.
+// cells come and go with every render (some grids still replace their
+// content wholesale), so per-cell listeners would need rebinding.
 // htmlForCell returns the tooltip markup, or null for no tooltip.
 export function bindCellTooltip(container, cellSelector, htmlForCell) {
   container.addEventListener('mouseover', (e) => {

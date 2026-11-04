@@ -339,6 +339,11 @@ export function setupNetworkTooltipEvents() {
   const refocus = () => {
     if (!openedFromKeyboard || dialogOpen()) return;  // only the top one closed
     openedFromKeyboard = false;
+    // Only where focus was left nowhere: dialogs.js usually has put it back
+    // on the cell already, and by now a key may have moved it on (up to
+    // the search) - taking it back would undo that key.
+    const active = document.activeElement;
+    if (active && active !== document.body && !active.closest('.modal-overlay')) return;
     const tabStop = listEl.querySelector('.network-cell[tabindex="0"]');
     if (tabStop && activeTab === 'network') tabStop.focus();
   };
