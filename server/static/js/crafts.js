@@ -467,7 +467,7 @@ export function tickSourceLine() {
   document.getElementById('staleBanner').classList.toggle('show', isStale());
   const age = dataAge();
   const ageDisplay = age != null ? Math.round(age) : '?';
-  sourceLine.textContent = `Source: ${lastData.source} - updated ${ageDisplay}s ago`;
+  sourceLine.textContent = `Updated ${ageDisplay}s ago`;
 }
 
 // The parts after "41% · 0/1 steps done": "running 12m 05s" - how
