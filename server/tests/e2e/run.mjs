@@ -763,8 +763,10 @@ async function main() {
     await waitFor('open with a cell per item', `visible($('#ingredientsModal')) && $$('#ingredientsGrid .ingredient-cell').length === 2`);
     await waitFor('crafting cell first', `$('#ingredientsGrid .ingredient-cell').classList.contains('crafting')
       && $('#ingredientsGrid .ingredient-cell').textContent.includes('Crafting: 3')`);
+    await evaluate(`window.ingBar = $('#ingredientsProgress .progress-fill'), true`);
     await sleep(3500);  // the crafts tab re-renders every 3s
     await waitFor('still open after re-render', `visible($('#ingredientsModal')) && $$('#ingredientsGrid .ingredient-cell').length === 2`);
+    await waitFor('the same progress bar', `window.ingBar && $('#ingredientsProgress .progress-fill') === window.ingBar`);
     // The filter box keeps what it matches through the next refresh.
     await evaluate(`typeInto('#ingredientsFilter', 'ore'), true`);
     await waitFor('filtered to the ore', `$$('#ingredientsGrid .ingredient-cell').length === 1
@@ -823,7 +825,7 @@ async function main() {
     // template's content) restarts all the same. adoptedCallback counts
     // those trips.
     const kept = await evaluate(`(async () => {
-      const { setHtmlKeepingIcons } = await import('/static/js/util.js');
+      const { updateHtml } = await import('/static/js/util.js');
       customElements.define('adopt-count-img', class extends HTMLImageElement {
         adoptedCallback() { window.__adopted++; }
       }, { extends: 'img' });
@@ -831,25 +833,25 @@ async function main() {
       const el = document.body.appendChild(document.createElement('div'));
       const img = (cls, src) => '<img is="adopt-count-img" class="' + cls + '" src="/icons?path=' + src + '">';
       const html = (cls) => img(cls, 'a.png') + img('', 'b.png') + img('', 'a.png') + '<span>x</span>';
-      setHtmlKeepingIcons(el, html('one'));
+      updateHtml(el, html('one'));
       const [a1, b, a2] = el.querySelectorAll('img');
       window.__adopted = 0;
-      setHtmlKeepingIcons(el, '<i>y</i>' + html('two'));
+      updateHtml(el, '<i>y</i>' + html('two'));
       const now = el.querySelectorAll('img');
       el.remove();
       return now[0] === a1 && now[1] === b && now[2] === a2 && a1.className === 'two'
         && el.firstChild.tagName === 'I' && el.textContent === 'yx' && window.__adopted === 0;
     })()`);
-    if (!kept) throw new Error('icon <img>s were not kept across setHtmlKeepingIcons');
+    if (!kept) throw new Error('icon <img>s were not kept across updateHtml');
   });
 
   step('a redraw updates in place: items, icons, focus, selection and clicks survive it', async () => {
     const result = await evaluate(`(async () => {
-      const { setHtmlKeepingIcons } = await import('/static/js/util.js');
+      const { updateHtml } = await import('/static/js/util.js');
       const el = document.body.appendChild(document.createElement('div'));
       const img = (src) => '<img is="adopt-count-img" src="/icons?path=' + src + '">';
       const item = (id, src, text) => '<div data-id="' + id + '">' + img(src) + '<span>' + text + '</span><button>b' + id + '</button></div>';
-      setHtmlKeepingIcons(el, item('a', 'x.png', 'one') + item('b', 'y.png', 'two'));
+      updateHtml(el, item('a', 'x.png', 'one') + item('b', 'y.png', 'two'));
       const [a, b] = el.children;
       const [ax, by] = el.querySelectorAll('img');
       a.querySelector('span').style.width = '40%';
@@ -860,26 +862,26 @@ async function main() {
       window.__adopted = 0;
       const fail = [];
       // Reordered: the same items move, with their icons.
-      setHtmlKeepingIcons(el, item('b', 'y.png', 'two') + item('a', 'x.png', 'one'));
+      updateHtml(el, item('b', 'y.png', 'two') + item('a', 'x.png', 'one'));
       if (el.children[0] !== b || el.children[1] !== a) fail.push('reorder replaced the items');
       if (b.querySelector('img') !== by || a.querySelector('img') !== ax) fail.push('reorder replaced the icons');
       // The icons swap items: each moves, none is given the other's src.
-      setHtmlKeepingIcons(el, item('b', 'x.png', 'two') + item('a', 'y.png', 'one'));
+      updateHtml(el, item('b', 'x.png', 'two') + item('a', 'y.png', 'one'));
       if (b.querySelector('img') !== ax || a.querySelector('img') !== by) fail.push('swapped icons were not moved');
       // Text changes in place; a style set through the DOM stays.
       const span = a.querySelector('span');
-      setHtmlKeepingIcons(el, item('b', 'x.png', 'two') + item('a', 'y.png', 'uno'));
+      updateHtml(el, item('b', 'x.png', 'two') + item('a', 'y.png', 'uno'));
       if (a.querySelector('span') !== span || span.textContent !== 'uno') fail.push('text was not updated in place');
       if (span.style.width !== '40%') fail.push('the style set through the DOM was dropped');
       // Focus, and a selection in text that didn't change, carry on.
       a.querySelector('button').focus();
       getSelection().selectAllChildren(b.querySelector('span'));
-      setHtmlKeepingIcons(el, item('b', 'x.png', 'two') + item('a', 'y.png', 'one'));
+      updateHtml(el, item('b', 'x.png', 'two') + item('a', 'y.png', 'one'));
       if (document.activeElement !== a.querySelector('button')) fail.push('focus was lost');
       if (getSelection().toString() !== 'two') fail.push('the selection was lost');
       getSelection().removeAllRanges();
       // A new item's new icon is a new <img>; the others are untouched.
-      setHtmlKeepingIcons(el, item('c', 'z.png', 'three') + item('b', 'x.png', 'two') + item('a', 'y.png', 'one'));
+      updateHtml(el, item('c', 'z.png', 'three') + item('b', 'x.png', 'two') + item('a', 'y.png', 'one'));
       if (el.children[1] !== b || el.children[2] !== a || el.querySelectorAll('img').length !== 3) fail.push('a new item disturbed the others');
       await new Promise(r => setTimeout(r, 0));
       watch.disconnect();
@@ -891,7 +893,7 @@ async function main() {
     if (result) throw new Error(result);
     // Lists in sections, as the Crafts tab draws them.
     const sections = await evaluate(`(async () => {
-      const { setHtmlKeepingIcons } = await import('/static/js/util.js');
+      const { updateHtml } = await import('/static/js/util.js');
       const el = document.body.appendChild(document.createElement('div'));
       const img = (src) => '<img is="adopt-count-img" src="/icons?path=' + src + '">';
       const card = (id, src) => '<div data-id="' + id + '">' + img(src) + '<button>' + id + '</button></div>';
@@ -906,7 +908,7 @@ async function main() {
 
       // c2 first: the old code gave a new card the first free <img>
       // showing its icon, in page order - c2's.
-      setHtmlKeepingIcons(el, section('active', [card('c2', 'x.png'), card('c1', 'x.png'), card('c3', 'y.png')]));
+      updateHtml(el, section('active', [card('c2', 'x.png'), card('c1', 'x.png'), card('c3', 'y.png')]));
       const [c1, c2, c3] = ['c1', 'c2', 'c3'].map(byId);
       const [x2, x1, y3] = el.querySelectorAll('img');
       const active = byId('active');
@@ -916,7 +918,7 @@ async function main() {
       // c1 finishes: a Finished section appears above, with a card for the
       // same item. The Active section and the cards in it stay put, c2
       // keeps its own icon, and the finished card takes c1's.
-      setHtmlKeepingIcons(el, section('finished', [card('done1', 'x.png')]) + section('active', [card('c2', 'x.png'), card('c3', 'y.png')]));
+      updateHtml(el, section('finished', [card('done1', 'x.png')]) + section('active', [card('c2', 'x.png'), card('c3', 'y.png')]));
       let m = await settle();
       if (byId('active') !== active || byId('c2') !== c2 || byId('c3') !== c3) fail.push('a section appearing replaced the one after it');
       if (m.has(active) || m.has(c2) || m.has(c3)) fail.push('a section appearing moved the one after it');
@@ -924,21 +926,21 @@ async function main() {
       if (byId('done1').querySelector('img') !== x1) fail.push("the finished card didn't take the finished CPU's icon");
 
       // The first card of a list goes: none after it moves.
-      setHtmlKeepingIcons(el, section('finished', [card('done1', 'x.png')]) + section('active', [card('c3', 'y.png')]));
+      updateHtml(el, section('finished', [card('done1', 'x.png')]) + section('active', [card('c3', 'y.png')]));
       m = await settle();
       if (byId('c3') !== c3 || m.has(c3)) fail.push('removing the first card moved the next');
 
       // c3 is pinned with its button focused: it moves to a new Pinned
       // section, the same element, and keeps focus.
       c3.querySelector('button').focus();
-      setHtmlKeepingIcons(el, section('finished', [card('done1', 'x.png')]) + section('pinned', [card('c3', 'y.png')]));
+      updateHtml(el, section('finished', [card('done1', 'x.png')]) + section('pinned', [card('c3', 'y.png')]));
       if (byId('c3') !== c3 || c3.querySelector('img') !== y3) fail.push('a card moving section was rebuilt');
       if (document.activeElement !== c3.querySelector('button')) fail.push('a card moving section lost focus');
 
       // Repeated keys (CPUs without a name): each keeps its own card.
-      setHtmlKeepingIcons(el, section('active', [card('cpu:', 'x.png'), card('cpu:', 'y.png')]));
+      updateHtml(el, section('active', [card('cpu:', 'x.png'), card('cpu:', 'y.png')]));
       const [n1, n2] = el.querySelectorAll('[data-id="cpu:"]');
-      setHtmlKeepingIcons(el, section('active', [card('cpu:', 'x.png'), card('cpu:', 'y.png')]));
+      updateHtml(el, section('active', [card('cpu:', 'x.png'), card('cpu:', 'y.png')]));
       const [n1b, n2b] = el.querySelectorAll('[data-id="cpu:"]');
       if (n1b !== n1 || n2b !== n2) fail.push('cards sharing a key were rebuilt');
 
@@ -948,20 +950,49 @@ async function main() {
       return fail.join('; ');
     })()`);
     if (sections) throw new Error(sections);
+    const actions = await evaluate(`(async () => {
+      const { updateHtml, setProgressWidth } = await import('/static/js/util.js');
+      const el = document.body.appendChild(document.createElement('div'));
+      const fail = [];
+      // A button going doesn't turn the next one into its action.
+      updateHtml(el, '<button data-action="toggle-pin">Pin</button><button data-action="cancel-craft">Cancel</button>');
+      const cancel = el.querySelector('[data-action="cancel-craft"]');
+      cancel.focus();
+      updateHtml(el, '<button data-action="cancel-craft">Cancel</button>');
+      if (el.querySelector('button') !== cancel || document.activeElement !== cancel) fail.push('the cancel button became another');
+      if (el.querySelector('[data-action="toggle-pin"]')) fail.push('the pin button stayed');
+      // Nor one coming: the new one is new.
+      updateHtml(el, '<button data-action="toggle-pin">Pin</button><button data-action="cancel-craft">Cancel</button>');
+      if (el.querySelector('[data-action="cancel-craft"]') !== cancel || document.activeElement !== cancel) fail.push('a new button took over the cancel button');
+      // A bar slides up, and jumps down (a new job on the same CPU).
+      el.innerHTML = '<div class="progress-track"><div class="progress-fill"></div></div>';
+      const bar = el.querySelector('.progress-fill');
+      setProgressWidth(bar, 10);
+      void bar.offsetWidth;
+      setProgressWidth(bar, 100);
+      if (!bar.getAnimations().length) fail.push('a bar going up did not slide');
+      await new Promise(r => setTimeout(r, 500));
+      setProgressWidth(bar, 3);
+      const want = bar.parentElement.getBoundingClientRect().width * 0.03;
+      if (bar.getAnimations().length || Math.abs(bar.getBoundingClientRect().width - want) > 1) fail.push('a bar going down slid back');
+      el.remove();
+      return fail.join('; ');
+    })()`);
+    if (actions) throw new Error(actions);
     // A click whose press and release straddle a redraw still lands, with
     // real mouse events.
     const box = await evaluate(`(async () => {
-      const { setHtmlKeepingIcons } = await import('/static/js/util.js');
+      const { updateHtml } = await import('/static/js/util.js');
       const el = window.redrawTarget;
       el.style.position = 'fixed'; el.style.left = '0'; el.style.top = '0'; el.style.zIndex = '9999';
-      setHtmlKeepingIcons(el, '<button data-id="go">Go 1</button>');
+      updateHtml(el, '<button data-id="go">Go 1</button>');
       window.clicks = 0;
       el.addEventListener('click', (e) => { if (e.target.closest('button')) window.clicks++; });
       const r = el.querySelector('button').getBoundingClientRect();
       return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
     })()`);
     await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: box.x, y: box.y, button: 'left', clickCount: 1 });
-    await evaluate(`import('/static/js/util.js').then(m => { m.setHtmlKeepingIcons(window.redrawTarget, '<button data-id="go">Go 2</button>'); return true; })`);
+    await evaluate(`import('/static/js/util.js').then(m => { m.updateHtml(window.redrawTarget, '<button data-id="go">Go 2</button>'); return true; })`);
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: box.x, y: box.y, button: 'left', clickCount: 1 });
     await waitFor('the click landed', `window.clicks === 1 && window.redrawTarget.textContent === 'Go 2'`);
     await evaluate(`window.redrawTarget.remove(), true`);
@@ -978,7 +1009,15 @@ async function main() {
   });
 
   step('expand idle CPUs; stays open across a refresh', async () => {
-    await click(`$('details.idle-group summary')`);
+    // A redraw straight after the click, before its toggle event: still open.
+    // The page's own crafts.js: modules carry the page's ?v= (pages.py).
+    await evaluate(`(async () => {
+      const v = new URL(document.querySelector('script[type="module"]').src).search;
+      const crafts = await import('/static/js/crafts.js' + v);
+      $('details.idle-group summary').click();
+      crafts.render(crafts.lastData);
+      return true;
+    })()`);
     await waitFor('open', `$('details.idle-group').open`);
     await sleep(3500);
     await waitFor('still open after re-render', `$('details.idle-group').open`);

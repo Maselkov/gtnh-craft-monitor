@@ -11,7 +11,7 @@ import { closeItemHistory } from './history.js';
 import { closeIngredientsModal } from './ingredients.js';
 import { closeRecipeCheck } from './recipe-check.js';
 import { closeWebhooksModal } from './webhooks.js';
-import { delegateActions, escapeHtml, iconClass, iconUrl, onBackdropClick, setHtmlKeepingIcons } from './util.js';
+import { delegateActions, escapeHtml, iconClass, iconUrl, onBackdropClick, updateHtml } from './util.js';
 
 // ---------- Craft request modal ----------
 let craftRequestTarget = null;
@@ -299,7 +299,7 @@ function renderCraftRequests() {
     el.innerHTML = '';
     return;
   }
-  setHtmlKeepingIcons(el, craftRequests.map(r => {
+  updateHtml(el, craftRequests.map(r => {
     const icon = r.icon
       ? `<img class="${iconClass('craft-request-icon', r.icon)}" src="${iconUrl(r.icon)}" alt="" loading="lazy" data-remove-on-error>`
       : '';

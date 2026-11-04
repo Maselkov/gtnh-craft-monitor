@@ -11,7 +11,7 @@ import { nameText } from './description.js';
 import { craftsBadge, setTabBadge } from './tab-badges.js';
 import {
   delegateActions, docsUrl, escapeHtml, formatDuration, formatRelativeTime, iconClass, iconUrl, PIN_ICON,
-  setHtmlKeepingIcons,
+  setProgressWidth, updateHtml,
 } from './util.js';
 
 // Toggle-open state of the idle-CPU section, which has to survive the
@@ -625,7 +625,7 @@ export function render(data) {
   ` : '';
 
   if (jobs.length === 0) {
-    setHtmlKeepingIcons(root, completedSection + (neverReported(data)
+    updateHtml(root, completedSection + (neverReported(data)
       ? connectNoteHtml('No crafting CPUs reported yet - is craft_monitor.lua running on a computer?')
       : '<div class="empty">No crafting CPUs reported yet.</div>'));
     refreshIngredientsModal(data);
@@ -651,6 +651,11 @@ export function render(data) {
     </section>
   ` : (pinnedJobs.length === 0 ? `<div class="empty">No CPUs currently crafting.</div>` : '');
 
+  // The section as it is now: a click opens it at once, but the toggle
+  // event that records it comes a moment later, after this redraw if
+  // one falls in between, and the markup would shut it again.
+  const shownIdle = root.querySelector('details.idle-group');
+  if (shownIdle) idleSectionOpen = shownIdle.open;
   const idleSection = idleJobs.length > 0 ? `
     <details class="idle-group" data-id="idle" ${idleSectionOpen ? 'open' : ''}>
       <summary>Idle CPUs (${idleJobs.length})</summary>
@@ -658,14 +663,15 @@ export function render(data) {
     </details>
   ` : '';
 
-  setHtmlKeepingIcons(root, completedSection + pinnedSection + activeSection + idleSection);
+  updateHtml(root, completedSection + pinnedSection + activeSection + idleSection);
   // Widths are set through the DOM rather than an inline style attribute in
   // the markup, which the Content-Security-Policy blocks. Done in the
   // same task as the redraw: a new bar's first computed width is already
   // right, so it doesn't animate in from 0, while a bar the redraw kept
-  // slides from its last width to the new one.
+  // slides on to the new one (and jumps back for a new job:
+  // setProgressWidth).
   for (const bar of root.querySelectorAll('.progress-fill[data-progress]')) {
-    bar.style.width = `${Number(bar.dataset.progress)}%`;
+    setProgressWidth(bar, bar.dataset.progress);
   }
   refreshIngredientsModal(data);
 }

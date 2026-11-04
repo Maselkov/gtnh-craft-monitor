@@ -63,7 +63,7 @@ matching edits in `server/tests/e2e/run.mjs`.
 - The crafts tab re-renders `#root` every 3s, and on each new game
   report; UI state that must survive (open sections, scroll) lives
   outside it or is restored. Markup that's redrawn on a timer goes
-  through `setHtmlKeepingIcons()` (`util.js`), not `innerHTML`: it
+  through `updateHtml()` (`util.js`), not `innerHTML`: it
   updates the elements in place, so clicks, focus, selections and
   animated icons (restarted by a new `<img>` or a changed `src`) survive
   it. Give each item of a redrawn list a `data-id` (or `data-key`), and

@@ -157,14 +157,22 @@ export function bindFilterInput(input, onChange) {
 //
 // The style attribute is left alone: the markup can't carry one (the
 // Content-Security-Policy), so any there was set through the DOM after a
-// redraw, such as a progress bar's width.
-export function setHtmlKeepingIcons(el, html) {
+// redraw, such as a progress bar's width. Such a style stays with the
+// element, so set it again after each redraw (as the bars' widths are),
+// rather than once when the element is new.
+//
+// An unkeyed element is never matched to one with another data-action:
+// otherwise a button appearing or going would turn the next one into a
+// different action, keeping a focus or a click meant for the old one.
+export function updateHtml(el, html) {
   try {
     updateInPlace(el, html);
   } catch (e) {
     // Markup this can't map onto what's there (an element moving into its
-    // own descendant): the page is still right, just not kept.
-    console.warn('redraw: replacing instead of updating', e);
+    // own descendant): the page is still right, just not kept. Anything
+    // else is a bug here, not to be hidden by the fallback.
+    if (!(e instanceof DOMException && e.name === 'HierarchyRequestError')) throw e;
+    console.error('redraw: replacing instead of updating', e);
     const tpl = document.createElement('template');
     tpl.innerHTML = html;
     el.replaceChildren(document.importNode(tpl.content, true));
@@ -233,26 +241,37 @@ function iconSrc(node) {
   return src && src.startsWith('/icons?') ? src : null;
 }
 
+// What an unkeyed node must share with the one it's matched to.
+function nodeKind(node) {
+  if (node.nodeType !== Node.ELEMENT_NODE) return node.nodeName;
+  return `${node.nodeName} ${node.getAttribute('data-action') || ''}`;
+}
+
 function matchChildren(oldParent, newParent, keyed, matchOf, claimed) {
-  const old = oldParent ? [...oldParent.childNodes] : [];
+  // Each old node's key, icon and kind, worked out once for the scans below.
+  const old = oldParent ? [...oldParent.childNodes].map(node => {
+    const src = iconSrc(node);
+    const key = src ? null : updateKey(node);
+    return { node, src, key, kind: src || key ? null : nodeKind(node) };
+  }) : [];
   let scan = 0;  // where to look on from for the next unkeyed match
   for (const node of newParent.childNodes) {
     let match = null;
     const src = iconSrc(node);
     const key = src ? null : updateKey(node);
     if (src) {
-      match = old.find(o => !claimed.has(o) && iconSrc(o) === src) || null;
+      match = old.find(o => !claimed.has(o.node) && o.src === src)?.node || null;
     } else if (key) {
       // A repeated key takes the next one; the same parent first. Never
       // an element holding where this goes, which can't move into itself.
       const usable = (keyed.get(key) || []).filter(o => !claimed.has(o) && !(oldParent && o.contains(oldParent)));
       match = usable.find(o => o.parentNode === oldParent) || usable[0] || null;
     } else {
+      const kind = nodeKind(node);
       for (let i = scan; i < old.length; i++) {
         const o = old[i];
-        if (claimed.has(o) || updateKey(o) || iconSrc(o)) continue;
-        if (o.nodeType === node.nodeType && o.nodeName === node.nodeName) {
-          match = o;
+        if (o.kind === kind && !claimed.has(o.node)) {
+          match = o.node;
           scan = i + 1;
           break;
         }
@@ -308,6 +327,23 @@ function moveInto(parent, node, ref) {
   const hadFocus = active && active !== document.body && node.contains && node.contains(active) ? active : null;
   parent.insertBefore(node, ref);
   if (hadFocus && document.activeElement !== hadFocus) hadFocus.focus({ preventScroll: true });
+}
+
+// A progress bar's width, set through the DOM (the Content-Security-Policy
+// blocks inline styles). A bar a redraw kept slides to its new width (its
+// CSS transition), but never back: a lower width is a new job on the same
+// CPU, not lost progress, so it jumps there.
+export function setProgressWidth(bar, percent) {
+  const width = `${Number(percent)}%`;
+  if (bar.style.width === width) return;
+  if (parseFloat(bar.style.width) > Number(percent)) {
+    bar.style.transition = 'none';
+    bar.style.width = width;
+    void bar.offsetWidth;  // the jump takes effect before the transition is back
+    bar.style.transition = '';
+  } else {
+    bar.style.width = width;
+  }
 }
 
 function updateAttributes(el, from) {

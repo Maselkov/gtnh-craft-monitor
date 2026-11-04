@@ -12,7 +12,7 @@ import { nameHtml, nameText } from './description.js';
 import { itemMatchesSearch, parseSearchQuery } from './search.js';
 import {
   bindFilterInput, delegateActions, escapeHtml, formatQty, iconClass, iconUrl, onBackdropClick,
-  setHtmlKeepingIcons,
+  setProgressWidth, updateHtml,
 } from './util.js';
 
 let openCpu = null;       // CPU name the modal is showing, null when closed
@@ -122,21 +122,19 @@ function renderHead(job) {
   const icon = job.final_output_icon
     ? `<img class="${iconClass('craft-icon', job.final_output_icon)}" src="${iconUrl(job.final_output_icon)}" alt="" loading="lazy" data-remove-on-error>`
     : '';
-  setHtmlKeepingIcons(document.getElementById('ingredientsTitle'),
+  updateHtml(document.getElementById('ingredientsTitle'),
     `${icon}<span>${escapeHtml(nameText(job.final_output || 'Crafting job'))}</span>`);
   document.getElementById('ingredientsCpu').textContent =
     `CPU ${job.name || '?'} · storage ${job.storage ?? '?'} · coprocessors ${job.coprocessors ?? '?'}`;
   const progress = document.getElementById('ingredientsProgress');
   if (job.progress_percent != null) {
-    progress.innerHTML = `
+    updateHtml(progress, `
       <div class="progress-track"><div class="progress-fill"></div></div>
       <div class="progress-label">${escapeHtml(job.progress_percent)}% &middot; ${escapeHtml(job.steps_done ?? '?')}/${escapeHtml(job.steps_total ?? '?')} steps done</div>
-    `;
-    // Set through the DOM, not an inline style attribute, which the
-    // Content-Security-Policy blocks.
-    progress.querySelector('.progress-fill').style.width = `${Number(job.progress_percent)}%`;
+    `);
+    setProgressWidth(progress.querySelector('.progress-fill'), job.progress_percent);
   } else {
-    progress.innerHTML = '';
+    updateHtml(progress, '');
   }
 }
 
@@ -152,7 +150,7 @@ function renderGrid(job) {
 
   const grid = document.getElementById('ingredientsGrid');
   const scrollTop = grid.scrollTop;
-  setHtmlKeepingIcons(grid, items.length
+  updateHtml(grid, items.length
     ? items.map(cellHtml).join('')
     : `<div class="network-note">${shownItems.size ? 'Nothing matches the filter.' : 'No ingredients reported.'}</div>`);
   grid.scrollTop = scrollTop;

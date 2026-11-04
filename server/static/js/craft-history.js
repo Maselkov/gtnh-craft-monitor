@@ -10,7 +10,7 @@ import { nameText } from './description.js';
 import { activeTab } from './tabs.js';
 import {
   bindFilterInput, dayLabel, delegateActions, escapeHtml, formatDuration, formatRelativeTime,
-  iconClass, iconUrl, setHtmlKeepingIcons,
+  iconClass, iconUrl, updateHtml,
 } from './util.js';
 
 const PAGE_SIZE = 25;
@@ -171,7 +171,7 @@ function render() {
     html += renderRow(e);
   }
   const none = query || status ? 'No crafts match.' : 'No crafts have ended yet.';
-  setHtmlKeepingIcons(list, html || (loaded ? `<div class="empty">${none}</div>` : ''));
+  updateHtml(list, html || (loaded ? `<div class="empty">${none}</div>` : ''));
   document.getElementById('craftHistoryLoading').hidden = true;
   // A page short enough not to scroll never fires a scroll event, so
   // check now too. A load renders again, which checks again, until the
