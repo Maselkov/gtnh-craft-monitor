@@ -138,6 +138,18 @@ export function bindFilterInput(input, onChange) {
 // every second or so made them stutter; a moved one keeps going. Only
 // within this document, though: a template's content is a document of its
 // own, and an <img> moved through one restarts too - hence importNode.
+// The element in root that a redraw made in place of el: same tag and
+// the same identifying attributes. null when el has none of them.
+const IDENTITY = ['id', 'data-action', 'data-cpu', 'data-key', 'data-mod', 'data-internal', 'data-damage', 'data-tab', 'data-view'];
+
+export function findCopy(root, el) {
+  const attrs = IDENTITY.filter(a => el.hasAttribute(a));
+  if (!attrs.length) return null;
+  const selector = el.tagName.toLowerCase()
+    + attrs.map(a => `[${a}="${CSS.escape(el.getAttribute(a))}"]`).join('');
+  return root.querySelector(selector);
+}
+
 export function setHtmlKeepingIcons(el, html) {
   const old = new Map();
   for (const img of el.querySelectorAll('img[src^="/icons?"]')) {
@@ -154,7 +166,11 @@ export function setHtmlKeepingIcons(el, html) {
     kept.className = img.className;
     img.replaceWith(kept);
   }
+  // Focus stays on the same control through a redraw, for the keyboard.
+  const active = document.activeElement;
+  const hadFocus = active && active !== el && el.contains(active) ? active : null;
   el.replaceChildren(content);
+  if (hadFocus) findCopy(el, hadFocus)?.focus({ preventScroll: true });
 }
 
 // <img data-remove-on-error> removes itself when it fails to load (an

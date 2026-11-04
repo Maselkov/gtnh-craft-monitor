@@ -1272,6 +1272,11 @@ html {
 #craftRequestModal {
   z-index: 2001;
 }
+/* Focus waits on the box itself when a dialog opens (dialogs.js); no
+   ring round the whole dialog for that. */
+.modal-box:focus {
+  outline: none;
+}
 .modal-box {
   background: var(--card);
   border: 1px solid rgba(128,128,128,0.3);
@@ -1821,6 +1826,10 @@ body.private-locked #networkTab {
 .item-history-link:hover {
   text-decoration: underline;
   color: var(--accent);
+}
+.item-history-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 .progress-track {
   height: 8px;

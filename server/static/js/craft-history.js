@@ -138,7 +138,7 @@ function renderRow(e) {
   const name = escapeHtml(nameText(e.itemName || 'Unknown item'));
   // Rows saved before items were recorded with them can't open a chart.
   const title = e.internal
-    ? `<span class="item-history-link" data-mod="${escapeHtml(e.mod || '')}" data-internal="${escapeHtml(e.internal)}" data-damage="${e.damage != null ? escapeHtml(e.damage) : ''}" data-name="${escapeHtml(e.itemName || 'Unknown item')}" data-icon="${escapeHtml(e.icon || '')}">${name}</span>`
+    ? `<span class="item-history-link" tabindex="0" role="button" data-mod="${escapeHtml(e.mod || '')}" data-internal="${escapeHtml(e.internal)}" data-damage="${e.damage != null ? escapeHtml(e.damage) : ''}" data-name="${escapeHtml(e.itemName || 'Unknown item')}" data-icon="${escapeHtml(e.icon || '')}">${name}</span>`
     : `<span>${name}</span>`;
   const badge = (e.auto ? '<span class="status-badge auto" title="Started to keep this item in stock">Auto</span>' : '')
     + (e.status === 'incomplete'
