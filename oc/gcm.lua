@@ -8,8 +8,10 @@
 -- Add --ref=<tag or branch> to install or update from something other
 -- than the latest release, e.g. --ref=main to test unreleased changes.
 -- install --server=<url> --api-key=<key> skips asking for those two: the
--- web page's Status dialog shows the whole command to paste. They also
--- replace the ones in an existing config.lua.
+-- web page's Status dialog shows the whole command to paste, with the
+-- scripts picked there. They also replace the ones in an existing
+-- config.lua. install enables the scripts on boot and reboots to start
+-- them, unless the server check failed or a value was left blank.
 -- update --no-reboot skips the reboot question: gcm_agent.lua runs it
 -- that way for the web page's update button, and reboots itself.
 --
@@ -32,6 +34,9 @@ local REPO = "Maselkov/gtnh-craft-monitor"
 local STATE_PATH = "/etc/gcm.cfg"
 local CONNECT_TIMEOUT_SECONDS = 30
 local STALL_TIMEOUT_SECONDS = 30
+-- Long enough to see a warning about a missing Adapter go by; the boot
+-- banner and the web page's Status dialog show it afterwards too.
+local INSTALL_REBOOT_SECONDS = 3
 -- Length and checksum() of OpenOS's own /etc/motd
 -- (oc/tests/fixtures/openos_motd), which gcm may replace with its banner.
 local STOCK_MOTD_LENGTH = 1558
@@ -330,8 +335,8 @@ local function quoted_list(list)
 end
 
 -- services: each component's rc service, for gcm_agent to report on.
--- agent_set_up: gcm_agent has been enabled (or the user declined
--- starting anything on boot), so updates don't enable it again.
+-- agent_set_up: gcm_agent has been enabled, so updates don't enable it
+-- again (and a player's `rc gcm_agent disable` sticks).
 local function write_state(state)
   local file = assert(io.open(STATE_PATH, "w"))
   file:write("-- Written by gcm. Lists what `gcm update` updates.\n")
@@ -409,7 +414,8 @@ local function is_local_host(url)
 end
 
 -- Tries the URL and key on the server now, so a mistake shows here
--- rather than as scripts that never report. Says what went wrong.
+-- rather than as scripts that never report. Says what went wrong, and
+-- returns whether the server accepted them.
 local function check_server(url, key)
   print("Checking " .. url .. " ...")
   local handle, err, code = open_request(url .. "/api/agent/ping", "{}",
@@ -443,6 +449,8 @@ end
 -- answers) filled in. After that, only the options given are written and
 -- the rest of the file is kept, so pasting the page's command again moves
 -- a computer to a new address or key; without them it's left alone.
+-- Returns whether the scripts can start with it: the server accepted the
+-- address and key, or an existing file was kept as it is.
 local function write_config(ref, cfg, opts)
   local url = opts.server and opts.server:gsub("/+$", "")
   local key = opts["api-key"]
@@ -451,7 +459,7 @@ local function write_config(ref, cfg, opts)
   if existing then
     if not (url or key) then
       print("Keeping existing " .. cfg.dst)
-      return
+      return true
     end
     local file = assert(io.open(cfg.dst, "r"))
     text = file:read("*a")
@@ -481,8 +489,9 @@ local function write_config(ref, cfg, opts)
     key = key or prompt("API key (on the web page: Settings > Status > Connect a computer)")
     checkUrl, checkKey = url, key
   end
+  local accepted = false
   if type(checkUrl) == "string" and checkUrl ~= "" and type(checkKey) == "string" and checkKey ~= "" then
-    check_server(checkUrl, checkKey)
+    accepted = check_server(checkUrl, checkKey)
   end
   for _, setting in ipairs({ { "SERVER_URL", url }, { "API_KEY", key } }) do
     local name, value = setting[1], setting[2]
@@ -504,6 +513,7 @@ local function write_config(ref, cfg, opts)
   if not existing and (url == "" or key == "") then
     print("Edit " .. cfg.dst .. " to set the missing values before starting the scripts.")
   end
+  return accepted
 end
 
 -- rc caches loaded services, and http.lua/json.lua stay in package.loaded,
@@ -592,18 +602,25 @@ local function cmd_install(args, opts)
   local state = { version = ref, components = all, services = services_for(manifest, all),
                   agent_set_up = previous and previous.agent_set_up }
   write_state(state)
-  write_config(ref, manifest.config, opts)
+  local ready = write_config(ref, manifest.config, opts)
 
   print()
-  if ask("Start the installed scripts automatically on every boot?", true) then
-    for _, name in ipairs(chosen) do
-      shell.execute("rc " .. find_component(manifest, name).service .. " enable")
-    end
-    if not state.agent_set_up then enable_agent() end
+  for _, name in ipairs(chosen) do
+    shell.execute("rc " .. find_component(manifest, name).service .. " enable")
   end
+  if not state.agent_set_up then enable_agent() end
   state.agent_set_up = true
   write_state(state)
-  offer_reboot()
+
+  -- Rebooting would clear the explanation of what to fix off the screen.
+  print()
+  if not ready then
+    print("Not rebooting: fix " .. manifest.config.dst .. " first, then reboot to start the scripts.")
+    return
+  end
+  print("Rebooting in " .. INSTALL_REBOOT_SECONDS .. " seconds to start the scripts.")
+  os.sleep(INSTALL_REBOOT_SECONDS)
+  computer.shutdown(true)
 end
 
 local function cmd_update(opts, no_reboot)

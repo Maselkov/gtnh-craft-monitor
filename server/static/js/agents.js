@@ -275,6 +275,16 @@ async function saveSetting(key, box) {
 const GCM_URL = 'https://raw.githubusercontent.com/Maselkov/gtnh-craft-monitor/main/oc/gcm.lua';
 const LOCAL_HOST = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/;
 
+// The scripts the command installs, as oc/manifest.lua names them
+// (agents.test.js checks the two agree). Which are ticked is remembered
+// per browser.
+export const CONNECT_SCRIPTS = [
+  { name: 'craft', label: 'Crafts', hint: 'Crafts tab and crafting from the page. Needs an Adapter touching an ME controller or interface.' },
+  { name: 'power', label: 'Power', hint: 'Power tab. Needs an Adapter touching a GregTech machine, e.g. the LSC.' },
+  { name: 'network', label: 'Network', hint: 'Network tab. Needs an Adapter touching an ME controller or interface.' },
+];
+const CONNECT_SCRIPTS_KEY = 'gtnhCraftMonitor.connectScripts';
+
 let connectInfo = null;
 let connectKeyShown = false;
 
@@ -293,18 +303,51 @@ function shellWord(s) {
   return /^[\w.:/@%+=~-]+$/.test(s) ? s : `"${s}"`;
 }
 
-export function connectCommand(serverUrl, apiKey) {
+// scripts: names from CONNECT_SCRIPTS. Naming them skips gcm's question
+// for each.
+export function connectCommand(serverUrl, apiKey, scripts = []) {
   const url = serverUrl.trim().replace(/\/+$/, '');
   return `wget -f ${GCM_URL} /tmp/gcm.lua && `
-    + `/tmp/gcm.lua install --server=${shellWord(url)} --api-key=${shellWord(apiKey)}`;
+    + `/tmp/gcm.lua install${scripts.map(name => ` ${name}`).join('')}`
+    + ` --server=${shellWord(url)} --api-key=${shellWord(apiKey)}`;
+}
+
+export function connectScriptsHtml(chosen) {
+  return CONNECT_SCRIPTS.map(s => `<label class="agent-setting">
+    <input type="checkbox" data-script="${s.name}"${chosen.includes(s.name) ? ' checked' : ''}>
+    <span>${escapeHtml(s.label)}<span class="agent-line">${escapeHtml(s.hint)}</span></span>
+  </label>`).join('');
+}
+
+function savedConnectScripts() {
+  const all = CONNECT_SCRIPTS.map(s => s.name);
+  try {
+    const saved = JSON.parse(localStorage.getItem(CONNECT_SCRIPTS_KEY));
+    if (Array.isArray(saved)) return all.filter(name => saved.includes(name));
+  } catch (e) { /* none saved, or storage blocked */ }
+  return all;
+}
+
+function chosenScripts() {
+  return [...document.querySelectorAll('#connectScripts input:checked')].map(box => box.dataset.script);
+}
+
+function onConnectScriptsChange() {
+  try {
+    localStorage.setItem(CONNECT_SCRIPTS_KEY, JSON.stringify(chosenScripts()));
+  } catch (e) { /* per-viewer nicety only */ }
+  renderConnect();
 }
 
 function renderConnect() {
   if (!connectInfo) return;
   const url = document.getElementById('connectServerUrl').value;
-  const command = connectCommand(url, connectInfo.api_key);
+  const scripts = chosenScripts();
+  const command = connectCommand(url, connectInfo.api_key, scripts);
   document.getElementById('connectCommand').textContent = connectKeyShown
     ? command : command.replace(connectInfo.api_key, '•'.repeat(12));
+  document.querySelector('[data-action="copy-connect"]').disabled = scripts.length === 0;
+  document.getElementById('connectNoScripts').style.display = scripts.length ? 'none' : '';
   document.getElementById('connectLocalNote').style.display = isLocalAddress(url) ? '' : 'none';
   document.getElementById('connectKeyBtn').textContent = connectKeyShown ? 'Hide API key' : 'Show API key';
 }
@@ -345,7 +388,7 @@ async function copyText(text) {
 async function copyConnect() {
   if (!connectInfo) return;
   const url = document.getElementById('connectServerUrl').value;
-  if (await copyText(connectCommand(url, connectInfo.api_key))) {
+  if (await copyText(connectCommand(url, connectInfo.api_key, chosenScripts()))) {
     showToast('Copied. Paste it into the computer with the middle mouse button or Insert.');
   } else {
     showToast('Could not copy: show the API key and copy the command by hand.', true);
@@ -496,6 +539,9 @@ export function setupAgentsActions() {
     'toggle-connect-key': () => { connectKeyShown = !connectKeyShown; renderConnect(); },
   });
   document.getElementById('connectServerUrl').addEventListener('input', renderConnect);
+  const scripts = document.getElementById('connectScripts');
+  scripts.innerHTML = connectScriptsHtml(savedConnectScripts());
+  scripts.addEventListener('change', onConnectScriptsChange);
   for (const [key, id] of Object.entries(SETTING_TOGGLES)) {
     const box = document.getElementById(id);
     box.addEventListener('change', () => saveSetting(key, box));

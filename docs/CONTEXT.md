@@ -1644,10 +1644,18 @@ nothing else. Separate from craft_monitor on purpose: an update must
 still work when the script it would fix has crashed.
 
 Connecting a computer: the Status dialog's "Connect a computer" builds
-one line, `wget ... gcm.lua && /tmp/gcm.lua install --server=<url>
---api-key=<key>` (OpenOS's shell chains with `&&`; checked in game), from
-`/api/admin/connect` (the API key and `PUBLIC_URL`; the page's own origin
-without it). The key is masked on screen but copied in full - the
+one line, `wget ... gcm.lua && /tmp/gcm.lua install <scripts>
+--server=<url> --api-key=<key>` (OpenOS's shell chains with `&&`; checked
+in game), from `/api/admin/connect` (the API key and `PUBLIC_URL`; the
+page's own origin without it). The scripts are the ones ticked above it
+(`CONNECT_SCRIPTS` in agents.js, which a JS test holds to
+oc/manifest.lua's components; the ticks kept in localStorage); naming them
+skips gcm's question for each. That gcm.lua comes from main, not a
+release, so installer changes reach new computers on merge. Install asks
+nothing else: it always enables the scripts and gcm_agent in rc and
+reboots 3 seconds later, except when the server check failed or a value
+was left blank (`write_config` returns whether the config is usable),
+because the reboot would clear the explanation off the screen. The key is masked on screen but copied in full - the
 clipboard API needs HTTPS or localhost, so it falls back to
 `execCommand('copy')` for a plain-HTTP LAN page. Before writing
 config.lua, `gcm install` POSTs `/api/agent/ping` with the key and says

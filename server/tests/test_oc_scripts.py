@@ -454,9 +454,9 @@ def test_agent_reports_what_a_script_died_of(game, client, monkeypatch):
 
 
 def test_install_checks_the_key_with_the_server(game, api_key):
-    # A fresh computer, the way "Connect a computer" sets one up; no to
-    # starting on boot and to rebooting.
-    game.lua('os.remove(env:path("/home/config.lua")); env:mkdir("/etc"); env:mkdir("/usr/bin"); env.stdin = { "n", "n" }')
+    # A fresh computer, the way "Connect a computer" sets one up: it asks
+    # nothing, and reboots once the server accepted the key.
+    game.lua('os.remove(env:path("/home/config.lua")); env:mkdir("/etc"); env:mkdir("/usr/bin")')
 
     def install(key):
         game.lua(
@@ -469,8 +469,10 @@ def test_install_checks_the_key_with_the_server(game, api_key):
     assert ("POST", "/api/agent/ping", 200) in game.requests
     assert '"%s"' % api_key in config
     assert game.lua('return env:printed("The server accepted the API key.")') is True
+    assert game.lua("return env.shutdown and env.shutdown.reboot") is True
 
-    game.lua('os.remove(env:path("/home/config.lua")); env.stdin = { "n", "n" }')
+    game.lua('os.remove(env:path("/home/config.lua")); env.shutdown = nil')
     install("not-the-key")
     assert ("POST", "/api/agent/ping", 401) in game.requests
     assert game.lua('return env:printed("The server refused the API key.")') is True
+    assert game.lua("return env.shutdown == nil") is True

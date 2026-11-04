@@ -173,21 +173,26 @@ wget -f https://raw.githubusercontent.com/Maselkov/gtnh-craft-monitor/main/oc/gc
 
 **Settings (⚙) → Status → Connect a computer** on the web page shows
 both as one command, joined with `&&`, with this server's address and API
-key filled in, ready to copy. Paste it into the computer with the middle
-mouse button or Insert.
+key filled in, ready to copy. Tick the scripts this computer should run
+first (Crafts, Power, Network; the page remembers your choice), and the
+command names them, so the computer doesn't ask. Paste it into the
+computer with the middle mouse button or Insert.
 The address is the page's own unless `PUBLIC_URL` is set; if the
 Minecraft server reaches the monitor some other way, press **Use a
 different address** there and type it in.
 
-`gcm install` asks which scripts to install, and warns when a chosen
+Without script names, `gcm install` asks which to install. It warns when a chosen
 script's block isn't connected: an Adapter touching an ME controller or
 interface for craft and network, or a GregTech machine for power. For
 network it also notes when there's no optional ME Interface Terminal. The
 script is installed anyway, so the Adapter can go in later. Then it checks that the
 computer reaches the server with the key, saying what's wrong if it
 doesn't, and writes both to `/home/config.lua`. Without `--server` and
-`--api-key` it asks for them. It can also enable the scripts so they start
-on every boot, and offers to reboot to start them.
+`--api-key` it asks for them. Then it enables the scripts so they start
+on every boot and reboots after 3 seconds to start them. If the server
+check failed or a value was left blank, it doesn't reboot, so you can
+read what went wrong: fix `/home/config.lua` (or paste the command
+again), then reboot.
 
 It also puts a GCM banner in `/etc/motd`, which OpenOS shows when the
 shell starts: the logo, the installed version, and each script with how it

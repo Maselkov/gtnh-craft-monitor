@@ -84,12 +84,12 @@ test("a failed update returns its message, for gcm_agent", function()
 end)
 
 -- A fresh computer for `gcm install`: no config.lua yet, the monitor's
--- ping answered by ping(req), and no to starting on boot and rebooting.
+-- ping answered by ping(req).
 local function install_env(ping)
   local env = github_env()
   os.remove(env:path("/home/config.lua"))
   env.server.routes["POST /api/agent/ping"] = ping
-  env.stdin = { "n", "n" }
+  env.stdin = {}
   return env
 end
 
@@ -111,11 +111,38 @@ test("install --server --api-key saves both once the server accepts the key", fu
   t.eq(env:printed("Leave a value blank"), false)
 end)
 
+test("install starts the scripts on boot and reboots without asking", function()
+  local env = install_env({ ok = true })
+  local started = env.now
+  t.eq(gcm(env, "install", "craft", "power", "--server=https://gtnh.example.com", "--api-key=k3y"), nil)
+  t.eq(count(env.shell_log, "rc craft_monitor enable"), 1)
+  t.eq(count(env.shell_log, "rc power_monitor enable"), 1)
+  t.eq(count(env.shell_log, "rc network_browser enable"), 0)
+  t.eq(count(env.shell_log, "rc gcm_agent enable"), 1)
+  t.eq(state(env).agent_set_up, true)
+  t.eq(env:printed("[Y/n]"), false)
+  t.truthy(env:printed("Rebooting in 3 seconds to start the scripts."))
+  t.eq(env.shutdown.reboot, true)
+  t.truthy(env.shutdown.at - started >= 3)
+
+  -- Adding a script later enables just that one; the agent stays as it is.
+  env.shutdown = nil
+  t.eq(gcm(env, "install", "network"), nil)
+  t.eq(count(env.shell_log, "rc network_browser enable"), 1)
+  t.eq(count(env.shell_log, "rc craft_monitor enable"), 1)
+  t.eq(count(env.shell_log, "rc gcm_agent enable"), 1)
+  t.truthy(env:printed("Keeping existing /home/config.lua"))
+  t.eq(env.shutdown.reboot, true)
+end)
+
 test("install says when the server refuses the key, and saves it anyway", function()
   local env = install_env({ status = 401, body = '{"error":"unauthorized"}' })
   t.eq(gcm(env, "install", "power", "--server=https://gtnh.example.com", "--api-key=wrong"), nil)
   t.truthy(env:printed("The server refused the API key."))
   t.eq(config(env).API_KEY, "wrong")
+  t.eq(count(env.shell_log, "rc power_monitor enable"), 1)
+  t.truthy(env:printed("Not rebooting: fix /home/config.lua first"))
+  t.eq(env.shutdown, nil)
 end)
 
 test("install points at OpenComputers' blacklist when a local address can't connect", function()
@@ -128,14 +155,33 @@ test("install points at OpenComputers' blacklist when a local address can't conn
   t.eq(gcm(public, "install", "power", "--server=https://gtnh.example.com", "--api-key=k3y"), nil)
   t.truthy(public:printed("The request comes from the Minecraft server"))
   t.eq(public:printed("OpenComputers blocks local addresses"), false)
+  t.eq(public.shutdown, nil)
 end)
 
 test("install asks for the address and key without the options", function()
   local env = install_env({ ok = true })
-  env.stdin = { "http://gtnh.example.com", "k3y", "n", "n" }
+  env.stdin = { "http://gtnh.example.com", "k3y" }
   t.eq(gcm(env, "install", "power"), nil)
   t.eq(config(env).SERVER_URL, "http://gtnh.example.com")
   t.truthy(env:printed("Leave a value blank"))
+  t.eq(env.shutdown.reboot, true)
+end)
+
+test("install doesn't reboot with a value left blank", function()
+  local env = install_env({ ok = true })
+  env.stdin = { "http://gtnh.example.com", "" }
+  t.eq(gcm(env, "install", "power"), nil)
+  t.eq(#env:requests_to("^/api/agent/ping$", "POST"), 0)
+  t.truthy(env:printed("Edit /home/config.lua to set the missing values"))
+  t.eq(env.shutdown, nil)
+end)
+
+test("install with no scripts named asks for each", function()
+  local env = install_env({ ok = true })
+  env.stdin = { "n", "y", "n" }
+  t.eq(gcm(env, "install", "--server=https://gtnh.example.com", "--api-key=k3y"), nil)
+  t.eq(state(env).components, { "power" })
+  t.eq(env.shutdown.reboot, true)
 end)
 
 test("install --server --api-key replace them in an existing config.lua, keeping the rest", function()
