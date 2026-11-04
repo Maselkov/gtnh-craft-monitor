@@ -868,6 +868,19 @@ are `source = 'assistant'` in their history tables (everything that
 filters by source compares with 'auto', so they count as a person's);
 the admin History marks them.
 
+**The MCP game-knowledge tools read the game data, not the network.**
+`find_recipes` reads the selected version's recipe index (`recipes.index`,
+built on first use as for the pattern check); `game_item` reads
+`item_info.describe` for any item key, not just the network's. Both take a
+name as well as a key: `RecipeIndex.find_names` (a `LIKE` over the
+index's `name` table, every item and fluid a recipe names) plus the
+network's names, and when that isn't one item they answer with the
+candidates' keys instead of guessing. `base_patterns` reads the planner's
+pattern index (`planner.index().candidates`), in AE2's order.
+`pattern_check` is `recipes.result()` for `recipes.default_versions()`,
+the check the page's notice asks for, so it answers "preparing" while
+recipes download or index.
+
 ### Assistant behaviour checks
 
 Run these by hand, with Claude Code or claude.ai connected to `dev.py`,
