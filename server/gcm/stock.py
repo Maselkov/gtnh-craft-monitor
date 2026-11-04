@@ -25,7 +25,7 @@ before asking again."""
 import logging
 import time
 
-from gcm import charts, commands, config, icons, push, state, store, tracking, webhooks
+from gcm import charts, commands, config, icons, push, state, store, webhooks
 
 log = logging.getLogger(__name__)
 
@@ -114,11 +114,139 @@ def _identity(target):
     return {"mod": target["mod"], "internal": target["internal"], "damage": target["damage"]}
 
 
+def item_from(payload):
+    """The item a rule is about, from a request body, or an error
+    message: (item, None) or (None, message)."""
+    item = {
+        "label": payload.get("label"),
+        "mod": payload.get("mod") or None,
+        "internal": payload.get("internal"),
+        "damage": payload.get("damage"),
+        "kind": payload.get("kind") or "item",
+        "variant": payload.get("variant") or None,
+    }
+    if not item["label"] or not item["internal"]:
+        return None, "missing label/internal"
+    if item["kind"] not in ("item", "fluid", "essentia"):
+        return None, "kind must be item, fluid or essentia"
+    if item["damage"] is not None and (isinstance(item["damage"], bool) or not isinstance(item["damage"], int)):
+        return None, "damage must be a whole number"
+    if item["variant"] is not None and not isinstance(item["variant"], str):
+        return None, "variant must be a string"
+    return item, None
+
+
+def rule_key(item):
+    return store.items.item_key(item["mod"], item["internal"], item["damage"], item["kind"], item["variant"])
+
+
+def _positive(value):
+    return not isinstance(value, bool) and isinstance(value, (int, float)) and value > 0
+
+
+def _network_item(key):
+    with state.network_lock:
+        return next((it for it in state.network["items"] if store.items.key_of(it) == key), None)
+
+
+def set_alert(user_id, item, below):
+    """Saves the user's low-stock alert on an item (from item_from()).
+    Returns an error message, or None once saved."""
+    if not _positive(below):
+        return "below must be a positive number"
+    store.stock.set_alert(user_id, item, below)
+    return None
+
+
+def set_target(user_id, item, keep_at_least, refill_to, enabled=True):
+    """Saves the base's keep-in-stock target for an item (from
+    item_from()), set by user_id. Returns an error message, or None once
+    saved. Only for operators: it queues real crafts."""
+    if not _positive(keep_at_least) or not _positive(refill_to):
+        return "keep_at_least and refill_to must be positive numbers"
+    if refill_to <= keep_at_least:
+        return "refill_to must be more than keep_at_least"
+    if not isinstance(enabled, bool):
+        return "enabled must be true or false"
+    # The game can only make what it has a pattern for, and the last
+    # scan is the only place that says.
+    network_item = _network_item(rule_key(item))
+    if not (network_item and network_item.get("isCraftable")):
+        return "only items the network can craft can be kept in stock"
+    store.stock.set_target(user_id, item, keep_at_least, refill_to, enabled)
+    return None
+
+
+def rules(user):
+    """Every keep-in-stock target, and the user's own alerts (none for
+    None), each with the item's amount in the latest scan (null before
+    any): {targets, alerts}."""
+    with state.network_lock:
+        items = state.network["items"]
+        scanned = state.network["updated_at"] is not None or bool(items)
+    sizes = current_sizes(items)
+    names = variant_names(items)
+    with state.crafts_lock:
+        jobs = list(state.crafts["jobs"])
+    pending = pending_auto_requests()
+
+    def with_item(rule):
+        current = sizes.get(rule["key"], 0) if scanned else None
+        return {
+            "key": rule["key"],
+            "label": rule["label"],
+            "mod": rule["mod"],
+            "internal": rule["internal"],
+            "damage": rule["damage"],
+            "kind": rule["kind"],
+            "variant": rule["variant"],
+            "icon": rule_icon(rule, names),
+            "current": current,
+        }
+
+    targets = []
+    for t in store.stock.targets():
+        row = with_item(t)
+        low = row["current"] is not None and row["current"] < t["keep_at_least"]
+        # Only while low: a CPU making the item for some other reason
+        # isn't this target's doing.
+        cpu = busy_cpu_making(t, jobs) if low else None
+        if t["key"] in pending:
+            status = "requested"
+        elif cpu:
+            status = "crafting"
+        elif not t["enabled"]:
+            status = "off"
+        elif low and t["last_status"] in ("failed", "waiting"):
+            status = t["last_status"]
+        else:
+            status = "low" if low else "ok"
+        targets.append({
+            **row,
+            "keep_at_least": t["keep_at_least"],
+            "refill_to": t["refill_to"],
+            "enabled": t["enabled"],
+            "status": status,
+            "reason": t["last_reason"] if status in ("failed", "waiting") else None,
+            "cpu": cpu,
+            "last_requested_at": t["last_requested_at"],
+            "last_status": t["last_status"],
+            "last_reason": t["last_reason"],
+        })
+
+    alerts = []
+    if user:
+        for a in store.stock.alerts_for_user(user["id"]):
+            row = with_item(a)
+            alerts.append({**row, "below": a["below"], "low": row["current"] is not None and row["current"] < a["below"]})
+    return {"targets": targets, "alerts": alerts}
+
+
 def busy_cpu_making(target, jobs):
     """The name of a busy CPU whose job makes the target's item, or None."""
     for job in jobs:
-        output = tracking.output_identity(job)
-        if job.get("busy") and output and tracking.same_output(output, _identity(target)):
+        output = commands.output_identity(job)
+        if job.get("busy") and output and commands.same_output(output, _identity(target)):
             return job.get("name")
     return None
 

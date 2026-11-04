@@ -11,7 +11,7 @@ process left open - see store.requests.close_orphaned())."""
 import threading
 import time
 
-from gcm import icons, inventory, store
+from gcm import icons, inventory, state, store
 
 
 class CommandQueue:
@@ -196,6 +196,19 @@ def _expire_craft_request(req_id, reason):
     store.stock.record_auto_result(req_id, "failed", reason)
 
 
+def craft_request_error(label, internal, amount, kind, variant):
+    """Why a craft request can't be queued as given, or None."""
+    if not label or not internal:
+        return "missing label/internal"
+    if isinstance(amount, bool) or not isinstance(amount, (int, float)) or amount <= 0:
+        return "amount must be a positive number"
+    if kind not in ("item", "fluid"):
+        return "kind must be item or fluid"
+    if variant is not None and not isinstance(variant, str):
+        return "variant must be a string"
+    return None
+
+
 def queue_craft(user_id, label, mod, internal, damage, amount, kind, variant=None,
                 variant_name=None, source="manual", target_key=None):
     """Queues a craft request for craft_monitor.lua and writes its history
@@ -258,6 +271,73 @@ cancel_requests = CommandQueue(
         req_id, False, reason, only_if_open=True
     ),
 )
+
+
+def output_identity(job):
+    """{mod, internal, damage} of what the job on this CPU is making, the
+    form craft_monitor.lua compares against the CPU's finalOutput() - or
+    None when that isn't reported."""
+    if not job.get("final_output_internal"):
+        return None
+    return {
+        "mod": job.get("final_output_mod"),
+        "internal": job.get("final_output_internal"),
+        "damage": job.get("final_output_damage"),
+    }
+
+
+def same_output(a, b):
+    """Whether two output identities name the same item."""
+    return all(a.get(key) == b.get(key) for key in ("mod", "internal", "damage"))
+
+
+def request_cancel(user_id, cpu_name, shown_output=None):
+    """Queues cancelling the job on a busy CPU. Returns (id, None), or
+    (None, (error message, HTTP status)) when it can't be cancelled.
+    shown_output is what the user saw the job making (output_identity's
+    form), if known: when the CPU has moved on to another job since, the
+    one they meant to cancel is gone, and nothing is queued."""
+    if not cpu_name:
+        return None, ("missing cpu_name", 400)
+
+    # Can only cancel a CPU that's actually busy right now - same
+    # reasoning as craft-request's own "only a busy CPU can be pinned"
+    # check, and it doesn't make sense to queue a cancel for something
+    # with nothing running on it.
+    with state.crafts_lock:
+        jobs = state.crafts.get("jobs", [])
+    job = next((j for j in jobs if j.get("name") == cpu_name), None)
+    if job is None:
+        return None, ("unknown cpu_name", 404)
+    if not job.get("busy"):
+        return None, ("CPU is not currently busy - nothing to cancel", 400)
+
+    # A CPU runs one job after another, so the cancel names the job too:
+    # what it's making, as the user saw it and as the latest status
+    # report has it. If those already differ, the job the user meant to
+    # cancel is gone. Lua checks it once more against the CPU itself
+    # right before cancelling. None when the CPU has no Crafting Monitor
+    # to report its output - then only the CPU name is known.
+    expected_output = output_identity(job)
+    if isinstance(shown_output, dict) and expected_output and not same_output(expected_output, shown_output):
+        return None, ("a different job is now running on this CPU - not cancelled", 409)
+
+    created_at = time.time()
+    req_id = cancel_requests.add(
+        {
+            "user_id": user_id,
+            "cpu_name": cpu_name,
+            "expected_output": expected_output,
+            # status: pending -> resolved
+            "success": None,
+            "reason": None,
+            "created_at": created_at,
+        },
+        lambda req_id: store.requests.record_cancel(
+            req_id, user_id, cpu_name, created_at, job.get("final_output"), job.get("final_output_icon")
+        ),
+    )
+    return req_id, None
 
 
 def reset():

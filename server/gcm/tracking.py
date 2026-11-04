@@ -153,24 +153,6 @@ def _job_output(job):
     )
 
 
-def output_identity(job):
-    """{mod, internal, damage} of what the job on this CPU is making, the
-    form craft_monitor.lua compares against the CPU's finalOutput() - or
-    None when that isn't reported."""
-    if not job.get("final_output_internal"):
-        return None
-    return {
-        "mod": job.get("final_output_mod"),
-        "internal": job.get("final_output_internal"),
-        "damage": job.get("final_output_damage"),
-    }
-
-
-def same_output(a, b):
-    """Whether two output identities name the same item."""
-    return all(a.get(key) == b.get(key) for key in ("mod", "internal", "damage"))
-
-
 # How long the end of a watched request's job waits for the game to
 # report its outcome (see report_outcome()) before it's judged without it.
 # craft_monitor.lua checks every 1.5s, but a tick also waits on its HTTP
