@@ -578,6 +578,16 @@ def _mark_missing(root, items):
             node["missing_below"] = below
 
 
+def rules_for_user(user_id):
+    """The stock rules a plan for this user warns about taking an item
+    below, as plan()'s rules: the user's own alerts and the base's
+    enabled keep-in-stock targets."""
+    rules = [(a["key"], a["below"], "below your alert") for a in store.stock.alerts_for_user(user_id)]
+    rules += [(t["key"], t["keep_at_least"], "below its keep-at-least target")
+              for t in store.stock.targets() if t["enabled"]]
+    return rules
+
+
 def cached_plan(patterns, stock, stock_version, key, amount, choices=None, rules=None, describe=None):
     """plan(), reusing one of the last few if nothing it depends on has
     changed: the pattern list, the stock (stock_version says when it

@@ -470,10 +470,7 @@ def network_plan_get():
     if (path is not None or reveal) and request.args.get("version") != version:
         return jsonify({"stale": True})
 
-    user_id = g.user["id"]
-    rules = [(a["key"], a["below"], "below your alert") for a in store.stock.alerts_for_user(user_id)]
-    rules += [(t["key"], t["keep_at_least"], "below its keep-at-least target")
-              for t in store.stock.targets() if t["enabled"]]
+    rules = planner.rules_for_user(g.user["id"])
     result = planner.cached_plan(pattern_list, stock_levels, stock_version, key, amount, choices, rules,
                                  describe=inventory.describe)
     if result is None:

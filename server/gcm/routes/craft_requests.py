@@ -8,11 +8,10 @@ Two-sided auth:
     submitting or cancelling a craft additionally requires the
     operator or admin role."""
 
-import time
 
 from flask import Blueprint, g, jsonify, request
 
-from gcm import auth, commands, state, stock, store, tracking
+from gcm import auth, commands, stock, store, tracking
 
 
 bp = Blueprint("craft_requests", __name__)
@@ -34,15 +33,9 @@ def craft_request_post():
     variant = payload.get("variant") or None
     variant_name = payload.get("variant_name") or None
 
-    if not label or not internal:
-        return jsonify({"error": "missing label/internal"}), 400
-    if not isinstance(amount, (int, float)) or amount <= 0:
-        return jsonify({"error": "amount must be a positive number"}), 400
-    if kind not in ("item", "fluid"):
-        return jsonify({"error": "kind must be item or fluid"}), 400
-
-    if variant is not None and not isinstance(variant, str):
-        return jsonify({"error": "variant must be a string"}), 400
+    error = commands.craft_request_error(label, internal, amount, kind, variant)
+    if error:
+        return jsonify({"error": error}), 400
 
     req_id = commands.queue_craft(
         user_id, label, mod, internal, damage, amount, kind, variant, variant_name
@@ -145,50 +138,10 @@ def craft_cancel_post():
     user_id = g.user["id"]
 
     payload = request.get_json(silent=True) or {}
-    cpu_name = payload.get("cpu_name")
-    if not cpu_name:
-        return jsonify({"error": "missing cpu_name"}), 400
-
-    # Can only cancel a CPU that's actually busy right now - same
-    # reasoning as craft-request's own "only a busy CPU can be pinned"
-    # check, and it doesn't make sense to queue a cancel for something
-    # with nothing running on it.
-    with state.crafts_lock:
-        jobs = state.crafts.get("jobs", [])
-    job = next((j for j in jobs if j.get("name") == cpu_name), None)
-    if job is None:
-        return jsonify({"error": "unknown cpu_name"}), 404
-    if not job.get("busy"):
-        return jsonify({"error": "CPU is not currently busy - nothing to cancel"}), 400
-
-    # A CPU runs one job after another, so the cancel names the job too:
-    # what it's making, as the browser showed it and as the latest status
-    # report has it. If those already differ, the job the user meant to
-    # cancel is gone. Lua checks it once more against the CPU itself
-    # right before cancelling. None when the CPU has no Crafting Monitor
-    # to report its output - then only the CPU name is known.
-    expected_output = tracking.output_identity(job)
-    shown = payload.get("expected_output")
-    if isinstance(shown, dict) and expected_output and not tracking.same_output(
-        expected_output, shown
-    ):
-        return jsonify({"error": "a different job is now running on this CPU - not cancelled"}), 409
-
-    created_at = time.time()
-    req_id = commands.cancel_requests.add(
-        {
-            "user_id": user_id,
-            "cpu_name": cpu_name,
-            "expected_output": expected_output,
-            # status: pending -> resolved
-            "success": None,
-            "reason": None,
-            "created_at": created_at,
-        },
-        lambda req_id: store.requests.record_cancel(
-            req_id, user_id, cpu_name, created_at, job.get("final_output"), job.get("final_output_icon")
-        ),
-    )
+    req_id, error = commands.request_cancel(user_id, payload.get("cpu_name"), payload.get("expected_output"))
+    if error:
+        message, status = error
+        return jsonify({"error": message}), status
     return jsonify({"ok": True, "id": req_id})
 
 
