@@ -173,8 +173,9 @@ wget -f https://raw.githubusercontent.com/Maselkov/gtnh-craft-monitor/main/oc/gc
 
 **Settings (⚙) → Status → Connect a computer** on the web page shows
 both as one command, joined with `&&`, with this server's address and API
-key filled in, ready to copy. Tick the scripts this computer should run
-first (Crafts, Power, Network; the page remembers your choice), and the
+key filled in, ready to copy. First switch on the scripts this computer
+should run with the Crafts, Power and Network buttons above it (hover one
+to see which block it needs; the page remembers your choice), and the
 command names them, so the computer doesn't ask. Paste it into the
 computer with the middle mouse button or Insert.
 The address is the page's own unless `PUBLIC_URL` is set; if the

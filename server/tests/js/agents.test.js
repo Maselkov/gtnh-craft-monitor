@@ -131,11 +131,11 @@ test('connect scripts are the components oc/manifest.lua installs', () => {
   assert.deepEqual(CONNECT_SCRIPTS.map(s => s.name), names);
 });
 
-test('connect scripts render a box each, ticked as chosen', () => {
+test('connect scripts render a toggle button each, pressed as chosen, the hint as tooltip', () => {
   const html = connectScriptsHtml(['power']);
-  assert.equal((html.match(/type="checkbox"/g) || []).length, 3);
-  assert.match(html, /data-script="power" checked>/);
-  assert.match(html, /data-script="craft">/);
+  assert.equal((html.match(/data-action="toggle-connect-script"/g) || []).length, 3);
+  assert.match(html, /class="range-btn active"[^>]*data-script="power" aria-pressed="true" title="Power tab\. Needs an Adapter touching a GregTech machine/);
+  assert.match(html, /class="range-btn"[^>]*data-script="craft" aria-pressed="false"/);
 });
 
 test('local addresses are the ones OpenComputers blocks by default', () => {

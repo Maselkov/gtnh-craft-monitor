@@ -276,8 +276,8 @@ const GCM_URL = 'https://raw.githubusercontent.com/Maselkov/gtnh-craft-monitor/m
 const LOCAL_HOST = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/;
 
 // The scripts the command installs, as oc/manifest.lua names them
-// (agents.test.js checks the two agree). Which are ticked is remembered
-// per browser.
+// (agents.test.js checks the two agree), as a row of toggle buttons; the
+// hint is each one's tooltip. Which are on is remembered per browser.
 export const CONNECT_SCRIPTS = [
   { name: 'craft', label: 'Crafts', hint: 'Crafts tab and crafting from the page. Needs an Adapter touching an ME controller or interface.' },
   { name: 'power', label: 'Power', hint: 'Power tab. Needs an Adapter touching a GregTech machine, e.g. the LSC.' },
@@ -313,10 +313,11 @@ export function connectCommand(serverUrl, apiKey, scripts = []) {
 }
 
 export function connectScriptsHtml(chosen) {
-  return CONNECT_SCRIPTS.map(s => `<label class="agent-setting">
-    <input type="checkbox" data-script="${s.name}"${chosen.includes(s.name) ? ' checked' : ''}>
-    <span>${escapeHtml(s.label)}<span class="agent-line">${escapeHtml(s.hint)}</span></span>
-  </label>`).join('');
+  return '<span class="connect-scripts-label">Install:</span>' + CONNECT_SCRIPTS.map((s) => {
+    const on = chosen.includes(s.name);
+    return `<button class="range-btn${on ? ' active' : ''}" data-action="toggle-connect-script"`
+      + ` data-script="${s.name}" aria-pressed="${on}" title="${escapeHtml(s.hint)}">${escapeHtml(s.label)}</button>`;
+  }).join('');
 }
 
 function savedConnectScripts() {
@@ -329,10 +330,13 @@ function savedConnectScripts() {
 }
 
 function chosenScripts() {
-  return [...document.querySelectorAll('#connectScripts input:checked')].map(box => box.dataset.script);
+  return [...document.querySelectorAll('#connectScripts [aria-pressed="true"]')].map(btn => btn.dataset.script);
 }
 
-function onConnectScriptsChange() {
+function toggleConnectScript(btn) {
+  const on = btn.getAttribute('aria-pressed') !== 'true';
+  btn.setAttribute('aria-pressed', String(on));
+  btn.classList.toggle('active', on);
   try {
     localStorage.setItem(CONNECT_SCRIPTS_KEY, JSON.stringify(chosenScripts()));
   } catch (e) { /* per-viewer nicety only */ }
@@ -537,11 +541,10 @@ export function setupAgentsActions() {
     'copy-connect': () => copyConnect(),
     'edit-connect-address': () => editConnectAddress(),
     'toggle-connect-key': () => { connectKeyShown = !connectKeyShown; renderConnect(); },
+    'toggle-connect-script': (el) => toggleConnectScript(el),
   });
   document.getElementById('connectServerUrl').addEventListener('input', renderConnect);
-  const scripts = document.getElementById('connectScripts');
-  scripts.innerHTML = connectScriptsHtml(savedConnectScripts());
-  scripts.addEventListener('change', onConnectScriptsChange);
+  document.getElementById('connectScripts').innerHTML = connectScriptsHtml(savedConnectScripts());
   for (const [key, id] of Object.entries(SETTING_TOGGLES)) {
     const box = document.getElementById(id);
     box.addEventListener('change', () => saveSetting(key, box));
