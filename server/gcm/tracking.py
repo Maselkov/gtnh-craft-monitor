@@ -137,6 +137,9 @@ def _new_job_entry(started_at, seen_from_start=True):
         "outcome": None,
         # Started by a keep-in-stock target rather than a person.
         "auto": False,
+        # The user whose request started it, when one did. Kept here, not
+        # on the job the page gets: /api/crafts can be public.
+        "requested_by": None,
     }
 
 
@@ -406,6 +409,22 @@ def job_eta(entry):
     return span * (100 - now) / gained
 
 
+def started_by(cpu_name):
+    """Who started the job running on a CPU: ("user", user id) for a
+    request made on the page or through /mcp, ("auto", None) for a
+    keep-in-stock target's, or None when the server didn't start it
+    (asked for in the game, or by a Level Maintainer)."""
+    with state.tracking_lock:
+        entry = state.cpu_last_known.get(cpu_name)
+        if entry is None:
+            return None
+        if entry.get("auto"):
+            return "auto", None
+        if entry.get("requested_by"):
+            return "user", entry["requested_by"]
+        return None
+
+
 def start_requested_job(user_id, cpu_name, label, icon, requested_at, request_id=None, auto=False):
     """A browser craft request the game reports it started on cpu_name:
     pins it for the requester and records the job as started. A
@@ -448,6 +467,7 @@ def start_requested_job(user_id, cpu_name, label, icon, requested_at, request_id
         if request_id is not None:
             entry["request_id"] = request_id
         entry["auto"] = auto
+        entry["requested_by"] = None if auto else user_id
         state.cpu_last_busy[cpu_name] = True
         if not auto:
             store.crafts.pin_cpu(user_id, cpu_name)

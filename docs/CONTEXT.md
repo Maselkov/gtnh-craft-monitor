@@ -853,6 +853,21 @@ item is reported apart), and fussing over which CPU AE2 used (AE2 picks;
 the tools can't). Every tool call is logged (`store.assistant`,
 30 days) for admins to see in the AI assistant dialog.
 
+**The MCP write tools guard against retries and a silent game.**
+`request_craft` doesn't queue while the base is already getting the item
+(a pending request for the same item key, the item's keep-in-stock
+refill, or a busy CPU whose output is that item) unless called again
+with `allow_duplicate`: models retry after slow answers, and AE2 would
+run both. Both write tools refuse while `craft_monitor.lua` is past the
+page's stale threshold (`state.stale_after`), since a request it never
+picks up expires after two minutes anyway. Who started a job is kept on
+its tracking entry (`requested_by`, set by `start_requested_job`) and
+read through `tracking.started_by()`, not put on the jobs `/api/crafts`
+serves, which can be public. Requests and cancels made through /mcp
+are `source = 'assistant'` in their history tables (everything that
+filters by source compares with 'auto', so they count as a person's);
+the admin History marks them.
+
 ### Assistant behaviour checks
 
 Run these by hand, with Claude Code or claude.ai connected to `dev.py`,

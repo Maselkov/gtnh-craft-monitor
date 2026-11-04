@@ -44,13 +44,13 @@ def resolve_request(request_id, status, reason, cpu_name, only_if_open=False):
         )
 
 
-def record_cancel(request_id, user_id, cpu_name, created_at, item_label=None, item_icon=None):
+def record_cancel(request_id, user_id, cpu_name, created_at, item_label=None, item_icon=None, source="manual"):
     with db.transaction(db.app_db) as conn:
         conn.execute(
             "INSERT INTO craft_cancel_history "
-            "(request_id, user_id, cpu_name, status, created_at, item_label, item_icon) "
-            "VALUES (?, ?, ?, 'pending', ?, ?, ?)",
-            (request_id, user_id, cpu_name, created_at, item_label, item_icon),
+            "(request_id, user_id, cpu_name, status, created_at, item_label, item_icon, source) "
+            "VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)",
+            (request_id, user_id, cpu_name, created_at, item_label, item_icon, source),
         )
 
 
@@ -109,7 +109,7 @@ def user_activity(user_id, limit=100, include_auto=False):
             "amount, kind, NULL, mod, internal, damage, NULL "
             "FROM craft_request_history WHERE user_id = ? AND (? OR source != 'auto') "
             "UNION ALL "
-            "SELECT 'cancel', item_label, status, reason, cpu_name, created_at, resolved_at, 'manual', "
+            "SELECT 'cancel', item_label, status, reason, cpu_name, created_at, resolved_at, source, "
             "NULL, NULL, success, NULL, NULL, NULL, item_icon "
             "FROM craft_cancel_history WHERE user_id = ? "
             "ORDER BY created_at DESC LIMIT ?",

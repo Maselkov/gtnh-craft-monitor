@@ -1925,6 +1925,23 @@ async function main() {
     }
     await clickBackdrop();
     await waitFor('closed by backdrop', `!visible($('#assistantModal'))`);
+    // A request an assistant makes shows as one in History.
+    await postCrafts(base, false);
+    const requested = await fetch(base + '/mcp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'request_craft', arguments: {
+        item: 'minecraft|iron_ingot|0|item', amount: 1, force: true, allow_duplicate: true } } }),
+    }).then((r) => r.json());
+    if (requested.result.isError) throw new Error(`request_craft: ${requested.result.content[0].text}`);
+    await click(`$('#settingsBtn')`);
+    await click(`$('#adminBtn')`);
+    await waitFor('admin dialog', `visible($('#adminUsersModal'))`);
+    await click(`byText('button', 'History', $$('#adminUsersList .admin-user-row').find(r => r.querySelector('.admin-user-you')))`);
+    await waitFor('the assistant\'s request', `$('#userHistoryList .status-badge.assistant')?.textContent === 'Assistant'`);
+    await click(`$('#userHistoryModal .history-close-btn')`);
+    await click(`$('#adminUsersModal .history-close-btn')`);
+    await waitFor('closed', `!visible($('#adminUsersModal'))`);
   });
 
   step('admin: a notice when a computer\'s scripts are older than the server needs', async () => {

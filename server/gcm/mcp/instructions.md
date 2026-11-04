@@ -88,8 +88,11 @@ change what happens in the game, on a base other people may share.
   and still wants it.
 - One request at a time. Follow it with `request_status`, and if it
   failed, give the reason.
-- A target someone else set (`set_by` in `stock_rules`) isn't yours to
-  change or remove without asking.
+- A target someone else set (`set_by` in `stock_rules`), or a job someone
+  else started (`started_by` in `current_crafts`), isn't yours to change
+  or cancel without asking.
+- If `request_craft` says the base is already getting the item, tell
+  the user; `allow_duplicate` only if they want another craft on top.
 
 ## How to answer
 

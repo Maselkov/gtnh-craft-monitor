@@ -212,7 +212,8 @@ def craft_request_error(label, internal, amount, kind, variant):
 def queue_craft(user_id, label, mod, internal, damage, amount, kind, variant=None,
                 variant_name=None, source="manual", target_key=None):
     """Queues a craft request for craft_monitor.lua and writes its history
-    row; returns its id. source is "manual" for one made on the page, or
+    row; returns its id. source is "manual" for one made on the page,
+    "assistant" for one an AI assistant made through /mcp, or
     "auto" for a keep-in-stock target's (target_key: that target's item
     key)."""
     created_at = time.time()
@@ -291,7 +292,7 @@ def same_output(a, b):
     return all(a.get(key) == b.get(key) for key in ("mod", "internal", "damage"))
 
 
-def request_cancel(user_id, cpu_name, shown_output=None):
+def request_cancel(user_id, cpu_name, shown_output=None, source="manual"):
     """Queues cancelling the job on a busy CPU. Returns (id, None), or
     (None, (error message, HTTP status)) when it can't be cancelled.
     shown_output is what the user saw the job making (output_identity's
@@ -334,7 +335,7 @@ def request_cancel(user_id, cpu_name, shown_output=None):
             "created_at": created_at,
         },
         lambda req_id: store.requests.record_cancel(
-            req_id, user_id, cpu_name, created_at, job.get("final_output"), job.get("final_output_icon")
+            req_id, user_id, cpu_name, created_at, job.get("final_output"), job.get("final_output_icon"), source
         ),
     )
     return req_id, None

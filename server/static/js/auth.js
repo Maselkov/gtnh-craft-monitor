@@ -417,7 +417,10 @@ function userHistoryRowHtml(e) {
     ? `Cancel on CPU ${escapeHtml(e.cpu_name || '?')}`
     : `Request${e.cpu_name ? ` &middot; CPU ${escapeHtml(e.cpu_name)}` : ''}`;
   const auto = e.source === 'auto'
-    ? '<span class="status-badge auto" title="Asked for by a keep-in-stock target">Auto</span>' : '';
+    ? '<span class="status-badge auto" title="Asked for by a keep-in-stock target">Auto</span>'
+    : e.source === 'assistant'
+      ? '<span class="status-badge assistant" title="Made by an AI assistant signed in as this user">Assistant</span>'
+      : '';
   const when = new Date(e.created_at * 1000).toLocaleString();
   return `<div class="history-row user-history-row">
     ${icon}
