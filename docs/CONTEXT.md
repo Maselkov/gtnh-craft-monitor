@@ -795,6 +795,26 @@ no icons, capped lists, ISO times). Auth is `auth.bearer_required`: the
 user's personal access token in an `Authorization: Bearer` header,
 never a session cookie, so a browser can't be tricked into calling it.
 
+**The server is its own OAuth server, for claude.ai.** claude.ai's
+connectors only sign in with OAuth, so `/mcp` (gcm/oauth.py,
+routes/oauth.py, store/oauth.py) answers 401 with a pointer to its
+protected resource metadata (RFC 9728), which names this server as the
+authorization server (RFC 8414). Clients register themselves (RFC 7591,
+public clients only; Claude registers on every new connection, so unused
+registrations are dropped after a day and capped per hour). A Client ID
+Metadata Document isn't supported: Claude falls back to registering when
+the metadata doesn't advertise one. The consent page signs in with the
+user's existing access token, so there's no new credential; it's plain
+HTML with its own CSP, whose `form-action` allows the app's callback
+origin, as Chrome applies `form-action` to the redirect after a POST.
+PKCE is S256 only. Loopback redirect URIs match on any port (RFC 8252),
+as Claude Code picks a free port each time. Access tokens last an hour
+and refresh tokens 30 days; refresh tokens rotate, and one used twice
+revokes its grant (it was copied). A grant remembers the login token the
+user consented with, so revoking that token, **New token** or deleting
+the user ends it too. `PUBLIC_URL`, when set, is the issuer and resource
+URL: behind a proxy the request's own host may not be what clients use.
+
 **Progress % counts steps, not time.** The server computes it
 (`gcm/progress.py`, called from `tracking.process_jobs`), not
 craft_monitor.lua. A step is one item or fluid type in the job's

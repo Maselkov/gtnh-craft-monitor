@@ -57,6 +57,11 @@ NO_STORE_ENDPOINTS = {
     "users.admin_user_token_regenerate",
     "agent.admin_connect_get",
     "mcp.mcp_post",
+    "oauth.register",
+    "oauth.authorize_get",
+    "oauth.authorize_post",
+    "oauth.token",
+    "users.admin_app_revoke_post",
 }
 
 

@@ -153,7 +153,11 @@ def admin_user_post():
 @bp.route("/api/admin/users", methods=["GET"])
 @auth.admin_required
 def admin_users_get():
-    return jsonify({"users": store.users.all_with_tokens()})
+    users = store.users.all_with_tokens()
+    apps = store.oauth.grants_by_user()
+    for user in users:
+        user["apps"] = apps.get(user["id"], [])
+    return jsonify({"users": users})
 
 
 @bp.route("/api/admin/users/<user_id>", methods=["DELETE"])
@@ -207,4 +211,14 @@ def admin_user_history_get(user_id):
 def admin_token_revoke_post(token_id):
     if not store.users.revoke_token(token_id):
         return jsonify({"error": "active token not found"}), 404
+    return jsonify({"ok": True})
+
+
+@bp.route("/api/admin/apps/<grant_id>/revoke", methods=["POST"])
+@auth.admin_required
+def admin_app_revoke_post(grant_id):
+    """Disconnects an app a user connected with OAuth (an AI assistant):
+    its tokens stop working at once."""
+    if not store.oauth.revoke_grant(grant_id):
+        return jsonify({"error": "connected app not found"}), 404
     return jsonify({"ok": True})

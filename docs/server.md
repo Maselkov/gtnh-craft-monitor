@@ -140,8 +140,11 @@ which is only appropriate on a trusted LAN. To expose it to the internet:
 5. Use an `https://` `SERVER_URL` in `/home/config.lua` so the API key isn't sent
    in cleartext.
 
-Proxy the whole site, not just the page: AI assistants use `/mcp` (see
-[AI assistants](using.md#ai-assistants)).
+Proxy the whole site, not just the page: AI assistants use `/mcp`,
+`/oauth/...` and `/.well-known/...` (see
+[AI assistants](using.md#ai-assistants)). Set `PUBLIC_URL` to the address
+people use, e.g. `https://monitor.example.com`: an assistant app is told to
+sign in there, and claude.ai only accepts an `https://` one.
 
 The server accepts up to 500 open connections. A proxy keeps idle
 connections to it open for reuse, and opening a page full of icons can make
@@ -189,7 +192,11 @@ Managing users:
   the item, whether it started or failed (and why), and which CPU.
   **Stock refills** adds the requests their keep-in-stock targets made;
   the server makes those, under whoever last set the target.
-- **Revoke** invalidates a token and ends its sessions immediately.
+- **Revoke** invalidates a token and ends its sessions immediately, and
+  disconnects any AI assistant the user connected while signed in with it.
+- **App: ...** rows are AI assistants the user connected
+  ([AI assistants](using.md#ai-assistants)); **Disconnect** stops one at
+  once.
 - **New token** replaces a user's current token in one step.
 - **Delete** (not on your own account) permanently removes a user with their tokens, sessions,
   pins and pending notifications. Their craft request history is kept.
