@@ -34,6 +34,7 @@ import { focusNetworkSearch, pathToTab, refreshActiveTab, setupTabActions, switc
 import { setupTheme } from './theme.js';
 import { removeLegacyStorageKeys, setupImageErrorRemoval } from './util.js';
 import { setupWebhooksActions } from './webhooks.js';
+import { setupAssistantActions } from './assistant.js';
 
 // Tells static/boot.js the modules loaded and linked.
 window.gcmStarted = true;
@@ -53,6 +54,7 @@ setupCraftHistory();
 setupCraftStats();
 setupAgentsActions();
 setupWebhooksActions();
+setupAssistantActions();
 setupIngredientsActions();
 setupTabActions();
 setupPowerActions();

@@ -239,3 +239,17 @@ def items_ended_since(since):
             (since,),
         ).fetchall()
     return {tuple(r) for r in rows}
+
+
+def item_crafts_since(mod, internal, damage, since):
+    """How many jobs making exactly this item (its mod, internal name
+    and damage, as craft_events keep them) ended at or after `since`, how
+    many of those were keep-in-stock refills, and when the last ended:
+    (count, auto, last_at or None)."""
+    with db.transaction(db.app_db) as conn:
+        count, auto, last_at = conn.execute(
+            "SELECT COUNT(*), COALESCE(SUM(auto <> 0), 0), MAX(occurred_at) FROM craft_events "
+            "WHERE item_internal = ? AND item_mod IS ? AND item_damage IS ? AND occurred_at >= ?",
+            (internal, mod, damage, since),
+        ).fetchone()
+    return count, auto, last_at
