@@ -818,6 +818,59 @@ async function main() {
     await postCrafts(base, true);
   });
 
+  step('dialogs by keyboard: focus goes in, Tab stays in, focus comes back; item links open with Enter', async () => {
+    // Real key presses, so focus moves the browser's own way.
+    const CODES = { Enter: 13, Escape: 27, Tab: 9 };
+    const key = async (k, shift) => {
+      const ev = { key: k, code: k, windowsVirtualKeyCode: CODES[k], modifiers: shift ? 8 : 0 };
+      // Enter's text is what makes a <button> click.
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', ...ev, ...(k === 'Enter' ? { text: '\r' } : {}) });
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', ...ev });
+    };
+    await game(base, '/api/crafts', { source: 'me_controller', jobs: [
+      { name: 'W01', busy: true, final_output: 'Iron Ingot', final_output_mod: 'minecraft',
+        final_output_internal: 'iron_ingot', final_output_damage: 0,
+        active: [{ name: 'Iron Ingot', size: 3 }],
+        pending: [{ name: 'Iron Ore', mod: 'minecraft', internal: 'iron_ore', damage: 0, size: 6 }], stored: [] },
+      { name: 'W02', busy: false },
+    ] });
+    await waitFor('W01 card', `card('W01')?.querySelector('.ingredients-btn')`);
+    const box = `$('#ingredientsModal .modal-box')`;
+    await evaluate(`card('W01').querySelector('.ingredients-btn').focus(), true`);
+    await key('Enter');
+    await waitFor('open', `visible($('#ingredientsModal'))`);
+    await waitFor('a modal dialog', `${box}.getAttribute('role') === 'dialog' && ${box}.getAttribute('aria-modal') === 'true'`);
+    await waitFor('labelled by its title', `document.getElementById(${box}.getAttribute('aria-labelledby'))?.textContent.includes('Iron Ingot')`);
+    await waitFor('focus in it', `$('#ingredientsModal').contains(document.activeElement)`);
+    // Round the dialog more than once, both ways: never out of it.
+    for (const shift of [false, true]) {
+      for (let i = 0; i < 8; i++) {
+        await key('Tab', shift);
+        const inside = await evaluate(`$('#ingredientsModal').contains(document.activeElement) && document.activeElement !== ${box}`);
+        if (!inside) throw new Error(`Tab ${shift ? 'backwards ' : ''}left the dialog, at ${i}: ${await evaluate('document.activeElement.outerHTML.slice(0, 120)')}`);
+      }
+    }
+    // An ingredient is a button to the keyboard.
+    await evaluate(`$$('#ingredientsGrid .ingredient-cell').find(c => c.dataset.internal === 'iron_ore').focus(), true`);
+    await key('Enter');
+    await waitFor('item open over it, focus in the item', `visible($('#itemHistoryModal')) && $('#itemHistoryName').textContent === 'Iron Ore'
+      && $('#itemHistoryModal').contains(document.activeElement)`);
+    await key('Escape');
+    await waitFor('item closed, focus back in the ingredients', `!visible($('#itemHistoryModal'))
+      && $('#ingredientsModal').contains(document.activeElement)`);
+    await key('Escape');
+    await waitFor('closed, focus back on its button', `!visible($('#ingredientsModal'))
+      && document.activeElement.matches('[data-action="open-ingredients"][data-cpu="W01"]')`);
+    // So is a card's item name.
+    await evaluate(`card('W01').querySelector('.item-history-link').focus(), true`);
+    await key('Enter');
+    await waitFor('its item open', `visible($('#itemHistoryModal')) && $('#itemHistoryName').textContent === 'Iron Ingot'`);
+    await key('Escape');
+    await waitFor('closed, focus back on the name', `!visible($('#itemHistoryModal'))
+      && document.activeElement.matches('.item-history-link[data-internal="iron_ingot"]')`);
+    await postCrafts(base, true);
+  });
+
   step('a redraw keeps icon <img>s, so animated ones carry on', async () => {
     // Kept isn't enough: an <img> moved through another document (a
     // template's content) restarts all the same. adoptedCallback counts

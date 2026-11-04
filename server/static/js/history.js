@@ -148,21 +148,34 @@ function readDamageFromDataset(raw) {
   return isNaN(n) ? null : n;
 }
 
+function openItemFromLink(link) {
+  openItemHistoryFromCraft(
+    link.dataset.mod || null,
+    link.dataset.internal || null,
+    readDamageFromDataset(link.dataset.damage),
+    link.dataset.name || '?',
+    link.dataset.icon || null);
+}
+
 export function setupCraftHistoryLinks() {
   // Event delegation, same reasoning as the network grid's tooltip -
   // the crafts container, the ingredients grid and the craft history
   // are rebuilt wholesale via innerHTML on every poll, so per-element
   // listeners would just be discarded each time.
   for (const id of ['root', 'ingredientsModal', 'craftHistory', 'craftStats']) {
-    document.getElementById(id).addEventListener('click', (e) => {
+    const container = document.getElementById(id);
+    container.addEventListener('click', (e) => {
       const link = e.target.closest('.item-history-link');
-      if (!link) return;
-      openItemHistoryFromCraft(
-        link.dataset.mod || null,
-        link.dataset.internal || null,
-        readDamageFromDataset(link.dataset.damage),
-        link.dataset.name || '?',
-        link.dataset.icon || null);
+      if (link) openItemFromLink(link);
+    });
+    // Focusable links (tabindex) open with Enter or Space, as a button does.
+    container.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const link = e.target.closest('.item-history-link[tabindex]');
+      if (!link || link !== e.target) return;
+      e.preventDefault();  // Space would scroll the page
+      openItemFromLink(link);
     });
   }
 }

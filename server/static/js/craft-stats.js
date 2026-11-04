@@ -66,7 +66,7 @@ function itemRow(item, maxCount) {
     : '<span class="craft-icon"></span>';
   const name = escapeHtml(nameText(item.itemName || 'Unknown item'));
   const title = item.internal
-    ? `<span class="item-history-link" data-mod="${escapeHtml(item.mod || '')}" data-internal="${escapeHtml(item.internal)}" data-damage="${item.damage != null ? escapeHtml(item.damage) : ''}" data-name="${escapeHtml(item.itemName || 'Unknown item')}" data-icon="${escapeHtml(item.icon || '')}">${name}</span>`
+    ? `<span class="item-history-link" tabindex="0" role="button" data-mod="${escapeHtml(item.mod || '')}" data-internal="${escapeHtml(item.internal)}" data-damage="${item.damage != null ? escapeHtml(item.damage) : ''}" data-name="${escapeHtml(item.itemName || 'Unknown item')}" data-icon="${escapeHtml(item.icon || '')}">${name}</span>`
     : `<span>${name}</span>`;
   const details = [`${item.count}&times;`];
   if (item.medianSeconds != null) details.push(`usually ${formatDuration(item.medianSeconds)}`);

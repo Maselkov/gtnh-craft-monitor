@@ -339,6 +339,10 @@ opens the craft dialog (as middle-click does), **P** pins it, and **Escape**
 (or **↑** from the top row) goes back to the search box. Closing a dialog
 with Escape returns to the item it was opened from.
 
+Elsewhere, item names on the Crafts tab and the cells in a CPU's ingredients
+are reached with **Tab** and open with **Enter**. **Tab** stays inside an open
+dialog, and closing one puts focus back where it was.
+
 ## Requesting and cancelling crafts
 
 Requires an operator or admin account. Craftable items and fluids in the

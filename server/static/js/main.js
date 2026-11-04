@@ -11,6 +11,7 @@ import {
 import { setupCraftHistory } from './craft-history.js';
 import { setupAgentsActions } from './agents.js';
 import { setupCraftStats } from './craft-stats.js';
+import { setupDialogs } from './dialogs.js';
 import { setupCraftPlanActions } from './craft-plan.js';
 import { pollCrafts, refresh, setupCraftsActions, setupNotifications, tickSourceLine } from './crafts.js';
 import { setupGameDataActions } from './gamedata.js';
@@ -41,6 +42,7 @@ window.gcmStarted = true;
 // and the render functions only carry data-action attributes.
 removeLegacyStorageKeys();
 setupImageErrorRemoval();
+setupDialogs();
 setupAuthControls();
 setupTheme();
 setupAdminActions();
