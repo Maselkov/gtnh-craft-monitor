@@ -440,6 +440,47 @@ Click a row to open that item. Grid cells with a rule carry a bell (alert) or
 circular-arrows (target) badge, tinted red while low, and the item's chart
 draws each threshold as a dashed line.
 
+## AI assistants
+
+The server is also an [MCP](https://modelcontextprotocol.io) server, so an AI
+assistant can read the base and answer questions about it: "what's been
+draining fastest this week?", "why is the craft on M00 slow?", "what's
+missing to make 64 of these?". Its address is your page's address with
+`/mcp` on the end, e.g. `https://monitor.example.com/mcp`.
+
+The assistant signs in with your personal access token, so it sees what you
+see. It can't change anything yet: every tool reads.
+
+With [Claude Code](https://claude.com/claude-code):
+
+```bash
+claude mcp add --transport http gtnh https://monitor.example.com/mcp \
+  --header "Authorization: Bearer gcm_tok-..."
+```
+
+Other MCP clients that can send a header work the same way: the endpoint
+speaks Streamable HTTP and wants `Authorization: Bearer <your token>`.
+Anyone holding the token can use it as you, so keep it out of shared config
+files, and use **New token** in Manage users if it leaks.
+
+What the assistant can look at:
+
+| Tool | What it answers |
+|---|---|
+| `search_items` | Items, fluids and essentia by name ([NEI-style search](#search)), with amounts |
+| `get_item` | One item: amount, trend, tooltip, stock rules, the CPUs making it |
+| `item_history` | An item's amount over the last hour to its whole history |
+| `inventory_changes` | What's being used up or piling up over a day or a week |
+| `current_crafts` | Each CPU's job and progress, and which are idle |
+| `craft_job` | A running job's steps, held-up ones first, with the machines holding them up |
+| `craft_history` | Jobs that ended |
+| `craft_stats` | Totals, most crafted items, CPU use, slowest machines |
+| `plan_craft` | The [crafting plan](#requesting-and-cancelling-crafts) for an amount of an item |
+| `stock_rules` | Keep-in-stock targets and your alerts |
+| `power` | Stored EU over time and its trend |
+
+Answers are only as fresh as the game's last report, the same as the page's.
+
 ## Limitations
 
 - Crafting status is only as fresh as `POLL_SECONDS` (5 s by default) plus the

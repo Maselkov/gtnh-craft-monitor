@@ -778,6 +778,23 @@ color alone differentiates the highlighted terms now.
 
 ## Design decisions worth knowing (not bugs, but non-obvious choices)
 
+**The MCP endpoint is hand-written, stateless and dual-era.** `/mcp`
+(`gcm/mcp/`) doesn't use the MCP Python SDK: the SDK is ASGI and this
+server is WSGI, and an endpoint that answers every request with one JSON
+object, keeps no sessions and only offers tools is a few hundred lines of
+JSON-RPC. It serves both protocol eras on one URL. A 2026-07-28 request
+carries its version in `params._meta` and the `MCP-Protocol-Version`
+header, which must match, as must `Mcp-Method`/`Mcp-Name`. An `initialize`
+request picks a 2025-03-26..2025-11-25 version, and later legacy requests
+name it in the header; as nothing is kept between requests, each is served
+by its header alone (2025-03-26 without one). Tools never take an item
+name: `search_items` returns item keys and the other tools take those, so
+a model can't act on the wrong one of several items with the same name.
+Tool output is compacted for a model's context (`tools._compact_numbers`,
+no icons, capped lists, ISO times). Auth is `auth.bearer_required`: the
+user's personal access token in an `Authorization: Bearer` header,
+never a session cookie, so a browser can't be tricked into calling it.
+
 **Progress % counts steps, not time.** The server computes it
 (`gcm/progress.py`, called from `tracking.process_jobs`), not
 craft_monitor.lua. A step is one item or fluid type in the job's
