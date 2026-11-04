@@ -631,6 +631,57 @@ def _app_cancel_items(conn):
     conn.execute("ALTER TABLE craft_cancel_history ADD COLUMN item_icon TEXT")
 
 
+def _app_oauth(conn):
+    # OAuth for AI assistants' MCP connections (gcm/oauth.py,
+    # gcm/store/oauth.py). A client registers itself (RFC 7591); a user's
+    # consent makes a one-use code, and redeeming it a grant: one
+    # connected app, with the access and refresh tokens issued under it.
+    # access_token_id is the login token the user consented with, so
+    # revoking that ends the grant too. Secrets are stored as hashes.
+    conn.execute("""
+        CREATE TABLE oauth_clients (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            redirect_uris TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            created_by_ip TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE oauth_codes (
+            code_hash TEXT PRIMARY KEY,
+            client_id TEXT NOT NULL REFERENCES oauth_clients(id) ON DELETE CASCADE,
+            user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            access_token_id TEXT,
+            redirect_uri TEXT NOT NULL,
+            code_challenge TEXT NOT NULL,
+            expires_at REAL NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE oauth_grants (
+            id TEXT PRIMARY KEY,
+            client_id TEXT NOT NULL REFERENCES oauth_clients(id) ON DELETE CASCADE,
+            user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            access_token_id TEXT,
+            created_at REAL NOT NULL,
+            last_used_at REAL,
+            revoked_at REAL
+        )
+    """)
+    conn.execute("CREATE INDEX idx_oauth_grants_user ON oauth_grants (user_id)")
+    conn.execute("""
+        CREATE TABLE oauth_tokens (
+            token_hash TEXT PRIMARY KEY,
+            grant_id TEXT NOT NULL REFERENCES oauth_grants(id) ON DELETE CASCADE,
+            kind TEXT NOT NULL,
+            expires_at REAL NOT NULL,
+            used_at REAL
+        )
+    """)
+    conn.execute("CREATE INDEX idx_oauth_tokens_grant ON oauth_tokens (grant_id)")
+
+
 APP_MIGRATIONS = [
     _app_baseline,
     _app_drop_orphaned_user_rows,
@@ -643,6 +694,7 @@ APP_MIGRATIONS = [
     _app_settings,
     _app_provider_stalls,
     _app_cancel_items,
+    _app_oauth,
 ]
 POWER_MIGRATIONS = [_power_baseline, _power_machines, _power_drop_impossible_times]
 ITEM_HISTORY_MIGRATIONS = [

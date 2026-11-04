@@ -259,6 +259,16 @@ function adminTokenRowHtml(user, token) {
   </div>`;
 }
 
+// An AI assistant the user connected with OAuth (/mcp).
+function adminAppRowHtml(user, app) {
+  const used = app.last_used_at ? `used ${formatRelativeTime(app.last_used_at)}` : 'never used';
+  return `<div class="admin-token-row" data-id="${escapeHtml(app.id)}">
+    <span class="admin-token-meta">App: ${escapeHtml(app.client_name)} · connected ${formatTokenDate(app.created_at)} · ${used}</span>
+    <button class="admin-token-revoke" data-action="revoke-app" data-app-id="${escapeHtml(app.id)}"
+      data-app-name="${escapeHtml(app.client_name)}" data-display-name="${escapeHtml(user.display_name)}">Disconnect</button>
+  </div>`;
+}
+
 function adminNewTokenHtml(token) {
   return `<div id="adminTokenResult" class="admin-token-result">
     <div class="modal-label">New access token: share it securely, it's shown only once.</div>
@@ -276,12 +286,13 @@ function adminUserRowHtml(user) {
   const isNew = shownToken && shownToken.userId === user.id;
   const tokens = (user.tokens || []).map((token) => adminTokenRowHtml(user, token)).join('')
     || '<div class="admin-token-row">No active tokens: they can\'t sign in.</div>';
+  const apps = (user.apps || []).map((app) => adminAppRowHtml(user, app)).join('');
   return `<div class="admin-user-row${isNew ? ' new' : ''}" data-user-id="${id}">
     <div class="admin-user-main">
       <div class="admin-user-title">
         <span class="admin-user-name" title="${name}">${name}</span>${isMe ? '<span class="admin-user-you">you</span>' : ''}
       </div>
-      <div class="admin-token-list">${tokens}</div>
+      <div class="admin-token-list">${tokens}${apps}</div>
     </div>
     <div class="admin-user-role-cell">
       <span class="badge role-badge ${escapeHtml(user.role)}" title="${escapeHtml(ROLE_HELP[user.role] || '')}">${escapeHtml(user.role)}</span>
@@ -360,6 +371,7 @@ export function setupAuthControls() {
 export function setupAdminActions() {
   delegateActions(document.getElementById('adminUsersList'), {
     'revoke-token': (el) => revokeAdminToken(el.dataset.tokenId, el.dataset.displayName),
+    'revoke-app': (el) => revokeAdminApp(el.dataset.appId, el.dataset.appName, el.dataset.displayName),
     'user-history': (el) => openUserHistory(el.dataset.userId, el.dataset.role),
     'regenerate-token': (el) => regenerateAdminToken(el.dataset.userId, el.dataset.displayName),
     'delete-user': (el) => deleteAdminUser(el.dataset.userId, el.dataset.displayName),
@@ -546,6 +558,19 @@ async function revokeAdminToken(tokenId, displayName) {
     return;
   }
   showToast('Access token revoked.');
+  shownToken = null;
+  await refreshAdminUsers();
+}
+
+async function revokeAdminApp(appId, appName, displayName) {
+  if (!window.confirm(`Disconnect ${appName} from ${displayName}'s account? It stops working immediately.`)) return;
+  const response = await fetch(`/api/admin/apps/${encodeURIComponent(appId)}/revoke`, { method: 'POST' });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    showToast(data.error || 'Could not disconnect the app.', true);
+    return;
+  }
+  showToast(`${appName} disconnected.`);
   shownToken = null;
   await refreshAdminUsers();
 }

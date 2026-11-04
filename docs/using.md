@@ -448,20 +448,39 @@ draining fastest this week?", "why is the craft on M00 slow?", "what's
 missing to make 64 of these?". Its address is your page's address with
 `/mcp` on the end, e.g. `https://monitor.example.com/mcp`.
 
-The assistant signs in with your personal access token, so it sees what you
+The assistant acts as you: it signs in with your account and sees what you
 see. It can't change anything yet: every tool reads.
 
-With [Claude Code](https://claude.com/claude-code):
+**claude.ai, the Claude apps, or another app that connects by URL:** add a
+custom connector with the `/mcp` address. The app sends you to this server's
+**Connect** page: sign in with your access token if you aren't already,
+check which app is asking, and click **Allow**. The server must be reachable
+from the internet over HTTPS for claude.ai (see
+[Exposing it beyond your LAN](server.md#exposing-it-beyond-your-lan)); one
+on your LAN only works with apps running on your own computer.
+
+**[Claude Code](https://claude.com/claude-code):** add the server, then run
+`/mcp` in Claude Code and pick it to sign in the same way:
+
+```bash
+claude mcp add --transport http gtnh https://monitor.example.com/mcp
+```
+
+Or skip the sign-in page and give it your access token, as with any MCP
+client that can send a header:
 
 ```bash
 claude mcp add --transport http gtnh https://monitor.example.com/mcp \
   --header "Authorization: Bearer gcm_tok-..."
 ```
 
-Other MCP clients that can send a header work the same way: the endpoint
-speaks Streamable HTTP and wants `Authorization: Bearer <your token>`.
 Anyone holding the token can use it as you, so keep it out of shared config
 files, and use **New token** in Manage users if it leaks.
+
+An app connected through the Connect page shows under its user in
+**Manage users** ("App: Claude · connected Nov 4 · used 5 minutes ago"),
+where an admin can **Disconnect** it. Revoking the token you signed in with,
+or **New token**, disconnects it too.
 
 What the assistant can look at:
 

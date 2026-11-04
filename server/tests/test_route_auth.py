@@ -29,6 +29,12 @@ PUBLIC_ENDPOINTS = {
     "users.auth_login_post",
     "users.auth_logout_post",
     "mcp.mcp_other",  # only ever answers 405
+    # OAuth for MCP clients (gcm/oauth.py): discovery documents, client
+    # registration and the token endpoint, which checks its own grants.
+    "oauth.protected_resource_metadata",
+    "oauth.authorization_server_metadata",
+    "oauth.register",
+    "oauth.token",
 }
 
 

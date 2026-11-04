@@ -1841,6 +1841,55 @@ async function main() {
     await waitFor('closed by backdrop', `!visible($('#adminUsersModal'))`);
   });
 
+  step('an AI assistant connects with OAuth: consent page, then listed and disconnected in Manage users', async () => {
+    // A loopback callback, as Claude Code registers: this server's own
+    // address, where the code shows up in the URL.
+    const callback = base + '/e2e-callback';
+    const { data: client } = await api(base, 'POST', '/oauth/register',
+      { client_name: 'E2E Assistant', redirect_uris: [callback] });
+    const verifier = 'e2e-verifier-'.padEnd(64, 'x');
+    const params = new URLSearchParams({
+      response_type: 'code', client_id: client.client_id, redirect_uri: callback, state: 'e2e',
+      code_challenge: createHash('sha256').update(verifier).digest('base64url'), code_challenge_method: 'S256',
+    });
+    await cdp.send('Page.navigate', { url: `${base}/oauth/authorize?${params}` });
+    await waitFor('consent page', `document.querySelector('.oauth-title')?.textContent === 'Connect E2E Assistant?'
+      && document.body.textContent.replace(/\\s+/g, ' ').includes('as Administrator (admin)')`);
+    // The site's stylesheet loads under the page's own CSP.
+    await waitFor('styled', `getComputedStyle(document.querySelector('.oauth-box')).borderRadius === '12px'`);
+    await evaluate(`[...document.querySelectorAll('button')].find((b) => b.textContent === 'Allow').click(), true`);
+    await waitFor('sent back with a code', `location.pathname === '/e2e-callback'
+      && new URLSearchParams(location.search).get('state') === 'e2e'`);
+    const code = await evaluate(`new URLSearchParams(location.search).get('code')`);
+    const exchanged = await fetch(base + '/oauth/token', {
+      method: 'POST',
+      body: new URLSearchParams({ grant_type: 'authorization_code', code, client_id: client.client_id,
+        redirect_uri: callback, code_verifier: verifier }),
+    });
+    const tokens = await exchanged.json();
+    if (!exchanged.ok) throw new Error(`token: ${exchanged.status} ${JSON.stringify(tokens)}`);
+    const mcpStatus = () => fetch(base + '/mcp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.access_token}` },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping' }),
+    }).then((r) => r.status);
+    if (await mcpStatus() !== 200) throw new Error('the access token should work on /mcp');
+
+    await cdp.send('Page.navigate', { url: base + '/' });
+    await waitFor('reloaded', `document.readyState === 'complete' && !window.byText`);
+    await evaluate(PAGE_LIB);
+    await click(`$('#settingsBtn')`);
+    await waitFor('menu open', `visible($('#settingsMenu'))`);
+    await click(`$('#adminBtn')`);
+    const app = `$$('#adminUsersList .admin-token-row').find((r) => r.textContent.includes('E2E Assistant'))`;
+    await waitFor('app listed', `${app}?.textContent.includes('App: E2E Assistant') && ${app}.textContent.includes('used')`);
+    await click(`${app}.querySelector('[data-action="revoke-app"]')`);
+    await waitFor('disconnected', `!(${app}) && $('#toastContainer').textContent.includes('E2E Assistant disconnected.')`);
+    if (await mcpStatus() !== 401) throw new Error('a disconnected app\'s token should stop working');
+    await click(`$('#adminUsersModal .history-close-btn')`);
+    await waitFor('closed', `!visible($('#adminUsersModal'))`);
+  });
+
   step('admin: a notice when a computer\'s scripts are older than the server needs', async () => {
     // v1.0.0 is older than GCM_SCRIPTS_VERSION (v1.1.0). The next step's
     // computer, on v1.1.0, only has a newer release to update to: no notice.

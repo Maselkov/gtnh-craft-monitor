@@ -27,7 +27,7 @@ import secrets
 
 from flask import g, jsonify, request
 
-from gcm import config, store
+from gcm import config, oauth, store
 
 
 def _api_key_valid():
@@ -145,21 +145,34 @@ def _check_login():
     return None
 
 
+def bearer_token():
+    """The token in an Authorization: Bearer header, or None."""
+    scheme, _, token = request.headers.get("Authorization", "").partition(" ")
+    token = token.strip()
+    return token if scheme.lower() == "bearer" and token else None
+
+
 def bearer_user():
-    """The user an Authorization: Bearer header's access token signs in,
-    or None."""
-    header = request.headers.get("Authorization", "")
-    scheme, _, token = header.partition(" ")
-    if scheme.lower() != "bearer" or not token.strip():
+    """The user a bearer token acts for, or None: an OAuth access token
+    an app was given (gcm/oauth.py), or the user's own access token."""
+    token = bearer_token()
+    if token is None:
         return None
-    return store.users.token_user(token.strip())
+    if token.startswith(store.oauth.ACCESS_PREFIX):
+        return store.oauth.access_user(token)
+    return store.users.token_user(token)
 
 
 def _check_bearer():
     g.user = bearer_user()
     if not g.user:
+        # Where an MCP client finds out how to sign in (RFC 9728): a
+        # 401 must say, claude.ai ignores it on anything else.
+        challenge = f'Bearer resource_metadata="{oauth.base_url()}/.well-known/oauth-protected-resource"'
+        if bearer_token() is not None:
+            challenge += ', error="invalid_token"'
         response = jsonify({"error": "authentication required"})
-        response.headers["WWW-Authenticate"] = 'Bearer realm="gtnh-craft-monitor"'
+        response.headers["WWW-Authenticate"] = challenge
         return response, 401
     return None
 

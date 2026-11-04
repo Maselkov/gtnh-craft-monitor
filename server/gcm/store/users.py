@@ -253,8 +253,9 @@ def delete(user_id):
 
 
 def replace_credentials(user_id):
-    """Revokes every token and session the user has and issues one new
-    token, which it returns - or None if there's no such user."""
+    """Revokes every token, session and OAuth grant the user has and
+    issues one new token, which it returns - or None if there's no such
+    user."""
     with db.transaction(db.app_db) as conn:
         if not conn.execute("SELECT 1 FROM users WHERE id = ?", (user_id,)).fetchone():
             return None
@@ -269,12 +270,18 @@ def replace_credentials(user_id):
             "WHERE user_id = ? AND revoked_at IS NULL",
             (now, user_id),
         )
+        # And every app connected with OAuth (gcm/store/oauth.py).
+        conn.execute(
+            "UPDATE oauth_grants SET revoked_at = ? "
+            "WHERE user_id = ? AND revoked_at IS NULL",
+            (now, user_id),
+        )
         return create_access_token(conn, user_id)
 
 
 def revoke_token(token_id):
-    """Revokes one token and the sessions made from it. False if no
-    unrevoked token has that id."""
+    """Revokes one token, the sessions made from it and the OAuth grants
+    consented to with it. False if no unrevoked token has that id."""
     with db.transaction(db.app_db) as conn:
         now = time.time()
         cursor = conn.execute(
@@ -286,6 +293,12 @@ def revoke_token(token_id):
             return False
         conn.execute(
             "UPDATE sessions SET revoked_at = ? "
+            "WHERE access_token_id = ? AND revoked_at IS NULL",
+            (now, token_id),
+        )
+        # Apps connected with OAuth while signed in with it, too.
+        conn.execute(
+            "UPDATE oauth_grants SET revoked_at = ? "
             "WHERE access_token_id = ? AND revoked_at IS NULL",
             (now, token_id),
         )
