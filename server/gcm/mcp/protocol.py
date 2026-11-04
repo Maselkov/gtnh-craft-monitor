@@ -25,7 +25,7 @@ import binascii
 import json
 
 from gcm import config
-from gcm.mcp import tools
+from gcm.mcp import instructions, tools
 
 MODERN_VERSIONS = ["2026-07-28"]
 LEGACY_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26"]
@@ -40,17 +40,6 @@ METHOD_NOT_FOUND = -32601
 INVALID_PARAMS = -32602
 HEADER_MISMATCH = -32020
 UNSUPPORTED_VERSION = -32022
-
-INSTRUCTIONS = (
-    "This server is a Gregtech: New Horizons (Minecraft modpack) base's monitor. It reads the base's "
-    "AE2 ME network, crafting CPUs and power storage, as reported by OpenComputers scripts in the game. "
-    "Start with search_items to find an item's key; the other item tools take that key, never a name. "
-    "Amounts are items, or mB (millibuckets, the game's litres) for fluids. Data is as fresh as the "
-    "game's last report: say when it is old. request_craft, cancel_craft and the keep-in-stock target "
-    "tools change what happens in the game: say exactly what you're about to do (item, amount, CPU) "
-    "and get the user's OK before calling them."
-)
-
 
 def server_info():
     return {"name": "gtnh-craft-monitor", "title": "GTNH Craft Monitor", "version": config.SERVER_VERSION or "dev"}
@@ -113,7 +102,7 @@ def handle(message, headers, user):
             "protocolVersion": version,
             "capabilities": {"tools": {"listChanged": False}},
             "serverInfo": server_info(),
-            "instructions": INSTRUCTIONS,
+            "instructions": instructions.build(user),
         })
 
     if _META_VERSION in meta:
@@ -143,9 +132,10 @@ def handle(message, headers, user):
         return 200, _modern_result(msg_id, {
             "supportedVersions": SUPPORTED_VERSIONS,
             "capabilities": {"tools": {}},
-            "instructions": INSTRUCTIONS,
-            "ttlMs": 3600000,
-            "cacheScope": "public",
+            "instructions": instructions.build(user),
+            # Per user and live (who's connected, the base's state).
+            "ttlMs": 300000,
+            "cacheScope": "private",
         })
     if method == "ping":
         result = {}

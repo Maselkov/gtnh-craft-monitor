@@ -523,6 +523,36 @@ accepted request pins its CPU for you.
 
 Answers are only as fresh as the game's last report, the same as the page's.
 
+### What the assistant is told
+
+When an assistant connects, the server gives it instructions, which apps
+such as Claude add to what the model is told:
+
+- how to use the tools well: find items first, plan before crafting, read
+  a plan's rows, confirm before changing anything
+- what GTNH's units and tiers mean
+- that AE2 picks the CPU for a craft, so there's nothing to choose
+- that much of a base is kept stocked by things this server can't see
+  (Level Maintainers, passive production), so it checks how an item is
+  made before suggesting a keep-in-stock target
+- a snapshot of the base as it connects: who's signed in and what their
+  role can change, the GTNH version, how many CPUs are busy, when the
+  network was last scanned, whether patterns and power are reporting
+
+**House rules.** Admins can add their own, in **Settings (⚙) → AI
+assistant**. Every assistant that connects afterwards gets them, so use
+them for what's true of this base. For example:
+
+- "Plasmas and the Infinity Catalyst are kept by Level Maintainers: never
+  add keep-in-stock targets for them."
+- "CPU M00 is for fusion crafts: don't cancel jobs on it."
+- "Ask in Discord before requesting anything over 1M EU/t."
+
+House rules can't give an assistant more than its user's role allows: the
+tools check the role either way. The same dialog shows the latest tool
+calls assistants made (who, which tool, with what), which helps when an
+assistant does something odd.
+
 ## Limitations
 
 - Crafting status is only as fresh as `POLL_SECONDS` (5 s by default) plus the

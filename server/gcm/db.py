@@ -682,6 +682,26 @@ def _app_oauth(conn):
     conn.execute("CREATE INDEX idx_oauth_tokens_grant ON oauth_tokens (grant_id)")
 
 
+def _app_mcp_calls(conn):
+    # Every tool call AI assistants make through /mcp (gcm/store/
+    # assistant.py), for admins to see how they use the tools: the
+    # arguments cut short, and the error if there was one. Kept 30 days.
+    conn.execute("""
+        CREATE TABLE mcp_calls (
+            id INTEGER PRIMARY KEY,
+            at REAL NOT NULL,
+            user_id TEXT,
+            tool TEXT NOT NULL,
+            arguments TEXT NOT NULL,
+            is_error INTEGER NOT NULL,
+            error TEXT,
+            result_bytes INTEGER NOT NULL,
+            ms INTEGER NOT NULL
+        )
+    """)
+    conn.execute("CREATE INDEX idx_mcp_calls_at ON mcp_calls (at)")
+
+
 APP_MIGRATIONS = [
     _app_baseline,
     _app_drop_orphaned_user_rows,
@@ -695,6 +715,7 @@ APP_MIGRATIONS = [
     _app_provider_stalls,
     _app_cancel_items,
     _app_oauth,
+    _app_mcp_calls,
 ]
 POWER_MIGRATIONS = [_power_baseline, _power_machines, _power_drop_impossible_times]
 ITEM_HISTORY_MIGRATIONS = [

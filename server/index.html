@@ -80,6 +80,8 @@
             data-action="open-agents">Status<span class="menu-note" id="agentsBtnNote" hidden></span></button>
           <button class="settings-menu-item" id="webhooksBtn" role="menuitem" style="display:none;"
             data-action="open-webhooks">Webhooks</button>
+          <button class="settings-menu-item" id="assistantBtn" role="menuitem" style="display:none;"
+            data-action="open-assistant">AI assistant</button>
           <button class="settings-menu-item" id="backupBtn" role="menuitem" style="display:none;"
             data-action="open-backups">Backups</button>
           <button class="settings-menu-item danger" id="signOutBtn" role="menuitem"
@@ -484,6 +486,35 @@
         <button class="modal-btn secondary" id="webhookTestBtn" data-action="test-webhooks">Send test</button>
         <button class="modal-btn primary" id="webhooksSaveBtn" data-action="save-webhooks">Save</button>
       </div>
+    </div>
+  </div>
+
+  <div id="assistantModal" class="modal-overlay" style="display:none;">
+    <div class="modal-box admin-box">
+      <div class="modal-header">
+        <div class="modal-item-name">AI assistant</div>
+        <button class="history-close-btn" data-action="close-assistant" title="Close">&times;</button>
+      </div>
+      <div class="modal-note">AI assistants such as Claude connect to this address, as whoever signs them in.</div>
+      <div class="assistant-url-row">
+        <input id="assistantUrl" class="modal-amount-input" readonly aria-label="MCP address">
+        <button class="modal-btn secondary" data-action="copy-assistant-url">Copy</button>
+      </div>
+      <label class="modal-label" for="assistantRules">House rules</label>
+      <div class="modal-note">Added to every assistant's instructions: what it should know about this base and
+        how to behave here, e.g. "Plasmas are kept by Level Maintainers: never add keep-in-stock targets for
+        them." They can't give it permissions its user doesn't have.</div>
+      <textarea id="assistantRules" class="modal-amount-input assistant-rules" rows="6" spellcheck="true"></textarea>
+      <div class="assistant-rules-count" id="assistantRulesCount"></div>
+      <div id="assistantError" class="modal-error" style="display:none;"></div>
+      <div class="modal-buttons">
+        <button class="modal-btn primary" data-action="save-assistant-rules">Save</button>
+      </div>
+      <div class="assistant-calls-head">
+        <span class="modal-label">Latest tool calls</span>
+        <button class="admin-token-revoke" data-action="refresh-assistant-calls">Refresh</button>
+      </div>
+      <div id="assistantCalls" class="assistant-calls"></div>
     </div>
   </div>
 

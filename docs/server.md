@@ -196,7 +196,9 @@ Managing users:
   disconnects any AI assistant the user connected while signed in with it.
 - **App: ...** rows are AI assistants the user connected
   ([AI assistants](using.md#ai-assistants)); **Disconnect** stops one at
-  once.
+  once. **Settings (⚙) → AI assistant** has the `/mcp` address, the
+  house rules every assistant is given, and the tool calls assistants made
+  in the last 30 days.
 - **New token** replaces a user's current token in one step.
 - **Delete** (not on your own account) permanently removes a user with their tokens, sessions,
   pins and pending notifications. Their craft request history is kept.

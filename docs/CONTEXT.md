@@ -833,6 +833,51 @@ route's own code and role check (`commands.request_cancel`,
 so a CPU that has moved on to another job isn't cancelled. Viewers aren't
 offered operators' tools in `tools/list`.
 
+**The MCP instructions are built per connection.** `gcm/mcp/
+instructions.py` joins three parts: `instructions.md` (fixed guidance,
+kept under 900 words by a test, since it's in every conversation's
+context), a snapshot of the base when the assistant connects (the user
+and role, GTNH version, CPUs, the last scan, patterns, power, stock
+rules), and the admins' house rules (setting `mcp_house_rules`). The
+snapshot says it's a snapshot, so the model checks the tools for
+anything current. Because the text depends on the user, `server/discover`
+is `cacheScope: private` with a 5-minute TTL. Each snapshot line is read
+on its own and a failure only drops that line. House rules are framed as
+unable to widen permissions or skip confirmations; the tools enforce
+roles anyway. The core text answers what models got wrong in use:
+suggesting keep-in-stock targets for items a Level Maintainer or passive
+production keeps up (it has them check `get_item`'s `crafts_last_week`
+and the history first), reading a plan's totals as "crafts instead of
+using storage" (plan rows now carry a `plan` sentence, and the requested
+item is reported apart), and fussing over which CPU AE2 used (AE2 picks;
+the tools can't). Every tool call is logged (`store.assistant`,
+30 days) for admins to see in the AI assistant dialog.
+
+### Assistant behaviour checks
+
+Run these by hand, with Claude Code or claude.ai connected to `dev.py`,
+after changing the instructions or the tools. Compare what the model did
+with the AI assistant dialog's call log.
+
+1. **"Craft 40 FusionTech Mk-V"** (or any craftable item): plans first,
+   reads the plan right (what comes from storage, what's crafted), states
+   the item and amount and asks before `request_craft`, never brings up
+   CPUs.
+2. **"Keep Radon Plasma stocked"**: checks `crafts_last_week` and
+   `item_history` before proposing a target, and asks how it's made if it
+   looks automated.
+3. **"Why is the job on M00 slow?"**: `craft_job`, names the held-up steps
+   and the machines with their coordinates.
+4. **"What's running out?"**: `inventory_changes` (falling), with hours
+   to empty, and no targets proposed without the check in 2.
+5. **"Cancel the job on W03"**: passes the `job_id`, confirms first.
+6. **Stale data** (stop the fake game): says how old the data is.
+7. **A viewer asks for a craft**: says it needs an operator, no attempt.
+8. **A house rule** ("never touch W03"): followed.
+9. **An ambiguous name** ("steel plate"): searches, picks by context or
+   asks, never makes up a key.
+10. **Buckets** ("make 5 buckets of X"): asks for 5000 mB.
+
 **Progress % counts steps, not time.** The server computes it
 (`gcm/progress.py`, called from `tracking.process_jobs`), not
 craft_monitor.lua. A step is one item or fluid type in the job's

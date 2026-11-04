@@ -1890,6 +1890,43 @@ async function main() {
     await waitFor('closed', `!visible($('#adminUsersModal'))`);
   });
 
+  step('admin: AI assistant dialog: the address, house rules, and the tool calls made', async () => {
+    // One tool call to show up in the log.
+    const called = await fetch(base + '/mcp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'current_crafts', arguments: {} } }),
+    });
+    if (!called.ok) throw new Error(`tools/call: ${called.status}`);
+    await click(`$('#settingsBtn')`);
+    await waitFor('menu open', `visible($('#settingsMenu'))`);
+    await click(`$('#assistantBtn')`);
+    await waitFor('dialog', `visible($('#assistantModal')) && $('#assistantUrl').value.endsWith('/mcp')`);
+    await waitFor('the call listed', `$('#assistantCalls .assistant-call b')?.textContent === 'current_crafts'
+      && $('#assistantCalls').textContent.includes('Administrator')`);
+    await evaluate(`typeInto('#assistantRules', 'Plasmas are kept by Level Maintainers.')`);
+    await waitFor('counted', `$('#assistantRulesCount').textContent.startsWith('38 /')`);
+    await click(`byText('#assistantModal button', 'Save')`);
+    await waitFor('saved', `$('#toastContainer').textContent.includes('House rules saved.')`);
+    await evaluate(`pressKey('Escape'), true`);
+    await waitFor('closed by Escape', `!visible($('#assistantModal'))`);
+    await click(`$('#settingsBtn')`);
+    await click(`$('#assistantBtn')`);
+    await waitFor('rules kept', `visible($('#assistantModal'))
+      && $('#assistantRules').value === 'Plasmas are kept by Level Maintainers.'`);
+    // What an assistant connecting now is told.
+    const init = await fetch(base + '/mcp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } }),
+    }).then((r) => r.json());
+    if (!init.result.instructions.endsWith('Plasmas are kept by Level Maintainers.')) {
+      throw new Error('house rules missing from the instructions');
+    }
+    await clickBackdrop();
+    await waitFor('closed by backdrop', `!visible($('#assistantModal'))`);
+  });
+
   step('admin: a notice when a computer\'s scripts are older than the server needs', async () => {
     // v1.0.0 is older than GCM_SCRIPTS_VERSION (v1.1.0). The next step's
     // computer, on v1.1.0, only has a newer release to update to: no notice.

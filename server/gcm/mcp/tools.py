@@ -12,6 +12,7 @@ tools take that, never a name, so a request can't land on the wrong one
 of several items called alike."""
 
 import datetime
+import json
 import logging
 import math
 import time
@@ -252,6 +253,11 @@ def get_item(user, args):
         j.get("name") for j in jobs
         if j.get("busy") and commands.output_identity(j) and commands.same_output(commands.output_identity(j), identity)
     ]
+    # How it's kept stocked: AE2 jobs that made it (by hand, by a target,
+    # or by a Level Maintainer, whose jobs run on CPUs too). Rising with
+    # none of these means something outside AE2's crafting makes it.
+    count, auto, last_at = store.crafts.item_crafts_since(mod, internal, damage, time.time() - 7 * 86400)
+    out["crafts_last_week"] = {"jobs": count, "by_keep_in_stock_target": auto, "last_ended_at": _iso(last_at)}
     return out
 
 
@@ -450,42 +456,91 @@ def _plan(user, key, amount):
     )
     if result is None:
         raise ToolError("None of the network's patterns makes this item.")
-    items = sorted(result["items"], key=lambda i: (-(i["missing"] > 0), -i["craft"], i["name"] or ""))
-
-    def row(i):
-        out = {"name": i["name"], "unit": _unit(i["kind"]), "need": i["need"], "in_stock": i["available"],
-               "from_stock": i["from_stock"], "craft": i["craft"]}
-        if i["missing"]:
-            out["missing"] = i["missing"]
-        if i.get("warnings"):
-            out["would_go_below"] = [w["rule"] + f" ({w['threshold']})" for w in i["warnings"]]
-        return out
-
+    root = next((i for i in result["items"] if i["key"] == key), None)
+    items = sorted(
+        (i for i in result["items"] if i["key"] != key),
+        key=lambda i: (-(i["missing"] > 0), -i["craft"], i["name"] or ""),
+    )
     return {
-        "item": key,
-        "amount": amount,
         "can_craft": not result["missing"],
-        "missing": [row(i) for i in result["missing"]],
+        "requested": _plan_row(root, requested=True) if root else None,
+        "missing": [_plan_row(i) for i in result["missing"]],
+        "ingredients": [_plan_row(i) for i in items[:60]],
+        "ingredients_total": len(items),
         "steps": result["steps"],
         "truncated": result["truncated"],
-        "items": [row(i) for i in items[:60]],
         "patterns_scanned_at": _iso(patterns_at),
         "stock_scanned_at": _iso(stock_at),
-        "note": "An estimate from the network's patterns and last scan, worked out the way AE2 plans.",
+        "note": ("An estimate from the network's patterns and last scan, worked out the way AE2 plans. Each "
+                 "row is a total over the whole craft; its `plan` sentence says how it's covered. AE2 always "
+                 "crafts the requested item in full and never takes it from storage, even with some in stock."),
     }
+
+
+def _amount(n, kind):
+    n = int(n) if float(n).is_integer() else n
+    return f"{n:,}" + (" mB" if kind == "fluid" else "")
+
+
+def _plan_row(i, requested=False):
+    """One item's totals in a plan, with a sentence saying how its need
+    is covered, so the numbers can't be read the wrong way round."""
+    kind = i["kind"]
+    used_crafted = i["need"] - i["from_stock"] - i["from_leftovers"] - i["missing"]
+    left_over = max(0, i["craft"] - used_crafted)
+    parts = []
+    if i["from_stock"]:
+        whole = " (all of it)" if i["from_stock"] >= i["available"] else f" (of {_amount(i['available'], kind)})"
+        parts.append(f"{_amount(i['from_stock'], kind)} from storage{whole}")
+    if i["from_leftovers"]:
+        parts.append(f"{_amount(i['from_leftovers'], kind)} left over from other steps")
+    if i["craft"]:
+        crafted = f"{_amount(i['craft'], kind)} crafted"
+        if left_over:
+            crafted += f" in whole batches, {_amount(left_over, kind)} left over"
+        parts.append(crafted)
+    if i["missing"]:
+        parts.append(f"{_amount(i['missing'], kind)} missing")
+    if requested:
+        sentence = f"crafts {_amount(i['craft'], kind)}"
+        if left_over:
+            sentence += f" in whole batches ({_amount(left_over, kind)} more than asked)"
+        if i["available"]:
+            sentence += f"; the {_amount(i['available'], kind)} already in storage aren't used, AE2 never takes the requested item from storage"
+    else:
+        sentence = f"needs {_amount(i['need'], kind)} in all: " + ", ".join(parts)
+    out = {
+        "name": i["name"],
+        "plan": sentence,
+        "needed": i["need"],
+        "in_storage": i["available"],
+        "from_storage": i["from_stock"],
+        "from_leftovers": i["from_leftovers"],
+        "crafted": i["craft"],
+        "unit": _unit(kind),
+    }
+    if i["missing"]:
+        out["missing"] = i["missing"]
+    if i.get("warnings"):
+        out["would_go_below"] = [w["rule"] + f" ({w['threshold']})" for w in i["warnings"]]
+    return out
 
 
 def plan_craft(user, args):
     key = _arg(args, "item", "string", required=True)
     amount = _arg(args, "amount", "integer", required=True, minimum=1, maximum=10**12)
     _parse_key(key)
-    return _plan(user, key, amount)
+    return {"item": key, "amount": amount, **_plan(user, key, amount)}
 
 
 def stock_rules_tool(user, args):
     rules = stock.rules(user)
+    set_by = {t["key"]: t["updated_by"] for t in store.stock.targets()}
+    names = {uid: store.users.display_name(uid) for uid in set(set_by.values()) if uid}
+    for t in rules["targets"]:
+        t["set_by"] = names.get(set_by.get(t["key"]))
     keep = ("key", "label", "kind", "current", "keep_at_least", "refill_to", "enabled", "status", "reason",
-            "cpu", "below", "low")
+            "cpu", "below", "low", "set_by")
     return {
         "keep_in_stock_targets": [
             {("item" if k == "key" else k): v for k, v in t.items() if k in keep} for t in rules["targets"]
@@ -662,8 +717,8 @@ def request_craft(user, args):
         "queued": True,
         "request_id": req_id,
         "item": key, "name": label, "amount": amount, "unit": _unit(kind), "in_stock": item.get("size") or 0,
-        "note": ("Sent to the game, which asks AE2 for it within a few seconds. request_status says whether "
-                 "AE2 started it and on which CPU."),
+        "note": ("Sent to the game, which asks AE2 for it within a few seconds; AE2 starts it on whichever "
+                 "CPU is free. request_status says whether it started."),
     }
     if plan_note:
         out["plan_note"] = plan_note
@@ -726,7 +781,7 @@ def request_status(user, args):
         out = {"request_id": req_id, "name": found["label"], "amount": found["amount"], "status": found["status"]}
         if found["status"] == "accepted":
             out["cpu"] = found["cpu_name"]
-            out["note"] = "AE2 started it: current_crafts and craft_job follow the job."
+            out["note"] = "AE2 started it. To follow it, craft_job takes the cpu given here."
         elif found["status"] == "failed":
             out["reason"] = found["reason"]
         else:
@@ -842,8 +897,8 @@ TOOLS = [
         "name": "craft_stats",
         "title": "Crafting statistics",
         "description": (
-            "Totals over a time range: jobs finished, the most crafted items, how busy each CPU was, "
-            "and the machines that held jobs up the longest."
+            "Totals over a time range: jobs finished, the most crafted items, and the machines that "
+            "held jobs up the longest (CPU use too, for when the user asks about CPUs)."
         ),
         "inputSchema": _schema({"range": _range_arg(tuple(STATS_RANGES), "week", "The time range.")}),
         "annotations": READ_ONLY,
@@ -890,8 +945,8 @@ TOOLS = [
         "name": "request_status",
         "title": "Request status",
         "description": (
-            "Whether one of your craft requests or cancels went through: AE2 started it (and on which "
-            "CPU), it failed (and why), or it's still waiting for the game."
+            "Whether one of your craft requests or cancels went through: AE2 started it, it failed (and "
+            "why), or it's still waiting for the game."
         ),
         "inputSchema": _schema({
             "request_id": {"type": "integer", "description": "The request_id request_craft or cancel_craft returned."},
@@ -958,7 +1013,8 @@ TOOLS = [
             "materials. Before calling, tell the user the item's name and the amount and get their OK. "
             "It works out the crafting plan first and doesn't start if ingredients are missing: it "
             "returns what's missing instead. force=true starts it anyway; only use it when the user "
-            "asks to after seeing what's missing. Returns a request_id for request_status."
+            "asks to after seeing what's missing. AE2 picks a free CPU itself: there's no CPU to "
+            "choose, and the user needn't hear which one. Returns a request_id for request_status."
         ),
         "inputSchema": _schema({
             "item": ITEM_ARG,
@@ -1010,9 +1066,25 @@ def exists(name):
 
 
 def call(name, args, user):
-    """Runs a tool (exists(name)) for a user. Returns (result, is_error):
-    result is the tool's JSON-able answer, or an error message for the
-    model."""
+    """Runs a tool (exists(name)) for a user and logs the call
+    (store.assistant). Returns (result, is_error): result is the tool's
+    JSON-able answer, or an error message for the model."""
+    started = time.monotonic()
+    answer, is_error = _run(name, args, user)
+    ms = int((time.monotonic() - started) * 1000)
+    size = len(answer) if isinstance(answer, str) else len(json.dumps(answer, default=str))
+    log.info("MCP %s by %s: %s%s (%d ms)", name, user.get("display_name"), "error" if is_error else "ok",
+             f" - {answer}" if is_error else "", ms)
+    try:
+        store.assistant.record_call(
+            user.get("id"), name, args, is_error, answer if is_error else None, size, ms,
+        )
+    except Exception:
+        log.exception("couldn't log MCP call %s", name)
+    return answer, is_error
+
+
+def _run(name, args, user):
     tool = _BY_NAME[name]
     if args is None:
         args = {}

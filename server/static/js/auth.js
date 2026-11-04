@@ -61,6 +61,7 @@ function updateAuthenticationControl() {
   document.getElementById('gamedataBtn').style.display = adminVisible ? '' : 'none';
   document.getElementById('patternCheckBtn').style.display = isOperator() ? '' : 'none';
   document.getElementById('webhooksBtn').style.display = adminVisible ? '' : 'none';
+  document.getElementById('assistantBtn').style.display = adminVisible ? '' : 'none';
   document.getElementById('backupBtn').style.display = adminVisible ? '' : 'none';
   document.getElementById('agentsBtn').style.display = adminVisible ? '' : 'none';
   if (AUTH_USER) syncPushSubscription();

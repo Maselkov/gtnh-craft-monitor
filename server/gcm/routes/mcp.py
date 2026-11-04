@@ -5,8 +5,8 @@ is gcm/mcp/protocol.py; this is the HTTP around it."""
 
 from flask import Blueprint, g, jsonify, request
 
-from gcm import auth
-from gcm.mcp import protocol
+from gcm import auth, oauth, store
+from gcm.mcp import instructions, protocol
 
 
 bp = Blueprint("mcp", __name__)
@@ -42,3 +42,42 @@ def mcp_other():
     response = jsonify({"error": "POST JSON-RPC messages to this endpoint"})
     response.headers["Allow"] = "POST"
     return response, 405
+
+
+# ---------------------------------------------------------------------
+# The AI assistant dialog (admins): house rules added to every
+# assistant's instructions (gcm/mcp/instructions.py), and the log of the
+# tool calls assistants made.
+
+
+@bp.route("/api/admin/assistant", methods=["GET"])
+@auth.admin_required
+def admin_assistant_get():
+    return jsonify({
+        "rules": instructions.house_rules(),
+        "max_rules": instructions.HOUSE_RULES_MAX,
+        "mcp_url": oauth.resource_url(),
+    })
+
+
+@bp.route("/api/admin/assistant/rules", methods=["PUT"])
+@auth.admin_required
+def admin_assistant_rules_put():
+    payload = request.get_json(silent=True)
+    error = instructions.set_house_rules(payload.get("rules") if isinstance(payload, dict) else None)
+    if error:
+        return jsonify({"error": error}), 400
+    return jsonify({"rules": instructions.house_rules()})
+
+
+ASSISTANT_CALLS_MAX = 200
+
+
+@bp.route("/api/admin/assistant/calls", methods=["GET"])
+@auth.admin_required
+def admin_assistant_calls_get():
+    try:
+        limit = int(request.args.get("limit", 50))
+    except ValueError:
+        limit = 50
+    return jsonify({"calls": store.assistant.recent_calls(max(1, min(limit, ASSISTANT_CALLS_MAX)))})

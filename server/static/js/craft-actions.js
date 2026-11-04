@@ -11,6 +11,7 @@ import { closeItemHistory } from './history.js';
 import { closeIngredientsModal } from './ingredients.js';
 import { closeRecipeCheck } from './recipe-check.js';
 import { closeWebhooksModal } from './webhooks.js';
+import { closeAssistantModal } from './assistant.js';
 import { delegateActions, escapeHtml, iconClass, iconUrl, onBackdropClick, updateHtml } from './util.js';
 
 // ---------- Craft request modal ----------
@@ -357,6 +358,8 @@ export function setupCraftDialogActions() {
         closeBackupsModal();
       } else if (document.getElementById('webhooksModal').style.display !== 'none') {
         closeWebhooksModal();
+      } else if (document.getElementById('assistantModal').style.display !== 'none') {
+        closeAssistantModal();
       } else if (document.getElementById('recipeCheckModal').style.display !== 'none') {
         // Before the Game data dialog it's opened over.
         closeRecipeCheck();

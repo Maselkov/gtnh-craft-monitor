@@ -2691,3 +2691,17 @@ body.oauth-page {
 .oauth-buttons {
   margin-top: 8px;
 }
+
+/* The AI assistant dialog (static/js/assistant.js). */
+.assistant-url-row { display: flex; gap: 8px; align-items: flex-start; }
+.assistant-url-row .modal-amount-input { flex: 1; min-width: 0; font-family: monospace; font-size: 12px; }
+.assistant-rules { resize: vertical; margin-bottom: 4px; font-family: inherit; }
+.assistant-rules-count { text-align: right; font-size: 11px; color: var(--muted); margin-bottom: 8px; }
+.assistant-rules-count.over { color: var(--stale); }
+.assistant-calls-head { display: flex; justify-content: space-between; align-items: baseline; margin-top: 16px; }
+.assistant-calls { max-height: 260px; overflow-y: auto; }
+.assistant-call { border-top: 1px solid rgba(128,128,128,0.2); padding: 6px 0; font-size: 12px; }
+.assistant-call-head { display: flex; flex-wrap: wrap; column-gap: 8px; align-items: baseline; }
+.assistant-call-meta { color: var(--muted); font-size: 11px; }
+.assistant-call-args { color: var(--muted); font-family: monospace; font-size: 11px; overflow-wrap: anywhere; }
+.assistant-call-error { color: var(--stale); overflow-wrap: anywhere; }
