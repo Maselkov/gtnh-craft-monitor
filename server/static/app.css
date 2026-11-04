@@ -785,6 +785,10 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
   border-color: var(--accent);
   color: var(--accent);
 }
+.range-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
 .chart-wrap {
   background: var(--card);
   border-radius: 12px;
@@ -1377,6 +1381,9 @@ body.private-locked #networkTab {
 }
 .connect-heading {
   margin-top: 16px;
+}
+.connect-scripts {
+  margin: 10px 0 0;
 }
 .connect-command {
   display: flex;

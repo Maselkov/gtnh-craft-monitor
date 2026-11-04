@@ -1919,14 +1919,24 @@ async function main() {
     await waitFor('back up', `$('#agentsList').textContent.includes('Updated v1.1.0 -> v1.2.0, back up')
       && !$('#agentsList [data-action="agent-command"]').disabled`);
 
-    // Connect a computer: this page's address, the key masked until shown,
-    // the address field hidden until asked for.
-    const install = '/tmp/gcm.lua install --server=';
+    // Connect a computer: every script picked, this page's address, the
+    // key masked until shown, the address field hidden until asked for.
+    const install = '/tmp/gcm.lua install craft power network --server=';
     await waitFor('connect command', `$('#connectServerUrl').value === location.origin
       && !visible($('#connectServerUrl'))
       && $('#connectCommand').textContent.startsWith('wget -f ')
       && $('#connectCommand').textContent.endsWith('/oc/gcm.lua /tmp/gcm.lua && ${install}' + location.origin + ' --api-key=' + '•'.repeat(12))
       && visible($('#connectLocalNote'))`);
+    // Unticked scripts drop out of the command; with none, nothing to copy.
+    await click(`$('#connectScripts [data-script="power"]')`);
+    await waitFor('power unpicked', `$('#connectCommand').textContent.includes('/tmp/gcm.lua install craft network --server=')`);
+    await click(`$('#connectScripts [data-script="craft"]')`);
+    await click(`$('#connectScripts [data-script="network"]')`);
+    await waitFor('none picked', `$('#connectCommand').textContent.includes('/tmp/gcm.lua install --server=')
+      && $('[data-action="copy-connect"]').disabled && visible($('#connectNoScripts'))`);
+    for (const name of ['craft', 'power', 'network']) await click(`$('#connectScripts [data-script="${name}"]')`);
+    await waitFor('all picked again', `$('#connectCommand').textContent.includes('${install}')
+      && !$('[data-action="copy-connect"]').disabled && !visible($('#connectNoScripts'))`);
     await click(`$('#connectKeyBtn')`);
     await waitFor('key shown', `$('#connectCommand').textContent.endsWith('--api-key=${API_KEY}')`);
     await click(`$('#connectAddressBtn')`);

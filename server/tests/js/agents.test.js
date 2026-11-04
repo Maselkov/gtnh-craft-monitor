@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
-  connectCommand, connectNoteHtml, isLocalAddress, renderComputer, renderHealth,
+  CONNECT_SCRIPTS, connectCommand, connectNoteHtml, connectScriptsHtml, isLocalAddress, renderComputer, renderHealth,
 } from '../../static/js/agents.js';
 
 const COMPUTER = {
@@ -117,6 +118,24 @@ test('connect command: download, then install with the address (no trailing slas
     'wget -f https://raw.githubusercontent.com/Maselkov/gtnh-craft-monitor/main/oc/gcm.lua /tmp/gcm.lua'
     + ' && /tmp/gcm.lua install --server=https://gtnh.example.com --api-key=ab12');
   assert.ok(connectCommand('http://h:8420', 'my key;x').endsWith(' --server=http://h:8420 --api-key="my key;x"'));
+});
+
+test('connect command names the scripts picked, so gcm asks nothing', () => {
+  assert.ok(connectCommand('https://gtnh.example.com', 'ab12', ['craft', 'network'])
+    .endsWith(' && /tmp/gcm.lua install craft network --server=https://gtnh.example.com --api-key=ab12'));
+});
+
+test('connect scripts are the components oc/manifest.lua installs', () => {
+  const manifest = readFileSync(new URL('../../../oc/manifest.lua', import.meta.url), 'utf8');
+  const names = [...manifest.matchAll(/^\s*name = "(\w+)",$/gm)].map(m => m[1]);
+  assert.deepEqual(CONNECT_SCRIPTS.map(s => s.name), names);
+});
+
+test('connect scripts render a box each, ticked as chosen', () => {
+  const html = connectScriptsHtml(['power']);
+  assert.equal((html.match(/type="checkbox"/g) || []).length, 3);
+  assert.match(html, /data-script="power" checked>/);
+  assert.match(html, /data-script="craft">/);
 });
 
 test('local addresses are the ones OpenComputers blocks by default', () => {
