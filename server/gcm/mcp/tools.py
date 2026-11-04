@@ -12,12 +12,16 @@ tools take that, never a name, so a request can't land on the wrong one
 of several items called alike."""
 
 import datetime
+import logging
+import math
 import time
 
 from gcm import (
     bottlenecks, commands, craft_stats, inventory, item_info, patterns, planner, rates,
-    search, state, stock, store,
+    mctext, search, state, stock, store,
 )
+
+log = logging.getLogger(__name__)
 
 
 class ToolError(Exception):
@@ -45,11 +49,15 @@ def _round(n, places=2):
 def _compact_numbers(value):
     """Numbers as a model needs them: whole ones without a ".0", the
     rest to about three significant figures (sizes are whole numbers;
-    rates and EU totals don't need sixteen digits)."""
+    rates and EU totals don't need sixteen digits). And text without
+    Minecraft's formatting codes."""
     if isinstance(value, dict):
         return {k: _compact_numbers(v) for k, v in value.items()}
     if isinstance(value, list):
         return [_compact_numbers(v) for v in value]
+    if isinstance(value, str) and "\u00a7" in value:
+        # Minecraft's colour codes (§a...), which names can carry.
+        return mctext.plain(value)
     if isinstance(value, float):
         if value != value or value in (float("inf"), float("-inf")):
             return None
@@ -132,13 +140,14 @@ def _arg(args, name, kind, default=None, choices=None, minimum=None, maximum=Non
         if required:
             raise ToolError(f"{name} is required")
         return None
-    if kind == "integer":
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or value != int(value):
-            raise ToolError(f"{name} must be a whole number")
-        value = int(value)
-    elif kind == "number":
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
+    if kind in ("integer", "number"):
+        # JSON allows 1e400, which Python reads as infinity.
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
             raise ToolError(f"{name} must be a number")
+        if kind == "integer":
+            if value != int(value):
+                raise ToolError(f"{name} must be a whole number")
+            value = int(value)
     elif kind == "string":
         if not isinstance(value, str):
             raise ToolError(f"{name} must be a string")
@@ -173,7 +182,7 @@ _DEEP_SEARCH_KINDS = {"tooltip", "ore", "formula"}
 
 
 def _rank(item, query):
-    name = (item.get("name") or "").lower()
+    name = mctext.plain(item.get("name") or "").lower()
     q = query.strip().lower()
     if name == q:
         return 0
@@ -207,7 +216,7 @@ def search_items(user, args):
             item_info.mod_name(item.get("mod")), info.get("formula"),
         ):
             found.append(item)
-    found.sort(key=lambda it: (_rank(it, query), len(it.get("name") or ""), -(it.get("size") or 0)))
+    found.sort(key=lambda it: (_rank(it, query), len(mctext.plain(it.get("name") or "")), -(it.get("size") or 0)))
     return {
         "scanned_at": _iso(scanned_at),
         "matches": len(found),
@@ -279,11 +288,14 @@ def inventory_changes(user, args):
     sort = _arg(args, "sort", "string", "biggest", choices=CHANGE_SORTS)
     limit = _arg(args, "limit", "integer", 25, minimum=1, maximum=100)
     range_key, changes = inventory.changes(range_key)
-    sizes, _, _ = inventory.stock_levels()
+    # One pass over the snapshot: looking each item up would go through
+    # all of it again for every changed item.
+    with state.network_lock:
+        by_key = {store.items.key_of(it): it for it in state.network["items"]}
     rows = []
     for key, change in changes.items():
-        item = _network_item(key)
-        now = sizes.get(key, 0)
+        item = by_key.get(key)
+        now = (item.get("size") or 0) if item else 0
         delta = now - change["from"]
         if (sort == "falling" and delta >= 0) or (sort == "rising" and delta <= 0):
             continue
@@ -680,12 +692,15 @@ def listing():
     return [{k: v for k, v in tool.items() if k != "handler"} for tool in TOOLS]
 
 
+def exists(name):
+    return name in _BY_NAME
+
+
 def call(name, args, user):
-    """Runs a tool for a user. Returns (result, is_error): result is the
-    tool's JSON-able answer, or an error message for the model."""
-    tool = _BY_NAME.get(name)
-    if tool is None:
-        raise KeyError(name)
+    """Runs a tool (exists(name)) for a user. Returns (result, is_error):
+    result is the tool's JSON-able answer, or an error message for the
+    model."""
+    tool = _BY_NAME[name]
     if args is None:
         args = {}
     if not isinstance(args, dict):
@@ -697,3 +712,8 @@ def call(name, args, user):
         return _compact_numbers(tool["handler"](user, args)), False
     except ToolError as e:
         return str(e), True
+    except Exception:
+        # A bug, not the model's mistake: logged, and the model told so
+        # rather than the client getting a 500 it can't read.
+        log.exception("MCP tool %s failed", name)
+        return "The server hit an error running this tool. Its log has the details.", True
