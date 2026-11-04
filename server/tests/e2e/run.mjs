@@ -1396,6 +1396,21 @@ async function main() {
     await waitFor('closed, back on iron', `!visible($('#craftRequestModal')) && ${focused}.startsWith('Iron Ingot')`);
     await key('ArrowUp');
     await waitFor('top row: up to the search', `document.activeElement === $('#networkSearch')`);
+    // Escape closes the dialog and focus is back on the cell at once; a key
+    // pressed straight after (here, the move ↑ makes to the search) isn't
+    // undone by a later refocus.
+    await key('ArrowDown');
+    await waitFor('iron again', `${focused}.startsWith('Iron Ingot')`);
+    await key('c');
+    await waitFor('craft dialog again', `visible($('#craftRequestModal'))`);
+    const kept = await evaluate(`(async () => {
+      document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      await Promise.resolve();
+      $('#networkSearch').focus();
+      await new Promise(r => setTimeout(r, 100));
+      return document.activeElement === $('#networkSearch');
+    })()`);
+    if (!kept) throw new Error('focus moved on right after Escape was taken back');
   });
 
   step('"/" jumps to the network search from another tab', async () => {
