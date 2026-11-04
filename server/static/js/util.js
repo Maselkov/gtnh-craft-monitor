@@ -132,6 +132,18 @@ export function bindFilterInput(input, onChange) {
   });
 }
 
+// The element in root that a redraw made in place of el: same tag and
+// the same identifying attributes. null when el has none of them.
+const IDENTITY = ['id', 'data-action', 'data-cpu', 'data-key', 'data-mod', 'data-internal', 'data-damage', 'data-tab', 'data-view'];
+
+export function findCopy(root, el) {
+  const attrs = IDENTITY.filter(a => el.hasAttribute(a));
+  if (!attrs.length) return null;
+  const selector = el.tagName.toLowerCase()
+    + attrs.map(a => `[${a}="${CSS.escape(el.getAttribute(a))}"]`).join('');
+  return root.querySelector(selector);
+}
+
 // el.innerHTML = html, done by updating what's already there: an element
 // that's still wanted stays the same element, and only the text and
 // attributes that differ change. Replacing everything on every redraw (the

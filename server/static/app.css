@@ -1240,14 +1240,42 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
   inset: 0;
   background: rgba(0,0,0,0.6);
   display: flex;
-  align-items: center;
-  justify-content: center;
   z-index: 2000;
+  /* A dialog taller than the screen scrolls here, from its top (margin:
+     auto centres it, where align-items: center would cut its top off),
+     and the scroll stops at the ends rather than moving the page. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 16px;
+  box-sizing: border-box;
+}
+.modal-overlay > .modal-box {
+  margin: auto;
+}
+/* The page doesn't scroll under an open dialog. Dialogs are shown and
+   hidden through their inline display style, so that's what says one
+   is open. */
+html:has(.modal-overlay:not([style*="none"])) {
+  overflow: hidden;
+}
+/* So the page doesn't shift sideways as its scrollbar goes. */
+html {
+  scrollbar-gutter: stable;
+}
+/* A dialog's own lists stop at their ends too. */
+.modal-box,
+.modal-box * {
+  overscroll-behavior: contain;
 }
 /* Opened from the item dialog, which can be over the ingredients dialog:
    above both, though it comes first in the page. */
 #craftRequestModal {
   z-index: 2001;
+}
+/* Focus waits on the box itself when a dialog opens (dialogs.js); no
+   ring round the whole dialog for that. */
+.modal-box:focus {
+  outline: none;
 }
 .modal-box {
   background: var(--card);
@@ -1798,6 +1826,10 @@ body.private-locked #networkTab {
 .item-history-link:hover {
   text-decoration: underline;
   color: var(--accent);
+}
+.item-history-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 .progress-track {
   height: 8px;

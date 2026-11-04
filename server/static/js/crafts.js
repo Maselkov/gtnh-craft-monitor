@@ -515,7 +515,7 @@ function renderCard(job) {
 
   const title = job.busy
     ? (job.final_output
-        ? `${job.final_output_icon ? `<img class="${iconClass('craft-icon', job.final_output_icon)}" src="${iconUrl(job.final_output_icon)}" alt="" loading="lazy" data-remove-on-error>` : ''}<span class="item-history-link" data-mod="${escapeHtml(job.final_output_mod || '')}" data-internal="${escapeHtml(job.final_output_internal || '')}" data-damage="${job.final_output_damage != null ? job.final_output_damage : ''}" data-name="${escapeHtml(job.final_output)}" data-icon="${escapeHtml(job.final_output_icon || '')}">${escapeHtml(nameText(job.final_output))}</span>`
+        ? `${job.final_output_icon ? `<img class="${iconClass('craft-icon', job.final_output_icon)}" src="${iconUrl(job.final_output_icon)}" alt="" loading="lazy" data-remove-on-error>` : ''}<span class="item-history-link"${job.final_output_internal ? ' tabindex="0" role="button"' : ''} data-mod="${escapeHtml(job.final_output_mod || '')}" data-internal="${escapeHtml(job.final_output_internal || '')}" data-damage="${job.final_output_damage != null ? job.final_output_damage : ''}" data-name="${escapeHtml(job.final_output)}" data-icon="${escapeHtml(job.final_output_icon || '')}">${escapeHtml(nameText(job.final_output))}</span>`
         : `<span class="craft-title-muted">${job.monitor_missing ? 'Unknown output' : 'Starting job…'}</span>`)
     : `<span class="craft-title-muted">Idle</span>`;
   // Only once the server is sure: a new job can report no output for a

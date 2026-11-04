@@ -100,7 +100,8 @@ function cellHtml(m) {
   const linkAttrs = `data-mod="${escapeHtml(m.mod || '')}" data-internal="${escapeHtml(m.internal || '')}" `
     + `data-damage="${m.damage != null ? m.damage : ''}" data-name="${escapeHtml(m.name || '?')}" `
     + `data-icon="${escapeHtml(m.icon || '')}"`;
-  return `<div class="ingredient-cell item-history-link${m.crafting > 0 ? ' crafting' : ''}" data-key="${escapeHtml(m.key)}" ${linkAttrs}>
+  const focusable = m.internal ? ' tabindex="0" role="button"' : '';
+  return `<div class="ingredient-cell item-history-link${m.crafting > 0 ? ' crafting' : ''}"${focusable} data-key="${escapeHtml(m.key)}" ${linkAttrs}>
     <div class="ingredient-cell-lines">${name}${lines}</div>${icon}
   </div>`;
 }
