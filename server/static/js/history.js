@@ -150,9 +150,9 @@ function readDamageFromDataset(raw) {
 
 export function setupCraftHistoryLinks() {
   // Event delegation, same reasoning as the network grid's tooltip -
-  // the crafts container, the ingredients grid and the craft history
-  // are rebuilt wholesale via innerHTML on every poll, so per-element
-  // listeners would just be discarded each time.
+  // links in the crafts container, the ingredients grid and the craft
+  // history come and go with every poll's redraw, so per-element
+  // listeners would need rebinding each time.
   for (const id of ['root', 'ingredientsModal', 'craftHistory', 'craftStats']) {
     document.getElementById(id).addEventListener('click', (e) => {
       const link = e.target.closest('.item-history-link');

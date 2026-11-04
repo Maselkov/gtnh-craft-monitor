@@ -889,6 +889,65 @@ async function main() {
       return fail.join('; ');
     })()`);
     if (result) throw new Error(result);
+    // Lists in sections, as the Crafts tab draws them.
+    const sections = await evaluate(`(async () => {
+      const { setHtmlKeepingIcons } = await import('/static/js/util.js');
+      const el = document.body.appendChild(document.createElement('div'));
+      const img = (src) => '<img is="adopt-count-img" src="/icons?path=' + src + '">';
+      const card = (id, src) => '<div data-id="' + id + '">' + img(src) + '<button>' + id + '</button></div>';
+      const section = (id, cards) => '<section data-id="' + id + '"><div class="grid">' + cards.join('') + '</div></section>';
+      const byId = (id) => el.querySelector('[data-id="' + id + '"]');
+      const fail = [];
+      // Kept nodes taken out of the page and put back (a move) lose focus.
+      let moved = new Set();
+      const watch = new MutationObserver((rs) => { for (const r of rs) for (const n of r.removedNodes) moved.add(n); });
+      watch.observe(el, { subtree: true, childList: true });
+      const settle = async () => { await new Promise(r => setTimeout(r, 0)); const m = moved; moved = new Set(); return m; };
+
+      // c2 first: the old code gave a new card the first free <img>
+      // showing its icon, in page order - c2's.
+      setHtmlKeepingIcons(el, section('active', [card('c2', 'x.png'), card('c1', 'x.png'), card('c3', 'y.png')]));
+      const [c1, c2, c3] = ['c1', 'c2', 'c3'].map(byId);
+      const [x2, x1, y3] = el.querySelectorAll('img');
+      const active = byId('active');
+      await settle();
+      window.__adopted = 0;
+
+      // c1 finishes: a Finished section appears above, with a card for the
+      // same item. The Active section and the cards in it stay put, c2
+      // keeps its own icon, and the finished card takes c1's.
+      setHtmlKeepingIcons(el, section('finished', [card('done1', 'x.png')]) + section('active', [card('c2', 'x.png'), card('c3', 'y.png')]));
+      let m = await settle();
+      if (byId('active') !== active || byId('c2') !== c2 || byId('c3') !== c3) fail.push('a section appearing replaced the one after it');
+      if (m.has(active) || m.has(c2) || m.has(c3)) fail.push('a section appearing moved the one after it');
+      if (c2.querySelector('img') !== x2) fail.push("the finished card took the icon of a card that stayed");
+      if (byId('done1').querySelector('img') !== x1) fail.push("the finished card didn't take the finished CPU's icon");
+
+      // The first card of a list goes: none after it moves.
+      setHtmlKeepingIcons(el, section('finished', [card('done1', 'x.png')]) + section('active', [card('c3', 'y.png')]));
+      m = await settle();
+      if (byId('c3') !== c3 || m.has(c3)) fail.push('removing the first card moved the next');
+
+      // c3 is pinned with its button focused: it moves to a new Pinned
+      // section, the same element, and keeps focus.
+      c3.querySelector('button').focus();
+      setHtmlKeepingIcons(el, section('finished', [card('done1', 'x.png')]) + section('pinned', [card('c3', 'y.png')]));
+      if (byId('c3') !== c3 || c3.querySelector('img') !== y3) fail.push('a card moving section was rebuilt');
+      if (document.activeElement !== c3.querySelector('button')) fail.push('a card moving section lost focus');
+
+      // Repeated keys (CPUs without a name): each keeps its own card.
+      setHtmlKeepingIcons(el, section('active', [card('cpu:', 'x.png'), card('cpu:', 'y.png')]));
+      const [n1, n2] = el.querySelectorAll('[data-id="cpu:"]');
+      setHtmlKeepingIcons(el, section('active', [card('cpu:', 'x.png'), card('cpu:', 'y.png')]));
+      const [n1b, n2b] = el.querySelectorAll('[data-id="cpu:"]');
+      if (n1b !== n1 || n2b !== n2) fail.push('cards sharing a key were rebuilt');
+
+      watch.disconnect();
+      if (window.__adopted) fail.push(window.__adopted + ' <img>(s) moved through another document');
+      el.remove();
+      return fail.join('; ');
+    })()`);
+    if (sections) throw new Error(sections);
     // A click whose press and release straddle a redraw still lands, with
     // real mouse events.
     const box = await evaluate(`(async () => {
@@ -907,10 +966,15 @@ async function main() {
     await waitFor('the click landed', `window.clicks === 1 && window.redrawTarget.textContent === 'Go 2'`);
     await evaluate(`window.redrawTarget.remove(), true`);
     // On the page: a card is the same element after the tab's redraw.
-    await evaluate(`window.w01 = card('W01'), window.w01btn = card('W01').querySelector('.ingredients-btn'), true`);
-    await sleep(3500);
-    await waitFor('same card, same button', `window.w01 && card('W01') === window.w01
-      && window.w01btn && card('W01').querySelector('.ingredients-btn') === window.w01btn`);
+    // A report with other numbers, so the redraw shows: same card, new text.
+    await evaluate(`window.w01 = card('W01'), window.w01btn = card('W01').querySelector('.ingredients-btn'),
+      window.w01text = card('W01').textContent, true`);
+    await postCrafts(base, true, true);
+    await waitFor('redrawn in place', `card('W01').textContent !== window.w01text && card('W01') === window.w01
+      && card('W01').querySelector('.ingredients-btn') === window.w01btn`);
+    await evaluate(`window.w01text = card('W01').textContent, true`);
+    await postCrafts(base, true);
+    await waitFor('back to the usual numbers, still in place', `card('W01').textContent !== window.w01text && card('W01') === window.w01`);
   });
 
   step('expand idle CPUs; stays open across a refresh', async () => {

@@ -15,7 +15,7 @@ import {
 } from './util.js';
 
 // Toggle-open state of the idle-CPU section, which has to survive the
-// 3s auto-refresh (it rebuilds the DOM from scratch).
+// 3s auto-refresh (the markup sets open or not, and the redraw follows it).
 let idleSectionOpen = false;
 
 // pinnedCpus and completedPins are now just local caches of what the
@@ -615,7 +615,7 @@ export function render(data) {
   // first thing you see.
   const sortedCompleted = completedPins.slice().sort((a, b) => b.finishedAt - a.finishedAt);
   const completedSection = sortedCompleted.length > 0 ? `
-    <section class="group">
+    <section class="group" data-id="finished">
       <div class="group-heading completed-heading">
         <span>&#10003; Finished (${sortedCompleted.length})</span>
         <button class="ack-all-btn" data-action="acknowledge-all">Acknowledge all</button>
@@ -638,21 +638,21 @@ export function render(data) {
   const idleJobs = unpinned.filter(j => !j.busy);
 
   const pinnedSection = pinnedJobs.length > 0 ? `
-    <section class="group">
+    <section class="group" data-id="pinned">
       <div class="group-heading">${PIN_ICON} Pinned (${pinnedJobs.length})</div>
       <div class="grid">${pinnedJobs.map(renderCard).join('')}</div>
     </section>
   ` : '';
 
   const activeSection = activeJobs.length > 0 ? `
-    <section class="group">
+    <section class="group" data-id="active">
       <div class="group-heading">Active (${activeJobs.length})</div>
       <div class="grid">${activeJobs.map(renderCard).join('')}</div>
     </section>
   ` : (pinnedJobs.length === 0 ? `<div class="empty">No CPUs currently crafting.</div>` : '');
 
   const idleSection = idleJobs.length > 0 ? `
-    <details class="idle-group" ${idleSectionOpen ? 'open' : ''}>
+    <details class="idle-group" data-id="idle" ${idleSectionOpen ? 'open' : ''}>
       <summary>Idle CPUs (${idleJobs.length})</summary>
       <div class="grid">${idleJobs.map(renderCard).join('')}</div>
     </details>
@@ -661,8 +661,9 @@ export function render(data) {
   setHtmlKeepingIcons(root, completedSection + pinnedSection + activeSection + idleSection);
   // Widths are set through the DOM rather than an inline style attribute in
   // the markup, which the Content-Security-Policy blocks. Done in the
-  // same task as the innerHTML, so the new bars' first computed width
-  // is already right and the width transition doesn't animate.
+  // same task as the redraw: a new bar's first computed width is already
+  // right, so it doesn't animate in from 0, while a bar the redraw kept
+  // slides from its last width to the new one.
   for (const bar of root.querySelectorAll('.progress-fill[data-progress]')) {
     bar.style.width = `${Number(bar.dataset.progress)}%`;
   }

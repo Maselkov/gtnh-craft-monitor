@@ -157,9 +157,9 @@ function renderGrid(job) {
     : `<div class="network-note">${shownItems.size ? 'Nothing matches the filter.' : 'No ingredients reported.'}</div>`);
   grid.scrollTop = scrollTop;
 
-  // The cell under a still cursor was just replaced, and no mouseout
-  // fires for a removed element - refresh the tooltip's numbers from
-  // the same item, or drop it if that item is gone.
+  // The cell under a still cursor may have new numbers, or be gone (no
+  // mouseout fires for a removed element) - refresh the tooltip from the
+  // same item, or drop it if that item is gone.
   if (tooltipVisible() && hoveredKey) {
     const m = shownItems.get(hoveredKey);
     if (m) showTooltip(tooltipHtml(m)); else hideTooltip();

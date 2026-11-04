@@ -139,45 +139,81 @@ export function bindFilterInput(input, onChange) {
 // selection and keyboard focus.
 //
 // Elements are matched to the new markup by their key (id, data-key or
-// data-id: give each item of a list one, so a reordered list moves its
-// items rather than rewriting each in place), otherwise by position among
+// data-id), looked for anywhere in el, so a keyed item that moves to
+// another list (a card pinned, a CPU going idle) moves rather than being
+// rebuilt. Give each item of a redrawn list a key, and each section that
+// can appear or go a key too, or its neighbours would be matched to the
+// wrong section by position. Unkeyed nodes are matched by position among
 // their siblings of the same tag.
 //
 // Icons: a new <img> starts an animated icon over from its first frame, and
 // so does changing an <img>'s src. So an icon <img> is never given another
-// src: the new markup's icon takes an <img> already showing that src, in
-// the same parent first, else from anywhere in el (moved, which keeps it
-// going), and only an icon not shown before gets a new <img>. Moves stay
-// within this document: a template's content is a document of its own,
-// and an <img> moved through one restarts too - hence importNode.
+// src. The new markup's icon keeps an <img> showing it in the same place;
+// one that can't takes an <img> showing it from what's being dropped
+// (never one that's staying where it is), and only an icon with none of
+// those gets a new <img>. Moves stay within this document: a template's
+// content is a document of its own, and an <img> moved through one
+// restarts too - hence importNode.
 //
 // The style attribute is left alone: the markup can't carry one (the
 // Content-Security-Policy), so any there was set through the DOM after a
 // redraw, such as a progress bar's width.
 export function setHtmlKeepingIcons(el, html) {
-  const icons = new Map();  // src -> icon <img>s in el, not yet given a place
-  for (const img of el.querySelectorAll('img[src^="/icons?"]')) {
-    const src = img.getAttribute('src');
-    if (!icons.has(src)) icons.set(src, []);
-    icons.get(src).push(img);
+  try {
+    updateInPlace(el, html);
+  } catch (e) {
+    // Markup this can't map onto what's there (an element moving into its
+    // own descendant): the page is still right, just not kept.
+    console.warn('redraw: replacing instead of updating', e);
+    const tpl = document.createElement('template');
+    tpl.innerHTML = html;
+    el.replaceChildren(document.importNode(tpl.content, true));
   }
-  const placed = new Set();
-  const takeIcon = (src, preferred) => {
-    if (preferred && !placed.has(preferred)) {
-      placed.add(preferred);
-      return preferred;
-    }
-    for (const img of icons.get(src) || []) {
-      if (!placed.has(img)) {
-        placed.add(img);
-        return img;
-      }
-    }
-    return null;
-  };
+}
+
+function updateInPlace(el, html) {
   const tpl = document.createElement('template');
   tpl.innerHTML = html;
-  updateChildren(el, document.importNode(tpl.content, true), takeIcon);
+  const fresh = document.importNode(tpl.content, true);
+
+  // 1. Match new nodes to old ones, changing nothing yet.
+  const keyed = new Map();  // key -> old elements with it, in page order
+  for (const node of el.querySelectorAll('[id], [data-key], [data-id]')) {
+    const key = updateKey(node);
+    if (!keyed.has(key)) keyed.set(key, []);
+    keyed.get(key).push(node);
+  }
+  const matchOf = new Map();  // new node -> the old node it updates
+  const claimed = new Set();
+  matchChildren(el, fresh, keyed, matchOf, claimed);
+
+  // 2. Icons with no <img> in their place take one from what's dropped.
+  const spare = new Map();  // src -> unclaimed icon <img>s
+  for (const img of el.querySelectorAll('img')) {
+    const src = iconSrc(img);
+    if (!src || claimed.has(img)) continue;
+    if (!spare.has(src)) spare.set(src, []);
+    spare.get(src).push(img);
+  }
+  for (const img of fresh.querySelectorAll('img')) {
+    const src = iconSrc(img);
+    if (!src || matchOf.has(img)) continue;
+    const kept = spare.get(src)?.shift();
+    if (kept) {
+      matchOf.set(img, kept);
+      claimed.add(kept);
+    }
+  }
+
+  // 3. Apply, from the top down, so a new section is in the page before
+  // the items moving into it are; what's left over goes last.
+  const leftovers = [];
+  applyChildren(el, fresh, matchOf, leftovers);
+  for (const [parent, keep] of leftovers) {
+    for (const node of [...parent.childNodes]) {
+      if (!keep.has(node)) node.remove();
+    }
+  }
 }
 
 const UPDATE_KEYS = ['id', 'data-key', 'data-id'];
@@ -190,10 +226,88 @@ function updateKey(node) {
   return null;
 }
 
+// What makes an <img> an icon, here and in the selectors above.
 function iconSrc(node) {
   if (node.nodeType !== Node.ELEMENT_NODE || node.tagName !== 'IMG') return null;
   const src = node.getAttribute('src');
   return src && src.startsWith('/icons?') ? src : null;
+}
+
+function matchChildren(oldParent, newParent, keyed, matchOf, claimed) {
+  const old = oldParent ? [...oldParent.childNodes] : [];
+  let scan = 0;  // where to look on from for the next unkeyed match
+  for (const node of newParent.childNodes) {
+    let match = null;
+    const src = iconSrc(node);
+    const key = src ? null : updateKey(node);
+    if (src) {
+      match = old.find(o => !claimed.has(o) && iconSrc(o) === src) || null;
+    } else if (key) {
+      // A repeated key takes the next one; the same parent first. Never
+      // an element holding where this goes, which can't move into itself.
+      const usable = (keyed.get(key) || []).filter(o => !claimed.has(o) && !(oldParent && o.contains(oldParent)));
+      match = usable.find(o => o.parentNode === oldParent) || usable[0] || null;
+    } else {
+      for (let i = scan; i < old.length; i++) {
+        const o = old[i];
+        if (claimed.has(o) || updateKey(o) || iconSrc(o)) continue;
+        if (o.nodeType === node.nodeType && o.nodeName === node.nodeName) {
+          match = o;
+          scan = i + 1;
+          break;
+        }
+      }
+    }
+    if (match) {
+      claimed.add(match);
+      matchOf.set(node, match);
+    }
+    // Into a new element too: keyed items and icons inside it may exist.
+    if (node.nodeType === Node.ELEMENT_NODE && !src) matchChildren(match, node, keyed, matchOf, claimed);
+  }
+}
+
+function applyChildren(parent, from, matchOf, leftovers) {
+  const sources = [...from.childNodes];  // before the moves below take them
+  const wanted = sources.map(node => {
+    const match = matchOf.get(node);
+    if (!match) return node;
+    if (match.nodeType === Node.ELEMENT_NODE) updateAttributes(match, node);
+    else if (match.nodeValue !== node.nodeValue) match.nodeValue = node.nodeValue;
+    return match;
+  });
+  const keep = new Set(wanted);
+  // Into order, moving only what's out of place: a node that's going is
+  // stepped over, not moved past, so dropping one moves none after it.
+  let ref = parent.firstChild;
+  for (const node of wanted) {
+    while (ref && ref !== node && !keep.has(ref)) ref = ref.nextSibling;
+    if (ref === node) ref = ref.nextSibling;
+    else moveInto(parent, node, ref);
+  }
+  leftovers.push([parent, keep]);
+  // A kept element takes the new one's children; a new element is its own
+  // source, its children swapped for the old nodes they match.
+  for (let i = 0; i < wanted.length; i++) {
+    const node = wanted[i];
+    if (node.nodeType === Node.ELEMENT_NODE && !iconSrc(node)) applyChildren(node, sources[i], matchOf, leftovers);
+  }
+}
+
+// parent.insertBefore(node, ref), keeping focus inside node: moveBefore
+// moves a node without taking it out of the page (which loses focus) where
+// the browser has it, and focus is put back by hand where it doesn't.
+function moveInto(parent, node, ref) {
+  if (typeof parent.moveBefore === 'function' && parent.isConnected && node.isConnected) {
+    try {
+      parent.moveBefore(node, ref);
+      return;
+    } catch (e) { /* not movable that way: insertBefore below */ }
+  }
+  const active = document.activeElement;
+  const hadFocus = active && active !== document.body && node.contains && node.contains(active) ? active : null;
+  parent.insertBefore(node, ref);
+  if (hadFocus && document.activeElement !== hadFocus) hadFocus.focus({ preventScroll: true });
 }
 
 function updateAttributes(el, from) {
@@ -203,74 +317,6 @@ function updateAttributes(el, from) {
   for (const { name } of [...el.attributes]) {
     if (name !== 'style' && !from.hasAttribute(name)) el.removeAttribute(name);
   }
-}
-
-// A new subtree going in: its icons take <img>s already showing them.
-function withKeptIcons(node, takeIcon) {
-  const imgs = iconSrc(node) ? [node] : (node.querySelectorAll ? [...node.querySelectorAll('img[src^="/icons?"]')] : []);
-  for (const img of imgs) {
-    const kept = takeIcon(img.getAttribute('src'));
-    if (!kept) continue;
-    updateAttributes(kept, img);
-    if (img === node) return kept;
-    img.replaceWith(kept);
-  }
-  return node;
-}
-
-function updateChildren(parent, from, takeIcon) {
-  const old = [...parent.childNodes];
-  const keyed = new Map();
-  for (const node of old) {
-    const key = updateKey(node);
-    if (key && !keyed.has(key)) keyed.set(key, node);
-  }
-  const claimed = new Set();
-  const stillHere = (node) => node.parentNode === parent && !claimed.has(node);
-  let scan = 0;  // where to look on from for the next unkeyed match
-  const wanted = [];
-  for (const node of [...from.childNodes]) {
-    let match = null;
-    const src = iconSrc(node);
-    const key = src ? null : updateKey(node);
-    if (src) {
-      const same = old.find(o => iconSrc(o) === src && stillHere(o));
-      match = takeIcon(src, same);
-      if (match) {
-        claimed.add(match);
-        updateAttributes(match, node);
-      }
-    } else if (key) {
-      const candidate = keyed.get(key);
-      if (candidate && stillHere(candidate)) match = candidate;
-    } else {
-      for (let i = scan; i < old.length; i++) {
-        const o = old[i];
-        if (!stillHere(o) || updateKey(o) || iconSrc(o)) continue;
-        if (o.nodeType === node.nodeType && o.nodeName === node.nodeName) {
-          match = o;
-          scan = i + 1;
-          break;
-        }
-      }
-    }
-    if (match && !src) {
-      claimed.add(match);
-      if (match.nodeType === Node.ELEMENT_NODE) {
-        updateAttributes(match, node);
-        updateChildren(match, node, takeIcon);
-      } else if (match.nodeValue !== node.nodeValue) {
-        match.nodeValue = node.nodeValue;
-      }
-    }
-    wanted.push(match || withKeptIcons(node, takeIcon));
-  }
-  // Into order, moving only what's out of place, then drop the rest.
-  for (let i = 0; i < wanted.length; i++) {
-    const at = parent.childNodes[i];
-    if (at !== wanted[i]) parent.insertBefore(wanted[i], at || null);
-  }
-  while (parent.childNodes.length > wanted.length) parent.lastChild.remove();
 }
 
 // <img data-remove-on-error> removes itself when it fails to load (an
