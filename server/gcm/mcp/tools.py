@@ -18,8 +18,8 @@ import math
 import time
 
 from gcm import (
-    auth, bottlenecks, commands, config, craft_stats, inventory, item_info, patterns, planner, rates,
-    mctext, search, state, stock, store, tracking,
+    auth, bottlenecks, commands, config, craft_stats, gamedata, inventory, item_info, patterns, planner, rates,
+    mctext, recipe_index, recipes, search, state, stock, store, tracking,
 )
 
 log = logging.getLogger(__name__)
@@ -616,6 +616,255 @@ def power(user, args):
 
 
 # ---------------------------------------------------------------------
+# The game itself: GregTech recipes and item tooltips from the selected
+# GTNH version's game data (gcm/recipes.py, gcm/item_info.py), and the
+# base's own patterns. Models misremember GTNH recipes; these are the
+# version the base runs.
+
+GAME_MATCHES_MAX = 10
+RECIPES_MAX = 10
+TOOLTIP_MAX = 3000
+
+
+def _recipe_index(required=True):
+    """(version, RecipeIndex) for the selected GTNH version. Without
+    recipes: a ToolError saying why, or (version, None) if not required."""
+    version = gamedata.selected_version()
+    if not version:
+        if not required:
+            return None, None
+        raise ToolError("No GTNH version is set in the game data, so there are no recipes: an admin picks one "
+                        "on the Game data page.")
+    try:
+        idx = recipes.index(version)
+    except ValueError as e:
+        if not required:
+            return version, None
+        raise ToolError(str(e)) from None
+    if idx is None and required:
+        raise ToolError(f"The game data for GTNH {version} has no recipes.")
+    return version, idx
+
+
+def _recipe_key(key):
+    """An item key as the recipe index keys it: (kind, key)."""
+    mod, internal, damage, kind, _ = _parse_key(key)
+    if kind == "fluid":
+        return recipe_index.FLUID, internal
+    if kind != "item":
+        raise ToolError("Only items and fluids have recipes.")
+    return recipe_index.ITEM, f"{mod}:{internal}:{'*' if damage is None else damage}"
+
+
+def _key_from_recipe(kind, rkey):
+    """The recipe index's key as an item key (the other tools' form)."""
+    if kind == recipe_index.FLUID:
+        return store.items.item_key(None, rkey, None, "fluid")
+    mod, _, rest = rkey.partition(":")
+    internal, _, damage = rest.rpartition(":")
+    try:
+        damage = None if damage == "*" else int(damage)
+    except ValueError:
+        return None
+    return store.items.item_key(mod, internal, damage, "item")
+
+
+def _game_matches(query, idx):
+    """[(item key, name)] for what's named like query in the game data's
+    recipes and in the network, best match first."""
+    q = query.strip()
+    found = {}
+    if idx is not None and q:
+        for kind, rkey, name in idx.find_names(q, 300):
+            key = _key_from_recipe(kind, rkey)
+            if key:
+                found.setdefault(key, mctext.plain(name))
+    with state.network_lock:
+        items = state.network["items"]
+    lowered = q.lower()
+    for it in items:
+        name = mctext.plain(it.get("name") or "")
+        if lowered in name.lower():
+            found.setdefault(store.items.key_of(it), name)
+    return sorted(found.items(), key=lambda kv: (_rank({"name": kv[1]}, q), len(kv[1]), kv[1]))
+
+
+def _pick(query, idx):
+    """The one item a query names: (key, None), or (None, a "which one?"
+    answer listing the candidates)."""
+    if "|" in query:
+        _parse_key(query)
+        return query, None
+    matches = _game_matches(query, idx)
+    if not matches:
+        raise ToolError(f"Nothing in the game data or the network is called anything like {query!r}.")
+    exact = [m for m in matches if m[1].lower() == query.strip().lower()]
+    if len(exact) == 1 or len(matches) == 1:
+        return (exact or matches)[0][0], None
+    return None, {
+        "matches": [{"item": k, "name": n} for k, n in matches[:GAME_MATCHES_MAX]],
+        "matches_total": len(matches),
+        "note": "Several items match: call again with the item key of the one meant.",
+    }
+
+
+def _stacks(stacks, kind, names, chances=False):
+    rows = []
+    for s in stacks:
+        row = {"name": mctext.plain(names.get(s[0]) or s[0]), "amount": s[1], "unit": "mB" if kind == "fluid" else "items"}
+        if chances and len(s) > 2 and s[2] is not None and s[2] < 10000:
+            row["chance_percent"] = s[2] / 100
+        rows.append(row)
+    return rows
+
+
+def find_recipes(user, args):
+    query = _arg(args, "item", "string", required=True)
+    limit = _arg(args, "limit", "integer", 5, minimum=1, maximum=RECIPES_MAX)
+    version, idx = _recipe_index()
+    key, ask = _pick(query, idx)
+    if ask:
+        return ask
+    kind, rkey = _recipe_key(key)
+    found = idx.making(kind, rkey)
+    found.sort(key=lambda r: (abs(r[2]["e"]), r[2]["d"]))
+    item_keys = {s[0] for _, _, b in found[:limit] for side in ("i", "o") for s in b[side]}
+    fluid_keys = {s[0] for _, _, b in found[:limit] for side in ("f", "g") for s in b[side]}
+    item_names = idx.names(recipe_index.ITEM, item_keys | ({rkey} if kind == recipe_index.ITEM else set()))
+    fluid_names = idx.names(recipe_index.FLUID, fluid_keys | ({rkey} if kind == recipe_index.FLUID else set()))
+    rows = []
+    for _, map_name, b in found[:limit]:
+        machines = [m["name"] for m in idx.machines(map_name)]
+        row = {
+            "machine": machines[0] if machines else map_name,
+            "inputs": _stacks(b["i"], "item", item_names) + _stacks(b["f"], "fluid", fluid_names),
+            "outputs": _stacks(b["o"], "item", item_names, chances=True) + _stacks(b["g"], "fluid", fluid_names),
+            "eu_per_tick": b["e"],
+            "tier": recipes._tier(b["e"]),
+            "seconds": round(b["d"] / 20, 2),
+        }
+        if len(machines) > 1:
+            row["other_machines"] = machines[1:4]
+        if b.get("s"):
+            row["coil_heat" if map_name in recipes.HEAT_MAPS else "special_value"] = b["s"]
+        rows.append(row)
+    used_in = []
+    for map_name in idx.using(kind, rkey):
+        machines = idx.machines(map_name)
+        used_in.append(machines[0]["name"] if machines else map_name)
+    names = item_names if kind == recipe_index.ITEM else fluid_names
+    return {
+        "item": key,
+        "name": mctext.plain(names.get(rkey) or query),
+        "gtnh_version": version,
+        "recipes": rows,
+        "recipes_total": len(found),
+        "used_in_machines": sorted(set(used_in))[:20],
+        "note": ("GregTech machine recipes from the game data, cheapest first. Crafting-table and other "
+                 "mods' recipes aren't included." if found else
+                 "No GregTech machine makes it; it may be crafted on a crafting table or by another mod."),
+    }
+
+
+def game_item(user, args):
+    query = _arg(args, "item", "string", required=True)
+    version, idx = _recipe_index(required=False)
+    key, ask = _pick(query, idx)
+    if ask:
+        return ask
+    mod, internal, damage, kind, variant = _parse_key(key)
+    network = _network_item(key)
+    name = network.get("name") if network else None
+    if name is None and idx is not None:
+        rkind, rkey = _recipe_key(key) if kind in ("item", "fluid") else (None, None)
+        if rkind is not None:
+            name = idx.names(rkind, [rkey]).get(rkey)
+    info = item_info.describe({"mod": mod, "internal": internal, "damage": damage, "kind": kind, "variant": variant,
+                               "name": name})
+    out = {"item": key, "name": mctext.plain(name) if name else None, "mod": item_info.mod_name(mod) or mod,
+           "gtnh_version": version}
+    for field, label in (("description", "tooltip"), ("shift_description", "shift_tooltip")):
+        if info.get(field):
+            text = info[field]
+            out[label] = text if len(text) <= TOOLTIP_MAX else text[:TOOLTIP_MAX] + "…"
+    if info.get("ore"):
+        out["ore_dictionary"] = info["ore"][:10]
+    if not (info.get("description") or info.get("shift_description")):
+        out["note"] = "The game data has no tooltip for it."
+    else:
+        out["note"] = ("The shift tooltip is what the game shows holding Shift: for a multiblock controller, "
+                       "its structure, hatches and limits.")
+    out["in_network"] = (network.get("size") or 0) if network else None
+    return out
+
+
+def base_patterns(user, args):
+    key = _arg(args, "item", "string", required=True)
+    _parse_key(key)
+    pattern_list, patterns_at = patterns.current()
+    if patterns_at is None:
+        raise ToolError(patterns.missing_reason("list of patterns"))
+    found = planner.index(pattern_list).candidates.get(key) or []
+    rows = []
+    for c in found[:20]:
+        provider = c.pattern.get("provider") or {}
+        rows.append({
+            "machine": provider.get("name"),
+            "at": {k: provider.get(k) for k in ("x", "y", "z", "dim")},
+            "kind": "crafting" if c.pattern.get("crafting") else "processing",
+            "makes": [{"name": mctext.plain(e.get("name") or k), "amount": size} for k, (e, size) in c.outputs.items()],
+            "takes": [{"name": mctext.plain(e.get("name") or k), "amount": size} for k, e, size in c.inputs],
+        })
+    return {
+        "item": key,
+        "patterns": rows,
+        "patterns_total": len(found),
+        "patterns_read_at": _iso(patterns_at),
+        "note": ("The network's own patterns for it, in the order AE2 tries them, with the machine (or "
+                 "interface) each is in." if found else "No pattern in the network makes it."),
+    }
+
+
+PATTERN_CHECK_MAX = 40
+_CHECK_ORDER = {"broken": 0, "moved": 1, "changed": 2}
+
+
+def pattern_check(user, args):
+    _require_operator(user, "see the pattern check")
+    from_version, to_version = recipes.default_versions()
+    if not to_version:
+        raise ToolError("There's no GTNH update to check: the game data has had one version. After an update "
+                        "the check compares the old version's recipes with the new one's.")
+    status, body = recipes.result(from_version, to_version)
+    if status == "preparing":
+        return {"state": "preparing", "from": from_version, "to": to_version,
+                "note": "The recipes are being downloaded and indexed: call again in a minute."}
+    if status in ("no_patterns", "error"):
+        raise ToolError(body)
+    rows = sorted((r for r in body["patterns"] if r["status"] in _CHECK_ORDER),
+                  key=lambda r: _CHECK_ORDER[r["status"]])
+    out_rows = []
+    for r in rows[:PATTERN_CHECK_MAX]:
+        provider = r.get("provider") or {}
+        row = {
+            "status": r["status"],
+            "machine": provider.get("name"),
+            "at": {k: provider.get(k) for k in ("x", "y", "z", "dim")},
+            "makes": [mctext.plain(o.get("name") or "") for o in r.get("outputs") or []],
+        }
+        for field in ("changes", "moved_to", "removed"):
+            if r.get(field):
+                row[field] = _without_icons(r[field])
+        out_rows.append(row)
+    return {
+        "from": body.get("from"), "to": body.get("to"), "counts": body.get("counts"),
+        "patterns": out_rows, "patterns_listed": len(out_rows), "patterns_needing_attention": len(rows),
+        "note": ("broken: the new version has no matching recipe; moved: the recipe is in another machine now; "
+                 "changed: same machine, different amounts, fluid, circuit or coil."),
+    }
+
+
+# ---------------------------------------------------------------------
 # Changes: stock rules, and crafts in the game. Each checks the role the
 # page's route checks (gcm.auth), and runs the same code it does.
 
@@ -1012,6 +1261,61 @@ TOOLS = [
         }),
         "annotations": READ_ONLY,
         "handler": power,
+    },
+    {
+        "name": "find_recipes",
+        "title": "Look up GregTech recipes",
+        "description": (
+            "How the game makes an item or fluid: the GregTech machine recipes for it in the base's GTNH "
+            "version (machine, inputs, outputs with chances, EU/t, voltage tier, time, coil heat), "
+            "cheapest first, and which machines use it. Use this instead of remembering recipes. Takes an "
+            "item key or a name; it can be any item in the game, not just ones in the network."
+        ),
+        "inputSchema": _schema({
+            "item": {"type": "string", "description": "An item key (from search_items or game_item), or a name."},
+            "limit": {"type": "integer", "minimum": 1, "maximum": RECIPES_MAX, "default": 5},
+        }, ["item"]),
+        "annotations": READ_ONLY,
+        "handler": find_recipes,
+    },
+    {
+        "name": "game_item",
+        "title": "Item tooltip",
+        "description": (
+            "Any item's tooltip from the game data, including the shift tooltip, which for a GregTech "
+            "multiblock controller is its structure: size, casings, hatches, coils and limits. Also its "
+            "ore-dictionary names and the amount in the network. Takes an item key or a name."
+        ),
+        "inputSchema": _schema({
+            "item": {"type": "string", "description": "An item key, or a name like 'Electric Blast Furnace'."},
+        }, ["item"]),
+        "annotations": READ_ONLY,
+        "handler": game_item,
+    },
+    {
+        "name": "base_patterns",
+        "title": "The base's patterns for an item",
+        "description": (
+            "The network's own patterns that make an item: which machine or interface each is in (with "
+            "coordinates), crafting or processing, and what it takes and makes. How this base makes it, "
+            "where find_recipes says how the game can."
+        ),
+        "inputSchema": _schema({"item": ITEM_ARG}, ["item"]),
+        "annotations": READ_ONLY,
+        "handler": base_patterns,
+    },
+    {
+        "name": "pattern_check",
+        "title": "Patterns a GTNH update broke",
+        "description": (
+            "After a GTNH update: the base's patterns whose GregTech recipe the new version broke, moved "
+            "to another machine, or changed (amounts, fluid, circuit, coil), with each pattern's machine "
+            "and coordinates. The same check as the page's Pattern check."
+        ),
+        "inputSchema": _schema({}),
+        "annotations": READ_ONLY,
+        "operator": True,
+        "handler": pattern_check,
     },
     {
         "name": "request_status",

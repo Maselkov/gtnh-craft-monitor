@@ -188,6 +188,12 @@ class RecipeIndex:
         )
         return sorted(self._maps[map_id] for (map_id,) in rows)
 
+    def find_names(self, query, limit=200):
+        """[(kind, key, name), ...] for every named item and fluid whose
+        name contains query, ignoring case (ASCII), up to limit."""
+        pattern = "%" + query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        return self._all("SELECT kind, k, v FROM name WHERE v LIKE ? ESCAPE '\\' LIMIT ?", (pattern, limit))
+
     def names(self, kind, keys):
         """{key: display name} for those of keys the export named."""
         keys = list(keys)

@@ -498,6 +498,10 @@ What it can look at:
 | `plan_craft` | The [crafting plan](#requesting-and-cancelling-crafts) for an amount of an item |
 | `stock_rules` | Keep-in-stock targets and your alerts |
 | `power` | Stored EU over time and its trend |
+| `find_recipes` | How the game makes an item: GregTech machine recipes for your GTNH version, cheapest first |
+| `game_item` | Any item's tooltip, including a multiblock's structure (its shift tooltip) |
+| `base_patterns` | How your base makes an item: its patterns and the machines they're in |
+| `pattern_check` | After a GTNH update, the patterns it broke (operators, as on the page) |
 
 | `request_status` | Whether a craft request or cancel went through, and on which CPU |
 
@@ -529,6 +533,10 @@ isn't reporting, both refuse, since the game would never see them.
 Requests and cancels show in your [history](server.md#user-accounts) like
 ones made on the page, marked **Assistant**, and an accepted request pins
 its CPU for you.
+
+`find_recipes` and `game_item` read the game data of the GTNH version set on
+the Game data page, so they need one set. They cover GregTech machine
+recipes, not crafting-table ones.
 
 Answers are only as fresh as the game's last report, the same as the page's.
 
