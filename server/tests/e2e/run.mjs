@@ -761,6 +761,7 @@ async function main() {
     await waitFor('ingredients button', `card('W01').querySelector('.ingredients-btn')`);
     await click(`card('W01').querySelector('.ingredients-btn')`);
     await waitFor('open with a cell per item', `visible($('#ingredientsModal')) && $$('#ingredientsGrid .ingredient-cell').length === 2`);
+    await waitFor('the page under it does not scroll', `getComputedStyle(document.documentElement).overflowY === 'hidden'`);
     await waitFor('crafting cell first', `$('#ingredientsGrid .ingredient-cell').classList.contains('crafting')
       && $('#ingredientsGrid .ingredient-cell').textContent.includes('Crafting: 3')`);
     await sleep(3500);  // the crafts tab re-renders every 3s
@@ -780,6 +781,7 @@ async function main() {
       && $$('#ingredientsGrid .ingredient-cell').length === 2`);
     await evaluate(`pressKey('Escape'), true`);
     await waitFor('closed', `!visible($('#ingredientsModal'))`);
+    await waitFor('the page scrolls again', `getComputedStyle(document.documentElement).overflowY !== 'hidden'`);
   });
 
   step('an ingredient opens its item over the dialog; Back closes one at a time', async () => {
