@@ -23,6 +23,7 @@ failed (usually missing ingredients) waits config.AUTOCRAFT_RETRY_SECONDS
 before asking again."""
 
 import logging
+import math
 import time
 
 from gcm import charts, commands, config, icons, push, state, store, webhooks
@@ -141,7 +142,9 @@ def rule_key(item):
 
 
 def _positive(value):
-    return not isinstance(value, bool) and isinstance(value, (int, float)) and value > 0
+    # Finite too: JSON's 1e400 reads as infinity, which a refill would
+    # then ask the game for.
+    return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value) and value > 0
 
 
 def _network_item(key):

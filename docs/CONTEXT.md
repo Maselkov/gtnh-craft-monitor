@@ -819,6 +819,20 @@ deleting the user ends it too. `PUBLIC_URL`, when set, is the issuer and
 resource URL: behind a proxy the request's own host may not be what
 clients use.
 
+**The MCP write tools have no amount cap; the plan is the guard.** A fixed
+cap can't be right for every item (100k mB of a fluid is little, 100k of an
+endgame part is a lot). `request_craft` runs the same planner as the craft
+dialog and refuses to queue when ingredients are missing unless called
+again with `force`; it returns the item's name, amount, unit and stock so
+the model can't misread what it sent. The tools that change the game carry
+`destructiveHint` (clients ask the user first) and their descriptions, and
+the server's instructions, tell the model to confirm. Each runs the page
+route's own code and role check (`commands.request_cancel`,
+`stock.set_target`...). `current_crafts` gives each busy CPU's job as a
+`job_id` and `cancel_craft` passes it back as the cancel's expected output,
+so a CPU that has moved on to another job isn't cancelled. Viewers aren't
+offered operators' tools in `tools/list`.
+
 **Progress % counts steps, not time.** The server computes it
 (`gcm/progress.py`, called from `tracking.process_jobs`), not
 craft_monitor.lua. A step is one item or fluid type in the job's

@@ -443,13 +443,14 @@ draws each threshold as a dashed line.
 ## AI assistants
 
 The server is also an [MCP](https://modelcontextprotocol.io) server, so an AI
-assistant can read the base and answer questions about it: "what's been
-draining fastest this week?", "why is the craft on M00 slow?", "what's
-missing to make 64 of these?". Its address is your page's address with
+assistant can answer questions about the base ("what's been draining fastest
+this week?", "why is the craft on M00 slow?", "what's missing to make 64 of
+these?") and act on them ("craft 64 of those", "keep 4k of every circuit up
+to IV"). Its address is your page's address with
 `/mcp` on the end, e.g. `https://monitor.example.com/mcp`.
 
-The assistant acts as you: it signs in with your account and sees what you
-see. It can't change anything yet: every tool reads.
+The assistant acts as you: it signs in with your account, sees what you see,
+and can only change what your [role](server.md#user-accounts) can.
 
 **claude.ai, the Claude apps, or another app that connects by URL:** add a
 custom connector with the `/mcp` address. The app sends you to this server's
@@ -482,7 +483,7 @@ An app connected through the Connect page shows under its user in
 where an admin can **Disconnect** it. Revoking the token you signed in with,
 or **New token**, disconnects it too.
 
-What the assistant can look at:
+What it can look at:
 
 | Tool | What it answers |
 |---|---|
@@ -497,6 +498,28 @@ What the assistant can look at:
 | `plan_craft` | The [crafting plan](#requesting-and-cancelling-crafts) for an amount of an item |
 | `stock_rules` | Keep-in-stock targets and your alerts |
 | `power` | Stored EU over time and its trend |
+
+| `request_status` | Whether a craft request or cancel went through, and on which CPU |
+
+What it can change:
+
+| Tool | What it does | Who |
+|---|---|---|
+| `set_stock_alert`, `remove_stock_alert` | Your own [low-stock alerts](#stock-rules) | Anyone signed in |
+| `set_stock_target`, `remove_stock_target` | The base's keep-in-stock targets | Operators, admins |
+| `request_craft` | Asks AE2 for an amount of an item, like **Craft** on the page | Operators, admins |
+| `cancel_craft` | Cancels a CPU's job, like **Cancel** on the page | Operators, admins |
+
+`request_craft` works out the crafting plan first. If ingredients are
+missing it doesn't start, and tells the assistant what's missing; it only
+starts anyway when asked to again with `force`. There's no fixed limit on the
+amount, since what's sensible depends on the item. Instead, the tools tell
+the assistant to confirm the item and amount with you, and apps such as
+Claude ask before running anything that changes the game. `cancel_craft`
+only cancels the job the assistant saw: if the CPU has started another one
+since, nothing happens. Requests and cancels show in your
+[history](server.md#user-accounts) like ones made on the page, and an
+accepted request pins its CPU for you.
 
 Answers are only as fresh as the game's last report, the same as the page's.
 

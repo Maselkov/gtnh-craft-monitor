@@ -186,10 +186,12 @@ def _hidden_fields(params):
 
 
 # What an app can do as each role, through the tools in gcm/mcp/tools.py.
+_OPERATOR_CAN = ("read the base, set your low-stock alerts, request and cancel crafts, and change the "
+                 "base's keep-in-stock targets")
 ROLE_CAN = {
-    "viewer": "read the base: items, crafts, power and stock rules",
-    "operator": "read the base: items, crafts, power and stock rules",
-    "admin": "read the base: items, crafts, power and stock rules",
+    "viewer": "read the base (items, crafts, power and stock rules) and set your low-stock alerts",
+    "operator": _OPERATOR_CAN,
+    "admin": _OPERATOR_CAN,
 }
 
 

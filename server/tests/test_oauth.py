@@ -176,7 +176,7 @@ class TestConsent:
         res = client.post("/oauth/authorize", data={**params, "action": "signin", "token": token})
         assert res.status_code == 303 and res.headers["Location"].startswith("/oauth/authorize?")
         page = client.get(res.headers["Location"])
-        assert "Connect Claude?" in page.text and "olive" in page.text and "read the base" in page.text
+        assert "Connect Claude?" in page.text and "olive" in page.text and "request and cancel crafts" in page.text
         # The form's POST redirects to the app: form-action has to allow it.
         assert "form-action 'self' https://claude.ai" in page.headers["Content-Security-Policy"]
 

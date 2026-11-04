@@ -144,3 +144,29 @@ def user_auto_request_count(user_id):
             "SELECT COUNT(*) FROM craft_request_history WHERE user_id = ? AND source = 'auto'",
             (user_id,),
         ).fetchone()[0]
+
+
+def find(kind, request_id, user_id):
+    """One of the user's own craft requests (kind "craft": {status,
+    reason, cpu_name, label, amount}) or cancels (kind "cancel": {status,
+    success, reason, cpu_name, label}), or None."""
+    with db.transaction(db.app_db) as conn:
+        if kind == "craft":
+            row = conn.execute(
+                "SELECT status, reason, cpu_name, label, amount, kind FROM craft_request_history "
+                "WHERE request_id = ? AND user_id = ?",
+                (request_id, user_id),
+            ).fetchone()
+            if row:
+                return {"status": row[0], "reason": row[1], "cpu_name": row[2], "label": row[3],
+                        "amount": row[4], "kind": row[5]}
+            return None
+        row = conn.execute(
+            "SELECT status, success, reason, cpu_name, item_label FROM craft_cancel_history "
+            "WHERE request_id = ? AND user_id = ?",
+            (request_id, user_id),
+        ).fetchone()
+    if not row:
+        return None
+    return {"status": row[0], "success": None if row[1] is None else bool(row[1]), "reason": row[2],
+            "cpu_name": row[3], "label": row[4]}

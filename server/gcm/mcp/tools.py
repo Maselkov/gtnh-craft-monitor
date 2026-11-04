@@ -17,7 +17,7 @@ import math
 import time
 
 from gcm import (
-    bottlenecks, commands, craft_stats, inventory, item_info, patterns, planner, rates,
+    auth, bottlenecks, commands, craft_stats, inventory, item_info, patterns, planner, rates,
     mctext, search, state, stock, store,
 )
 
@@ -334,6 +334,7 @@ def current_crafts(user, args):
         busy.append({
             "cpu": job.get("name"),
             "making": job.get("final_output"),
+            "job_id": _job_id(job),
             "progress_percent": job.get("progress_percent"),
             "steps_done": job.get("steps_done"),
             "steps_total": job.get("steps_total"),
@@ -435,10 +436,10 @@ def craft_stats_tool(user, args):
 # ---------------------------------------------------------------------
 # Craft plans and stock rules
 
-def plan_craft(user, args):
-    key = _arg(args, "item", "string", required=True)
-    amount = _arg(args, "amount", "integer", required=True, minimum=1, maximum=10**12)
-    _parse_key(key)
+def _plan(user, key, amount):
+    """The crafting plan for amount of an item, as the model sees it.
+    ToolError when there's none: no pattern scan yet, or no pattern
+    makes the item."""
     pattern_list, patterns_at = patterns.current()
     if patterns_at is None:
         raise ToolError(patterns.missing_reason("crafting plan"))
@@ -472,6 +473,13 @@ def plan_craft(user, args):
         "stock_scanned_at": _iso(stock_at),
         "note": "An estimate from the network's patterns and last scan, worked out the way AE2 plans.",
     }
+
+
+def plan_craft(user, args):
+    key = _arg(args, "item", "string", required=True)
+    amount = _arg(args, "amount", "integer", required=True, minimum=1, maximum=10**12)
+    _parse_key(key)
+    return _plan(user, key, amount)
 
 
 def stock_rules_tool(user, args):
@@ -541,9 +549,205 @@ def power(user, args):
 
 
 # ---------------------------------------------------------------------
+# Changes: stock rules, and crafts in the game. Each checks the role the
+# page's route checks (gcm.auth), and runs the same code it does.
+
+def _require_operator(user, what):
+    if not auth.is_operator(user):
+        raise ToolError(f"Only operators and admins can {what}; you're a {user['role']}.")
+
+
+def _rule_item(key):
+    """The item a new stock rule is about, from the last scan (a rule
+    keeps the item's name, which only the scan has)."""
+    mod, internal, damage, kind, variant = _parse_key(key)
+    item = _network_item(key)
+    if item is None:
+        raise ToolError("That item isn't in the network's last scan.")
+    return item, {"label": item.get("name") or internal, "mod": mod, "internal": internal, "damage": damage,
+                  "kind": kind, "variant": variant}
+
+
+def set_stock_alert(user, args):
+    key = _arg(args, "item", "string", required=True)
+    below = _arg(args, "below", "number", required=True)
+    item, rule = _rule_item(key)
+    error = stock.set_alert(user["id"], rule, below)
+    if error:
+        raise ToolError(error)
+    return {
+        "saved": True, "item": key, "name": rule["label"], "below": below, "now": item.get("size") or 0,
+        "note": "You get a notification when it drops below this, then again only after it has been back above.",
+    }
+
+
+def remove_stock_alert(user, args):
+    key = _arg(args, "item", "string", required=True)
+    _parse_key(key)
+    if not any(a["key"] == key for a in store.stock.alerts_for_user(user["id"])):
+        raise ToolError("You have no alert on that item.")
+    store.stock.delete_alert(user["id"], key)
+    return {"removed": True, "item": key}
+
+
+def set_stock_target(user, args):
+    _require_operator(user, "change keep-in-stock targets")
+    key = _arg(args, "item", "string", required=True)
+    keep = _arg(args, "keep_at_least", "number", required=True)
+    refill = _arg(args, "refill_to", "number", required=True)
+    enabled = _arg(args, "enabled", "boolean", True)
+    item, rule = _rule_item(key)
+    error = stock.set_target(user["id"], rule, keep, refill, enabled)
+    if error:
+        raise ToolError(error)
+    now = item.get("size") or 0
+    return {
+        "saved": True, "item": key, "name": rule["label"], "keep_at_least": keep, "refill_to": refill,
+        "enabled": enabled, "now": now,
+        "note": ("It's below that now: the server asks AE2 for more after the next check, while a CPU is free."
+                 if enabled and now < keep else
+                 "The server asks AE2 for more whenever it drops below keep_at_least."),
+    }
+
+
+def remove_stock_target(user, args):
+    _require_operator(user, "change keep-in-stock targets")
+    key = _arg(args, "item", "string", required=True)
+    _parse_key(key)
+    if not any(t["key"] == key for t in store.stock.targets()):
+        raise ToolError("There's no keep-in-stock target on that item.")
+    store.stock.delete_target(key)
+    return {"removed": True, "item": key}
+
+
+def request_craft(user, args):
+    _require_operator(user, "request crafts")
+    key = _arg(args, "item", "string", required=True)
+    amount = _arg(args, "amount", "integer", required=True, minimum=1, maximum=10**12)
+    force = _arg(args, "force", "boolean", False)
+    mod, internal, damage, kind, variant = _parse_key(key)
+    item = _network_item(key)
+    if item is None:
+        raise ToolError("That item isn't in the network's last scan.")
+    if not item.get("isCraftable"):
+        raise ToolError("The network has no pattern for that item, so AE2 can't craft it.")
+    label = item.get("name") or internal
+    error = commands.craft_request_error(label, internal, amount, kind, variant)
+    if error:
+        raise ToolError(error)
+
+    # The plan first: a request AE2 can't cover just fails in-game, so
+    # say what's missing instead, unless asked to go ahead anyway.
+    plan = None
+    try:
+        plan = _plan(user, key, amount)
+    except ToolError as e:
+        plan_note = f"Couldn't check the ingredients first: {e}"
+    else:
+        plan_note = None
+        if not plan["can_craft"] and not force:
+            return {
+                "queued": False,
+                "item": key, "name": label, "amount": amount, "unit": _unit(kind),
+                "missing": plan["missing"],
+                "note": ("Not started: the plan says these are missing. Tell the user. Only call again with "
+                         "force=true if they want to try anyway (AE2 then fails the request if they're "
+                         "still missing)."),
+            }
+
+    req_id = commands.queue_craft(
+        user["id"], label, mod, internal, damage, amount, kind, variant, item.get("variant_name"),
+    )
+    out = {
+        "queued": True,
+        "request_id": req_id,
+        "item": key, "name": label, "amount": amount, "unit": _unit(kind), "in_stock": item.get("size") or 0,
+        "note": ("Sent to the game, which asks AE2 for it within a few seconds. request_status says whether "
+                 "AE2 started it and on which CPU."),
+    }
+    if plan_note:
+        out["plan_note"] = plan_note
+    elif not plan["can_craft"]:
+        out["plan_note"] = "Started with force: the plan said ingredients were missing."
+    return out
+
+
+def _job_id(job):
+    """What a busy CPU is making, as cancel_craft takes it back, or None
+    when the CPU doesn't report it (no Crafting Monitor)."""
+    output = commands.output_identity(job)
+    if not output:
+        return None
+    damage = output["damage"]
+    return f"{output['mod'] or ''}|{output['internal']}|{'' if damage is None else damage}"
+
+
+def cancel_craft(user, args):
+    _require_operator(user, "cancel crafts")
+    cpu = _arg(args, "cpu", "string", required=True)
+    job_id = _arg(args, "job_id", "string", None)
+    shown = None
+    if job_id:
+        parts = job_id.split("|")
+        if len(parts) != 3 or not parts[1]:
+            raise ToolError("job_id must be the job_id current_crafts gave for this CPU")
+        try:
+            damage = int(parts[2]) if parts[2] else None
+        except ValueError:
+            raise ToolError("job_id must be the job_id current_crafts gave for this CPU") from None
+        shown = {"mod": parts[0] or None, "internal": parts[1], "damage": damage}
+    if shown is None:
+        # Without it, a CPU that moved on to another job since the user
+        # agreed would have that one cancelled instead.
+        with state.crafts_lock:
+            job = next((j for j in state.crafts["jobs"] if j.get("name") == cpu), None)
+        if job is not None and job.get("busy") and _job_id(job):
+            raise ToolError("Pass the job_id current_crafts gave for this CPU, so only that job is cancelled.")
+    req_id, error = commands.request_cancel(user["id"], cpu, shown)
+    if error:
+        raise ToolError(error[0])
+    return {
+        "queued": True, "request_id": req_id, "cpu": cpu,
+        "note": "Sent to the game, which cancels it within a few seconds. request_status says whether it worked.",
+    }
+
+
+def request_status(user, args):
+    req_id = _arg(args, "request_id", "integer", required=True)
+    kind = _arg(args, "type", "string", "craft", choices=("craft", "cancel"))
+    # A request the game never picked up is only marked failed when its
+    # queue is next looked at (the game's poll, the page): look now.
+    queue = commands.craft_requests if kind == "craft" else commands.cancel_requests
+    queue.select(lambda r: False)
+    found = store.requests.find(kind, req_id, user["id"])
+    if found is None:
+        raise ToolError(f"You have no {kind} request with that id.")
+    if kind == "craft":
+        out = {"request_id": req_id, "name": found["label"], "amount": found["amount"], "status": found["status"]}
+        if found["status"] == "accepted":
+            out["cpu"] = found["cpu_name"]
+            out["note"] = "AE2 started it: current_crafts and craft_job follow the job."
+        elif found["status"] == "failed":
+            out["reason"] = found["reason"]
+        else:
+            out["note"] = "Still waiting for the game to ask AE2."
+        return out
+    out = {"request_id": req_id, "cpu": found["cpu_name"], "making": found["label"]}
+    if found["status"] == "pending":
+        out.update(status="pending", note="Still waiting for the game.")
+    else:
+        out.update(status="cancelled" if found["success"] else "not cancelled", reason=found["reason"])
+    return out
+
+
+# ---------------------------------------------------------------------
 # The registry
 
 READ_ONLY = {"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False}
+# Changes only this server's settings (your own alerts).
+CHANGES = {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False}
+# Changes what happens in the game: clients ask the user before these.
+GAME_CHANGES = {"readOnlyHint": False, "destructiveHint": True, "idempotentHint": False, "openWorldHint": True}
 
 TOOLS = [
     {
@@ -682,14 +886,123 @@ TOOLS = [
         "annotations": READ_ONLY,
         "handler": power,
     },
+    {
+        "name": "request_status",
+        "title": "Request status",
+        "description": (
+            "Whether one of your craft requests or cancels went through: AE2 started it (and on which "
+            "CPU), it failed (and why), or it's still waiting for the game."
+        ),
+        "inputSchema": _schema({
+            "request_id": {"type": "integer", "description": "The request_id request_craft or cancel_craft returned."},
+            "type": {"type": "string", "enum": ["craft", "cancel"], "default": "craft"},
+        }, ["request_id"]),
+        "annotations": READ_ONLY,
+        "handler": request_status,
+    },
+    {
+        "name": "set_stock_alert",
+        "title": "Set a low-stock alert",
+        "description": (
+            "Your own alert on an item: a notification when it drops below an amount. Changes an "
+            "existing alert's amount."
+        ),
+        "inputSchema": _schema({
+            "item": ITEM_ARG,
+            "below": {"type": "number", "exclusiveMinimum": 0, "description": "Notify below this amount (mB for a fluid)."},
+        }, ["item", "below"]),
+        "annotations": CHANGES,
+        "handler": set_stock_alert,
+    },
+    {
+        "name": "remove_stock_alert",
+        "title": "Remove a low-stock alert",
+        "description": "Removes your low-stock alert on an item.",
+        "inputSchema": _schema({"item": ITEM_ARG}, ["item"]),
+        "annotations": CHANGES,
+        "handler": remove_stock_alert,
+    },
+    {
+        "name": "set_stock_target",
+        "title": "Set a keep-in-stock target",
+        "description": (
+            "The base's target for an item: whenever it drops below keep_at_least, the server asks AE2 "
+            "to craft it back up to refill_to. Starts real crafts in the game, for everyone's base: "
+            "confirm the item and both amounts with the user first. Craftable items only. Changes an "
+            "existing target."
+        ),
+        "inputSchema": _schema({
+            "item": ITEM_ARG,
+            "keep_at_least": {"type": "number", "exclusiveMinimum": 0},
+            "refill_to": {"type": "number", "exclusiveMinimum": 0, "description": "More than keep_at_least."},
+            "enabled": {"type": "boolean", "default": True},
+        }, ["item", "keep_at_least", "refill_to"]),
+        "annotations": GAME_CHANGES,
+        "operator": True,
+        "handler": set_stock_target,
+    },
+    {
+        "name": "remove_stock_target",
+        "title": "Remove a keep-in-stock target",
+        "description": "Removes the base's keep-in-stock target on an item. Confirm with the user first.",
+        "inputSchema": _schema({"item": ITEM_ARG}, ["item"]),
+        "annotations": GAME_CHANGES,
+        "operator": True,
+        "handler": remove_stock_target,
+    },
+    {
+        "name": "request_craft",
+        "title": "Request a craft",
+        "description": (
+            "Asks AE2 to craft an amount of an item: a real craft in the game, using up the base's "
+            "materials. Before calling, tell the user the item's name and the amount and get their OK. "
+            "It works out the crafting plan first and doesn't start if ingredients are missing: it "
+            "returns what's missing instead. force=true starts it anyway; only use it when the user "
+            "asks to after seeing what's missing. Returns a request_id for request_status."
+        ),
+        "inputSchema": _schema({
+            "item": ITEM_ARG,
+            "amount": {"type": "integer", "minimum": 1,
+                       "description": "How many items, or mB for a fluid (1000 mB is a bucket)."},
+            "force": {"type": "boolean", "default": False,
+                      "description": "Start even though the plan says ingredients are missing."},
+        }, ["item", "amount"]),
+        "annotations": GAME_CHANGES,
+        "operator": True,
+        "handler": request_craft,
+    },
+    {
+        "name": "cancel_craft",
+        "title": "Cancel a craft",
+        "description": (
+            "Cancels the job running on a crafting CPU. Confirm the CPU and what it's making with the "
+            "user first. Pass the job_id current_crafts gave: if the CPU has moved on to another job "
+            "since, nothing is cancelled."
+        ),
+        "inputSchema": _schema({
+            "cpu": {"type": "string", "description": "A CPU name from current_crafts."},
+            "job_id": {"type": "string", "description": (
+                "The job_id current_crafts gave for that CPU's job. Required unless current_crafts "
+                "gave none (the CPU has no Crafting Monitor)."
+            )},
+        }, ["cpu"]),
+        "annotations": GAME_CHANGES,
+        "operator": True,
+        "handler": cancel_craft,
+    },
 ]
 
 _BY_NAME = {tool["name"]: tool for tool in TOOLS}
 
 
-def listing():
-    """tools/list's tools, in a fixed order."""
-    return [{k: v for k, v in tool.items() if k != "handler"} for tool in TOOLS]
+def listing(user):
+    """tools/list's tools for a user, in a fixed order: a viewer isn't
+    offered the ones only operators may use."""
+    return [
+        {k: v for k, v in tool.items() if k not in ("handler", "operator")}
+        for tool in TOOLS
+        if not tool.get("operator") or auth.is_operator(user)
+    ]
 
 
 def exists(name):

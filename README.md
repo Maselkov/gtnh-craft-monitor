@@ -32,8 +32,9 @@ Basically, it's web AE2 for your base.
 - **[Webhooks](docs/using.md#webhooks)** — finished pinned crafts and failed
   auto-crafts posted to a Discord channel or any other webhook.
 - **[AI assistants](docs/using.md#ai-assistants)** — an MCP endpoint, so
-  Claude or another AI assistant can answer questions about the base: what's
-  running low, why a craft is slow, what a craft needs.
+  Claude or another AI assistant can answer questions about the base (what's
+  running low, why a craft is slow, what a craft needs) and request crafts
+  or set stock rules for you.
 - **[Accounts](docs/server.md#user-accounts)** — per-user tokens with
   viewer, operator, and admin roles, and a
   [private](docs/server.md#private-servers) setting so only signed-in
