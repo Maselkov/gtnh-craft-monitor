@@ -643,7 +643,8 @@ def _app_oauth(conn):
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             redirect_uris TEXT NOT NULL,
-            created_at REAL NOT NULL
+            created_at REAL NOT NULL,
+            created_by_ip TEXT
         )
     """)
     conn.execute("""

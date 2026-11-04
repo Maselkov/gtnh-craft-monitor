@@ -19,17 +19,23 @@ REFRESH_SECONDS = 30 * 86400
 
 # Clients are made by anyone who asks (RFC 7591: Claude registers on every
 # new connection), so ones never used for a grant are dropped after a day,
-# and only so many may be made in an hour.
+# and only so many may be made in an hour: per address, so one script
+# can't use up everyone's, and in all, as a backstop.
 UNUSED_CLIENT_SECONDS = 86400
-CLIENTS_PER_HOUR = 200
+CLIENTS_PER_HOUR_PER_IP = 30
+CLIENTS_PER_HOUR = 2000
+# A refresh token used again this soon after its first use is a client
+# retrying, or two requests refreshing at once, not a copy: it gets new
+# tokens instead of revoking the grant.
+REFRESH_REUSE_GRACE_SECONDS = 30
 
 ACCESS_PREFIX = "gcmat_"
 REFRESH_PREFIX = "gcmrt_"
 
 
-def create_client(name, redirect_uris):
-    """Registers a client; returns its id, or None when too many were
-    registered in the last hour."""
+def create_client(name, redirect_uris, ip=None):
+    """Registers a client for a request from ip; returns its id, or None
+    when too many were registered in the last hour."""
     now = time.time()
     with db.transaction(db.app_db) as conn:
         conn.execute(
@@ -37,15 +43,16 @@ def create_client(name, redirect_uris):
             "AND id NOT IN (SELECT client_id FROM oauth_grants)",
             (now - UNUSED_CLIENT_SECONDS,),
         )
-        recent = conn.execute(
-            "SELECT COUNT(*) FROM oauth_clients WHERE created_at > ?", (now - 3600,)
-        ).fetchone()[0]
-        if recent >= CLIENTS_PER_HOUR:
+        recent, from_ip = conn.execute(
+            "SELECT COUNT(*), COALESCE(SUM(created_by_ip IS ?), 0) FROM oauth_clients WHERE created_at > ?",
+            (ip, now - 3600),
+        ).fetchone()
+        if recent >= CLIENTS_PER_HOUR or from_ip >= CLIENTS_PER_HOUR_PER_IP:
             return None
         client_id = f"gcmc_{secrets.token_hex(16)}"
         conn.execute(
-            "INSERT INTO oauth_clients (id, name, redirect_uris, created_at) VALUES (?, ?, ?, ?)",
-            (client_id, name, json.dumps(redirect_uris), now),
+            "INSERT INTO oauth_clients (id, name, redirect_uris, created_at, created_by_ip) VALUES (?, ?, ?, ?, ?)",
+            (client_id, name, json.dumps(redirect_uris), now, ip),
         )
     return client_id
 
@@ -137,8 +144,9 @@ def create_grant(code_details):
 
 def refresh(refresh_token, client_id):
     """New tokens for a refresh token, which is used up. A refresh token
-    used a second time means it was copied: the whole grant is revoked.
-    None when it can't be used."""
+    used again later than REFRESH_REUSE_GRACE_SECONDS after its first
+    use means it was copied: the whole grant is revoked. None when it
+    can't be used."""
     if not isinstance(refresh_token, str) or not refresh_token.startswith(REFRESH_PREFIX):
         return None
     now = time.time()
@@ -154,14 +162,15 @@ def refresh(refresh_token, client_id):
         if not row or row[3] != client_id:
             return None
         grant_id, expires_at, used_at, _, revoked_at, disabled_at = row
-        if used_at is not None:
+        if used_at is not None and now - used_at > REFRESH_REUSE_GRACE_SECONDS:
             conn.execute(
                 "UPDATE oauth_grants SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL", (now, grant_id)
             )
             return None
         if expires_at <= now or revoked_at is not None or disabled_at is not None:
             return None
-        conn.execute("UPDATE oauth_tokens SET used_at = ? WHERE token_hash = ?", (now, hash_secret(refresh_token)))
+        if used_at is None:
+            conn.execute("UPDATE oauth_tokens SET used_at = ? WHERE token_hash = ?", (now, hash_secret(refresh_token)))
         return _issue(conn, grant_id, now)
 
 

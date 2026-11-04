@@ -2,9 +2,11 @@
 craft requests and cancels, and following a request to its outcome,
 with the same role checks as the page's routes."""
 
+import time
+
 import pytest
 
-from gcm import commands, store
+from gcm import commands, stock, store
 from gcm.mcp import tools
 from test_mcp import IRON_KEY, call, make_token, modern, ok
 from test_network_api import run_scan
@@ -87,6 +89,13 @@ class TestStockRules:
         assert store.stock.targets() == []
         assert call(client, operator, "remove_stock_target", item=IRON_KEY)[1] is True
 
+    def test_infinite_amounts_are_refused_on_the_page_too(self, network):
+        rule = {"label": "Iron Ingot", "mod": "minecraft", "internal": "iron_ingot", "damage": 0,
+                "kind": "item", "variant": None}
+        assert stock.set_target("olive", rule, 10, float("inf")) is not None
+        assert stock.set_alert("olive", rule, float("inf")) is not None
+        assert store.stock.targets() == []
+
     def test_target_checks_are_the_pages(self, client, operator, network):
         answer, is_error = call(client, operator, "set_stock_target", item=GOLD_KEY, keep_at_least=1, refill_to=2)
         assert is_error and answer == "only items the network can craft can be kept in stock"
@@ -136,6 +145,15 @@ class TestRequestCraft:
         # Someone else's request isn't yours to look at.
         assert call(client, viewer, "request_status", request_id=req_id)[1] is True
 
+    def test_one_the_game_never_picks_up_ends_up_failed(self, client, operator, network, monkeypatch):
+        # Nothing else looks at the queue (no game, no page open): asking
+        # for the status still expires it.
+        req_id = ok(client, operator, "request_craft", item=IRON_KEY, amount=8)["request_id"]
+        real_time = time.time
+        monkeypatch.setattr(time, "time", lambda: real_time() + commands.craft_requests.pickup_timeout + 1)
+        status = ok(client, operator, "request_status", request_id=req_id)
+        assert status["status"] == "failed" and "didn't pick up" in status["reason"]
+
     def test_a_failed_request_says_why(self, client, operator, network, api_headers):
         req_id = ok(client, operator, "request_craft", item=IRON_KEY, amount=8)["request_id"]
         client.get("/api/craft/requests/pending", headers=api_headers)
@@ -164,6 +182,18 @@ class TestCancelCraft:
         answer, is_error = call(client, operator, "cancel_craft", cpu="B0", job_id="minecraft|iron_ingot|0")
         assert is_error and "different job" in answer
         assert commands.cancel_requests.select(lambda r: True) == []
+
+    def test_job_id_is_required_when_the_cpu_says_what_it_makes(self, client, operator, api_headers):
+        cpus(client, api_headers, idle=0, busy=[IRON])
+        answer, is_error = call(client, operator, "cancel_craft", cpu="B0")
+        assert is_error and "job_id" in answer
+        assert commands.cancel_requests.select(lambda r: True) == []
+
+    def test_but_not_for_a_cpu_without_a_crafting_monitor(self, client, operator, api_headers):
+        client.post("/api/crafts", json={"source": "me", "jobs": [{"name": "M1", "busy": True}]},
+                    headers=api_headers)
+        assert ok(client, operator, "current_crafts")["busy_cpus"][0]["job_id"] is None
+        assert ok(client, operator, "cancel_craft", cpu="M1")["queued"] is True
 
     def test_not_an_idle_or_unknown_cpu(self, client, operator, api_headers):
         cpus(client, api_headers, idle=1)

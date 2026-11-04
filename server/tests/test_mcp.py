@@ -216,6 +216,19 @@ class TestMalformed:
         assert post(client, token, {"hello": 1}).status_code == 400
         assert post(client, token, [{"jsonrpc": "2.0", "id": 1, "method": "ping"}]).status_code == 400
 
+    def test_a_bug_in_a_tool_is_a_tool_error_not_a_500(self, client, token, monkeypatch):
+        def broken(user, args):
+            return {}["missing"]
+
+        monkeypatch.setitem(tools._BY_NAME["current_crafts"], "handler", broken)
+        answer, is_error = call(client, token, "current_crafts")
+        assert is_error and "server hit an error" in answer
+
+    def test_infinite_numbers_are_refused(self, client, token):
+        # 1e400 in JSON is infinity to Python.
+        answer, is_error = call(client, token, "search_items", query="x", limit=float("inf"))
+        assert is_error and answer == "limit must be a number"
+
     def test_bad_arguments_come_back_as_tool_errors(self, client, token):
         assert call(client, token, "search_items") == ("query is required", True)
         assert call(client, token, "search_items", query="x", bogus=1) == ("unknown argument(s): bogus", True)
@@ -245,6 +258,14 @@ class TestNetworkTools:
         assert found["items"][0] == {"item": IRON_KEY, "name": "Iron Ingot", "amount": 500,
                                      "unit": "items", "craftable": True}
         assert ok(client, token, "search_items", query="iron plate")["items"][0]["name"] == "Iron Plate"
+
+    def test_search_ranks_by_the_name_without_colour_codes(self, client, token, api_headers):
+        run_scan(client, api_headers, [[
+            {"name": "Infinity Catalyst Dust", "mod": "gregtech", "internal": "dust", "damage": 1, "size": 1},
+            {"name": "\u00a76Infinity Catalyst", "mod": "gregtech", "internal": "ingot", "damage": 1, "size": 1},
+        ]])
+        found = ok(client, token, "search_items", query="infinity catalyst")
+        assert found["items"][0]["name"] == "Infinity Catalyst"
 
     def test_search_filters(self, client, token, network):
         assert ok(client, token, "search_items", query="ingot", craftable_only=True)["matches"] == 1

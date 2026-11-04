@@ -12,12 +12,16 @@ tools take that, never a name, so a request can't land on the wrong one
 of several items called alike."""
 
 import datetime
+import logging
+import math
 import time
 
 from gcm import (
     auth, bottlenecks, commands, craft_stats, inventory, item_info, patterns, planner, rates,
     mctext, search, state, stock, store,
 )
+
+log = logging.getLogger(__name__)
 
 
 class ToolError(Exception):
@@ -136,13 +140,14 @@ def _arg(args, name, kind, default=None, choices=None, minimum=None, maximum=Non
         if required:
             raise ToolError(f"{name} is required")
         return None
-    if kind == "integer":
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or value != int(value):
-            raise ToolError(f"{name} must be a whole number")
-        value = int(value)
-    elif kind == "number":
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
+    if kind in ("integer", "number"):
+        # JSON allows 1e400, which Python reads as infinity.
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
             raise ToolError(f"{name} must be a number")
+        if kind == "integer":
+            if value != int(value):
+                raise ToolError(f"{name} must be a whole number")
+            value = int(value)
     elif kind == "string":
         if not isinstance(value, str):
             raise ToolError(f"{name} must be a string")
@@ -177,7 +182,7 @@ _DEEP_SEARCH_KINDS = {"tooltip", "ore", "formula"}
 
 
 def _rank(item, query):
-    name = (item.get("name") or "").lower()
+    name = mctext.plain(item.get("name") or "").lower()
     q = query.strip().lower()
     if name == q:
         return 0
@@ -211,7 +216,7 @@ def search_items(user, args):
             item_info.mod_name(item.get("mod")), info.get("formula"),
         ):
             found.append(item)
-    found.sort(key=lambda it: (_rank(it, query), len(it.get("name") or ""), -(it.get("size") or 0)))
+    found.sort(key=lambda it: (_rank(it, query), len(mctext.plain(it.get("name") or "")), -(it.get("size") or 0)))
     return {
         "scanned_at": _iso(scanned_at),
         "matches": len(found),
@@ -283,11 +288,14 @@ def inventory_changes(user, args):
     sort = _arg(args, "sort", "string", "biggest", choices=CHANGE_SORTS)
     limit = _arg(args, "limit", "integer", 25, minimum=1, maximum=100)
     range_key, changes = inventory.changes(range_key)
-    sizes, _, _ = inventory.stock_levels()
+    # One pass over the snapshot: looking each item up would go through
+    # all of it again for every changed item.
+    with state.network_lock:
+        by_key = {store.items.key_of(it): it for it in state.network["items"]}
     rows = []
     for key, change in changes.items():
-        item = _network_item(key)
-        now = sizes.get(key, 0)
+        item = by_key.get(key)
+        now = (item.get("size") or 0) if item else 0
         delta = now - change["from"]
         if (sort == "falling" and delta >= 0) or (sort == "rising" and delta <= 0):
             continue
@@ -688,6 +696,13 @@ def cancel_craft(user, args):
         except ValueError:
             raise ToolError("job_id must be the job_id current_crafts gave for this CPU") from None
         shown = {"mod": parts[0] or None, "internal": parts[1], "damage": damage}
+    if shown is None:
+        # Without it, a CPU that moved on to another job since the user
+        # agreed would have that one cancelled instead.
+        with state.crafts_lock:
+            job = next((j for j in state.crafts["jobs"] if j.get("name") == cpu), None)
+        if job is not None and job.get("busy") and _job_id(job):
+            raise ToolError("Pass the job_id current_crafts gave for this CPU, so only that job is cancelled.")
     req_id, error = commands.request_cancel(user["id"], cpu, shown)
     if error:
         raise ToolError(error[0])
@@ -700,6 +715,10 @@ def cancel_craft(user, args):
 def request_status(user, args):
     req_id = _arg(args, "request_id", "integer", required=True)
     kind = _arg(args, "type", "string", "craft", choices=("craft", "cancel"))
+    # A request the game never picked up is only marked failed when its
+    # queue is next looked at (the game's poll, the page): look now.
+    queue = commands.craft_requests if kind == "craft" else commands.cancel_requests
+    queue.select(lambda r: False)
     found = store.requests.find(kind, req_id, user["id"])
     if found is None:
         raise ToolError(f"You have no {kind} request with that id.")
@@ -962,7 +981,10 @@ TOOLS = [
         ),
         "inputSchema": _schema({
             "cpu": {"type": "string", "description": "A CPU name from current_crafts."},
-            "job_id": {"type": "string", "description": "The job_id current_crafts gave for that CPU's job."},
+            "job_id": {"type": "string", "description": (
+                "The job_id current_crafts gave for that CPU's job. Required unless current_crafts "
+                "gave none (the CPU has no Crafting Monitor)."
+            )},
         }, ["cpu"]),
         "annotations": GAME_CHANGES,
         "operator": True,
@@ -983,12 +1005,15 @@ def listing(user):
     ]
 
 
+def exists(name):
+    return name in _BY_NAME
+
+
 def call(name, args, user):
-    """Runs a tool for a user. Returns (result, is_error): result is the
-    tool's JSON-able answer, or an error message for the model."""
-    tool = _BY_NAME.get(name)
-    if tool is None:
-        raise KeyError(name)
+    """Runs a tool (exists(name)) for a user. Returns (result, is_error):
+    result is the tool's JSON-able answer, or an error message for the
+    model."""
+    tool = _BY_NAME[name]
     if args is None:
         args = {}
     if not isinstance(args, dict):
@@ -1000,3 +1025,8 @@ def call(name, args, user):
         return _compact_numbers(tool["handler"](user, args)), False
     except ToolError as e:
         return str(e), True
+    except Exception:
+        # A bug, not the model's mistake: logged, and the model told so
+        # rather than the client getting a 500 it can't read.
+        log.exception("MCP tool %s failed", name)
+        return "The server hit an error running this tool. Its log has the details.", True

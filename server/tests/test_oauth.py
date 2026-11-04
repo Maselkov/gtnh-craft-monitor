@@ -136,11 +136,22 @@ class TestRegistration:
                                                    "token_endpoint_auth_method": "client_secret_basic"})
         assert res.status_code == 400
 
-    def test_too_many_in_an_hour(self, client, monkeypatch):
-        monkeypatch.setattr(oauth_store, "CLIENTS_PER_HOUR", 2)
+    def test_too_many_from_one_address_in_an_hour(self, client, monkeypatch):
+        monkeypatch.setattr(oauth_store, "CLIENTS_PER_HOUR_PER_IP", 2)
         register(client)
         register(client)
         assert client.post("/oauth/register", json={"redirect_uris": [CALLBACK]}).status_code == 429
+        # Someone else, elsewhere, isn't held up by it.
+        other = client.post("/oauth/register", json={"redirect_uris": [CALLBACK]},
+                            environ_base={"REMOTE_ADDR": "203.0.113.9"})
+        assert other.status_code == 201
+
+    def test_and_in_all(self, client, monkeypatch):
+        monkeypatch.setattr(oauth_store, "CLIENTS_PER_HOUR", 1)
+        register(client)
+        other = client.post("/oauth/register", json={"redirect_uris": [CALLBACK]},
+                            environ_base={"REMOTE_ADDR": "203.0.113.9"})
+        assert other.status_code == 429
 
     def test_unused_old_clients_are_dropped(self, client, monkeypatch):
         old = register(client)
@@ -199,6 +210,18 @@ class TestConsent:
         res = client.post("/oauth/authorize", data={**params, "form": form_value(page.text), "action": "allow"},
                           headers={"Origin": "https://evil.example"})
         assert res.status_code == 403
+
+    def test_another_site_cant_sign_the_visitor_in(self, client):
+        # Login CSRF: a form on another site posting someone's token.
+        client_id = register(client)
+        params = authorize_params(client_id)
+        token = make_token("mallory", role="viewer")
+        for headers in ({"Origin": "https://evil.example"}, {"Sec-Fetch-Site": "cross-site"}):
+            res = client.post("/oauth/authorize", data={**params, "action": "signin", "token": token}, headers=headers)
+            assert res.status_code == 403 and "gcm_session" not in res.headers.get("Set-Cookie", "")
+        same = client.post("/oauth/authorize", data={**params, "action": "signin", "token": token},
+                           headers={"Origin": BASE, "Sec-Fetch-Site": "same-origin"})
+        assert same.status_code == 303
 
     def test_unknown_client_or_redirect_is_an_error_page_not_a_redirect(self, client):
         client_id = register(client)
@@ -272,7 +295,7 @@ class TestTokens:
         monkeypatch.setattr(time, "time", lambda: real_time() + oauth_store.ACCESS_SECONDS + 1)
         assert mcp_status(client, tokens["access_token"]) == 401
 
-    def test_refresh_rotates_and_a_reused_refresh_token_revokes_the_grant(self, client):
+    def test_refresh_rotates_and_a_reused_refresh_token_revokes_the_grant(self, client, monkeypatch):
         client_id, tokens = tokens_for(client)
         refresh = {"grant_type": "refresh_token", "client_id": client_id, "refresh_token": tokens["refresh_token"]}
         res = client.post("/oauth/token", data=refresh)
@@ -281,11 +304,24 @@ class TestTokens:
         assert new["refresh_token"] != tokens["refresh_token"]
         assert mcp_status(client, new["access_token"]) == 200
 
+        real_time = time.time
+        monkeypatch.setattr(time, "time", lambda: real_time() + oauth_store.REFRESH_REUSE_GRACE_SECONDS + 1)
         replay = client.post("/oauth/token", data=refresh)
         assert replay.status_code == 400 and replay.get_json()["error"] == "invalid_grant"
         assert mcp_status(client, new["access_token"]) == 401
         again = {**refresh, "refresh_token": new["refresh_token"]}
         assert client.post("/oauth/token", data=again).status_code == 400
+
+    def test_a_refresh_retried_at_once_is_not_a_theft(self, client):
+        # Two requests refreshing together, or a retry after a lost
+        # answer: both get tokens, and the app stays connected.
+        client_id, tokens = tokens_for(client)
+        refresh = {"grant_type": "refresh_token", "client_id": client_id, "refresh_token": tokens["refresh_token"]}
+        first = client.post("/oauth/token", data=refresh).get_json()
+        second = client.post("/oauth/token", data=refresh)
+        assert second.status_code == 200
+        assert mcp_status(client, first["access_token"]) == 200
+        assert mcp_status(client, second.get_json()["access_token"]) == 200
 
     def test_refresh_needs_the_same_client(self, client):
         _, tokens = tokens_for(client)

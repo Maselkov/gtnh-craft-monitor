@@ -90,7 +90,7 @@ def register():
         name = urlsplit(uris[0]).hostname or "An app"
     name = " ".join(name.split())[: oauth.MAX_CLIENT_NAME]
 
-    client_id = store.oauth.create_client(name, uris)
+    client_id = store.oauth.create_client(name, uris, request.remote_addr)
     if client_id is None:
         return jsonify({"error": "temporarily_unavailable",
                         "error_description": "too many registrations; try again later"}), 429
@@ -248,9 +248,22 @@ def authorize_get():
     return _consent_page(params, client, auth.session_user())
 
 
+def _from_this_site():
+    """Whether a form POST came from this server's own pages. Browsers
+    send Origin on every cross-site POST (Sec-Fetch-Site too): without
+    this, another site could post a sign-in with its own token and sign
+    the visitor in as someone else."""
+    origin = request.headers.get("Origin")
+    if origin is not None and origin != request.host_url.rstrip("/"):
+        return False
+    return request.headers.get("Sec-Fetch-Site") in (None, "same-origin", "none")
+
+
 @bp.route("/oauth/authorize", methods=["POST"])
-@auth.custom_check  # signing in needs no session; allowing checks it and the form value
+@auth.custom_check  # same-site only; signing in needs no session, allowing checks it and the form value
 def authorize_post():
+    if not _from_this_site():
+        return _error_page("This form has to be sent from this server's own page.", 403)
     params, client, error = _authorize_request(request.form)
     if error and error[1] is None:
         return _error_page(error[0])
