@@ -84,7 +84,7 @@ The full list, including the OpenComputers config settings, is under
    there until its script reports). Check the address in the command is
    one the Minecraft server can reach (**Use a different address** changes
    it), then paste the command into that computer (each one, if you use
-   several), after ticking the scripts that computer should run. It
+   several), after picking the scripts that computer should run. It
    installs them, checks that the computer can reach the server, starts
    them on every boot and reboots. If it can't reach it, see
    [Scripts can't reach the server](#scripts-cant-reach-the-server).

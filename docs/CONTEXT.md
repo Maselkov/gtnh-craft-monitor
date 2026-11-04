@@ -1647,9 +1647,11 @@ Connecting a computer: the Status dialog's "Connect a computer" builds
 one line, `wget ... gcm.lua && /tmp/gcm.lua install <scripts>
 --server=<url> --api-key=<key>` (OpenOS's shell chains with `&&`; checked
 in game), from `/api/admin/connect` (the API key and `PUBLIC_URL`; the
-page's own origin without it). The scripts are the ones ticked above it
-(`CONNECT_SCRIPTS` in agents.js, which a JS test holds to
-oc/manifest.lua's components; the ticks kept in localStorage); naming them
+page's own origin without it). The scripts are the ones switched on above it,
+a row of toggle buttons (`aria-pressed`) with each one's needed block as
+its tooltip, to keep the section short (`CONNECT_SCRIPTS` in agents.js,
+which a JS test holds to oc/manifest.lua's components; the choice kept in
+localStorage); naming them
 skips gcm's question for each. That gcm.lua comes from main, not a
 release, so installer changes reach new computers on merge. Install asks
 nothing else: it always enables the scripts and gcm_agent in rc and

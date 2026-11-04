@@ -1383,7 +1383,16 @@ body.private-locked #networkTab {
   margin-top: 16px;
 }
 .connect-scripts {
-  margin: 10px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 13px;
+}
+.connect-scripts-label {
+  color: var(--muted);
+  margin-right: 2px;
 }
 .connect-command {
   display: flex;

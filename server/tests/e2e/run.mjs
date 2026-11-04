@@ -1927,9 +1927,11 @@ async function main() {
       && $('#connectCommand').textContent.startsWith('wget -f ')
       && $('#connectCommand').textContent.endsWith('/oc/gcm.lua /tmp/gcm.lua && ${install}' + location.origin + ' --api-key=' + '•'.repeat(12))
       && visible($('#connectLocalNote'))`);
-    // Unticked scripts drop out of the command; with none, nothing to copy.
+    // Scripts switched off drop out of the command; with none, nothing to copy.
     await click(`$('#connectScripts [data-script="power"]')`);
-    await waitFor('power unpicked', `$('#connectCommand').textContent.includes('/tmp/gcm.lua install craft network --server=')`);
+    await waitFor('power unpicked', `$('#connectCommand').textContent.includes('/tmp/gcm.lua install craft network --server=')
+      && $('#connectScripts [data-script="power"]').getAttribute('aria-pressed') === 'false'
+      && !$('#connectScripts [data-script="power"]').classList.contains('active')`);
     await click(`$('#connectScripts [data-script="craft"]')`);
     await click(`$('#connectScripts [data-script="network"]')`);
     await waitFor('none picked', `$('#connectCommand').textContent.includes('/tmp/gcm.lua install --server=')
