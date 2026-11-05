@@ -449,7 +449,7 @@ these?") and act on them ("craft 64 of those", "keep 4k of every circuit up
 to IV"). Its address is your page's address with
 `/mcp` on the end, e.g. `https://monitor.example.com/mcp`; operators and
 admins can copy it from **Settings (⚙) → MCP server**. It's an optional
-extra for people who already use an AI app: nothing else needs it.
+extra for people who already use an AI app.
 
 The assistant acts as you: it signs in with your account, sees what you see,
 and can only change what your [role](server.md#user-accounts) can.
