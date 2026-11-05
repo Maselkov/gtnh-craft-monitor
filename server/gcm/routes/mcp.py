@@ -45,9 +45,15 @@ def mcp_other():
 
 
 # ---------------------------------------------------------------------
-# The AI assistant dialog (admins): house rules added to every
-# assistant's instructions (gcm/mcp/instructions.py), and the log of the
-# tool calls assistants made.
+# The MCP server dialog. Operators and admins see the /mcp address; only
+# admins see the house rules added to every assistant's instructions
+# (gcm/mcp/instructions.py) and the log of the tool calls assistants made.
+
+
+@bp.route("/api/mcp-server", methods=["GET"])
+@auth.operator_required
+def mcp_server_get():
+    return jsonify({"mcp_url": oauth.resource_url()})
 
 
 @bp.route("/api/admin/assistant", methods=["GET"])
@@ -56,7 +62,6 @@ def admin_assistant_get():
     return jsonify({
         "rules": instructions.house_rules(),
         "max_rules": instructions.HOUSE_RULES_MAX,
-        "mcp_url": oauth.resource_url(),
     })
 
 

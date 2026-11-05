@@ -79,12 +79,15 @@ class TestHouseRules:
         assert instructions.house_rules() == ""
 
     def test_admin_routes(self, client):
+        login_as(client, "vic", role="viewer")
+        assert client.get("/api/mcp-server").status_code == 403
         login_as(client, "olive", role="operator")
+        assert client.get("/api/mcp-server").get_json() == {"mcp_url": "http://localhost/mcp"}
         assert client.get("/api/admin/assistant").status_code == 403
         assert client.put("/api/admin/assistant/rules", json={"rules": "x"}).status_code == 403
         login_as(client, "ada", role="admin")
         data = client.get("/api/admin/assistant").get_json()
-        assert data["rules"] == "" and data["mcp_url"] == "http://localhost/mcp"
+        assert data["rules"] == "" and "mcp_url" not in data
         res = client.put("/api/admin/assistant/rules", json={"rules": "Ask Steve first."})
         assert res.get_json() == {"rules": "Ask Steve first."}
         assert client.get("/api/admin/assistant").get_json()["rules"] == "Ask Steve first."

@@ -851,7 +851,7 @@ and the history first), reading a plan's totals as "crafts instead of
 using storage" (plan rows now carry a `plan` sentence, and the requested
 item is reported apart), and fussing over which CPU AE2 used (AE2 picks;
 the tools can't). Every tool call is logged (`store.assistant`,
-30 days) for admins to see in the AI assistant dialog.
+30 days) for admins to see in the MCP server dialog.
 
 **The MCP write tools guard against retries and a silent game.**
 `request_craft` doesn't queue while the base is already getting the item
@@ -897,7 +897,7 @@ are flagged `approximate`.
 
 Run these by hand, with Claude Code or claude.ai connected to `dev.py`,
 after changing the instructions or the tools. Compare what the model did
-with the AI assistant dialog's call log.
+with the MCP server dialog's call log.
 
 1. **"Craft 40 FusionTech Mk-V"** (or any craftable item): plans first,
    reads the plan right (what comes from storage, what's crafted), states

@@ -81,7 +81,7 @@
           <button class="settings-menu-item" id="webhooksBtn" role="menuitem" style="display:none;"
             data-action="open-webhooks">Webhooks</button>
           <button class="settings-menu-item" id="assistantBtn" role="menuitem" style="display:none;"
-            data-action="open-assistant">AI assistant</button>
+            data-action="open-assistant">MCP server</button>
           <button class="settings-menu-item" id="backupBtn" role="menuitem" style="display:none;"
             data-action="open-backups">Backups</button>
           <button class="settings-menu-item danger" id="signOutBtn" role="menuitem"
@@ -492,14 +492,19 @@
   <div id="assistantModal" class="modal-overlay" style="display:none;">
     <div class="modal-box admin-box">
       <div class="modal-header">
-        <div class="modal-item-name">AI assistant</div>
+        <div class="modal-item-name">MCP server</div>
         <button class="history-close-btn" data-action="close-assistant" title="Close">&times;</button>
       </div>
-      <div class="modal-note">AI assistants such as Claude connect to this address, as whoever signs them in.</div>
+      <div class="modal-note">Lets an AI app such as Claude or ChatGPT read this base and, when you ask it to,
+        request crafts and change stock rules. It signs in as you and can only do what you can.</div>
+      <div class="modal-note">It's an optional extra for people who already use one of these apps. Everything
+        else here works without it.</div>
       <div class="assistant-url-row">
         <input id="assistantUrl" class="modal-amount-input" readonly aria-label="MCP address">
         <button class="modal-btn secondary" data-action="copy-assistant-url">Copy</button>
       </div>
+      <div class="modal-note"><a id="assistantDocsLink" target="_blank" rel="noopener">How to connect an app</a></div>
+      <div id="assistantAdmin">
       <label class="modal-label" for="assistantRules">House rules</label>
       <div class="modal-note">Added to every assistant's instructions: what it should know about this base and
         how to behave here, e.g. "Plasmas are kept by Level Maintainers: never add keep-in-stock targets for
@@ -515,6 +520,7 @@
         <button class="admin-token-revoke" data-action="refresh-assistant-calls">Refresh</button>
       </div>
       <div id="assistantCalls" class="assistant-calls"></div>
+      </div>
     </div>
   </div>
 

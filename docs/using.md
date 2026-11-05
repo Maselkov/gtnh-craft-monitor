@@ -447,7 +447,9 @@ assistant can answer questions about the base ("what's been draining fastest
 this week?", "why is the craft on M00 slow?", "what's missing to make 64 of
 these?") and act on them ("craft 64 of those", "keep 4k of every circuit up
 to IV"). Its address is your page's address with
-`/mcp` on the end, e.g. `https://monitor.example.com/mcp`.
+`/mcp` on the end, e.g. `https://monitor.example.com/mcp`; operators and
+admins can copy it from **Settings (⚙) → MCP server**. It's an optional
+extra for people who already use an AI app: nothing else needs it.
 
 The assistant acts as you: it signs in with your account, sees what you see,
 and can only change what your [role](server.md#user-accounts) can.
