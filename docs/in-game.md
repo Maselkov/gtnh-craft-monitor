@@ -100,6 +100,8 @@ The rest:
 
 ### Crafting CPUs
 
+#### CPU names
+
 Give each crafting CPU a name of its own: **Shift + right-click** one of its
 blocks with **Wire Cutters**. A CPU with no name is shown by its storage,
 numbered among the CPUs of that size: `68k #1`, `68k #2`. CPUs that share a
@@ -108,6 +110,8 @@ name get their size added: two called "Main" show as `Main 64k #1` and
 rebuilds its list of CPUs (a restart, or a CPU added or removed), and
 resizing a CPU renames it, so a pin or history entry on one can end up on
 another. A name of its own avoids that.
+
+#### Crafting Monitor
 
 Put an AE2 **Crafting Monitor** in each crafting CPU's multiblock. It's
 the only way the scripts can ask a CPU what it's making. A CPU without

@@ -63,7 +63,7 @@ Basically, it's web AE2 for your base.
   everything, or the scripts can be spread over several, each with the
   Adapters for its own scripts.
 - An AE2 **Crafting Monitor** in each crafting CPU, so the page can show
-  what it's making (see [Crafting CPUs](docs/in-game.md#crafting-cpus)).
+  what it's making (see [Crafting Monitor](docs/in-game.md#crafting-monitor)).
 - GTNH 2.9.0-beta-2 or later for crafting from the page.
 
 The full list, including the OpenComputers config settings, is under
