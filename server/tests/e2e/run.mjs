@@ -1890,7 +1890,7 @@ async function main() {
     await waitFor('closed', `!visible($('#adminUsersModal'))`);
   });
 
-  step('admin: AI assistant dialog: the address, house rules, and the tool calls made', async () => {
+  step('admin: MCP server dialog: the address, the guide, house rules, and the tool calls made', async () => {
     // One tool call to show up in the log.
     const called = await fetch(base + '/mcp', {
       method: 'POST',
@@ -1901,7 +1901,9 @@ async function main() {
     await click(`$('#settingsBtn')`);
     await waitFor('menu open', `visible($('#settingsMenu'))`);
     await click(`$('#assistantBtn')`);
-    await waitFor('dialog', `visible($('#assistantModal')) && $('#assistantUrl').value.endsWith('/mcp')`);
+    await waitFor('dialog', `visible($('#assistantModal')) && $('#assistantUrl').value.endsWith('/mcp')
+      && $('#assistantModal .modal-item-name').textContent === 'MCP server'
+      && $('#assistantDocsLink').href.endsWith('/docs/using.md#ai-assistants') && visible($('#assistantAdmin'))`);
     await waitFor('the call listed', `$('#assistantCalls .assistant-call b')?.textContent === 'current_crafts'
       && $('#assistantCalls').textContent.includes('Administrator')`);
     await evaluate(`typeInto('#assistantRules', 'Plasmas are kept by Level Maintainers.')`);
@@ -2349,7 +2351,8 @@ async function main() {
     // The settings menu stays, with just the Theme.
     await click(`$('#settingsBtn')`);
     await waitFor('theme-only menu', `visible($('#settingsMenu')) && visible($('.theme-row'))
-      && !visible($('#settingsUser')) && !visible($('#notifToggle')) && !visible($('#signOutBtn'))`);
+      && !visible($('#settingsUser')) && !visible($('#notifToggle')) && !visible($('#signOutBtn'))
+      && !visible($('#assistantBtn'))`);
     await evaluate(`pressKey('Escape'), true`);
     // Pinning and cancelling both need a user, so the cards drop them.
     await click(`$('#tabBtnCrafts')`);

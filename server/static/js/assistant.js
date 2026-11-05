@@ -1,10 +1,11 @@
-// AI assistant admin dialog: the /mcp address, the house rules added to
-// every assistant's instructions (server/gcm/mcp/instructions.py), and
-// the latest tool calls assistants made.
+// The MCP server dialog. Operators and admins get the /mcp address and a
+// link to the guide; admins also the house rules added to every
+// assistant's instructions (server/gcm/mcp/instructions.py) and the
+// latest tool calls assistants made.
 
-import { AUTH_USER, closeSettingsMenu } from './auth.js';
+import { AUTH_USER, closeSettingsMenu, isOperator } from './auth.js';
 import { showToast } from './craft-actions.js';
-import { delegateActions, escapeHtml, formatRelativeTime, onBackdropClick } from './util.js';
+import { delegateActions, docsUrl, escapeHtml, formatRelativeTime, onBackdropClick } from './util.js';
 
 let maxRules = 4000;
 
@@ -47,23 +48,36 @@ async function loadCalls() {
   }
 }
 
+async function getJson(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url}: ${res.status}`);
+  return res.json();
+}
+
 async function openAssistantModal() {
-  if (!AUTH_USER || AUTH_USER.role !== 'admin') return;
+  if (!isOperator()) return;
+  const admin = AUTH_USER.role === 'admin';
   showError('');
   try {
-    const res = await fetch('/api/admin/assistant');
-    if (!res.ok) throw new Error(`assistant: ${res.status}`);
-    const data = await res.json();
-    maxRules = data.max_rules;
-    document.getElementById('assistantUrl').value = data.mcp_url;
-    document.getElementById('assistantRules').value = data.rules;
+    const [server, settings] = await Promise.all([
+      getJson('/api/mcp-server'),
+      admin ? getJson('/api/admin/assistant') : null,
+    ]);
+    document.getElementById('assistantUrl').value = server.mcp_url;
+    if (settings) {
+      maxRules = settings.max_rules;
+      document.getElementById('assistantRules').value = settings.rules;
+    }
   } catch (e) {
     showToast('Could not reach the server.', true);
     return;
   }
-  updateCounter();
+  document.getElementById('assistantAdmin').hidden = !admin;
   document.getElementById('assistantModal').style.display = 'flex';
-  loadCalls();
+  if (admin) {
+    updateCounter();
+    loadCalls();
+  }
 }
 
 export function closeAssistantModal() {
@@ -117,5 +131,6 @@ export function setupAssistantActions() {
     'refresh-assistant-calls': () => loadCalls(),
   });
   document.getElementById('assistantRules').addEventListener('input', updateCounter);
+  document.getElementById('assistantDocsLink').href = docsUrl('using.md#ai-assistants');
   onBackdropClick('assistantModal', closeAssistantModal);
 }
