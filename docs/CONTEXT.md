@@ -762,7 +762,9 @@ in the last 5 minutes, and the tab button shows that machine's EU instead
 of a fill. It goes by capacity 0, not by name, because `WIRELESS_NAME` is
 configurable. Its badge warns only when the past hour's rate empties it
 within a day. Since `/power` with no machine now means "the default", the
-unnamed machine's button links to `?machine=`.
+unnamed machine's button links to `?machine=Main`, as it reads; `pick()`
+takes "Main" for `''` unless a machine is really called that (then the
+unnamed one falls back to `?machine=`, which older links use too).
 
 **An LSC in wireless mode is measured against its wireless threshold.**
 From a real 2.9.0 dump: the mode is in the key with no value

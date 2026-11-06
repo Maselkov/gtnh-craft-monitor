@@ -1337,7 +1337,7 @@ async function main() {
     await waitFor('tab shows the wireless network', `$('#tabBtnPower .tab-fill')?.textContent === '2.00E'
       && !$('#tabBtnPower .tab-badge')`);
     await click(`$('#powerMachines [data-machine=""]')`);
-    await waitFor('main again', `location.pathname === '/power' && location.search === '?machine='
+    await waitFor('main again', `location.pathname === '/power' && location.search === '?machine=Main'
       && $('#powerMachines [data-machine=""]').classList.contains('active') && $('#powerEta').textContent !== ''`);
     // An LSC drained under its threshold: the red dot, and its button in red.
     await game(base, '/api/power', {

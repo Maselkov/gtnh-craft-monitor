@@ -215,6 +215,16 @@ class TestMachines:
         data = client.get("/api/power").get_json()
         assert (data["machine"], data["latest"]["stored"]) == ("Batteries", 2)
 
+    def test_main_is_the_unnamed_machine(self, client, api_headers):
+        # The page links to the unnamed machine as ?machine=Main, as its button reads.
+        self.post(client, api_headers, 1)
+        client.post("/api/power", json={"stored": 5, "capacity": 0, "machine": "Wireless"}, headers=api_headers)
+        assert client.get("/api/power?machine=Main").get_json()["machine"] == ""
+        assert client.get("/api/power?machine=").get_json()["machine"] == ""  # older links
+        # Unless a machine is really called that.
+        self.post(client, api_headers, 3, "Main")
+        assert client.get("/api/power?machine=Main").get_json()["machine"] == "Main"
+
     def test_unknown_machine_falls_back(self, client, api_headers):
         self.post(client, api_headers, 1, "LSC")
         assert client.get("/api/power?machine=nope").get_json()["machine"] == "LSC"
@@ -492,6 +502,19 @@ class TestMachineNames:
         assert client.put("/api/admin/power/machines", json={"from": "A"}).status_code == 400
         assert self.rename(client, "A", "A").status_code == 200
         assert self.names(client) == ["A", "B"]
+
+    def test_main_is_taken_while_the_unnamed_machine_is_there(self, client, api_headers):
+        # The unnamed machine is shown as "Main", and linked to as ?machine=Main.
+        self.post(client, api_headers, 1, "A")
+        self.post(client, api_headers, 2)
+        login_as(client, "boss", role="admin")
+        res = self.rename(client, "A", "Main")
+        assert res.status_code == 409
+        assert res.get_json()["error"] == "There's already a machine named Main."
+        # The unnamed machine itself may take it, and then "Main" is free.
+        assert self.rename(client, "", "Main").status_code == 200
+        assert self.rename(client, "Main", "Home").status_code == 200
+        assert self.rename(client, "A", "Main").status_code == 200
 
     def test_a_configured_name_doesnt_take_over_another_machine_given_it(self, client, api_headers):
         # An admin named an unnamed machine "Batteries"; another computer's

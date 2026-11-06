@@ -299,7 +299,8 @@ a bigger one later only changes the order of the buttons.
 Admins can rename the machine shown with **Rename…** beside the buttons.
 Its history keeps the new name, and so do its script's readings from then
 on; nothing needs changing in the game. A link to its old name opens the
-default machine instead.
+default machine instead. While there's an unnamed machine, no other can be
+named **Main**, which it goes by (its link is `/power?machine=Main`).
 
 With an LSC reporting and EU in your wireless network, there's also a
 **Wireless** entry, first among the buttons. The network has no capacity, so
