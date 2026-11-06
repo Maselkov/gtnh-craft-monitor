@@ -143,6 +143,9 @@ local CONFIG = {
                                      -- keep its CraftingStatus and report
                                      -- whether its job finished or was
                                      -- cancelled (isDone()/isCanceled())
+  KIT_SCAN_SECONDS = 600,           -- how often to look for kit slots
+                                     -- (multiblock kits as one job: see
+                                     -- docs/in-game.md)
   CRAFT_REQUEST_POLL_SECONDS = 1.5,  -- separate, much faster loop than the
                                       -- main status poll above - request()
                                       -- itself returns near-instantly, the
@@ -217,6 +220,12 @@ end
 -- the size of the tables: on a big craft they're thousands of stacks,
 -- held the whole time it runs, in memory the other scripts share.
 local watched, ended = {}, {}
+
+-- Multiblock kit slots as the craft-request loop last found them (see
+-- "Multiblock kits as one job" below): { {me, address, slot} }, and
+-- when it looked - nil until it has. The report says how many.
+local kitSlots = {}
+local kitSlotsLookedAt = nil
 
 -- A CPU's storage or coprocessors: a number within +-2^53, or 0. NaN
 -- (which fails both comparisons) would break table.sort's comparison
@@ -431,7 +440,10 @@ local function post_report(source, jobs)
   local encodeOk, body = pcall(function()
     -- poll_seconds: the server waits longer before calling the report
     -- stale when this is set higher than usual.
-    return '{"source":' .. json_encode(source) .. ',"poll_seconds":' .. json_encode(CONFIG.POLL_SECONDS)
+    -- kit_slots: how many multiblock kits can be requested as one job
+    -- at a time; left out until the request loop has looked.
+    local kits = kitSlotsLookedAt and (',"kit_slots":' .. #kitSlots) or ""
+    return '{"source":' .. json_encode(source) .. ',"poll_seconds":' .. json_encode(CONFIG.POLL_SECONDS) .. kits
       .. ',"jobs":[' .. table.concat(jobs, ",") .. "]}"
   end)
   -- Emptied rather than left to the caller: it's the body's size again,
@@ -551,6 +563,182 @@ local function find_craftable(me, reqData)
   return craftable
 end
 
+-- ---------------------------------------------------------------------
+-- Multiblock kits as one job. The server sends a kit as a request with
+-- kit_inputs: the blocks, and the multiblock's controller named
+-- "<multiblock> kit" (the request's own item and tag). A kit slot is a
+-- processing pattern in an ME Interface reached through an Adapter (an
+-- me_interface component) that this script may rewrite: its inputs
+-- become the blocks and its output that named controller, which is
+-- then requested like any other item. AE2 plans the whole kit as one
+-- job, takes what's in storage, crafts the rest and pushes it all
+-- through the kit interface into a subnet that leads back into the
+-- network; a Fake Crafting Card in the interface ends the job there,
+-- as the output never arrives. docs/in-game.md has the setup.
+--
+-- A slot is a kit slot when its pattern makes a Command Block (one the
+-- player set up and that was never used) or something named "... kit"
+-- (one this script rewrote): it never touches another pattern. It
+-- never leaves a pattern without inputs or outputs either, even between
+-- two calls: AE2 marks a pattern item it can't read invalid for good.
+-- A slot isn't rewritten while a request it was written for is being
+-- planned or its job runs (AE2 finds where to push a step by its
+-- pattern, so a job whose pattern changed would wait forever), nor
+-- while any CPU is making what the slot makes.
+
+local KIT_FRESH = "minecraft:command_block"
+local KIT_SUFFIX = " kit"
+-- An interface has 9 pattern slots, up to 36 with Capacity Cards.
+local KIT_MAX_SLOTS = 36
+-- How long a rewritten pattern may take to show up as craftable: AE2
+-- re-reads the network's patterns on its next tick.
+local KIT_CRAFTABLE_WAIT_SECONDS = 5
+
+local kitHolds = {}       -- "address/slot" -> { status, since } while in use
+
+local function is_kit_output(out)
+  if type(out) ~= "table" then return false end
+  if out.name == KIT_FRESH then return true end
+  return out.hasTag == true and type(out.label) == "string"
+    and out.label:sub(-#KIT_SUFFIX) == KIT_SUFFIX
+end
+
+-- The kit slot's pattern, or nil and why it isn't one (any more).
+local function kit_pattern(ks)
+  local ok, pattern = pcall(ks.me.getInterfacePattern, ks.slot)
+  if not ok then return nil, tostring(pattern) end
+  if type(pattern) ~= "table" or not pattern.outputs or not is_kit_output(pattern.outputs[1]) then
+    return nil, "not a kit pattern any more"
+  end
+  if pattern.isCraftable then return nil, "a crafting pattern - a kit needs a processing one" end
+  return pattern
+end
+
+-- Every me_interface's kit slots. Each slot asked about takes a tick.
+local function find_kit_slots()
+  local found = {}
+  for address in component.list("me_interface", true) do
+    local me = component.proxy(address)
+    if me.getInterfacePattern and me.setInterfacePatternInput then
+      for slot = 1, KIT_MAX_SLOTS do
+        local ok, pattern = pcall(me.getInterfacePattern, slot)
+        if not ok then break end  -- past the interface's last slot
+        if type(pattern) == "table" and pattern.outputs and not pattern.isCraftable
+            and is_kit_output(pattern.outputs[1]) then
+          found[#found + 1] = { me = me, address = address, slot = slot }
+        end
+      end
+    end
+  end
+  kitSlots = found
+  kitSlotsLookedAt = computer.uptime()
+  return found
+end
+
+local function kit_key(ks)
+  return ks.address .. "/" .. ks.slot
+end
+
+-- The highest position a pattern's stacks use (they're keyed by
+-- position from 1, with gaps for empty entries).
+local function last_index(list)
+  local n = 0
+  for k in pairs(type(list) == "table" and list or {}) do
+    if type(k) == "number" and k > n then n = k end
+  end
+  return n
+end
+
+-- Whether a busy CPU is making what this pattern makes.
+local function kit_output_busy(cpus, out)
+  for _, c in ipairs(cpus) do
+    if c.busy and c.cpu then
+      local ok, stack = pcall(c.cpu.finalOutput)
+      if ok and type(stack) == "table" and stack.name == out.name
+          and (stack.damage or 0) == (out.damage or 0) and stack.label == out.label then
+        return true
+      end
+    end
+  end
+  return false
+end
+
+-- A free kit slot and its pattern, or nil and why there's none.
+local function free_kit_slot(me)
+  local cpusOk, cpus = get_cpus(me)
+  if not cpusOk then cpus = {} end
+  for attempt = 1, 2 do
+    if attempt == 2 or not kitSlotsLookedAt then find_kit_slots() end
+    local busy = 0
+    for _, ks in ipairs(kitSlots) do
+      if kitHolds[kit_key(ks)] then
+        busy = busy + 1
+      else
+        local pattern = kit_pattern(ks)
+        if pattern then
+          if not kit_output_busy(cpus, pattern.outputs[1]) then return ks, pattern end
+          busy = busy + 1
+        end
+      end
+    end
+    if attempt == 2 and busy > 0 then
+      return nil, "every kit slot is in use by another kit - try again when one finishes"
+    end
+  end
+  return nil, "no kit slot found: put a processing pattern that makes a Command Block in the kit interface"
+    .. " (see docs/in-game.md), or request each block on its own"
+end
+
+-- Rewrites the slot's pattern into the kit: the output first, then the
+-- inputs over the old ones, then what's left of the old ones removed
+-- from the end, so it's never empty.
+local function write_kit(ks, pattern, output, inputs)
+  local me = ks.me
+  local function call(what, ...)
+    local ok, err = pcall(me[what], ...)
+    if not ok then error(what .. " failed: " .. tostring(err), 0) end
+  end
+  call("setInterfacePatternOutput", ks.slot, 1, output, "item")
+  for i = last_index(pattern.outputs), 2, -1 do call("clearInterfacePatternOutput", ks.slot, i) end
+  for i, item in ipairs(inputs) do
+    call("setInterfacePatternInput", ks.slot, i, { name = item.name, damage = item.damage, size = item.size }, "item")
+  end
+  for i = last_index(pattern.inputs), #inputs + 1, -1 do call("clearInterfacePatternInput", ks.slot, i) end
+end
+
+-- Puts a kit request into a kit slot and finds it as a craftable.
+-- Returns the craftable and the slot's key (held until the job ends),
+-- or nil and why not.
+local function prepare_kit(me, reqData)
+  if type(reqData.kit_inputs) ~= "table" or #reqData.kit_inputs == 0 then
+    return nil, "a kit request without blocks"
+  end
+  if not reqData.tag then return nil, "a kit request without its name" end
+  local ks, pattern = free_kit_slot(me)
+  if not ks then return nil, pattern end
+  local key = kit_key(ks)
+  kitHolds[key] = { since = computer.uptime() }
+  local name = reqData.internal
+  if reqData.mod and reqData.mod ~= "" then name = reqData.mod .. ":" .. name end
+  local output = { name = name, damage = reqData.damage or 0, size = 1, tag = unhex(reqData.tag) }
+  local ok, err = pcall(write_kit, ks, pattern, output, reqData.kit_inputs)
+  if not ok then
+    kitHolds[key] = nil
+    return nil, "rewriting the kit pattern: " .. tostring(err)
+  end
+  local deadline = computer.uptime() + KIT_CRAFTABLE_WAIT_SECONDS
+  local craftable, findErr
+  repeat
+    os.sleep(0.25)
+    craftable, findErr = find_craftable(me, reqData)
+  until craftable or computer.uptime() > deadline
+  if not craftable then
+    kitHolds[key] = nil
+    return nil, "AE2 didn't take the rewritten kit pattern: " .. tostring(findErr)
+  end
+  return craftable, key
+end
+
 local function busy_map(cpus)
   local snap = {}
   for _, c in ipairs(cpus) do
@@ -657,6 +845,16 @@ local function request_outcome(status)
   return nil
 end
 
+-- Lets go of slots whose request failed or whose job ended.
+local function release_kit_holds(now)
+  for key, hold in pairs(kitHolds) do
+    if hold.done or (hold.status and request_outcome(hold.status))
+        or now - hold.since > OUTCOME_MAX_WATCH_SECONDS then
+      kitHolds[key] = nil
+    end
+  end
+end
+
 local function run_craft_request_loop(me)
   local tracked = {}  -- request id -> { status = <CraftingStatus>, before = <snapshot>, ... }
   -- Accepted requests watched for how their job ends: request id ->
@@ -673,7 +871,13 @@ local function run_craft_request_loop(me)
       if pendingResp and pendingResp.requests then
         for _, reqData in ipairs(pendingResp.requests) do
           if not tracked[reqData.id] then
-            local craftable, findErr = find_craftable(me, reqData)
+            local craftable, findErr, kitKey
+            if reqData.kit_inputs then
+              craftable, kitKey = prepare_kit(me, reqData)
+              if not craftable then findErr, kitKey = kitKey, nil end
+            else
+              craftable, findErr = find_craftable(me, reqData)
+            end
             if not craftable then
               craft_post_json("/requests/" .. reqData.id .. "/result", {
                 status = "failed",
@@ -683,6 +887,7 @@ local function run_craft_request_loop(me)
               local before = snapshot_cpu_busy(me)
               local reqOk, status = pcall(craftable.request, reqData.amount)
               if not reqOk then
+                if kitKey then kitHolds[kitKey] = nil end
                 craft_post_json("/requests/" .. reqData.id .. "/result", {
                   status = "failed",
                   reason = tostring(status),
@@ -695,7 +900,10 @@ local function run_craft_request_loop(me)
                   mod = reqData.mod,
                   internal = reqData.internal,
                   damage = reqData.damage,
-                  tag = reqData.tag,
+                  -- A kit's job is matched to its CPU without the NBT:
+                  -- OC compresses the CPU's output tag its own way.
+                  tag = not kitKey and reqData.tag or nil,
+                  kitKey = kitKey,
                 }
               end
             end
@@ -769,6 +977,15 @@ local function run_craft_request_loop(me)
     end
     for reqId, entry in pairs(planned) do
       local failOk, failed, failReason = pcall(entry.status.hasFailed)
+      if entry.kitKey and kitHolds[entry.kitKey] then
+        -- Held until the job ends; a status that can't say when, or a
+        -- request AE2 refused, lets go now.
+        if (failOk and failed) or entry.status.isDone == nil or entry.status.isCanceled == nil then
+          kitHolds[entry.kitKey] = nil
+        else
+          kitHolds[entry.kitKey].status = entry.status
+        end
+      end
       if failOk and failed then
         craft_post_json("/requests/" .. reqId .. "/result", {
           status = "failed",
@@ -794,6 +1011,12 @@ local function run_craft_request_loop(me)
     end
 
     local now = computer.uptime()
+    release_kit_holds(now)
+    -- Kit slots are looked for again now and then (a player may add
+    -- one), never while one is being used.
+    if next(kitHolds) == nil and (not kitSlotsLookedAt or now - kitSlotsLookedAt > CONFIG.KIT_SCAN_SECONDS) then
+      find_kit_slots()
+    end
     for reqId, w in pairs(watching) do
       local outcome = request_outcome(w.status)
       if outcome and craft_post_json("/requests/" .. reqId .. "/outcome", {

@@ -923,6 +923,14 @@ class Cpu:
         return report
 
 
+def kit_blocks(inputs):
+    """A kit request's blocks ({name: "mod:internal", damage, size}) as
+    catalog items [{name, size}], leaving out any the catalog lacks."""
+    by_id = {(f"{it['mod']}:{it['internal']}", it["damage"]): it["name"] for it in CATALOG if it["kind"] == "item"}
+    return [{"name": by_id[(i["name"], i["damage"])], "size": i["size"]}
+            for i in inputs if (i["name"], i["damage"]) in by_id]
+
+
 def random_ingredients(count, exclude):
     names = [it["name"] for it in CATALOG if it["name"] != exclude and it["kind"] != "essentia"]
     return [(name, random.randint(1, 64) * random.choice((1, 1, 4, 16)))
@@ -1047,8 +1055,9 @@ class FakeGame:
                 cpu.start(out, random_ingredients(random.randint(1, 6), out))
         self.name_cpus()
         self.answer_requests()
+        # Two kit slots: multiblock kits can be requested as one job.
         self.call("POST", "/api/crafts", {"source": "me_controller", "poll_seconds": TICK_SECONDS,
-                                          "jobs": [cpu.report() for cpu in self.cpus]})
+                                          "kit_slots": 2, "jobs": [cpu.report() for cpu in self.cpus]})
         stored, trend = power_reading(time.time())
         self.call("POST", "/api/power", {"stored": stored, "capacity": CAPACITY, "poll_seconds": TICK_SECONDS, **trend})
         name, capacity, lag = BATTERIES
@@ -1089,7 +1098,11 @@ class FakeGame:
                           {"status": "failed", "reason": FAILS[req["label"]]})
                 continue
             label = req["label"] if req["label"] in BY_NAME else "Iron Ingot"
-            cpu.start(label, random_ingredients(random.randint(2, 8), label))
+            if req.get("kit_inputs"):
+                # A multiblock kit: its blocks, all on the one CPU.
+                cpu.start(label, [(it["name"], it["size"]) for it in kit_blocks(req["kit_inputs"])])
+            else:
+                cpu.start(label, random_ingredients(random.randint(2, 8), label))
             cpu.job["output"] = req["label"]
             cpu.request_id = req["id"]
             cpu.delivers = (req["label"], int(req["amount"])) if req["label"] in BY_NAME else None

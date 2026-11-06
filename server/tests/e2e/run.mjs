@@ -275,9 +275,10 @@ const game = (base, urlPath, body) => api(base, 'POST', urlPath, body, { 'X-API-
 
 // The server measures progress against the first report of a job, so
 // seed() sends a starting report (atStart) first: 3/5 ingots and 6/10 ore
-// left afterwards is 40%.
-function postCrafts(base, w01Busy, atStart = false) {
+// left afterwards is 40%. extra: more of the report (kit_slots).
+function postCrafts(base, w01Busy, atStart = false, extra = {}) {
   return game(base, '/api/crafts', {
+    ...extra,
     source: 'me_controller',
     jobs: [
       w01Busy
@@ -2369,6 +2370,21 @@ async function main() {
     // The slider under the block and its box follow each other.
     await evaluate(`(() => { const s = $('#kitRows .kit-slider'); s.value = '500'; s.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
     await waitFor('slider sets the box', `$('#kitRows .kit-request').value === '500'`);
+    // Without a kit interface in the game, each block is its own request.
+    await waitFor('no kit slots', `visible($('#kitMode')) && $('#kitSeparate').checked && $('#kitSeparate').disabled
+      && $('#kitModeLine').textContent.includes('set up a kit interface')`);
+    // With one, the kit is one job unless asked otherwise. Picking the
+    // coil tier again fetches the kit again, keeping the amounts.
+    await postCrafts(base, true, false, { kit_slots: 1 });
+    await evaluate(`(() => { const s = $('#kitControls select'); s.value = '1'; s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+    await waitFor('one job', `!$('#kitSeparate').checked && !$('#kitSeparate').disabled
+      && $('#kitRequestBtn').textContent === 'Request as one job (1 block)' && $('#kitRows .kit-request').value === '500'
+      && $('#kitModeLine').textContent.startsWith('As one job')`);
+    await click(`$('#kitSeparate')`);
+    await waitFor('each on its own', `$('#kitRequestBtn').textContent === 'Request 1 craft' && $('#kitSeparate').checked`);
+    await click(`$('#kitSeparate')`);
+    await waitFor('one job again', `$('#kitRequestBtn').textContent === 'Request as one job (1 block)'`);
+    await postCrafts(base, true);
     // The plan for what Request would ask for, all together: the craft
     // dialog's plan panel, moved into the kit.
     await waitFor('plan button', `visible($('#kitPlanBtn'))`);

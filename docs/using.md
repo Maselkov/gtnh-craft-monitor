@@ -505,8 +505,19 @@ beside the multiblock's name, multiplies the kit.
   you'll put in casing spots, and for walls you share with another
   multiblock. A block without a pattern says so and can't be requested.
 
-**Request** queues each block as its own craft, as if you'd requested them
-one by one, and they show as pending cards like any other request.
+**Request** asks for the kit as **one job** where the base has a
+[kit interface](in-game.md#kit-interface): AE2 plans every block together,
+so what they share (the plates two casings both need) is made once, runs
+it on one CPU, and puts the blocks in the network when they're all done.
+The job shows on the Crafts tab as making "*multiblock* kit". AE2 uses
+what's in storage first, so the kit asks for what's in stock of each block
+(up to what it needs) plus the Request amount, and crafts the Request
+amount.
+
+Tick **Request each block on its own** to queue each block as its own
+craft instead, as if you'd requested them one by one: each lands in the
+network as soon as it's done. Without a kit interface, that's how a kit is
+always requested, and the box says so. The page remembers the choice.
 
 **Check the plan** (signed in) shows the [crafting plan](#requesting-and-cancelling-crafts)
 for everything Request would ask for, all together, before you request it:

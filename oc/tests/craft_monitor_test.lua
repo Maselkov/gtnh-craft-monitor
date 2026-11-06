@@ -378,6 +378,132 @@ test("a fluid is found by its name", function()
   t.eq(results_for(env, 10)[1].status, "accepted")
 end)
 
+-- Multiblock kits as one job: a kit interface (its own Adapter) on the
+-- network, with a fresh kit slot (a pattern making a Command Block) in
+-- slot 2 and a real pattern in slot 1.
+local COMMAND_BLOCK = { name = "minecraft:command_block", damage = 0, size = 1 }
+local KIT_TAG = "\31\139nbt-ebf-kit"
+local CONTROLLER = { name = "gregtech:gt.blockmachines", damage = 1000 }
+
+local function kit_request(id, inputs)
+  return { id = id, kind = "item", mod = "gregtech", internal = "gt.blockmachines", damage = 1000,
+    label = "Electric Blast Furnace kit", amount = 1, tag = hex(KIT_TAG),
+    kit_inputs = inputs or {
+      { name = "gregtech:gt.blockcasings", damage = 11, size = 34 },
+      { name = "gregtech:gt.blockcasings5", damage = 0, size = 16 },
+    } }
+end
+
+local function kit_setup(routes, opts)
+  opts = opts or {}
+  local env, me = setup(routes)
+  me.tag_labels = { [KIT_TAG] = "Electric Blast Furnace kit" }
+  me.kit = opts.kit
+  local iface = me:add_interface(9)
+  me:set_pattern(1, { inputs = { { name = "gregtech:ingot", damage = 0, size = 1 } },
+    outputs = { { name = "gregtech:plate", damage = 0, size = 1 } } }, iface)
+  if opts.fresh ~= false then
+    me:set_pattern(2, { inputs = { { name = "minecraft:dirt", damage = 0, size = 1 }, false,
+      { name = "minecraft:log", damage = 0, size = 2 }, { name = "minecraft:sand", damage = 0, size = 3 } },
+      outputs = { COMMAND_BLOCK, { name = "minecraft:dirt", damage = 0, size = 1 } } }, iface)
+  end
+  return env, me, iface
+end
+
+test("a kit is written into a kit slot and requested as one job", function()
+  local env, _, iface = kit_setup({ ["GET /api/craft/requests/pending"] = queue({ kit_request(20) }) })
+  env:start_service("craft_monitor")
+  env:run({ seconds = 10 })
+
+  local p = iface.patterns[2]
+  t.eq(p.invalid, nil)
+  t.eq(p.inputs, {
+    { name = "gregtech:gt.blockcasings", damage = 11, size = 34 },
+    { name = "gregtech:gt.blockcasings5", damage = 0, size = 16 },
+  })
+  t.eq(p.outputs, { { name = CONTROLLER.name, damage = CONTROLLER.damage, size = 1, tag = KIT_TAG, hasTag = true,
+    label = "Electric Blast Furnace kit" } })
+  t.eq(iface.patterns[1].outputs, { { name = "gregtech:plate", damage = 0, size = 1 } })
+
+  t.eq(results_for(env, 20)[1], { status = "accepted", cpu_name = "CPU 1", watching = true })
+  local outcomes = env:requests_to("^/api/craft/requests/20/outcome$", "POST")
+  t.eq(outcomes[1].json, { outcome = "finished", cpu_name = "CPU 1" })
+  local posts = crafts_posts(env)
+  t.eq(posts[#posts].kit_slots, 1)
+end)
+
+test("a kit slot is used again once its job has ended, and never shrinks to nothing", function()
+  local env, me, iface = kit_setup({
+    ["GET /api/craft/requests/pending"] = queue({ kit_request(21) }, {}, {}, {}, {}, {},
+      { kit_request(22, { { name = "minecraft:glass", damage = 0, size = 4 } }) }),
+  })
+  env:start_service("craft_monitor")
+  env:run({ seconds = 20 })
+  t.eq(results_for(env, 21)[1].status, "accepted")
+  t.eq(results_for(env, 22)[1].status, "accepted")
+  t.eq(iface.patterns[2].inputs, { { name = "minecraft:glass", damage = 0, size = 4 } })
+  t.eq(iface.patterns[2].invalid, nil)
+  t.eq(#me.statuses, 2)
+end)
+
+test("a second kit waits for no slot: it fails while the only one is in use", function()
+  local env, me = kit_setup({ ["GET /api/craft/requests/pending"] = queue({ kit_request(23), kit_request(24) }) },
+    { kit = { duration = 100 } })
+  env:start_service("craft_monitor")
+  env:run({ seconds = 10 })
+  t.eq(results_for(env, 23)[1].status, "accepted")
+  t.eq(results_for(env, 24), { {
+    status = "failed", reason = "every kit slot is in use by another kit - try again when one finishes" } })
+  t.eq(#me.statuses, 1)
+end)
+
+test("a slot whose kit is still crafting isn't rewritten after a restart", function()
+  local env, me, iface = kit_setup({ ["GET /api/craft/requests/pending"] = queue({ kit_request(25) }) },
+    { fresh = false })
+  -- Written by an earlier run, its job still going.
+  local out = { name = CONTROLLER.name, damage = CONTROLLER.damage, size = 1, tag = KIT_TAG, hasTag = true,
+    label = "Electric Blast Furnace kit" }
+  me:set_pattern(2, { inputs = { { name = "minecraft:glass", damage = 0, size = 4 } }, outputs = { out } }, iface)
+  me:start_job("CPU 2", { output = out, duration = 100 })
+  env:start_service("craft_monitor")
+  env:run({ seconds = 5 })
+  t.eq(results_for(env, 25)[1].reason, "every kit slot is in use by another kit - try again when one finishes")
+  t.eq(iface.patterns[2].inputs, { { name = "minecraft:glass", damage = 0, size = 4 } })
+end)
+
+test("without a kit slot a kit fails and no pattern is touched", function()
+  local env, me = kit_setup({ ["GET /api/craft/requests/pending"] = queue({ kit_request(26) }) }, { fresh = false })
+  env:start_service("craft_monitor")
+  env:run({ seconds = 5 })
+  t.truthy(results_for(env, 26)[1].reason:find("no kit slot found", 1, true))
+  t.eq(me.calls.setInterfacePatternInput, nil)
+  t.eq(me.calls.setInterfacePatternOutput, nil)
+  local posts = crafts_posts(env)
+  t.eq(posts[#posts].kit_slots, 0)
+end)
+
+test("a crafting pattern making a Command Block isn't a kit slot", function()
+  local env, me, iface = kit_setup({ ["GET /api/craft/requests/pending"] = queue({ kit_request(27) }) },
+    { fresh = false })
+  me:set_pattern(3, { inputs = { { name = "minecraft:dirt", damage = 0, size = 1 } }, outputs = { COMMAND_BLOCK },
+    crafting = true }, iface)
+  env:start_service("craft_monitor")
+  env:run({ seconds = 5 })
+  t.truthy(results_for(env, 27)[1].reason:find("no kit slot found", 1, true))
+  t.eq(me.calls.setInterfacePatternInput, nil)
+end)
+
+test("a kit AE2 refuses frees its slot for the next one", function()
+  local env, me = kit_setup({
+    ["GET /api/craft/requests/pending"] = queue({ kit_request(28) }, {}, {}, { kit_request(29) }),
+  }, { kit = { fail = "missing 16x Cupronickel Coil Block" } })
+  env:start_service("craft_monitor")
+  env:run({ seconds = 10 })
+  t.eq(results_for(env, 28), { { status = "failed", reason = "missing 16x Cupronickel Coil Block" } })
+  t.eq(results_for(env, 29), { { status = "failed", reason = "missing 16x Cupronickel Coil Block" } })
+  t.eq(#me.statuses, 2)
+end)
+
 test("a cancel stops the job it was meant for", function()
   local env, me = setup({
     ["GET /api/craft/cancel/pending"] = queue({

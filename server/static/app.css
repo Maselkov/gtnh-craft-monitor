@@ -2904,6 +2904,9 @@ body.oauth-page {
 .kit-note {
   margin-top: 0;
 }
+.kit-mode {
+  margin: 0 0 12px;
+}
 @media (max-width: 520px) {
   .kit-row,
   .kit-rows-operator .kit-row {

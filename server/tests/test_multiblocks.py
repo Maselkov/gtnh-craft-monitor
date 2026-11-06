@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from gcm import commands, gamedata, multiblocks, state
+from gcm import commands, gamedata, multiblocks, nbt, state
 from conftest import login_as
 
 EBF = "gregtech:gt.blockmachines:1000"
@@ -156,6 +156,88 @@ def test_batch_request_needs_an_operator(client):
     assert client.post("/api/craft/request-batch", json=BATCH).status_code == 401
     login_as(client, "usr_viewer", role="viewer")
     assert client.post("/api/craft/request-batch", json=BATCH).status_code == 403
+
+
+def test_a_display_name_tag_reads_back_and_is_always_the_same():
+    tag = nbt.display_name_hex("Electric Blast Furnace kit")
+    assert nbt.parse_hex(tag) == {"display": (nbt.COMPOUND, {"Name": (nbt.STRING, "Electric Blast Furnace kit")})}
+    assert tag == nbt.display_name_hex("Electric Blast Furnace kit")
+
+
+def kit_payload(**amounts):
+    return {"key": EBF, "count": 1, "tiers": {"coil": 2}, "amounts": amounts}
+
+
+@pytest.fixture()
+def kit_slots():
+    with state.crafts_lock:
+        state.crafts["kit_slots"] = 1
+
+
+def test_a_kit_is_queued_as_one_request(client, structures, kit_slots, api_headers):
+    login_as(client, "usr_operator", role="operator")
+    # Kanthal: 5 in stock of 16, 11 to craft. AE2 takes a pattern's inputs
+    # from stock first, so the input is 5 + 11. The casings: 10 of 16, a
+    # wall shared.
+    res = client.post("/api/craft/request-kit", json=kit_payload(**{KANTHAL: 11, HEATPROOF: 10}))
+    assert res.status_code == 200
+    [req] = commands.craft_requests.select(lambda r: True)
+    assert (req["label"], req["amount"], req["mod"], req["internal"], req["damage"]) == (
+        "Electric Blast Furnace kit", 1, "gregtech", "gt.blockmachines", 1000)
+    assert nbt.parse_hex(req["tag"])["display"][1]["Name"][1] == "Electric Blast Furnace kit"
+    assert req["kit_inputs"] == [
+        {"name": "gregtech:gt.blockcasings", "damage": 11, "size": 10},
+        {"name": "gregtech:gt.blockcasings5", "damage": 1, "size": 16},
+    ]
+    # The game gets the blocks; the page doesn't need them.
+    [pending] = client.get("/api/craft/requests/pending", headers=api_headers).get_json()["requests"]
+    assert pending["kit_inputs"] == req["kit_inputs"] and pending["tag"] == req["tag"]
+    client.post(f"/api/craft/requests/{pending['id']}/result", headers=api_headers,
+                json={"status": "failed", "reason": "no kit slot"})
+    [mine] = client.get("/api/craft/requests").get_json()["requests"]
+    assert "kit_inputs" not in mine and "tag" not in mine
+
+
+def test_a_block_left_at_zero_stays_out_of_the_kit(client, structures, kit_slots):
+    login_as(client, "usr_operator", role="operator")
+    assert client.post("/api/craft/request-kit", json=kit_payload(**{HEATPROOF: 16})).status_code == 200
+    [req] = commands.craft_requests.select(lambda r: True)
+    assert req["kit_inputs"] == [{"name": "gregtech:gt.blockcasings", "damage": 11, "size": 16}]
+
+
+def test_a_kit_needs_a_kit_slot_in_the_game(client, structures):
+    login_as(client, "usr_operator", role="operator")
+    res = client.post("/api/craft/request-kit", json=kit_payload(**{HEATPROOF: 16}))
+    assert res.status_code == 409
+    assert "on its own" in res.get_json()["error"]
+    assert commands.craft_requests.select(lambda r: True) == []
+
+
+def test_bad_kit_requests(client, structures, kit_slots):
+    def post(payload):
+        return client.post("/api/craft/request-kit", json=payload)
+    assert post(kit_payload(**{HEATPROOF: 16})).status_code == 401
+    login_as(client, "usr_viewer", role="viewer")
+    assert post(kit_payload(**{HEATPROOF: 16})).status_code == 403
+    login_as(client, "usr_operator", role="operator")
+    assert post(kit_payload()).status_code == 400
+    assert post(kit_payload(**{HEATPROOF: -1})).status_code == 400
+    assert post(kit_payload(**{HEATPROOF: 1.5})).status_code == 400
+    # Cupronickel (coil tier 1) isn't in the network, so it has no pattern.
+    assert post({**kit_payload(**{CUPRONICKEL: 16}), "tiers": {}}).status_code == 400
+    assert post({**kit_payload(**{HEATPROOF: 16}), "key": "nope"}).status_code == 404
+    assert post({"key": EBF}).status_code == 400
+    assert commands.craft_requests.select(lambda r: True) == []
+
+
+def test_the_game_reports_its_kit_slots(client, structures, api_headers):
+    def report(**extra):
+        client.post("/api/crafts", headers=api_headers, json={"jobs": [], **extra})
+        return client.get(f"/api/multiblocks/kit?key={EBF}").get_json()["kit_slots"]
+    assert report() == 0
+    assert report(kit_slots=2) == 2
+    assert report(kit_slots="2") == 0
+    assert state.kit_slots() == 0
 
 
 def test_mcp_kit_by_name_with_a_block_tier(client, structures):

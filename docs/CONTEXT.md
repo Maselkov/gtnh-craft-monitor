@@ -949,6 +949,37 @@ anything's requested. The page reuses the craft dialog's plan panel
 screen at a time; `/api/network/plan` takes `targets` for it, and the
 tree's branches and filter work as for one item.
 
+**A kit as one job is a pattern rewritten through OC.** AE2 has no
+multi-item request, but OC's interface driver edits an encoded pattern
+in place (`setInterfacePatternInput(slot, index, {name, damage, size},
+"item")`, up to 512 entries, sizes as longs), and AE2 reads a processing
+pattern with any number of inputs and pushes them all as one step (from
+GTNH 2.9's OC and AE2, `PatternEnvironment` and `PatternHelper`/
+`CraftingCPUCluster`; tried on a real base). So `craft_monitor.lua`
+rewrites a kit slot's pattern (inputs: the blocks; output: the
+controller, named "*multiblock* kit" in its NBT, which the server writes,
+so `getCraftable()` finds this pattern and not the controller's own) and
+requests that. What it found on the way:
+- OC only edits an encoded pattern, so the player sets up each slot with
+  a dummy (any input, a Command Block out: the marker that it's ours).
+- A pattern AE2 can't read (no inputs, say) gets `InvalidPattern` set in
+  its NBT for good, and OC can't clear it: the script overwrites the old
+  inputs first and only then removes the extras.
+- An interface never pushes into another on the same network
+  (`ScheduledReason.SAME_NETWORK`), so the blocks go back through a
+  subnet; and the output never arrives, so a Fake Crafting Card in the
+  interface ends the job at the push (`finalOutput.performFakeCrafting`).
+- A CPU finds where to push a step by its pattern, so a slot isn't
+  rewritten while a job written into it is planned or runs (held in
+  memory, and checked against what busy CPUs are making, for after a
+  restart).
+- AE2 takes a pattern's inputs from storage first, so each input is the
+  stock (up to the need) plus the amount to craft, and the server works
+  that out from the last scan. The kit's shared plan is then what AE2
+  does.
+- OC compresses a CPU's output NBT its own way, so the job is matched to
+  its CPU by item, not by tag.
+
 **Connected textures are joined up in the browser, not captured.**
 Capturing them would take a second game launch with Angelica on (it
 can't be on for the icons) and a mesh for every way a block's neighbours

@@ -11,7 +11,7 @@ Two-sided auth:
 
 from flask import Blueprint, g, jsonify, request
 
-from gcm import auth, commands, stock, store, tracking
+from gcm import auth, commands, mctext, multiblocks, state, stock, store, tracking
 
 
 bp = Blueprint("craft_requests", __name__)
@@ -74,6 +74,53 @@ def craft_request_batch_post():
     return jsonify({"ok": True, "ids": ids})
 
 
+@bp.route("/api/craft/request-kit", methods=["POST"])
+@auth.login_required
+@auth.operator_required
+def craft_request_kit_post():
+    """A multiblock kit as one craft job (commands.queue_kit): {key,
+    count, tiers: {channel: tier}, amounts: {row key: how many to
+    craft}}, the kit's rows as /api/multiblocks/kit gives them.
+
+    AE2 takes a pattern's inputs from storage first and crafts only the
+    rest, so each input is what's in stock of the block, up to what the
+    kit needs, plus how many to craft."""
+    payload = request.get_json(silent=True) or {}
+    key = payload.get("key")
+    tiers = payload.get("tiers") or {}
+    amounts = payload.get("amounts")
+    if not isinstance(key, str) or not isinstance(tiers, dict) or not isinstance(amounts, dict):
+        return jsonify({"error": "key, tiers and amounts are needed"}), 400
+    slots = state.kit_slots()
+    if not slots:
+        return jsonify({"error": "The game has no kit interface to request kits through - "
+                                 "request each block on its own instead"}), 409
+    try:
+        count = int(payload.get("count") or 1)
+    except (TypeError, ValueError):
+        return jsonify({"error": "count must be a number"}), 400
+    result = multiblocks.kit(key, tiers, count) if key.count(":") >= 2 else None
+    if result is None:
+        return jsonify({"error": "no kit for that item"}), 404
+    inputs = []
+    for row in result["rows"]:
+        n = amounts.get(row["key"], 0)
+        if isinstance(n, bool) or not isinstance(n, int) or n < 0:
+            return jsonify({"error": f"{row['name']}: amount must be a whole number"}), 400
+        if n == 0:
+            continue
+        if not row["craftable"]:
+            return jsonify({"error": f"{row['name']}: the network has no pattern for it"}), 400
+        inputs.append({**row, "amount": min(row["have"], row["need"]) + n})
+    if not inputs:
+        return jsonify({"error": "nothing to request"}), 400
+    controller = result["controller"]
+    mod, internal, damage = controller["key"].rsplit(":", 2)
+    # The damage as a number: OC reads a stack's damage only as one.
+    req_id = commands.queue_kit(g.user["id"], mctext.plain(controller["name"]), mod, internal, int(damage), inputs)
+    return jsonify({"ok": True, "id": req_id})
+
+
 @bp.route("/api/craft/requests", methods=["GET"])
 @auth.login_required
 def craft_requests_get():
@@ -92,6 +139,7 @@ def craft_requests_get():
     mine.sort(key=lambda r: r["created_at"], reverse=True)
     for r in mine:
         r.pop("tag", None)  # only for the game
+        r.pop("kit_inputs", None)
     return jsonify({"requests": mine})
 
 

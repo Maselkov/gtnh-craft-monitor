@@ -6,6 +6,11 @@
 // Each row's Request box starts at what's missing and can be lowered by
 // hand: the kit counts every spot that takes a hatch or a casing as a
 // casing, and walls shared with another multiblock need fewer.
+//
+// Where the game has a kit interface (craft_monitor.lua reports its kit
+// slots), the blocks are requested as one job (/api/craft/request-kit):
+// AE2 plans them together, sharing what they have in common. Otherwise,
+// or when the viewer ticks "on its own", each block is its own request.
 
 import { AUTH_USER, isOperator } from './auth.js';
 import { closeCraftPlan, kitPlanOpen, openKitPlan } from './craft-plan.js';
@@ -25,6 +30,24 @@ let fetchSeq = 0;
 let planWanted = false;
 // Whether the 3D view is open: it is unless this viewer closed it.
 const VIEW_KEY = 'gtnhCraftMonitor.kitViewClosed';
+// Whether this viewer requests each block on its own even where a kit
+// could be one job.
+const SEPARATE_KEY = 'gtnhCraftMonitor.kitSeparate';
+
+function separateWanted() {
+  try { return localStorage.getItem(SEPARATE_KEY) === '1'; } catch (e) { return false; }
+}
+
+function setSeparateWanted(on) {
+  try {
+    if (on) localStorage.setItem(SEPARATE_KEY, '1'); else localStorage.removeItem(SEPARATE_KEY);
+  } catch (e) { /* per-viewer nicety only */ }
+}
+
+// Whether Request makes one job of the kit.
+function oneJob() {
+  return !!(kit && kit.kit_slots > 0) && !separateWanted();
+}
 
 function viewWanted() {
   try { return localStorage.getItem(VIEW_KEY) !== '1'; } catch (e) { return true; }
@@ -102,6 +125,7 @@ export function openKit(key) {
   document.getElementById('kitRows').innerHTML = '';
   document.getElementById('kitError').hidden = true;
   document.getElementById('kitRequestBtn').hidden = true;
+  document.getElementById('kitMode').hidden = true;
   document.getElementById('kitTitle').textContent = 'Multiblock kit';
   document.getElementById('kitIcon').hidden = true;
   document.getElementById('kitViewBtn').hidden = true;
@@ -266,13 +290,51 @@ function updatePlan() {
   openKitPlan({ kit: kit.controller.key, count: kit.count, targets }, document.getElementById('kitError'));
 }
 
+// The "on its own" box: ticked and fixed where the game has no kit
+// interface to make one job with.
+function updateMode() {
+  const box = document.getElementById('kitMode');
+  box.hidden = !isOperator() || !kit;
+  if (box.hidden) return;
+  const can = kit.kit_slots > 0;
+  const input = document.getElementById('kitSeparate');
+  input.checked = !oneJob();
+  input.disabled = !can;
+  document.getElementById('kitModeLine').textContent = !can
+    ? 'To request a kit as one job, set up a kit interface in the game (see the in-game guide).'
+    : oneJob()
+      ? 'As one job: AE2 plans the blocks together, making what they share once, and puts them in the network when they\'re all done.'
+      : 'One craft per block, each in the network as soon as it\'s done.';
+}
+
 function updateRequestButton() {
   const btn = document.getElementById('kitRequestBtn');
   const n = requests().length;
   btn.hidden = !isOperator() || !kit;
   btn.disabled = n === 0;
-  btn.textContent = n === 0 ? 'Nothing to request' : `Request ${n} craft${n === 1 ? '' : 's'}`;
+  btn.textContent = n === 0 ? 'Nothing to request'
+    : oneJob() ? `Request as one job (${n} block${n === 1 ? '' : 's'})`
+      : `Request ${n} craft${n === 1 ? '' : 's'}`;
+  updateMode();
   updatePlan();
+}
+
+// What to send: the kit as one job, or each block on its own.
+function submission(list) {
+  if (!oneJob()) return { url: '/api/craft/request-batch', body: { requests: list } };
+  const amounts = {};
+  for (const r of kit.rows) {
+    if (r.craftable && requestOf(r) > 0) amounts[r.key] = requestOf(r);
+  }
+  return {
+    url: '/api/craft/request-kit',
+    body: {
+      key: kit.controller.key,
+      count: kit.count,
+      tiers: Object.fromEntries(kit.channels.map(c => [c.name, c.tier])),
+      amounts,
+    },
+  };
 }
 
 async function submitKit() {
@@ -280,13 +342,15 @@ async function submitKit() {
   if (!list.length) return;
   const btn = document.getElementById('kitRequestBtn');
   const errorEl = document.getElementById('kitError');
+  const together = oneJob();
+  const { url, body } = submission(list);
   btn.disabled = true;
   btn.textContent = 'Submitting…';
   try {
-    const res = await fetch('/api/craft/request-batch', {
+    const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ requests: list }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -295,7 +359,8 @@ async function submitKit() {
       updateRequestButton();
       return;
     }
-    showToast(`Requested ${list.length} craft${list.length === 1 ? '' : 's'} for ${nameText(kit.controller.name)}`);
+    showToast(together ? `Requested ${nameText(kit.controller.name)} kit as one job`
+      : `Requested ${list.length} craft${list.length === 1 ? '' : 's'} for ${nameText(kit.controller.name)}`);
     closeKit();
     fetchCraftRequests();
   } catch (e) {
@@ -326,6 +391,10 @@ export function setupKitActions() {
     'open-kit': () => openKit(null),
   });
 
+  document.getElementById('kitSeparate').addEventListener('change', (e) => {
+    setSeparateWanted(e.target.checked);
+    updateRequestButton();
+  });
   document.getElementById('kitPicker').addEventListener('change', (e) => {
     const label = e.target.value.trim().toLowerCase();
     const found = (controllers || []).find(c => c.label.toLowerCase() === label);

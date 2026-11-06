@@ -38,7 +38,18 @@ crafts = {
     "source": None,
     "received_at": None,  # server-side wall clock, for staleness checks
     "poll_seconds": None,  # craft_monitor.lua's POLL_SECONDS, if it said
+    # How many kit slots craft_monitor.lua found (patterns in the kit
+    # interface it may rewrite to request a multiblock kit as one job);
+    # None from a craft_monitor.lua too old to say.
+    "kit_slots": None,
 }
+
+
+def kit_slots():
+    """How many kit slots the game last reported: 0 when it has none or
+    never said."""
+    with crafts_lock:
+        return crafts["kit_slots"] or 0
 
 
 # ---------------------------------------------------------------------
@@ -183,6 +194,7 @@ def reset():
         crafts["source"] = None
         crafts["received_at"] = None
         crafts["poll_seconds"] = None
+        crafts["kit_slots"] = None
     with network_lock:
         network_buffer.clear()
         network_tag_buffer.clear()
