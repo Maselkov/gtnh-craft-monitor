@@ -1615,16 +1615,36 @@ path outlive a bundle, and both have to work with either. Craft history
 stores the path an icon had when it was recorded; `icons.current_path()`
 re-prefixes those for the live bundle already, and swaps a `.png` or
 `.webp` suffix for the live bundle's, so the API only ever hands out paths
-that name a real entry. The page's own fixed icons (the favicon's ME
-Interface, the Blank Pattern badge) had hard-coded `.png` paths; they ask
-by item instead, `/icons?key=modid:internalname:damage`, served with a
-day's cache rather than the immutable week, as the same URL gets the next
-bundle's image. The favicon, apple-touch icon and manifest add
-`notification=1`, a 192px PNG, since they declare `image/png`. `/icons`
-names its content type from the bytes. A server from before WebP that
-installs a WebP bundle mostly works (browsers don't trust an image's
-content type anyway), but its favicon and craft history icons 404 and
-reduced motion still animates.
+that name a real entry. The page's own fixed game icons (the Blank
+Pattern badge) had hard-coded `.png` paths; they ask by item instead,
+`/icons?key=modid:internalname:damage`, served with a day's cache rather
+than the immutable week, as the same URL gets the next bundle's image.
+`/icons` names its content type from the bytes. A server from before WebP
+that installs a WebP bundle mostly works (browsers don't trust an image's
+content type anyway), but its craft history icons 404 and reduced motion
+still animates.
+
+**The project's icon.** The favicon, app icons and the notifications'
+fallback icon were once the ME Interface block from the game data, so a
+server without `images.zip` had none. They're now static files in
+`static/icons/`: an ME Controller-style face drawn for the project (not
+AE2's texture), a 16×16 pixel grid with a blue maze, so it's crisp at
+16 px and every 16n px. `favicon.svg` is the source; the PNGs are
+renders of it, the maskable and Apple ones on the page's dark background
+with room for the platform's mask (the face at 56%, inside a circle
+mask's safe zone, and 71% for iOS's rounded square):
+
+```bash
+cd server/static/icons
+rsvg-convert -w 32 favicon.svg -o favicon-32.png
+rsvg-convert -w 192 favicon.svg -o icon-192.png
+rsvg-convert -w 512 favicon.svg -o icon-512.png
+rsvg-convert -w 288 favicon.svg | magick -size 512x512 xc:'#0f1115' - -gravity center -composite -strip maskable-512.png
+rsvg-convert -w 128 favicon.svg | magick -size 180x180 xc:'#0f1115' - -gravity center -composite -strip apple-touch-icon.png
+```
+
+The icons use fixed colours: a favicon can't follow the page's theme.
+The header has no logo; the mockups found it competed with the title.
 
 **Run-to-run differences.** Two exports of the same pack with the same
 code aren't identical. Measured on 2.9.0 (two runs at once): 91 of ~132k

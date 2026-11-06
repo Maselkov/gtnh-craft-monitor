@@ -88,3 +88,31 @@ def test_no_inline_event_handlers():
         if hits:
             offenders[os.path.basename(path)] = hits
     assert offenders == {}
+
+
+def test_app_icons_exist_at_their_declared_sizes(client):
+    import io
+    import json
+
+    from PIL import Image
+
+    def size_of(url):
+        response = client.get(url)
+        assert response.status_code == 200, url
+        return "%dx%d" % Image.open(io.BytesIO(response.data)).size
+
+    manifest = json.loads(client.get("/static/manifest.json").get_data(as_text=True))
+    assert {icon["purpose"] for icon in manifest["icons"]} == {"any", "maskable"}
+    for icon in manifest["icons"]:
+        assert size_of(icon["src"]) == icon["sizes"], icon["src"]
+
+    html = client.get("/").get_data(as_text=True)
+    assert size_of(re.search(r'rel="apple-touch-icon" href="([^"]+)"', html)[1]) == "180x180"
+    assert size_of(re.search(r'rel="icon" type="image/png" sizes="32x32" href="([^"]+)"', html)[1]) == "32x32"
+    assert client.get("/static/icons/favicon.svg").mimetype == "image/svg+xml"
+
+    # Notifications without an item icon of their own (sw.js, crafts.js).
+    for name in ("sw.js", "js/crafts.js"):
+        with open(os.path.join(STATIC_DIR, name), encoding="utf-8") as f:
+            assert "'/static/icons/icon-192.png'" in f.read(), name
+    assert size_of("/static/icons/icon-192.png") == "192x192"

@@ -5,7 +5,7 @@
 // Notification()` from a page. Nothing is cached here - every request
 // still goes straight to the network.
 
-const ICON = '/icons?key=appliedenergistics2%3Atile.BlockInterface%3A0&notification=1';
+const ICON = '/static/icons/icon-192.png';
 
 self.addEventListener('install', () => self.skipWaiting());
 
