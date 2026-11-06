@@ -13,6 +13,7 @@ import {
 import { hideIngredientsModal, ingredientsCpu, openIngredientsModal } from './ingredients.js';
 import { clearJobLink, readJobLinkFromUrl } from './job-link.js';
 import { fetchNetwork, fetchNetworkPins, tickNetworkSourceLine } from './network.js';
+import { setPageView } from './page-title.js';
 import { fetchPower, powerMachineFromUrl, powerPath, tickPowerSourceLine } from './power.js';
 import { fetchStockRules } from './stock.js';
 import { delegateActions } from './util.js';
@@ -24,6 +25,8 @@ let powerTickInterval = null;
 let networkInterval = null;
 let networkTickInterval = null;
 let craftRequestsInterval = null;
+
+const TAB_NAMES = { crafts: 'Crafts', power: 'Power', network: 'Network' };
 
 export function pathToTab(path) {
   if (path === '/power') return 'power';
@@ -45,6 +48,7 @@ export function switchTab(tab, pushUrl) {
     hideIngredientsModal();
   }
   activeTab = tab;
+  setPageView('tab', TAB_NAMES[tab]);
   document.getElementById('tabBtnCrafts').classList.toggle('active', tab === 'crafts');
   document.getElementById('tabBtnPower').classList.toggle('active', tab === 'power');
   document.getElementById('tabBtnNetwork').classList.toggle('active', tab === 'network');

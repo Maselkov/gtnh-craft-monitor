@@ -19,10 +19,15 @@ bp = Blueprint("pages", __name__)
 @bp.before_app_request
 def recolored_icon():
     """With ICON_COLOR set, static/icons/ in that colour (gcm/app_icons.py)
-    instead of the files as they are."""
-    if config.ICON_COLOR is None or not request.path.startswith("/static/icons/"):
+    instead of the files as they are; the favicon with ?dot=, with a dot
+    on it (static/js/page-title.js)."""
+    if not request.path.startswith("/static/icons/"):
         return None
-    made = app_icons.recolored(request.path.rsplit("/", 1)[1], config.ICON_COLOR)
+    name = request.path.rsplit("/", 1)[1]
+    dot = request.args.get("dot")
+    made = app_icons.badged(name, config.ICON_COLOR, dot) if dot else None
+    if made is None and config.ICON_COLOR is not None:
+        made = app_icons.recolored(name, config.ICON_COLOR)
     if made is None:
         return None
     data, mimetype = made

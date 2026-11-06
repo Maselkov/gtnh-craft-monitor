@@ -6,17 +6,17 @@ test('craftsBadge counts busy CPUs and turns green for finished crafts', () => {
   assert.equal(craftsBadge([], []), null);
   assert.equal(craftsBadge([{ busy: false }], []), null);
   assert.deepEqual(craftsBadge([{ busy: true }, { busy: true }, { busy: false }], []),
-    { count: 2, tone: '', label: '2 crafting' });
+    { count: 2, tone: '', label: '2 crafting', attention: 0 });
   assert.deepEqual(craftsBadge([{ busy: true }], [{ id: 'a' }]),
-    { count: 1, tone: 'done', label: '1 crafting, 1 finished' });
+    { count: 1, tone: 'done', label: '1 crafting, 1 finished', attention: 1 });
   // Only finished ones: a dot, no count.
   assert.deepEqual(craftsBadge([], [{ id: 'a' }, { id: 'b' }]),
-    { count: null, tone: 'done', label: '2 finished' });
+    { count: null, tone: 'done', label: '2 finished', attention: 2 });
 });
 
 test('stockBadge shows only when something is low', () => {
   assert.equal(stockBadge(0), null);
-  assert.deepEqual(stockBadge(3), { count: 3, tone: 'alert', label: '3 low' });
+  assert.deepEqual(stockBadge(3), { count: 3, tone: 'alert', label: '3 low', attention: 3 });
 });
 
 test('powerBadge warns when power is running out or nearly gone', () => {

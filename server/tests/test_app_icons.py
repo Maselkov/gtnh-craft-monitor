@@ -45,3 +45,23 @@ def test_icon_color_setting(value, parsed):
 def test_an_icon_color_that_isnt_one_stops_the_server(value):
     with pytest.raises(RuntimeError, match="ICON_COLOR"):
         config._parse_icon_color(value)
+
+
+@pytest.mark.parametrize("color", [None, RED])
+def test_favicon_with_a_dot(client, monkeypatch, color):
+    monkeypatch.setattr(config, "ICON_COLOR", color)
+    maze = "#ff6b6b" if color else "#5fb3ff"
+    for dot, rgb in app_icons.DOTS.items():
+        svg = client.get(f"/static/icons/favicon.svg?v=1&dot={dot}")
+        assert svg.mimetype == "image/svg+xml"
+        text = svg.get_data(as_text=True)
+        assert 'fill="#%02x%02x%02x"' % rgb in text and "<circle" in text and maze in text
+        png = client.get(f"/static/icons/favicon-32.png?dot={dot}")
+        assert png.mimetype == "image/png"
+        assert rgb in colours(png.data) and app_icons.RING in colours(png.data)
+        assert (RED if color else app_icons.BLUE) in colours(png.data)
+    plain = client.get("/static/icons/favicon.svg").get_data(as_text=True)
+    assert "<circle" not in plain
+    # A dot that isn't one, or on an icon that has none: the plain icon.
+    assert client.get("/static/icons/favicon.svg?dot=nope").get_data(as_text=True) == plain
+    assert client.get("/static/icons/icon-192.png?dot=alert").data == client.get("/static/icons/icon-192.png").data

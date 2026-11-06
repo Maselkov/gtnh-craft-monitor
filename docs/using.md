@@ -121,6 +121,16 @@ turned notifications on, triggers a notification. Pins and
 completions are saved per user on the server, so they follow you across
 devices.
 
+The browser tab shows the same things in the background. Its title counts
+what wants a look: finished crafts not yet acknowledged, items under their
+stock rules, and a power alert (crafts still running don't count). For
+example, **(2) Crafts · GTNH Monitor**. The rest of the title names the open
+tab, or the item or craft whose dialog is open. A craft's details also show
+its progress there (**45% Iron Ingot**), then **Finished** once it ends, so
+a tab left on one craft says how it's going. The tab's icon gets a dot:
+red for low stock or power, green for finished crafts. iOS and Safari don't
+show the dot, but the title count works there too.
+
 Turn notifications on with the **Notifications** switch in the settings
 (⚙) menu. Each browser you turn it on in gets them, delivered through
 the browser's push service (Web Push), so they arrive even with the page
