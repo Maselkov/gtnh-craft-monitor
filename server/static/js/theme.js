@@ -26,6 +26,7 @@ function applyTheme(theme) {
     else localStorage.setItem(THEME_KEY, theme);
   } catch (e) { /* per-viewer nicety only */ }
   showTheme(theme);
+  window.dispatchEvent(new Event('gcm-themechange'));  // util.js onThemeChange
 }
 
 export function setupTheme() {

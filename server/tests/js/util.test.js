@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   closeNote, escapeHtml, essentiaBadgeHtml, formatDuration, formatQty, formatRate, iconClass, iconKeyUrl, iconUrl, kindTooltipHtml, loadDismissedNotes, noteClosed,
+  withAlpha,
 } from '../../static/js/util.js';
 
 test('formatQty abbreviates like the in-game terminal', () => {
@@ -143,4 +144,11 @@ test('a dismissal this browser kept is moved to the server once', async () => {
   } finally {
     fake.restore();
   }
+});
+
+test('withAlpha turns a theme colour into the chart fill', () => {
+  assert.equal(withAlpha('#5fb3ff', 0.15), 'rgba(95,179,255,0.15)');
+  assert.equal(withAlpha('#2272C9', 0.15), 'rgba(34,114,201,0.15)');
+  // Anything but #rrggbb comes back as is, rather than as a wrong colour.
+  assert.equal(withAlpha('rgb(1, 2, 3)', 0.5), 'rgb(1, 2, 3)');
 });

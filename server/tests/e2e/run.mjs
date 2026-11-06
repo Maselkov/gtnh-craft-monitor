@@ -643,6 +643,28 @@ async function main() {
     await waitFor('light', `document.documentElement.dataset.theme === 'light' && ${bg} === 'rgb(244, 245, 247)'
       && $('[data-theme-choice="light"]').getAttribute('aria-checked') === 'true'
       && $('[data-theme-choice="dark"]').getAttribute('aria-checked') === 'false'`);
+    // Light's own text colours read on a card (4.5:1, WCAG AA), and a
+    // card's edge shows against the page - the dark theme's translucent
+    // and pale colours didn't, over near-white.
+    const contrasts = await evaluate(`(() => {
+      const css = getComputedStyle(document.documentElement);
+      const hex = (name) => css.getPropertyValue(name).trim();
+      const lum = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255)
+        .map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4))
+        .reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i], 0);
+      const ratio = (a, b) => {
+        const [hi, lo] = [lum(hex(a)), lum(hex(b))].sort((x, y) => y - x);
+        return (hi + 0.05) / (lo + 0.05);
+      };
+      const out = {};
+      for (const name of ['--text', '--muted', '--accent', '--busy', '--idle', '--stale', '--essentia', '--rise',
+        '--search-mod', '--search-quote']) out[name] = ratio(name, '--card');
+      out.edge = ratio('--border-faint', '--bg');
+      return out;
+    })()`);
+    for (const [name, ratio] of Object.entries(contrasts)) {
+      if (ratio < (name === 'edge' ? 1.3 : 4.5)) throw new Error(`${name} at ${ratio.toFixed(2)}:1 in light`);
+    }
     await cdp.send('Page.reload');
     await waitFor('reloaded', `document.readyState === 'complete' && !window.byText`);
     await evaluate(PAGE_LIB);
@@ -1319,6 +1341,18 @@ async function main() {
     await evaluate(PAGE_LIB);
     await waitFor('wireless by default', `$('#powerMachines [data-machine="Wireless"]')?.classList.contains('active')
       && $('#powerCurrent .big')?.textContent === '2.00E EU'`);
+    // The chart is in the theme's accent, and redrawn in the new one when the theme changes.
+    const line = `Chart.getChart($('#powerChart')).data.datasets[0].borderColor`;
+    const accent = `getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()`;
+    await waitFor('chart in the accent', `${line} === ${accent}`);
+    await click(`$('#settingsBtn')`);
+    await click(`$('[data-theme-choice="dark"]')`);
+    await waitFor('chart in dark\'s accent', `${line} === '#5fb3ff'`);
+    await click(`$('[data-theme-choice="light"]')`);
+    await waitFor('chart in light\'s accent', `${line} === '#2272c9'`);
+    await click(`$('[data-theme-choice="auto"]')`);
+    await evaluate(`pressKey('Escape'), true`);
+    await waitFor('menu closed', `!visible($('#settingsMenu'))`);
   });
 
   step('a network_browser crash shows on the Network tab until a scan finishes', async () => {

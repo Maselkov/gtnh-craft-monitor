@@ -13,7 +13,8 @@ import { hideStockPanel, showStockPanel, stockThresholdsFor } from './stock.js';
 import { ingredientsCpu } from './ingredients.js';
 import { activeTab, switchTab } from './tabs.js';
 import {
-  delegateActions, escapeHtml, formatDuration, formatQty, formatRate, iconClass, iconUrl, onBackdropClick,
+  chartColors, delegateActions, escapeHtml, formatDuration, formatQty, formatRate, iconClass, iconUrl, onBackdropClick,
+  onThemeChange,
 } from './util.js';
 
 // ---------- Item history popup ----------
@@ -434,7 +435,9 @@ export const CHART_TIME_CONFIG = {
 };
 // Both charts' time axis. autoSkipPadding: Chart.js's default leaves
 // labels touching on a phone-width chart ("16:0019:0022:00").
-export const CHART_X_TICKS = { color: '#8a8f98', maxRotation: 0, autoSkip: true, autoSkipPadding: 16 };
+export function chartXTicks(colors) {
+  return { color: colors.muted, maxRotation: 0, autoSkip: true, autoSkipPadding: 16 };
+}
 
 // Again from the last data, when only the stock rules' lines changed.
 export function redrawItemHistoryChart() {
@@ -443,7 +446,8 @@ export function redrawItemHistoryChart() {
 
 // A stock rule's threshold, as a flat dashed line across the chart.
 function thresholdDataset(line, axisMin, axisMax, firstX) {
-  const color = line.label === 'Alert below' ? '#ff6b6b' : '#ffb454';
+  const colors = chartColors();
+  const color = line.label === 'Alert below' ? colors.alert : colors.refill;
   return {
     label: line.label,
     data: [{ x: axisMin ?? firstX, y: line.value }, { x: axisMax, y: line.value }],
@@ -524,6 +528,7 @@ function renderItemHistoryChart(data) {
   }
 
   const ctx = canvas.getContext('2d');
+  const colors = chartColors();
   itemHistoryChart = new Chart(ctx, {
     type: 'line',
     data: {
@@ -542,8 +547,8 @@ function renderItemHistoryChart(data) {
         // points made every gap look the same length regardless of
         // how much real time it actually spanned.
         stepped: 'after',
-        borderColor: '#5fb3ff',
-        backgroundColor: 'rgba(95,179,255,0.15)',
+        borderColor: colors.line,
+        backgroundColor: colors.fill,
         fill: true,
         pointRadius: 0,
         borderWidth: 2,
@@ -571,14 +576,14 @@ function renderItemHistoryChart(data) {
           min: axisMin,
           max: axisMax,
           time: CHART_TIME_CONFIG,
-          ticks: CHART_X_TICKS,
+          ticks: chartXTicks(colors),
           grid: { color: 'rgba(128,128,128,0.1)' },
         },
         // Whole-number ticks: a few items would otherwise get ticks at
         // 0.2, 0.4... that formatQty() rounds to repeated labels.
         y: {
           beginAtZero: true,
-          ticks: { color: '#8a8f98', precision: 0, callback: (v) => formatQty(v) },
+          ticks: { color: colors.muted, precision: 0, callback: (v) => formatQty(v) },
           grid: { color: 'rgba(128,128,128,0.1)' },
         },
       },
@@ -594,6 +599,13 @@ function requestCraftFromHistory() {
 }
 
 export function setupHistoryActions() {
+  // A chart takes its colours when built (chartColors), so a new theme rebuilds it.
+  onThemeChange(() => {
+    if (!itemHistoryChart) return;
+    itemHistoryChart.destroy();
+    itemHistoryChart = null;
+    redrawItemHistoryChart();
+  });
   delegateActions(document, {
     'history-range': (el) => setItemHistoryRange(el.dataset.range),
     'history-pin': () => toggleNetworkItemPin(itemHistoryTarget),

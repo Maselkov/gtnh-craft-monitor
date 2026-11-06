@@ -496,3 +496,35 @@ export function closeNote(name, value = '1') {
     body: JSON.stringify({ value }),
   }).then((res) => res.ok, () => false);
 }
+
+// The page's colours for the charts (app.css's, for the theme showing):
+// a canvas can't use var(--accent), so they're read when a chart is built.
+export function chartColors() {
+  const css = getComputedStyle(document.documentElement);
+  const color = (name) => css.getPropertyValue(name).trim();
+  const accent = color('--accent');
+  return {
+    line: accent,
+    fill: withAlpha(accent, 0.15),
+    muted: color('--muted'),
+    alert: color('--stale'),
+    refill: color('--busy'),
+  };
+}
+
+// '#rrggbb' at an opacity, as rgba(); anything else is returned as is.
+export function withAlpha(hex, alpha) {
+  const m = /^#([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${alpha})`;
+}
+
+// Calls fn whenever the page's colours change: the settings menu's Theme
+// (theme.js), or the system's light/dark while the Theme is on auto.
+export function onThemeChange(fn) {
+  window.addEventListener('gcm-themechange', fn);
+  if (typeof matchMedia === 'function') {
+    matchMedia('(prefers-color-scheme: dark)').addEventListener('change', fn);
+  }
+}

@@ -1,8 +1,8 @@
 // Power tab: readings, trend and chart.
 
-import { CHART_RANGE_SECONDS_JS, CHART_TIME_CONFIG, CHART_X_TICKS } from './history.js';
+import { CHART_RANGE_SECONDS_JS, CHART_TIME_CONFIG, chartXTicks } from './history.js';
 import { machineLabel, powerBadge, setTabBadge } from './tab-badges.js';
-import { delegateActions, escapeHtml, formatDuration, formatRate } from './util.js';
+import { chartColors, delegateActions, escapeHtml, formatDuration, formatRate, onThemeChange } from './util.js';
 
 // ---------- Power chart ----------
 let powerRange = 'day';
@@ -347,6 +347,7 @@ function renderPower(data) {
   }
 
   const ctx = canvas.getContext('2d');
+  const colors = chartColors();
   powerChart = new Chart(ctx, {
     type: 'line',
     data: {
@@ -354,8 +355,8 @@ function renderPower(data) {
         {
           label: 'Stored EU',
           data: storedData,
-          borderColor: '#5fb3ff',
-          backgroundColor: 'rgba(95,179,255,0.15)',
+          borderColor: colors.line,
+          backgroundColor: colors.fill,
           fill: true,
           pointRadius: 0,
           borderWidth: 2,
@@ -387,7 +388,7 @@ function renderPower(data) {
         // No Capacity entry for a machine without one (the wireless
         // network). dataset.hidden is only ever set above; a legend
         // click hides a line through the chart's own meta instead.
-        legend: { labels: { color: '#8a8f98', filter: (item, data) => !data.datasets[item.datasetIndex].hidden } },
+        legend: { labels: { color: colors.muted, filter: (item, data) => !data.datasets[item.datasetIndex].hidden } },
         tooltip: {
           callbacks: {
             label: (item) => {
@@ -414,16 +415,23 @@ function renderPower(data) {
           min: axisMin,
           max: axisMax,
           time: CHART_TIME_CONFIG,
-          ticks: CHART_X_TICKS,
+          ticks: chartXTicks(colors),
           grid: { color: 'rgba(128,128,128,0.1)' },
         },
-        y: { ticks: { color: '#8a8f98', callback: (v) => formatEU(v) }, grid: { color: 'rgba(128,128,128,0.1)' } },
+        y: { ticks: { color: colors.muted, callback: (v) => formatEU(v) }, grid: { color: 'rgba(128,128,128,0.1)' } },
       },
     },
   });
 }
 
 export function setupPowerActions() {
+  // A chart takes its colours when built (chartColors), so a new theme rebuilds it.
+  onThemeChange(() => {
+    if (!powerChart) return;
+    powerChart.destroy();
+    powerChart = null;
+    if (lastPowerData) renderPower(lastPowerData);
+  });
   delegateActions(document, {
     'power-range': (el) => setPowerRange(el.dataset.range),
     'power-machine': (el) => setPowerMachine(el.dataset.machine),
