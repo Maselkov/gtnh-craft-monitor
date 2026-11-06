@@ -1279,17 +1279,46 @@ async function main() {
     // The wireless network: no capacity, so no fill, "/ capacity" or line.
     await game(base, '/api/power', { stored: 2e18, capacity: 0, machine: 'Wireless' });
     await click(`$('#powerTab [data-range="day"]')`);
-    await waitFor('wireless button, without a fill', `$$('#powerMachines .range-btn').map((b) => b.textContent).join()
-      === 'Main 30%,Batteries 25%,Wireless'`);
+    await waitFor('wireless button first, with its EU', `$$('#powerMachines .range-btn').map((b) => b.textContent).join()
+      === 'Wireless 2.00E,Main 30%,Batteries 25%'`);
     await click(`$('#powerMachines [data-machine="Wireless"]')`);
     await waitFor('wireless shown', `location.search === '?machine=Wireless'
       && $('#powerCurrent .big').textContent === '2.00E EU'
       && !$('#powerCurrent').textContent.includes('%')`);
     await waitFor('no capacity line', `Chart.getChart($('#powerChart')).data.datasets[1].hidden === true`);
-    await waitFor('tab fill leaves it out', `$('#tabBtnPower .tab-fill')?.textContent === '30%'`);
+    // An LSC in wireless mode is measured against its threshold (1 UEV: 6P), past 100% too.
+    await game(base, '/api/power', {
+      stored: 6.3e15, capacity: 9.2e18, machine: 'LSC', wireless_mode: true, capacitors: { UEV: 1 },
+      avg_eu_in_5s: 100, avg_eu_out_5s: 40, avg_eu_in_1h: 100, avg_eu_out_1h: 150,
+    });
+    await click(`$('#powerTab [data-range="day"]')`);
+    await waitFor('lsc button', `$('#powerMachines [data-machine="LSC"]')`);
+    await click(`$('#powerMachines [data-machine="LSC"]')`);
+    await waitFor('lsc by its threshold', `$('#powerMachines [data-machine="LSC"]').textContent === 'LSC 105%'
+      && $('#powerCurrent').textContent.includes('6.30P EU / 6.00P EU wireless threshold (105.0%)')
+      && Chart.getChart($('#powerChart')).data.datasets[1].label === 'Wireless threshold'
+      && !Chart.getChart($('#powerChart')).data.datasets[1].hidden
+      && $('#powerEta').textContent
+        === 'Drawing 1.00k EU/s from the wireless network over the past hour \u00b7 refills up to 20.00T EU/s'`);
+    // Its averages are EU/t: 60 EU/t is 1.2k EU/s.
+    await waitFor('arrow in EU/s', `$('#powerCurrent .power-trend').textContent.includes('1.20k EU/s')`);
+    await evaluate(`window.lscChartTop = $('#powerChartWrap').getBoundingClientRect().top`);
+    await click(`$('#powerMachines [data-machine="Wireless"]')`);
+    await waitFor('wireless again', `location.search === '?machine=Wireless' && $('#powerEta').textContent === ''`);
+    // Its readout has no "Empty in" line yet, but the chart stays where it was.
+    await waitFor('chart doesn\'t move', `$('#powerChartWrap').getBoundingClientRect().top === window.lscChartTop`);
+    // An LSC in wireless mode stays near empty: the tab button shows the network.
+    await waitFor('tab shows the wireless network', `$('#tabBtnPower .tab-fill')?.textContent === '2.00E'
+      && !$('#tabBtnPower .tab-badge')`);
     await click(`$('#powerMachines [data-machine=""]')`);
-    await waitFor('main again', `location.pathname === '/power' && location.search === ''
-      && $('#powerEta')`);
+    await waitFor('main again', `location.pathname === '/power' && location.search === '?machine='
+      && $('#powerMachines [data-machine=""]').classList.contains('active') && $('#powerEta').textContent !== ''`);
+    // With no machine picked, the wireless network is the default.
+    await cdp.send('Page.navigate', { url: base + '/power' });
+    await waitFor('reloaded', `document.readyState === 'complete' && !window.byText`);
+    await evaluate(PAGE_LIB);
+    await waitFor('wireless by default', `$('#powerMachines [data-machine="Wireless"]')?.classList.contains('active')
+      && $('#powerCurrent .big')?.textContent === '2.00E EU'`);
   });
 
   step('a network_browser crash shows on the Network tab until a scan finishes', async () => {

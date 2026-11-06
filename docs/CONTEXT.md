@@ -749,7 +749,51 @@ starts with `§c` and uses the server locale's grouping; `power_monitor.lua` kee
 only the digits of the first match. It's posted as its own machine with
 capacity 0, but only once it has been above 0 in that run, so bases without
 wireless don't get an empty chart; after that it keeps posting at 0, so the
-health dot doesn't go stale. Not yet checked against a real in-game dump.
+health dot doesn't go stale. Checked against a real 2.9.0 dump: the full
+number first, then `§c6.50x10^16`.
+
+**With the wireless network reporting, it's the Power tab's default and
+badge.** An LSC in wireless mode keeps its wireless threshold (60T per UHV
+capacitor, ×100 per tier above) and rebalances every 6,000 ticks: it uploads
+everything above the threshold and downloads up to it. Its fill sits under
+1% for good, which tripped the "under 10% full" badge all the time. So
+`store.power.pick()` defaults to a machine with no capacity that has reported
+in the last 5 minutes, and the tab button shows that machine's EU instead
+of a fill. It goes by capacity 0, not by name, because `WIRELESS_NAME` is
+configurable. Its badge warns only when the past hour's rate empties it
+within a day. Since `/power` with no machine now means "the default", the
+unnamed machine's button links to `?machine=`.
+
+**An LSC in wireless mode is measured against its wireless threshold.**
+From a real 2.9.0 dump: the mode is in the key with no value
+(`...lapotronic_super_capacitor.wireless_mode.enabled`), and each wireless
+tier has a line `...capacitors\§5§nUEV§r\1` (tier name in colour codes,
+then the count). The dump's fields are split by two backslashes, which the
+splitter takes as one. `power_monitor.lua` posts `wireless_mode` and the
+raw `capacitors` counts; the server works out the threshold
+(`store.power.wireless_threshold`: 6e13 per UHV, ×100 a tier, per the wiki)
+so a correction reaches hosted instances on deploy. It's stored per reading
+(`wireless_threshold`, NULL otherwise), so the chart can draw it and leave
+a gap before wireless mode. That dump checked out: 6.21P stored against
+1 UEV's 6.00P. The hourly "Empty in" fit is hidden for such an LSC, as the
+network refills it every 5 minutes.
+
+The LSC's `wireless_mode` is stored too (1/0, NULL when not posted). With the
+wireless network as the default, the badge still warns about another machine
+under 10% full, but only when it's posted `wireless_mode: false`. An LSC on a
+script from before this posts nothing, and may be in wireless mode, where its
+capacity says nothing; batteries never post it, and as before only warn as
+the default.
+
+`/api/power` refuses a non-finite `stored`/`capacity` and drops non-finite
+trend fields and capacitor counts: one Infinity stored would make every later
+reply invalid JSON (Flask writes it as a bare `Infinity`).
+
+**The LSC's `avg_eu_in`/`avg_eu_out` are EU/t, not EU/s.** Its own
+"time to full" only works out that way: (9.22E capacity − 6.21P stored) ÷
+(109.95G − 59.12G 5-second averages) ÷ 20 ÷ 86,400 = 104.9 days, against its
+105.15. The page's arrow multiplies them by 20; it used to label them EU/s
+as they came.
 
 **A downsampled chart series is not safe to reuse for a "live" readout.**
 The power tab's live stored/capacity/percentage line used to be derived

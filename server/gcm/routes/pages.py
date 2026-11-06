@@ -126,8 +126,14 @@ def _build_og_tags(path, args):
         latest = store.power.latest(machine)
         title = f"Power · {machine}" if machine else "Power"
         if latest:
-            stored, capacity = latest[1], latest[2]
-            if capacity:
+            stored, capacity, threshold = latest[1], latest[2], latest[5]
+            if threshold:  # an LSC in wireless mode: its 5-minute buffer
+                pct = round(stored / threshold * 100, 1)
+                desc = (
+                    f"{charts.format_qty(stored)} EU stored, {pct}% of its "
+                    f"{charts.format_qty(threshold)} EU wireless threshold"
+                )
+            elif capacity:
                 pct = round(stored / capacity * 100, 1)
                 desc = f"{charts.format_qty(stored)} EU stored of {charts.format_qty(capacity)} EU ({pct}%)"
             else:  # no capacity: the wireless network

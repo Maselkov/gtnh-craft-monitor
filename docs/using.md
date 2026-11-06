@@ -248,7 +248,7 @@ ranges are downsampled on the server to at most 800 points, so long ranges
 stay fast. Readings are kept in `data/power.db`.
 
 Above the chart, an arrow shows the machine's net EU/s over the last 5
-seconds (hover it for input and output separately), and a line gives the
+seconds, from the LSC's own averages (hover it for input and output separately), and a line gives the
 rate over the past hour with the time until the machine is full or empty
 at that rate. The estimate needs at least 10 minutes of readings.
 
@@ -258,11 +258,34 @@ the readout switch between them, and the page's URL
 (`/power?machine=Batteries`) keeps the choice for links and link previews.
 In Discord, a link to the tab previews the latest reading and the day's
 chart.
-The unnamed machine shows as **Main**, and the tab badge follows it.
+The unnamed machine shows as **Main**, and the tab badge follows it
+(the wireless network instead, while it reports).
 
 With an LSC reporting and EU in your wireless network, there's also a
-**Wireless** entry. The network has no capacity, so it shows only stored EU and
-its rate, with no fill. It doesn't count toward the fill on the tab button.
+**Wireless** entry, first among the buttons. The network has no capacity, so
+it shows only stored EU and its rate, with no fill; its button shows its EU
+(`64.9P`) where the others show how full they are.
+
+While the wireless network reports, it's what the tab opens on, and what
+link previews show. The tab button then shows the network's EU (`64.9P`)
+instead of a fill, and its red dot means the past hour's rate would empty
+the network within a day.
+
+An LSC in wireless mode keeps only its wireless threshold (60T EU per UHV
+capacitor, ×100 a tier above) and trades the rest with the network every
+5 minutes: it uploads what's above the threshold and downloads up to it.
+So the Power tab measures it against its threshold, not its capacity: its
+button and readout say how full that 5-minute buffer is, past 100% while
+it holds a surplus waiting for the next upload, and its chart draws the
+threshold where the capacity line would be. Instead of an "Empty in" line
+it says what it sent to or drew from the network over the past hour, from
+its own averages. When it's drawing, the line also gives the most it can
+refill: one threshold every 5 minutes (20T EU/s for one UEV capacitor). A
+draw near that needs more capacitors. If it drops under 10% of its threshold,
+the tab's red dot comes on: it's draining faster than the network can
+refill it, and it needs more or higher-tier capacitors. An LSC that's not
+in wireless mode still turns the dot on when it's under 10% full, even
+with the wireless network as the tab's default.
 
 ## Network tab
 

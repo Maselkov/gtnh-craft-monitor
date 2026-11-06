@@ -546,6 +546,25 @@ BATTERIES = ("Batteries", 2e8, 6 * 3600)
 WIRELESS = "Wireless"
 
 
+# An LSC in wireless mode, with one UEV capacitor: every 5 minutes it's
+# set back to its 6P threshold, and in between it fills or drains.
+LSC = "LSC"
+LSC_CAPACITY = 9.2e18
+LSC_CAPACITORS = {"UHV": 0, "UEV": 1, "UIV": 0, "UMV": 0}
+LSC_THRESHOLD = 6e15
+
+
+def lsc_reading(ts):
+    """(stored, trend) of the wireless LSC: a sawtooth around its
+    threshold, rising by day and draining by night. Its averages are
+    EU/t, as a real LSC's are."""
+    phase = (ts % 86400) / 86400 * 2 * math.pi
+    per_second = 2e12 * math.sin(phase) - 5e11 + random.uniform(-1e11, 1e11)
+    stored = max(0.0, LSC_THRESHOLD + per_second * (ts % 300))
+    avg_in = 1.1e11 + random.uniform(0, 5e9)
+    return stored, {"avg_eu_in_5s": avg_in, "avg_eu_out_5s": max(0.0, avg_in - per_second / 20)}
+
+
 def wireless_reading(ts):
     """Wireless EU climbing slowly, swinging on a daily cycle."""
     phase = (ts % 86400) / 86400 * 2 * math.pi
@@ -557,10 +576,11 @@ def power_reading(ts, capacity=CAPACITY):
     for the backfill and the live readings, so they join up."""
     phase = (ts % 86400) / 86400 * 2 * math.pi
     stored = capacity * (0.45 + 0.3 * math.sin(phase) + 0.03 * random.uniform(-1, 1))
-    # The trend arrow follows the slope of the cycle.
-    slope = math.cos(phase) * 80000
-    return stored, {"avg_eu_in_5s": 200000 + max(0, slope) + random.uniform(0, 5000),
-                    "avg_eu_out_5s": 200000 + max(0, -slope) + random.uniform(0, 5000)}
+    # The trend arrow follows the slope of the cycle. EU/t, as an LSC's
+    # averages are; the page shows them per second.
+    slope = math.cos(phase) * 4000
+    return stored, {"avg_eu_in_5s": 10000 + max(0, slope) + random.uniform(0, 250),
+                    "avg_eu_out_5s": 10000 + max(0, -slope) + random.uniform(0, 250)}
 
 
 def backfill_history(days=7):
@@ -578,6 +598,8 @@ def backfill_history(days=7):
         stored, trend = power_reading(ts - lag, capacity)
         store.power.add_reading(ts, stored, capacity, trend, name)
         store.power.add_reading(ts, wireless_reading(ts), 0, {}, WIRELESS)
+        stored, trend = lsc_reading(ts)
+        store.power.add_reading(ts, stored, LSC_CAPACITY, trend, LSC, threshold=LSC_THRESHOLD, wireless_mode=True)
 
     rows, stock = [], {}
     for it in CATALOG:
@@ -902,6 +924,9 @@ class FakeGame:
         stored, trend = power_reading(time.time() - lag, capacity)
         self.call("POST", "/api/power", {"stored": stored, "capacity": capacity, "machine": name, **trend})
         self.call("POST", "/api/power", {"stored": wireless_reading(time.time()), "capacity": 0, "machine": WIRELESS})
+        stored, trend = lsc_reading(time.time())
+        self.call("POST", "/api/power", {"stored": stored, "capacity": LSC_CAPACITY, "machine": LSC,
+                                         "wireless_mode": True, "capacitors": LSC_CAPACITORS, **trend})
         if self.terminal and self.ticks % PATTERN_SCAN_EVERY_TICKS == 0:
             self.scan_patterns()
         if self.ticks % SCAN_EVERY_TICKS == 0:

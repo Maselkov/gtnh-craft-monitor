@@ -5,6 +5,17 @@
 // Power runs out within this long, or is under POWER_LOW_FRACTION full.
 const POWER_SOON_SECONDS = 3600;
 const POWER_LOW_FRACTION = 0.1;
+// The wireless network (no capacity) has no "full" to fall under, and
+// holds far more: warn when it empties within a day.
+const WIRELESS_SOON_SECONDS = 86400;
+// A machine's last reading counts for this long (power.js's FILL_STALE_SECONDS).
+const POWER_FRESH_SECONDS = 300;
+
+// The unnamed machine is the one reported before machines had names.
+// Here rather than in power.js, which imports this module.
+export function machineLabel(name) {
+  return name || 'Main';
+}
 
 // A badge is {count, tone, label}, or null for none. count may be
 // null for a plain dot; tone is '' (neutral), 'done' or 'alert'.
@@ -22,12 +33,35 @@ export function stockBadge(lowCount) {
   return lowCount ? { count: lowCount, tone: 'alert', label: `${lowCount} low` } : null;
 }
 
-export function powerBadge(latest, trend) {
+// latest and trend are the tab's default machine's; machines are all of
+// them, for an LSC in wireless mode that isn't the default (the wireless
+// network is, while it reports).
+export function powerBadge(latest, trend, machines = [], now = Date.now() / 1000) {
   if (!latest) return null;
-  const low = latest.capacity > 0 && latest.stored / latest.capacity < POWER_LOW_FRACTION;
-  const soon = trend && trend.seconds_to_empty != null && trend.seconds_to_empty < POWER_SOON_SECONDS;
-  if (!low && !soon) return null;
-  return { count: null, tone: 'alert', label: soon ? 'running out within the hour' : 'under 10% full' };
+  const alert = (label) => ({ count: null, tone: 'alert', label });
+  const wireless = !(latest.capacity > 0);
+  const soonSeconds = wireless ? WIRELESS_SOON_SECONDS : POWER_SOON_SECONDS;
+  const refilled = latest.wireless_threshold > 0;  // by the network, every 5 minutes
+  if (!refilled && trend && trend.seconds_to_empty != null && trend.seconds_to_empty < soonSeconds) {
+    return alert(wireless ? 'running out within a day' : 'running out within the hour');
+  }
+  // An LSC in wireless mode drained under its threshold between 5-minute
+  // refills: it needs more, or higher-tier, capacitors.
+  const drained = (machines || []).find(m => m.wireless_threshold > 0 && m.stored != null
+    && now - m.t <= POWER_FRESH_SECONDS && m.stored / m.wireless_threshold < POWER_LOW_FRACTION);
+  if (drained) return alert(`${machineLabel(drained.name)} under 10% of its wireless threshold`);
+  // That LSC's capacity says nothing: it keeps only its threshold.
+  if (!wireless && !(latest.wireless_threshold > 0) && latest.stored / latest.capacity < POWER_LOW_FRACTION) {
+    return alert('under 10% full');
+  }
+  // Another machine running low while the wireless network is the
+  // default: only an LSC whose sensor says it's NOT in wireless mode. One
+  // on an older script doesn't say, and may be in wireless mode, where
+  // its capacity means nothing.
+  const low = (machines || []).find(m => m.wireless_mode === false && m.capacity > 0 && m.stored != null
+    && now - m.t <= POWER_FRESH_SECONDS && m.stored / m.capacity < POWER_LOW_FRACTION);
+  if (low) return alert(`${machineLabel(low.name)} under 10% full`);
+  return null;
 }
 
 const TAB_BUTTONS = { crafts: 'tabBtnCrafts', power: 'tabBtnPower', network: 'tabBtnNetwork' };

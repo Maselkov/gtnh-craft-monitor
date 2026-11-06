@@ -1639,6 +1639,8 @@ body.private-locked #networkTab {
 .power-eta {
   color: var(--muted);
   font-size: 13px;
+  line-height: 18px;
+  min-height: 18px;
   margin-top: 4px;
 }
 .history-pin-btn {

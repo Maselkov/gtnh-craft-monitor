@@ -412,7 +412,9 @@ An LSC also reports your wireless EU network (your team's, if you're in
 one). Once the network holds any EU, it gets its own chart, named
 `WIRELESS_NAME`, with no Adapter or setting needed. That holds whether the
 LSC's own wireless mode is on or off. A base that doesn't use wireless
-never sees it.
+never sees it. With the LSC's wireless mode on, the Power tab measures it
+against its wireless threshold instead of its capacity
+([Power tab](using.md#power-tab)).
 
 ### network_browser.lua
 

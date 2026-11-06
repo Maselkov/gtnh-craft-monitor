@@ -174,6 +174,19 @@ def test_wireless_network_lands_as_its_own_machine(game, client):
     assert wireless["capacity"] == 0
 
 
+def test_lsc_in_wireless_mode_lands_with_its_threshold(game, client):
+    game.lua(
+        """
+        gt.new(env, { stored = 6.2e15, capacity = 9.2e18, wireless_eu = '64975224327465740',
+          wireless_mode = true, capacitors = { UEV = 1 } })
+        env:start_service("power_monitor")
+        """
+    )
+    game.run(1)
+    lsc = client.get("/api/power?machine=").get_json()["latest"]
+    assert lsc["wireless_threshold"] == 6e15
+
+
 def test_network_scan_lands(game, client):
     game.write_file("/home/item_catalog.txt", "testmod:a\ntestmod:b\n")
     game.lua(
