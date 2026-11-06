@@ -135,6 +135,8 @@ def crafts_post():
         state.crafts["source"] = payload.get("source")
         state.crafts["received_at"] = time.time()
         state.crafts["poll_seconds"] = state.reported_interval(payload.get("poll_seconds"))
+        slots = payload.get("kit_slots")
+        state.crafts["kit_slots"] = slots if isinstance(slots, int) and not isinstance(slots, bool) and slots >= 0 else None
     # Once per process: remembers there's a craft_monitor.lua to wait
     # for after a restart, so the page says it's late rather than
     # telling the admin to connect one.

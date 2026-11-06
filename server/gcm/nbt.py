@@ -93,6 +93,23 @@ def _decompress(data):
     return out
 
 
+def _string(text):
+    # Java's writeUTF: modified UTF-8, the same as UTF-8 for a name
+    # without NULs or characters outside the BMP.
+    data = text.replace("\0", "").encode("utf-8", errors="replace")[:65535]
+    return struct.pack(">H", len(data)) + data
+
+
+def display_name_hex(name):
+    """An item tag giving the item a custom name ({display: {Name}}), the
+    way an anvil does: gzipped and hex-encoded, the form OC reads a tag
+    in (craft_monitor.lua passes it to getCraftable() and the pattern).
+    The same name always gives the same bytes."""
+    display = bytes([STRING]) + _string("Name") + _string(name) + bytes([END])
+    root = bytes([COMPOUND]) + _string("") + bytes([COMPOUND]) + _string("display") + display + bytes([END])
+    return gzip.compress(root, mtime=0).hex()
+
+
 def parse_hex(tag_hex):
     """The root compound of a hex-encoded (gzipped) NBT tag, as a dict of
     name -> (type, value). Raises NbtError if it isn't valid."""

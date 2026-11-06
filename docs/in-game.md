@@ -150,6 +150,37 @@ the Tree view then say a terminal is needed, the Network tab shows admins
 a note about it until one of them closes it, and **Status** lists Patterns as
 "no ME Interface Terminal connected (optional)".
 
+### Kit interface
+
+Optional. It lets the page request a [multiblock kit](using.md#multiblock-kits)
+as one crafting job: `craft_monitor.lua` rewrites a pattern in this
+interface so its inputs are the kit's blocks, and requests it. Without
+one, a kit is requested a block at a time.
+
+1. Place an **ME Interface** on the main network, with a **Fake Crafting
+   Card** in it and blocking mode off. Naming it in an anvil (say "Kit")
+   makes it easy to find in the Interface Terminal.
+2. Put an encoded **processing** pattern in it whose output is a
+   **Command Block** (pull one from NEI into the pattern terminal's
+   output); the input can be anything. That marks the slot as a kit slot.
+   Each kit slot takes one kit at a time, so add more for kits in
+   parallel. Nothing else on the network may make Command Blocks.
+3. Point the interface at an **ME Interface on a separate small network**
+   whose **Storage Bus** faces an interface on the main network, so the
+   blocks go back into storage. (An interface never pushes into another
+   interface on its own network.) Nothing else that holds items may touch
+   the kit interface: it pushes into every neighbour that takes them.
+4. Put an **Adapter** against the kit interface, cabled to the computer
+   running `craft_monitor.lua`.
+
+`craft_monitor.lua` looks for kit slots when it starts and every
+[`KIT_SCAN_SECONDS`](#craft_monitorlua), and only ever rewrites a pattern
+that makes a Command Block, or one it already rewrote (named "... kit").
+The job's final output never arrives, and the Fake Crafting Card ends the
+job once the blocks are pushed. A job stuck on its last step instead
+means the card is missing, or the interface it faces is on the main
+network.
+
 ### Connecting the Adapter
 
 An Adapter doesn't have to touch the ME Controller. Put an **MFU** in the
@@ -369,6 +400,7 @@ one clears the terminal on every cycle, so two would flicker.
 | `WATCH_SECONDS` | `1` | Between those, how often busy CPUs are checked, so a job's end is noticed sooner; `0` turns it off |
 | `CRAFT_REQUEST_POLL_SECONDS` | `1.5` | How often pending craft requests are checked |
 | `WATCH_REQUEST_OUTCOMES` | `true` | After a requested craft starts, report whether it finished or was cancelled |
+| `KIT_SCAN_SECONDS` | `600` | How often to look for [kit slots](#kit-interface) |
 | `COMPONENT` | `nil` (auto) | Force `"me_controller"` or `"me_interface"` |
 | `HTTP_TIMEOUT_SECONDS` | `20` | Give up on a request to the server that stalls this long |
 | `SHOW_STATUS` | `false` | Draw a compact status screen |

@@ -324,6 +324,8 @@ def multiblock_kit_get():
     result = multiblocks.kit(key, tiers, count) if key.count(":") >= 2 else None
     if result is None:
         return jsonify({"error": "no kit for that item"}), 404
+    # Whether it can be requested as one job (/api/craft/request-kit).
+    result["kit_slots"] = state.kit_slots()
     return jsonify(result)
 
 

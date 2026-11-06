@@ -420,6 +420,11 @@
       </div>
       <div id="kitRows" class="kit-rows"></div>
       <div class="modal-note kit-note">No hatches, buses, mufflers or maintenance hatches: pick your own. Every spot that takes a hatch or a casing counts as a casing, so lower the casings for your hatches and for walls you share with another multiblock.</div>
+      <div id="kitMode" class="agent-settings kit-mode" hidden>
+        <label class="agent-setting"><input type="checkbox" id="kitSeparate">
+          <span>Request each block on its own
+            <span class="agent-line" id="kitModeLine"></span></span></label>
+      </div>
       <div id="kitError" class="modal-error" hidden></div>
       <div class="modal-buttons">
         <button class="modal-btn secondary" id="kitPlanBtn" data-action="kit-plan" aria-pressed="false" hidden title="What requesting these would take, all together, before you request them">Check the plan</button>

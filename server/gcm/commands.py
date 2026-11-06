@@ -11,7 +11,7 @@ process left open - see store.requests.close_orphaned())."""
 import threading
 import time
 
-from gcm import icons, inventory, state, store
+from gcm import icons, inventory, nbt, state, store
 
 
 class CommandQueue:
@@ -243,6 +243,52 @@ def queue_craft(user_id, label, mod, internal, damage, amount, kind, variant=Non
         },
         lambda req_id: store.requests.record_request(
             req_id, user_id, label, mod, internal, damage, amount, kind, created_at, source
+        ),
+    )
+
+
+def kit_label(name):
+    """What a multiblock kit's job makes, as the game will name it."""
+    return f"{name} kit"
+
+
+def queue_kit(user_id, name, mod, internal, damage, inputs, source="manual"):
+    """Queues a multiblock kit as ONE craft request: craft_monitor.lua
+    rewrites a kit pattern in the base's kit interface so its inputs are
+    `inputs` ([{mod, internal, damage, amount}]) and its output the
+    controller, named "<name> kit", then requests that. AE2 plans it as
+    one job, sharing what the blocks have in common, and the interface
+    pushes the blocks back into the network (docs/in-game.md has the
+    setup). Returns its id."""
+    label = kit_label(name)
+    created_at = time.time()
+    return craft_requests.add(
+        {
+            "user_id": user_id,
+            "label": label,
+            "mod": mod,
+            "internal": internal,
+            "damage": damage,
+            "amount": 1,
+            "kind": "item",
+            "icon": icons.resolve_icon(mod, internal, damage, name),
+            "variant": None,
+            "variant_name": None,
+            # The name, as NBT: getCraftable() then finds the kit pattern's
+            # output and not the controller's own pattern.
+            "tag": nbt.display_name_hex(label),
+            "kit_inputs": [
+                {"name": f"{i['mod']}:{i['internal']}", "damage": int(i["damage"] or 0), "size": int(i["amount"])}
+                for i in inputs
+            ],
+            "source": source,
+            "target_key": None,
+            "reason": None,
+            "cpu_name": None,
+            "created_at": created_at,
+        },
+        lambda req_id: store.requests.record_request(
+            req_id, user_id, label, mod, internal, damage, 1, "item", created_at, source
         ),
     )
 
