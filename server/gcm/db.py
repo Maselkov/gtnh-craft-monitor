@@ -293,6 +293,22 @@ def _power_wireless_lsc(conn):
         conn.execute("ALTER TABLE power_readings ADD COLUMN wireless_mode INTEGER")
 
 
+def _power_machine_names(conn):
+    # Which machine a post is (store.power.resolve): name is what its
+    # readings are stored under now; address its gt_machine component's;
+    # reported the name its script posts it as ('' unnamed); kind 'LSC'
+    # or 'Storage', for numbering; first_unnamed marks the unnamed one
+    # that has the history from before addresses were sent.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS power_machines ("
+        " name TEXT PRIMARY KEY,"
+        " address TEXT UNIQUE,"
+        " reported TEXT,"
+        " kind TEXT,"
+        " first_unnamed INTEGER NOT NULL DEFAULT 0)"
+    )
+
+
 # 2026-01-01: before this project's earliest data (its history predates
 # the repository by a few days), so no real reading is older.
 POWER_EARLIEST_REAL_TS = 1767225600
@@ -745,7 +761,9 @@ APP_MIGRATIONS = [
     _app_cancel_source,
     _app_craft_event_first_seen,
 ]
-POWER_MIGRATIONS = [_power_baseline, _power_machines, _power_drop_impossible_times, _power_wireless_lsc]
+POWER_MIGRATIONS = [
+    _power_baseline, _power_machines, _power_drop_impossible_times, _power_wireless_lsc, _power_machine_names,
+]
 ITEM_HISTORY_MIGRATIONS = [
     _item_history_baseline,
     _item_history_variants,

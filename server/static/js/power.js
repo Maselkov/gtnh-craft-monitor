@@ -2,7 +2,9 @@
 
 import { CHART_RANGE_SECONDS_JS, CHART_TIME_CONFIG, chartXTicks } from './history.js';
 import { machineLabel, powerBadge, setTabBadge } from './tab-badges.js';
-import { chartColors, delegateActions, escapeHtml, formatDuration, formatRate, onThemeChange } from './util.js';
+import {
+  chartColors, delegateActions, escapeHtml, formatDuration, formatRate, onBackdropClick, onThemeChange,
+} from './util.js';
 
 // ---------- Power chart ----------
 let powerRange = 'day';
@@ -141,10 +143,14 @@ function setPowerTabFill(machines) {
 }
 
 // The machine buttons' order: the wireless network (no capacity) first,
-// as it's where the base's power is, then the rest as the server lists them.
+// as it's where the base's power is.
 export function orderMachines(machines) {
   const all = machines || [];
-  return [...all.filter(m => !(m.capacity > 0)), ...all.filter(m => m.capacity > 0)];
+  // Then by size, largest first (an LSC in wireless mode by its threshold),
+  // by name between equals. A machine's number never changes with it.
+  const bySize = (a, b) => (fillSize(b) || 0) - (fillSize(a) || 0)
+    || machineLabel(a.name).localeCompare(machineLabel(b.name));
+  return [...all.filter(m => !(m.capacity > 0)), ...all.filter(m => m.capacity > 0).sort(bySize)];
 }
 
 // What a machine button shows after its name: its fill, or for the
@@ -182,16 +188,26 @@ function renderMachines(data) {
   }).join('');
 }
 
+// Each fetchPower() is numbered, and only the latest one's answer is
+// shown: a click on a machine or range while an earlier fetch (another
+// click, the 15s refresh) is still out would otherwise be overwritten
+// when that earlier answer arrives last - showing, and letting an admin
+// rename, the machine before.
+let powerFetchSeq = 0;
+
 export async function fetchPower() {
+  const seq = ++powerFetchSeq;
   try {
     const query = new URLSearchParams({ range: powerRange });
     if (powerMachine != null) query.set('machine', powerMachine);
     const res = await fetch('/api/power?' + query);
     const data = await res.json();
+    if (seq !== powerFetchSeq) return;
     lastPowerData = data;
     renderPower(data);
     tickPowerSourceLine();
   } catch (e) {
+    if (seq !== powerFetchSeq) return;
     document.getElementById('powerSourceLine').textContent = 'Could not reach server.';
   }
 }
@@ -308,6 +324,8 @@ function renderPower(data) {
   // Before the buttons, which tint the machine the badge is about.
   if (powerMachine == null) setPowerBadge(data);
   renderMachines(data);
+  // Admins only (admin-only), and only with a machine to rename.
+  document.getElementById('powerRenameBtn').hidden = !data.latest;
   setPowerTabFill(data.machines);
   const empty = document.getElementById('powerEmpty');
   const chartWrap = document.getElementById('powerChartWrap');
@@ -483,7 +501,68 @@ function renderPower(data) {
   });
 }
 
+// ---------- Renaming a machine (admins)
+// The machine being renamed: the one shown when the dialog opened.
+let renaming = null;
+
+function openPowerRename() {
+  if (!lastPowerData || !lastPowerData.latest) return;
+  // A machine just picked whose data hasn't come yet: the one shown is
+  // still the one before, so wait rather than rename that.
+  if (powerMachine != null && lastPowerData.machine !== powerMachine) return;
+  renaming = lastPowerData.machine;
+  const input = document.getElementById('powerRenameInput');
+  input.value = machineLabel(renaming);
+  showPowerRenameError('');
+  document.getElementById('powerRenameModal').style.display = 'flex';
+  input.focus();
+  input.select();
+}
+
+function closePowerRename() {
+  document.getElementById('powerRenameModal').style.display = 'none';
+  renaming = null;
+}
+
+function showPowerRenameError(message) {
+  const el = document.getElementById('powerRenameError');
+  el.textContent = message;
+  el.style.display = message ? '' : 'none';
+}
+
+async function submitPowerRename() {
+  if (renaming == null) return;
+  const to = document.getElementById('powerRenameInput').value.trim();
+  if (!to) return showPowerRenameError('Give it a name.');
+  // Unchanged: nothing to do. For the unnamed machine, shown as "Main",
+  // sending it would rename it to a real "Main", rewriting its whole
+  // history for a name it already shows.
+  if (to === machineLabel(renaming)) return closePowerRename();
+  const button = document.getElementById('powerRenameSubmitBtn');
+  button.disabled = true;
+  try {
+    const res = await fetch('/api/admin/power/machines', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: renaming, to }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return showPowerRenameError(data.error || 'Could not rename it.');
+    closePowerRename();
+    setPowerMachine(data.name);
+  } catch (e) {
+    showPowerRenameError('Could not reach the server.');
+  } finally {
+    button.disabled = false;
+  }
+}
+
 export function setupPowerActions() {
+  onBackdropClick('powerRenameModal', closePowerRename);
+  document.getElementById('powerRenameInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') submitPowerRename();
+    if (e.key === 'Escape') closePowerRename();
+  });
   // A chart takes its colours when built (chartColors), so a new theme rebuilds it.
   onThemeChange(() => {
     if (!powerChart) return;
@@ -494,5 +573,8 @@ export function setupPowerActions() {
   delegateActions(document, {
     'power-range': (el) => setPowerRange(el.dataset.range),
     'power-machine': (el) => setPowerMachine(el.dataset.machine),
+    'power-rename': () => openPowerRename(),
+    'power-rename-close': () => closePowerRename(),
+    'power-rename-submit': () => submitPowerRename(),
   });
 }

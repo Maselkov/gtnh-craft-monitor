@@ -2,6 +2,7 @@ import pytest
 import sqlite3
 import time
 
+from conftest import login_as
 from gcm import config, db, store
 
 REAL_TS = 1790121600.0  # 2026-09-23, after the impossible-times cutoff
@@ -373,3 +374,178 @@ class TestTimestamps:
             conn.close()
         db.init_power_db()
         assert [r[0] for r in conn_rows("SELECT stored FROM power_readings ORDER BY ts")] == [3, 5]
+
+
+class TestMachineNames:
+    """Which machine a post is (store.power.resolve), and renaming."""
+
+    def post(self, client, api_headers, stored, machine=None, address=None, lsc=True, **extra):
+        body = {"stored": stored, "capacity": 1000, **extra}
+        if machine is not None:
+            body["machine"] = machine
+        if address is not None:
+            body["address"] = address
+        if lsc:
+            body["wireless_mode"] = False
+        res = client.post("/api/power", json=body, headers=api_headers)
+        assert res.status_code == 200, res.get_data(as_text=True)
+
+    def names(self, client):
+        return sorted(m["name"] for m in client.get("/api/power").get_json()["machines"])
+
+    def stored(self, client, name):
+        return [p["stored"] for p in client.get(f"/api/power?machine={name}").get_json()["points"]]
+
+    def test_an_older_script_without_an_address_stays_unnamed(self, client, api_headers):
+        self.post(client, api_headers, 1)
+        self.post(client, api_headers, 2)
+        assert self.names(client) == [""]
+
+    def test_the_first_address_keeps_the_unnamed_history(self, client, api_headers):
+        self.post(client, api_headers, 1)  # from before addresses were sent
+        self.post(client, api_headers, 2, address="a")
+        assert self.names(client) == [""]
+        assert self.stored(client, "") == [1, 2]
+
+    def test_a_second_unnamed_machine_numbers_both(self, client, api_headers):
+        self.post(client, api_headers, 1, address="a")
+        self.post(client, api_headers, 2, address="b")
+        self.post(client, api_headers, 3, address="a")
+        self.post(client, api_headers, 4, address="b")
+        assert self.names(client) == ["LSC 1", "LSC 2"]
+        assert self.stored(client, "LSC 1") == [1, 3]  # the old '' history moved with it
+        assert self.stored(client, "LSC 2") == [2, 4]
+        # An older script's unnamed posts follow the first one.
+        self.post(client, api_headers, 5)
+        assert self.stored(client, "LSC 1") == [1, 3, 5]
+
+    def test_a_machine_that_isnt_an_lsc_is_storage(self, client, api_headers):
+        self.post(client, api_headers, 1, address="a", lsc=False)
+        self.post(client, api_headers, 2, address="b", lsc=False)
+        self.post(client, api_headers, 3, address="c")
+        assert self.names(client) == ["LSC 1", "Storage 1", "Storage 2"]
+
+    def test_named_machines_keep_their_names(self, client, api_headers):
+        self.post(client, api_headers, 1, "Batteries", address="a")
+        self.post(client, api_headers, 2, address="b")
+        self.post(client, api_headers, 3, "Batteries", address="a")
+        assert self.names(client) == ["", "Batteries"]
+        # Two computers naming theirs the same share it, as before.
+        self.post(client, api_headers, 4, "Batteries", address="c")
+        assert self.stored(client, "Batteries") == [1, 3, 4]
+
+    def test_a_numbered_machine_named_in_machines_keeps_its_history(self, client, api_headers):
+        self.post(client, api_headers, 1, address="a")
+        self.post(client, api_headers, 2, address="b")
+        self.post(client, api_headers, 3, "Nether", address="b")
+        assert self.names(client) == ["LSC 1", "Nether"]
+        assert self.stored(client, "Nether") == [2, 3]
+
+    def test_the_wireless_network_is_unaffected(self, client, api_headers):
+        self.post(client, api_headers, 1, address="a")
+        self.post(client, api_headers, 2, address="b")
+        client.post("/api/power", json={"stored": 9, "capacity": 0, "machine": "Wireless"}, headers=api_headers)
+        assert self.names(client) == ["LSC 1", "LSC 2", "Wireless"]
+
+    def test_bad_addresses_rejected(self, client, api_headers):
+        for address in (5, "", "x" * 65):
+            res = client.post("/api/power", json={"stored": 1, "capacity": 2, "address": address}, headers=api_headers)
+            assert res.status_code == 400
+
+    def rename(self, client, old, new):
+        return client.put("/api/admin/power/machines", json={"from": old, "to": new})
+
+    def test_rename_keeps_history_and_later_posts(self, client, api_headers):
+        from gcm import state
+        self.post(client, api_headers, 1, address="a")
+        self.post(client, api_headers, 2, address="b", poll_seconds=30)
+        login_as(client, "boss", role="admin")
+        res = self.rename(client, "LSC 2", "  Nether LSC ")
+        assert res.status_code == 200 and res.get_json() == {"name": "Nether LSC"}
+        self.post(client, api_headers, 3, address="b")
+        assert self.names(client) == ["LSC 1", "Nether LSC"]
+        assert self.stored(client, "Nether LSC") == [2, 3]
+        assert "LSC 2" not in state.power_poll_seconds and "Nether LSC" in state.power_poll_seconds
+
+    def test_rename_a_machine_from_an_older_script(self, client, api_headers):
+        self.post(client, api_headers, 1, "Batteries")
+        self.post(client, api_headers, 2)
+        login_as(client, "boss", role="admin")
+        assert self.rename(client, "Batteries", "Big batteries").status_code == 200
+        assert self.rename(client, "", "Home").status_code == 200
+        self.post(client, api_headers, 3, "Batteries")
+        self.post(client, api_headers, 4)
+        assert self.names(client) == ["Big batteries", "Home"]
+        assert self.stored(client, "Big batteries") == [1, 3]
+        assert self.stored(client, "Home") == [2, 4]
+
+    def test_rename_refusals(self, client, api_headers):
+        self.post(client, api_headers, 1, "A")
+        self.post(client, api_headers, 2, "B")
+        login_as(client, "op", role="operator")
+        assert self.rename(client, "A", "C").status_code == 403
+        login_as(client, "boss", role="admin")
+        assert self.rename(client, "A", "B").status_code == 409
+        assert self.rename(client, "A", "   ").status_code == 400
+        assert self.rename(client, "A", "x" * 65).status_code == 400
+        assert self.rename(client, "nope", "C").status_code == 404
+        assert client.put("/api/admin/power/machines", json={"from": "A"}).status_code == 400
+        assert self.rename(client, "A", "A").status_code == 200
+        assert self.names(client) == ["A", "B"]
+
+    def test_a_configured_name_doesnt_take_over_another_machine_given_it(self, client, api_headers):
+        # An admin named an unnamed machine "Batteries"; another computer's
+        # MACHINES then names its own the same: that one is numbered.
+        self.post(client, api_headers, 1, address="a")
+        self.post(client, api_headers, 2, address="b")
+        login_as(client, "boss", role="admin")
+        assert self.rename(client, "LSC 2", "Batteries").status_code == 200
+        self.post(client, api_headers, 3, "Batteries", address="c")
+        self.post(client, api_headers, 4, "Batteries", address="c")
+        self.post(client, api_headers, 5, address="b")
+        assert self.names(client) == ["Batteries", "Batteries 2", "LSC 1"]
+        assert self.stored(client, "Batteries") == [2, 5]
+        assert self.stored(client, "Batteries 2") == [3, 4]
+
+    def test_a_rename_before_the_script_sends_addresses_keeps_the_machine(self, client, api_headers):
+        # Main renamed while its computer ran an older script; the updated
+        # script's first post with an address is that machine, not a new one.
+        self.post(client, api_headers, 1)
+        login_as(client, "boss", role="admin")
+        assert self.rename(client, "", "Home").status_code == 200
+        self.post(client, api_headers, 2, address="a")
+        self.post(client, api_headers, 3, address="b")
+        assert self.names(client) == ["Home", "LSC 1"]
+        assert self.stored(client, "Home") == [1, 2]
+        assert self.stored(client, "LSC 1") == [3]
+
+    def test_a_known_machine_named_like_another_keeps_its_own_chart(self, client, api_headers):
+        self.post(client, api_headers, 1, address="a")
+        self.post(client, api_headers, 2, address="b")
+        login_as(client, "boss", role="admin")
+        assert self.rename(client, "LSC 1", "Batteries").status_code == 200
+        # b, numbered LSC 2, is now named "Batteries" in its MACHINES.
+        self.post(client, api_headers, 3, "Batteries", address="b")
+        assert self.stored(client, "Batteries") == [1]
+        assert self.stored(client, "LSC 2") == [2, 3]
+
+    def test_a_rename_during_a_post_leaves_no_phantom_machine(self, client, api_headers, monkeypatch):
+        import threading
+        self.post(client, api_headers, 1, address="a")
+        self.post(client, api_headers, 2, address="b")
+        real_resolve = store.power.resolve
+        renamed = threading.Event()
+
+        def resolve_then_rename(*args, **kwargs):
+            result = real_resolve(*args, **kwargs)
+            # An admin's rename, from another thread, right after the lookup.
+            t = threading.Thread(target=lambda: (store.power.rename("LSC 2", "Nether"), renamed.set()))
+            t.start()
+            t.join(0.2)  # it waits for the post to finish, if the lock covers both
+            return result
+
+        monkeypatch.setattr(store.power, "resolve", resolve_then_rename)
+        self.post(client, api_headers, 3, address="b")
+        assert renamed.wait(5)
+        assert self.names(client) == ["LSC 1", "Nether"]
+        assert self.stored(client, "Nether") == [2, 3]

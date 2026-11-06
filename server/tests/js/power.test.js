@@ -93,7 +93,13 @@ test('the wireless network comes first among the machine buttons, with its EU', 
   const lsc = { name: 'LSC', stored: 6.3e15, capacity: 9.2e18, wireless_threshold: 6e15 };
   const main = { name: '', stored: 3, capacity: 10 };
   const wireless = { name: 'Wireless', stored: 6.489e16, capacity: 0 };
-  assert.deepEqual(orderMachines([main, lsc, wireless]).map(m => m.name), ['Wireless', '', 'LSC']);
+  // Then by size, largest first: the LSC by its 6P threshold, not its 9.2E capacity.
+  assert.deepEqual(orderMachines([main, lsc, wireless]).map(m => m.name), ['Wireless', 'LSC', '']);
+  const big = { name: 'Big', stored: 1, capacity: 1e19 };
+  assert.deepEqual(orderMachines([main, lsc, big, wireless]).map(m => m.name), ['Wireless', 'Big', 'LSC', '']);
+  // Equal sizes by name.
+  assert.deepEqual(orderMachines([{ name: 'LSC 2', capacity: 5 }, { name: 'LSC 1', capacity: 5 }]).map(m => m.name),
+    ['LSC 1', 'LSC 2']);
   assert.deepEqual(orderMachines(null), []);
   assert.equal(machineButtonText(wireless), '64.9P');
   assert.equal(machineButtonText(lsc), '105%');

@@ -268,6 +268,22 @@ GTNewHorizons/OpenComputers#78). If the numeric call fails or reports more
 stored than the capacity, the script falls back to parsing
 `getSensorInformation()`.
 
+Each reading carries the name the machine has in `MACHINES` (none without)
+and the `gt_machine` component's address. The server keeps a table of
+machines (`power_machines` in `power.db`) that maps these to the name the
+readings are stored under:
+
+- A name from `MACHINES` is used as it is, or as an admin renamed it.
+- The first unnamed address keeps the unnamed history from before addresses
+  were sent. Each further unnamed address is numbered by kind ("LSC 2", or
+  "Storage 2" without an LSC's wireless mode), and the first one becomes
+  "LSC 1".
+- A script from before addresses were sent posts unnamed readings without
+  one; they go to the first unnamed machine, as before.
+
+A rename rewrites the stored name in the readings, so links, health and the
+MCP tool all follow it.
+
 A Lapotronic Supercapacitor's `getSensorInformation()` also has a
 `wireless_eu` line: the EU in its owner's wireless network (their team's,
 when they're in one), whether or not the LSC's own wireless mode is on.

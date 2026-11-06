@@ -785,6 +785,53 @@ script from before this posts nothing, and may be in wireless mode, where its
 capacity says nothing; batteries never post it, and as before only warn as
 the default.
 
+**Power machines are told apart by component address.** Two computers each
+posting an unnamed LSC used to mix into one "Main" chart that jumped between
+them. `power_monitor.lua` now sends the `gt_machine` proxy's `address`, and
+`store.power.resolve()` maps (reported name, address) to the name readings
+are stored under, through `power_machines`:
+- A rename **rewrites `power_readings.machine`** rather than keeping a
+  display name beside it. Everything that keys on the name (URLs, the health
+  list, `state.power_poll_seconds`, the MCP tool, link previews, the chart
+  cache) follows with no mapping of its own. Only incoming posts need one.
+  The UPDATE walks a machine's whole history, once per rename.
+- The first unnamed address claims `''` and the history from before
+  addresses were sent: first come, first served. On a base where the second
+  computer's script updates first, that one gets the old history.
+  Unnamed posts without an address (older scripts) go to that first
+  machine. If an admin renamed that machine before its script sent
+  addresses, its row has no address; the first unnamed address then
+  claims it, rather than splitting the LSC into a stale renamed chart and
+  a new "LSC 1".
+- Numbering is per kind, from 1, skipping names in use. The kind is "LSC"
+  when the post has `wireless_mode`, which only an LSC's sensor reports,
+  else "Storage". The first unnamed machine becomes "<kind> 1" when the
+  second appears, unless an admin already renamed it.
+- A configured name wins over an address: two computers naming theirs the
+  same share it, as before. A name newly set in `MACHINES` for a numbered
+  machine takes over its history if the name is free. The exception is a
+  name an admin gave a *different* machine (one with another address): a
+  configured name never takes that over, and the newcomer is numbered
+  ("Batteries 2"). Otherwise two machines would mix without either player
+  having asked for it.
+- `store.power.machines_lock` (re-entrant) is held by the POST handler
+  across `resolve()` and the insert, and by `rename()`. Otherwise a rename
+  landing in between stored the reading under the old name: a one-reading
+  phantom machine whose health entry then goes stale.
+- A replaced Adapter means a new address, so a new machine. There's no
+  merge; renaming the new one and letting the old go stale is the
+  workaround.
+- Each script also posts the Wireless network, so two computers store it
+  twice. That's harmless (the same value), and not deduplicated.
+
+**`fetchPower()` shows only its latest request's answer.** A click on a
+machine while an earlier fetch was out (another click, the 15s refresh)
+was overwritten when the earlier answer arrived last. The page then showed
+the previous machine under the new URL, and the rename dialog would have
+renamed it. The e2e suite hit this by chance. Each call is now numbered,
+and stale answers are dropped. The rename dialog also waits until the
+picked machine's data has arrived.
+
 `/api/power` refuses a non-finite `stored`/`capacity` and drops non-finite
 trend fields and capacitor counts: one Infinity stored would make every later
 reply invalid JSON (Flask writes it as a bare `Infinity`).

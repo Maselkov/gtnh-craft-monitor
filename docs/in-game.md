@@ -408,6 +408,14 @@ history recorded before `MACHINES` was set, so leave the one you were
 already charting unnamed. The addresses are the ones `component.list("gt_machine")`
 prints, or that the script lists when it finds several.
 
+Each post also carries the machine's component address, so you don't need
+names to tell machines apart: an unnamed LSC on each of two computers gets
+**LSC 1** and **LSC 2** on the Power tab, and an admin can rename either
+there. A name set in `MACHINES` for a machine that's already numbered takes
+over its chart. If an Adapter is broken and replaced, its machine gets a new
+address and turns up as a new machine; rename it, and the old one stops
+updating.
+
 An LSC also reports your wireless EU network (your team's, if you're in
 one). Once the network holds any EU, it gets its own chart, named
 `WIRELESS_NAME`, with no Adapter or setting needed. That holds whether the
