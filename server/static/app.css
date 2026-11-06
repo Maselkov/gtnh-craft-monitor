@@ -14,11 +14,23 @@
      either theme. */
   --accent-fill: #2272c9;
   --danger-fill: #d13b3b;
+  /* Borders: one translucent grey, at five strengths. Light overrides
+     them with solid greys - over near-white, the translucent ones all
+     but vanish. */
+  --border-faint: rgba(128,128,128,0.15);
+  --border: rgba(128,128,128,0.2);
+  --border-mid: rgba(128,128,128,0.25);
+  --border-strong: rgba(128,128,128,0.3);
+  --border-stronger: rgba(128,128,128,0.35);
   /* NEI's yellow and aqua for its # and $ search prefixes, GregTech's
      green for its =. */
   --search-tooltip: #f2d43d;
   --search-ore: #4fd8d8;
   --search-formula: #5be05b;
+  --search-mod: #ff6ec7;
+  --search-quote: #ffa94d;
+  /* A stock or power level going up. */
+  --rise: #5fd97a;
 }
 /* Light follows the system unless the settings menu's Theme picks one
    (theme.js; boot.js sets data-theme before first paint). */
@@ -31,6 +43,21 @@
     --search-tooltip: #9a7b00;
     --search-ore: #0b8585;
     --search-formula: #1e8a1e;
+    --search-mod: #b4157f;
+    --search-quote: #a35c00;
+    --rise: #2e7d55;
+    /* The accent and status colours, deepened to read as text on white
+       (4.5:1 or more); the dark theme's are too pale for it. */
+    --accent: #2272c9;
+    --busy: #a35c00;
+    --idle: #2e7d55;
+    --stale: #d13b3b;
+    --essentia: #7a4fd6;
+    --border-faint: #d3d7dd;
+    --border: #ccd1d8;
+    --border-mid: #c4c9d1;
+    --border-strong: #b9bfc8;
+    --border-stronger: #aeb5bf;
   }
 }
 :root[data-theme="light"] {
@@ -42,6 +69,21 @@
   --search-tooltip: #9a7b00;
   --search-ore: #0b8585;
   --search-formula: #1e8a1e;
+  --search-mod: #b4157f;
+  --search-quote: #a35c00;
+  --rise: #2e7d55;
+  /* The accent and status colours, deepened to read as text on white
+     (4.5:1 or more); the dark theme's are too pale for it. */
+  --accent: #2272c9;
+  --busy: #a35c00;
+  --idle: #2e7d55;
+  --stale: #d13b3b;
+  --essentia: #7a4fd6;
+  --border-faint: #d3d7dd;
+  --border: #ccd1d8;
+  --border-mid: #c4c9d1;
+  --border-strong: #b9bfc8;
+  --border-stronger: #aeb5bf;
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
@@ -95,7 +137,7 @@ h1 {
   gap: 8px 12px;
   padding: 10px 12px;
   margin-bottom: 16px;
-  border: 1px solid rgba(128,128,128,0.2);
+  border: 1px solid var(--border);
   border-radius: 10px;
   font-size: 13px;
 }
@@ -137,7 +179,7 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
   background: var(--card);
   border-radius: 12px;
   padding: 16px;
-  border: 1px solid rgba(128,128,128,0.15);
+  border: 1px solid var(--border-faint);
   display: flex;
   flex-direction: column;
 }
@@ -169,7 +211,7 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
   padding: 10px 16px;
   border-radius: 12px 12px 0 0;
   background: color-mix(in srgb, var(--text) 3%, transparent);
-  border-bottom: 1px solid rgba(128,128,128,0.15);
+  border-bottom: 1px solid var(--border-faint);
 }
 .card-top .head-right {
   margin-left: auto;
@@ -247,7 +289,7 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
 .pin-btn {
   flex-shrink: 0;
   background: none;
-  border: 1px solid rgba(128,128,128,0.3);
+  border: 1px solid var(--border-strong);
   border-radius: 8px;
   width: 30px;
   height: 30px;
@@ -276,7 +318,7 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
 .cancel-btn {
   flex-shrink: 0;
   background: none;
-  border: 1px solid rgba(255,107,107,0.35);
+  border: 1px solid color-mix(in srgb, var(--stale) 35%, transparent);
   border-radius: 8px;
   width: 30px;
   height: 30px;
@@ -337,7 +379,7 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
 .ack-btn {
   flex-shrink: 0;
   background: none;
-  border: 1px solid rgba(128,128,128,0.3);
+  border: 1px solid var(--border-strong);
   border-radius: 8px;
   width: 30px;
   height: 30px;
@@ -364,7 +406,7 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
   font-size: 11px;
   padding: 4px 10px;
   border-radius: 999px;
-  border: 1px solid rgba(128,128,128,0.3);
+  border: 1px solid var(--border-strong);
   background: none;
   color: var(--muted);
   cursor: pointer;
@@ -386,7 +428,7 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
   font-size: 12px;
   padding: 6px 12px;
   border-radius: 8px;
-  border: 1px solid rgba(128,128,128,0.3);
+  border: 1px solid var(--border-strong);
   background: none;
   color: var(--text);
   cursor: pointer;
@@ -414,7 +456,7 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
   top: calc(100% + 6px);
   min-width: 180px;
   background: var(--card);
-  border: 1px solid rgba(128,128,128,0.3);
+  border: 1px solid var(--border-strong);
   border-radius: 8px;
   box-shadow: 0 6px 20px rgba(0,0,0,0.3);
   padding: 4px;
@@ -427,7 +469,7 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
   font-size: 11px;
   color: var(--muted);
   padding: 6px 10px 8px;
-  border-bottom: 1px solid rgba(128,128,128,0.2);
+  border-bottom: 1px solid var(--border);
   margin-bottom: 4px;
   white-space: nowrap;
 }
@@ -471,7 +513,7 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
 }
 .theme-seg {
   display: inline-flex;
-  border: 1px solid rgba(128,128,128,0.3);
+  border: 1px solid var(--border-strong);
   border-radius: 6px;
   padding: 2px;
   gap: 2px;
@@ -569,7 +611,7 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
      field, a narrow window), what wraps goes on a line ABOVE the tabs,
      which keep sitting on the border below. */
   flex-wrap: wrap-reverse;
-  border-bottom: 1px solid rgba(128,128,128,0.2);
+  border-bottom: 1px solid var(--border);
   margin-bottom: 20px;
 }
 .top-bar h1 {
@@ -589,7 +631,7 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
 }
 .craft-key-input {
   background: var(--card);
-  border: 1px solid rgba(128,128,128,0.25);
+  border: 1px solid var(--border-mid);
   border-radius: 8px;
   padding: 8px 12px;
   color: var(--text);
@@ -701,7 +743,7 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
   cursor: default;
 }
 .power-trend-up {
-  color: #5fd97a;
+  color: var(--rise);
 }
 .power-trend-down {
   color: var(--stale);
@@ -726,7 +768,7 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
   right: 0;
   margin-top: 6px;
   background: var(--card);
-  border: 1px solid rgba(128,128,128,0.25);
+  border: 1px solid var(--border-mid);
   border-radius: 8px;
   padding: 10px 12px;
   font-size: 12px;
@@ -763,7 +805,7 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
   white-space: nowrap;
 }
 .power-trend-in {
-  color: #5fd97a;
+  color: var(--rise);
 }
 .power-trend-out {
   color: var(--stale);
@@ -779,7 +821,7 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
   font-size: 12px;
   padding: 6px 12px;
   border-radius: 8px;
-  border: 1px solid rgba(128,128,128,0.3);
+  border: 1px solid var(--border-strong);
   background: none;
   color: var(--text);
   cursor: pointer;
@@ -796,7 +838,7 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
 .chart-wrap {
   background: var(--card);
   border-radius: 12px;
-  border: 1px solid rgba(128,128,128,0.15);
+  border: 1px solid var(--border-faint);
   padding: 16px;
   height: 420px;
 }
@@ -841,7 +883,7 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
 .network-search {
   width: 100%;
   background: var(--card);
-  border: 1px solid rgba(128,128,128,0.25);
+  border: 1px solid var(--border-mid);
   border-radius: 8px;
   padding: 10px 14px;
   font-size: 14px;
@@ -871,7 +913,7 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
   border: 1px solid transparent;
 }
 .search-hl-mod {
-  color: #ff6ec7;
+  color: var(--search-mod);
   /* NOT font-weight: 600 here - bold glyphs render wider than
      normal-weight glyphs in essentially every font, and the real
      input's (invisible) text stays at normal weight regardless. That
@@ -907,7 +949,7 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
      input text underneath, or the two layers drift out of alignment
      as more of the query is highlighted.
   */
-  color: #ffa94d;
+  color: var(--search-quote);
 }
 .network-grid {
   display: grid;
@@ -918,7 +960,7 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
   position: relative;
   aspect-ratio: 1;
   background: var(--card);
-  border: 1px solid rgba(128,128,128,0.2);
+  border: 1px solid var(--border);
   border-radius: 8px;
   display: flex;
   align-items: center;
@@ -949,8 +991,11 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
   bottom: 2px;
   font-size: 10px;
   font-weight: 700;
-  color: var(--text);
-  text-shadow: 0 0 3px rgba(0,0,0,0.9), 0 0 3px rgba(0,0,0,0.9);
+  /* Like the game's inventory counts, in either theme: white with a
+     black outline reads on any icon, black ones (fluids) included. */
+  color: #fff;
+  text-shadow: 1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000,
+    1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000;
   font-variant-numeric: tabular-nums;
   z-index: 3;
 }
@@ -1048,6 +1093,7 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
   position: static;
   order: 2;
   font-size: 12px;
+  color: var(--text);
   text-shadow: none;
 }
 .network-grid.list .network-cell.has-change .network-cell-qty {
@@ -1287,7 +1333,7 @@ html {
 }
 .modal-box {
   background: var(--card);
-  border: 1px solid rgba(128,128,128,0.3);
+  border: 1px solid var(--border-strong);
   border-radius: 12px;
   padding: 20px;
   width: 280px;
@@ -1356,7 +1402,7 @@ body.private-locked #networkTab {
 }
 .server-health {
   padding: 10px 12px;
-  border: 1px solid rgba(128,128,128,0.2);
+  border: 1px solid var(--border);
   border-radius: 10px;
   margin-bottom: 14px;
 }
@@ -1418,7 +1464,7 @@ body.private-locked #networkTab {
 }
 .agent-card {
   padding: 10px 12px;
-  border: 1px solid rgba(128,128,128,0.2);
+  border: 1px solid var(--border);
   border-radius: 10px;
 }
 .agent-card.offline {
@@ -1500,7 +1546,7 @@ body.private-locked #networkTab {
 .admin-users {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
-  border: 1px solid rgba(128,128,128,0.2);
+  border: 1px solid var(--border);
   border-radius: 8px;
   font-size: 13px;
 }
@@ -1511,7 +1557,7 @@ body.private-locked #networkTab {
   align-items: center;
   column-gap: 12px;
   padding: 10px 14px;
-  border-bottom: 1px solid rgba(128,128,128,0.15);
+  border-bottom: 1px solid var(--border-faint);
 }
 .admin-user-row:last-child { border-bottom: none; }
 .admin-user-row.new { background: color-mix(in srgb, var(--accent) 8%, transparent); }
@@ -1528,7 +1574,7 @@ body.private-locked #networkTab {
 .role-badge.disabled { background: color-mix(in srgb, var(--stale) 20%, transparent); color: var(--stale); cursor: default; }
 .admin-user-actions { display: flex; align-items: center; gap: 6px; }
 .admin-user-actions .range-btn { padding: 5px 10px; }
-.admin-delete-btn { color: var(--stale); border-color: rgba(255,107,107,0.35); }
+.admin-delete-btn { color: var(--stale); border-color: color-mix(in srgb, var(--stale) 35%, transparent); }
 .admin-delete-btn:hover { background: color-mix(in srgb, var(--stale) 15%, transparent); }
 .admin-token-list { margin-top: 3px; }
 .admin-token-row { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; margin-top: 2px; color: var(--muted); font-size: 11px; }
@@ -1573,7 +1619,7 @@ body.private-locked #networkTab {
 .recipe-check-row {
   padding: 10px 12px;
   margin-top: 8px;
-  border: 1px solid rgba(128,128,128,0.2);
+  border: 1px solid var(--border);
   border-radius: 10px;
   font-size: 13px;
 }
@@ -1631,7 +1677,7 @@ body.private-locked #networkTab {
   margin-top: 2px;
 }
 .history-trend.trend-up {
-  color: #5fd97a;
+  color: var(--rise);
 }
 .history-trend.trend-down {
   color: var(--stale);
@@ -1646,7 +1692,7 @@ body.private-locked #networkTab {
 .history-pin-btn {
   flex-shrink: 0;
   background: none;
-  border: 1px solid rgba(128,128,128,0.3);
+  border: 1px solid var(--border-strong);
   border-radius: 8px;
   width: 30px;
   height: 30px;
@@ -1662,7 +1708,7 @@ body.private-locked #networkTab {
 .history-close-btn {
   flex-shrink: 0;
   background: none;
-  border: 1px solid rgba(128,128,128,0.3);
+  border: 1px solid var(--border-strong);
   border-radius: 8px;
   width: 30px;
   height: 30px;
@@ -1681,7 +1727,7 @@ body.private-locked #networkTab {
   margin-left: auto;
   background: var(--card);
   color: var(--text);
-  border: 1px solid rgba(128,128,128,0.3);
+  border: 1px solid var(--border-strong);
   border-radius: 8px;
   padding: 0 10px;
   font-size: 13px;
@@ -1711,7 +1757,7 @@ body.private-locked #networkTab {
 .modal-amount-input {
   width: 100%;
   background: var(--bg);
-  border: 1px solid rgba(128,128,128,0.25);
+  border: 1px solid var(--border-mid);
   border-radius: 8px;
   padding: 8px 12px;
   color: var(--text);
@@ -1776,7 +1822,7 @@ body.private-locked #networkTab {
 }
 .toast {
   background: var(--card);
-  border: 1px solid rgba(128,128,128,0.3);
+  border: 1px solid var(--border-strong);
   border-radius: 8px;
   padding: 10px 16px;
   font-size: 13px;
@@ -1802,7 +1848,7 @@ body.private-locked #networkTab {
   align-items: center;
   gap: 10px;
   background: var(--card);
-  border: 1px solid rgba(128,128,128,0.2);
+  border: 1px solid var(--border);
   border-radius: 10px;
   padding: 10px 14px;
   margin-bottom: 8px;
@@ -1835,7 +1881,7 @@ body.private-locked #networkTab {
 .craft-request-dismiss {
   flex-shrink: 0;
   background: none;
-  border: 1px solid rgba(128,128,128,0.3);
+  border: 1px solid var(--border-strong);
   border-radius: 8px;
   width: 28px;
   height: 28px;
@@ -1898,7 +1944,7 @@ body.private-locked #networkTab {
   font-weight: 600;
   color: var(--accent);
   padding: 6px 10px;
-  background: rgba(95,179,255,0.1);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
   border: none;
   border-radius: 8px;
   cursor: pointer;
@@ -1907,7 +1953,7 @@ body.private-locked #networkTab {
   margin-top: 0;  /* flex cards don't collapse this into the label's margin */
 }
 .ingredients-btn:hover {
-  background: rgba(95,179,255,0.18);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
 }
 .ingredients-box {
   width: min(720px, calc(100vw - 32px));
@@ -1948,7 +1994,7 @@ body.private-locked #networkTab {
   min-height: 56px;
   padding: 6px 10px;
   background: color-mix(in srgb, var(--text) 4%, var(--card));
-  border: 1px solid rgba(128,128,128,0.2);
+  border: 1px solid var(--border);
   border-radius: 8px;
   font-size: 12px;
   line-height: 1.35;
@@ -2036,7 +2082,7 @@ body.private-locked #networkTab {
   font-size: 12px;
   padding: 2px 8px;
   border-radius: 999px;
-  border: 1px solid rgba(128,128,128,0.35);
+  border: 1px solid var(--border-stronger);
   background: none;
   color: var(--accent);
   cursor: pointer;
@@ -2133,7 +2179,7 @@ body.private-locked #networkTab {
   overflow-y: auto;
   padding: 8px 10px;
   background: var(--card);
-  border: 1px solid rgba(128,128,128,0.3);
+  border: 1px solid var(--border-strong);
   border-radius: 8px;
   box-shadow: 0 6px 20px rgba(0,0,0,0.35);
   font-size: 12px;
@@ -2159,7 +2205,7 @@ body.private-locked #networkTab {
   max-height: min(55vh, 520px);
   overflow-y: auto;
   overflow-x: hidden;  /* as .ingredients-grid: haloed icons at the edge */
-  border: 1px solid rgba(128,128,128,0.2);
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 6px;
 }
@@ -2184,7 +2230,7 @@ body.private-locked #networkTab {
 .plan-tree ul {
   margin-left: 11px;
   padding-left: 10px;
-  border-left: 1px solid rgba(128,128,128,0.25);
+  border-left: 1px solid var(--border-mid);
 }
 .plan-row {
   display: flex;
@@ -2251,7 +2297,7 @@ span.plan-caret {
   font-size: 11px;
   background: var(--card);
   color: var(--text);
-  border: 1px solid rgba(128,128,128,0.3);
+  border: 1px solid var(--border-strong);
   border-radius: 6px;
   padding: 2px 4px;
 }
@@ -2276,7 +2322,7 @@ details.stock-rules summary {
   color: var(--muted);
   padding: 8px 12px;
   background: var(--card);
-  border: 1px solid rgba(128,128,128,0.15);
+  border: 1px solid var(--border-faint);
   border-radius: 10px;
   user-select: none;
 }
@@ -2337,7 +2383,7 @@ details.craft-history {
   gap: 10px;
   padding: 8px 12px;
   background: var(--card);
-  border: 1px solid rgba(128,128,128,0.15);
+  border: 1px solid var(--border-faint);
   border-radius: 10px;
 }
 .history-row span.craft-icon {
@@ -2452,7 +2498,7 @@ details.stock-rules {
 .stock-panel {
   margin: 4px 0 12px;
   padding-top: 12px;
-  border-top: 1px solid rgba(128,128,128,0.15);
+  border-top: 1px solid var(--border-faint);
 }
 .stock-panel-row {
   display: flex;
@@ -2706,7 +2752,7 @@ body.oauth-page {
 .assistant-rules-count.over { color: var(--stale); }
 .assistant-calls-head { display: flex; justify-content: space-between; align-items: baseline; margin-top: 16px; }
 .assistant-calls { max-height: 260px; overflow-y: auto; }
-.assistant-call { border-top: 1px solid rgba(128,128,128,0.2); padding: 6px 0; font-size: 12px; }
+.assistant-call { border-top: 1px solid var(--border); padding: 6px 0; font-size: 12px; }
 .assistant-call-head { display: flex; flex-wrap: wrap; column-gap: 8px; align-items: baseline; }
 .assistant-call-meta { color: var(--muted); font-size: 11px; }
 .assistant-call-args { color: var(--muted); font-family: monospace; font-size: 11px; overflow-wrap: anywhere; }

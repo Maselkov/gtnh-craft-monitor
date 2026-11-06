@@ -38,6 +38,11 @@ scripts would. `--host 0.0.0.0` makes it reachable from a phone on the
 same network; `--no-icons` runs without game data. It never touches
 `server/data/`.
 
+Look at a change to the page in both themes (the settings menu's
+Theme). Colours are the custom properties at the top of
+`server/static/app.css`, which the light theme overrides; a colour
+written anywhere else won't follow it.
+
 ## Tests and checks
 
 CI runs all of these on every push and pull request; run all of them before

@@ -1139,7 +1139,24 @@ prefix (`NEIGTConfig`, `ChemicalFormulaFilter`): the formula with
 formatting codes dropped, GregTech's glyphs replaced and sub- and
 superscript digits as plain ones, so `=sio2` finds SiO₂. The colours
 are NEI's and GregTech's own for those prefixes (yellow, aqua, green),
-darkened in the light theme to be readable on white.
+darkened in the light theme to be readable on white, as are `@`'s pink
+and the quote marks' orange.
+
+**The light theme has its own colours, not the dark theme's.** The page
+was tuned on dark, and the light theme first only swapped the
+background and text: the accent and status colours stayed the pale
+shades made for a dark background (2-3:1 on white, so links, amber
+notes and red buttons washed out), borders were one translucent grey
+that all but vanishes over near-white, and the grid's counts got a
+black glow behind dark text. Now `app.css`'s light blocks set each
+colour used as text to a deeper shade of the same hue, at 4.5:1 or
+more on white (an e2e step checks it), borders to solid greys
+(`--border-faint` to `--border-stronger`, the same five strengths). The
+grid's counts are drawn like the game's in both themes, white with a
+sharp black outline, which reads on any icon, black fluids included. Apart from the counts, the dark values are
+exactly what was there before. The charts read the same colours (`chartColors()`), since a
+canvas can't use `var()`, and rebuild when the theme changes. The
+item tooltip stays dark in both themes, like the game's.
 
 **GregTech's formulas use its own font glyphs.** Superscript isotope
 numbers, a subscript 0, the classical elements and more are private-use

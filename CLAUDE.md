@@ -15,7 +15,8 @@ two in sync.
 `cd server && python dev.py` runs the real app with a fake game feeding it
 (crafts, network, power, history, icons) on http://127.0.0.1:8421/ and
 prints an admin token. Use it to look at any frontend change before
-calling it done. Run it in the background, and stop it with a plain
+calling it done, in both themes (the settings menu's Theme): the light
+one is easy to forget, and colours tuned on dark often wash out on it. Run it in the background, and stop it with a plain
 `kill`; that deletes its temp data directory.
 
 ## Before pushing
@@ -76,5 +77,10 @@ matching edits in `server/tests/e2e/run.mjs`.
   through the DOM is kept; any other attribute follows the markup, so
   state the user changes on a redrawn element (a `<details>` opened) is
   read back from the page before building the markup.
+- Colours come from the custom properties at the top of `app.css`,
+  which the light theme overrides (the accent and status colours,
+  `--border*` for borders): use them rather than a colour of your own,
+  or the light theme won't follow. A chart can't use `var()`: it takes
+  `chartColors()` (`util.js`) and is rebuilt on `onThemeChange()`.
 - New `static/js` modules are only imported, never run on import;
   `main.js` calls their setup functions.
