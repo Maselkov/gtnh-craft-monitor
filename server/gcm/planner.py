@@ -515,6 +515,38 @@ def plan(patterns, stock, key, amount, choices=None, rules=None, describe=None):
         return None
     planner = _Planner(patterns, stock, choices or {}, describe)
     root = planner.run(target, amount)
+    return _result(planner, root, rules)
+
+
+def plan_many(patterns, stock, targets, root, choices=None, rules=None, describe=None):
+    """One plan for several items requested together (a multiblock kit's
+    blocks): targets [(key, amount)], each planned in turn as plan()
+    plans one, against what the ones before it left - so two blocks that
+    need the same plates aren't both counted as having them, as they
+    wouldn't be when both crafts start at once. Their trees are the
+    children of root (its key, name and icon: the kit), status "kit".
+    An item no pattern makes is a missing step of its own. None if
+    targets is empty."""
+    if not targets:
+        return None
+    planner = _Planner(patterns, stock, choices or {}, describe)
+    children = []
+    for key, amount in targets:
+        target = find_output(patterns, key)
+        if target is None:
+            entry = planner.index.entries.get(key) or (describe(key) if describe else None) or {"name": key}
+            totals = planner.totals(entry, key)
+            totals["need"] += amount
+            totals["missing"] += amount
+            children.append({**_item_fields(entry, key), "need": amount, "from_stock": 0, "missing": amount,
+                             "status": "missing"})
+            continue
+        children.append(planner.run(target, amount))
+    return _result(planner, {**root, "status": "kit", "need": 0, "from_stock": 0, "children": children}, rules)
+
+
+def _result(planner, root, rules):
+    """What plan() and plan_many() answer, once the tree is planned."""
     _mark_missing(root, planner.items)
 
     items = list(planner.items.values())
@@ -601,12 +633,32 @@ def cached_plan(patterns, stock, stock_version, key, amount, choices=None, rules
             _plan_cache.move_to_end(cache_key)
             return hit[1]
     result = plan(patterns, stock, key, amount, choices, rules, describe)
+    _remember(cache_key, patterns, result)
+    return result
+
+
+def cached_plan_many(patterns, stock, stock_version, targets, root, choices=None, rules=None, describe=None):
+    """plan_many(), reusing a recent one as cached_plan() does."""
+    choices = choices or {}
+    rules = rules or []
+    cache_key = (stock_version, oredict.version(), "many", tuple(map(tuple, targets)), tuple(sorted(root.items())),
+                 tuple(sorted(choices.items())), tuple(rules))
+    with _plan_lock:
+        hit = _plan_cache.get(cache_key)
+        if hit is not None and hit[0] is patterns:
+            _plan_cache.move_to_end(cache_key)
+            return hit[1]
+    result = plan_many(patterns, stock, targets, root, choices, rules, describe)
+    _remember(cache_key, patterns, result)
+    return result
+
+
+def _remember(cache_key, patterns, result):
     with _plan_lock:
         _plan_cache[cache_key] = (patterns, result)
         _plan_cache.move_to_end(cache_key)
         while len(_plan_cache) > PLAN_CACHE_SIZE:
             _plan_cache.popitem(last=False)
-    return result
 
 
 def trim(node, depth, budget=MISSING_PATH_BUDGET):

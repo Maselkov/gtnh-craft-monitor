@@ -21,7 +21,7 @@ import time
 
 from gcm import (
     auth, bottlenecks, commands, config, craft_stats, gamedata, inventory, item_info, job_links, patterns, planner, rates,
-    mctext, recipe_index, recipes, search, state, stock, store, tracking,
+    mctext, multiblocks, recipe_index, recipes, search, state, stock, store, tracking,
 )
 
 log = logging.getLogger(__name__)
@@ -853,6 +853,85 @@ def game_item(user, args):
     return out
 
 
+KIT_OPTIONS_MAX = 80
+
+
+def _kit_controller(query):
+    """The game data key of the multiblock a query names (a network item
+    key or a name), or a ToolError listing the candidates."""
+    if query.count("|") >= 3:
+        mod, internal, damage, _, _ = _parse_key(query)
+        key = multiblocks.game_key(mod, internal, damage)
+        if not multiblocks.available(mod, internal, damage):
+            raise ToolError(f"{query} isn't a multiblock controller with a kit")
+        return key
+    found = multiblocks.controllers()
+    if not found:
+        raise ToolError("The game data has no multiblock structures (it's older than kits).")
+    q = query.strip().lower()
+    exact = [k for k, n in found if mctext.plain(n).lower() == q]
+    if exact:
+        return exact[0]
+    near = [(k, n) for k, n in found if q in mctext.plain(n).lower()]
+    if len(near) == 1:
+        return near[0][0]
+    if not near:
+        names = [n for _, n in found]
+        near = [(None, n) for n in difflib.get_close_matches(query, names, n=10, cutoff=0.5)]
+    raise ToolError(f"Which multiblock? {'; '.join(mctext.plain(n) for _, n in near[:10]) or 'none matched'}")
+
+
+def multiblock_kit(user, args):
+    query = _arg(args, "multiblock", "string", required=True)
+    count = _arg(args, "count", "integer", default=1, minimum=1, maximum=multiblocks.MAX_COUNT)
+    wanted = args.get("tiers") or {}
+    if not isinstance(wanted, dict):
+        raise ToolError("tiers must be an object: {channel: tier number or block name}")
+    key = _kit_controller(query)
+    first = multiblocks.kit(key)
+    tiers = {}
+    for channel in first["channels"]:
+        value = wanted.get(channel["name"])
+        if value is None:
+            continue
+        if isinstance(value, str) and not value.strip().isdigit():
+            match = [o["tier"] for o in channel["options"] if mctext.plain(o["label"]).lower() == value.strip().lower()]
+            if not match:
+                raise ToolError(f"{channel['name']} has no {value!r}; see its options")
+            value = match[0]
+        tiers[channel["name"]] = int(value)
+    unknown = sorted(set(wanted) - {c["name"] for c in first["channels"]})
+    if unknown:
+        raise ToolError(f"{query} has no channel {', '.join(unknown)}; its channels: "
+                        f"{', '.join(c['name'] for c in first['channels']) or 'none'}")
+    kit = multiblocks.kit(key, tiers, count)
+    channels = []
+    for c in kit["channels"]:
+        chosen = next(o for o in c["options"] if o["tier"] == c["tier"])
+        out = {"name": c["name"], "kind": c["kind"], "tier": c["tier"], "chosen": mctext.plain(chosen["label"])}
+        if c["kind"] == "block":
+            out["options"] = [f"{o['tier']}: {mctext.plain(o['label'])}" for o in c["options"]][:KIT_OPTIONS_MAX]
+        else:
+            out["range"] = [c["min"], c["max"]]
+        channels.append(out)
+    return {
+        "multiblock": mctext.plain(kit["controller"]["name"]),
+        "count": kit["count"],
+        "channels": channels,
+        "blocks": [
+            {"item": r["item"], "name": mctext.plain(r["name"]), "need": r["need"], "in_network": r["have"],
+             "craftable": r["craftable"]}
+            for r in kit["rows"]
+        ],
+        "note": (
+            "Hatches, buses, mufflers and maintenance hatches aren't included: the player picks those. Spots "
+            "that take a hatch or a casing count as casings, so casings are the most needed; walls shared with "
+            "another multiblock need fewer. Ask the user before requesting, then request_craft each block "
+            "still short." + (" Channels interact here; counts are approximate." if kit["approximate"] else "")
+        ),
+    }
+
+
 def base_patterns(user, args):
     key = _arg(args, "item", "string", required=True)
     _parse_key(key)
@@ -1360,6 +1439,26 @@ TOOLS = [
         }, ["item"]),
         "annotations": READ_ONLY,
         "handler": game_item,
+    },
+    {
+        "name": "multiblock_kit",
+        "title": "Blocks to build a multiblock",
+        "description": (
+            "Every block a GregTech multiblock is built from, with the amount the network has and whether "
+            "it's craftable: its casings, coils, glass and so on, for the tiers chosen (a coil or glass "
+            "channel's tiers are the blocks it takes; a length or height channel's are sizes). Without "
+            "tiers, each channel is at its lowest; the result lists each channel's options."
+        ),
+        "inputSchema": _schema({
+            "multiblock": {"type": "string",
+                           "description": "The controller: a name like 'Electric Blast Furnace', or an item key."},
+            "tiers": {"type": "object", "additionalProperties": {"type": ["integer", "string"]},
+                      "description": "{channel: tier number or block name}, e.g. {\"coil\": \"Nichrome Coil Block\"}."},
+            "count": {"type": "integer", "minimum": 1, "maximum": multiblocks.MAX_COUNT, "default": 1,
+                      "description": "How many of the multiblock."},
+        }, ["multiblock"]),
+        "annotations": READ_ONLY,
+        "handler": multiblock_kit,
     },
     {
         "name": "base_patterns",

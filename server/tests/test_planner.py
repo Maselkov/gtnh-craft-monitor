@@ -403,6 +403,47 @@ class TestPaging:
         assert len(calls) == 3
 
 
+class TestPlanMany:
+    """A multiblock kit's blocks planned together (planner.plan_many)."""
+
+    ROOT = {"key": "kit|gregtech:gt.blockmachines:1000", "name": "2 × Electric Blast Furnace"}
+
+    def many(self, stock, targets, **kw):
+        return planner.plan_many(CHAIN, {key(n): s for n, s in stock.items()},
+                                 [(key(n), a) for n, a in targets], self.ROOT, **kw)
+
+    def test_blocks_share_the_stock(self):
+        # A gear takes 4 ingots for its plates and 1 for bolts (making 4).
+        # With 6, each gear alone would be fine; together, the second
+        # gets the first's spare bolt but is 3 ingots short for plates.
+        result = self.many({"Ingot": 6}, [("Gear", 1), ("Gear", 1)])
+        root = result["root"]
+        assert (root["status"], root["name"]) == ("kit", "2 × Electric Blast Furnace")
+        first, second = root["children"]
+        assert not first.get("missing_below")
+        assert second["missing_below"] > 0
+        assert totals(result, "Ingot")["missing"] == 3
+        assert [m["name"] for m in result["missing"]] == ["Ingot"]
+
+    def test_leftovers_carry_over(self):
+        # One gear's bolts make 4 and use 1: the second gear uses a
+        # leftover bolt instead of crafting more.
+        second = self.many({"Ingot": 100}, [("Gear", 1), ("Gear", 1)])["root"]["children"][1]
+        assert child(second, "Bolt")["from_leftovers"] == 1
+        assert "craft" not in child(second, "Bolt") or child(second, "Bolt")["craft"] == 0
+
+    def test_an_item_nothing_makes_is_missing(self):
+        it("Nothing Makes This")
+        result = self.many({}, [("Nothing Makes This", 3)], describe=lambda k: {"name": "Nothing Makes This"})
+        [step] = result["root"]["children"]
+        assert (step["status"], step["missing"]) == ("missing", 3)
+        assert [m["name"] for m in result["missing"]] == ["Nothing Makes This"]
+        assert result["missing"][0]["at"] == ["0"]
+
+    def test_nothing_to_plan(self):
+        assert self.many({}, []) is None
+
+
 class TestRoute:
     URL = "/api/network/plan"
 
@@ -464,6 +505,21 @@ class TestRoute:
         assert data["plan"]["missing"][0]["at"] == ["0.0", "1.0"]  # under the plates and the bolt
         assert all("at" not in i for i in data["plan"]["items"])
         assert data["patterns_updated_at"] and data["stock_updated_at"]
+
+    def test_a_kit_plan_from_the_scans(self, client, api_headers):
+        self.scan(client, api_headers, {"Ingot": 6})
+        login_as(client, "usr_alice")
+        targets = json.dumps([[key("Gear"), 1], [key("Gear"), 1]])
+        data = client.get(self.URL, query_string={"targets": targets, "kit": "nope:x:1", "count": 2}).get_json()
+        root = data["plan"]["root"]
+        assert (root["status"], root["name"], len(root["children"])) == ("kit", "2 × Multiblock kit", 2)
+        assert [m["missing"] for m in data["plan"]["missing"]] == [3]
+        # Branches and the filter's reveal work the same as for one item.
+        branch = client.get(self.URL, query_string={"targets": targets, "path": "1", "version": data["version"]})
+        assert branch.get_json()["node"]["name"] == "Gear"
+        assert client.get(self.URL, query_string={"targets": "[]"}).get_json()["plan"] is None
+        for bad in ("nope", '[["x", 1]]', json.dumps([[key("Gear"), 0]]), json.dumps([[key("Gear"), 1]] * 101)):
+            assert client.get(self.URL, query_string={"targets": bad}).status_code == 400, bad
 
     def test_nothing_makes_it(self, client, api_headers):
         self.scan(client, api_headers, {})

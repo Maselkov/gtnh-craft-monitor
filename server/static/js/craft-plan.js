@@ -1,6 +1,9 @@
 // Crafting plan in the craft-request dialog: what asking AE2 for this
 // amount would take, before the request is sent - worked out on the
-// server from the network's patterns and stock (gcm/planner.py).
+// server from the network's patterns and stock (gcm/planner.py). The
+// multiblock kit dialog shows one too, for all the blocks it would
+// request together (openKitPlan): the same panel, moved into that dialog
+// while it's there, as only one plan is ever on screen.
 //
 // Two views, like AE2's own Request Craft screen: a list of every item
 // the plan touches, coloured by how much of its stock it uses, and the
@@ -18,7 +21,7 @@ const VIEW_KEY = 'gtnhCraftMonitor.planView';
 const HIDE_KEY = 'gtnhCraftMonitor.planHideAvailable';
 const FETCH_DELAY_MS = 300;
 
-let target = null;      // the item the dialog is for
+let target = null;      // the item the dialog is for, or a kit: {kit, count, targets}
 let amount = null;      // the last valid amount asked for
 let choices = {};       // item key -> pattern id picked in the tree
 let openState = new Map();  // tree path -> open, where the user toggled it
@@ -80,6 +83,11 @@ export function nodeQtyText(node, isRoot) {
   const batches = (n) => `${qty(n.craft, n.kind)}` + (n.batches !== n.craft ? ` (${n.batches}×)` : '');
   // One of the patterns a split step's item comes from.
   if (node.status === 'via') return 'makes ' + batches(node);
+  // A multiblock kit's own step, above the blocks it requests.
+  if (node.status === 'kit') {
+    const blocks = (node.children ? node.children.length : node.more) || 0;
+    return `${blocks} block${blocks === 1 ? '' : 's'} to request`;
+  }
   const parts = [];
   if (!isRoot) parts.push('need ' + qty(node.need, node.kind));
   const fromLeftovers = node.from_leftovers || 0;
@@ -357,8 +365,20 @@ function renderRules(plan) {
       </div></div>`).join('');
 }
 
+// Only the craft dialog widens for its plan; the kit dialog is wide
+// already.
 function setModalWide(wide) {
-  document.querySelector('#craftRequestModal .modal-box').classList.toggle('with-plan', wide);
+  document.querySelector('#craftRequestModal .modal-box').classList.toggle(
+    'with-plan', wide && !!document.getElementById('craftPlan').closest('#craftRequestModal'));
+}
+
+// Puts the panel and its note in a dialog, before `before`.
+function placePanel(before) {
+  const panel = document.getElementById('craftPlan');
+  const note = document.getElementById('craftPlanNote');
+  if (panel.nextElementSibling === note && note.nextElementSibling === before) return;
+  before.parentElement.insertBefore(panel, before);
+  before.parentElement.insertBefore(note, before);
 }
 
 // needsTerminal: there are no patterns for want of an ME Interface
@@ -401,6 +421,12 @@ function render() {
 }
 
 function planParams() {
+  if (target.targets) {
+    const params = new URLSearchParams({ targets: JSON.stringify(target.targets), kit: target.kit,
+      count: String(target.count || 1) });
+    if (Object.keys(choices).length) params.set('choose', JSON.stringify(choices));
+    return params;
+  }
   const params = new URLSearchParams({ internal: target.internal, amount: String(amount), kind: target.kind || 'item' });
   if (target.mod) params.set('mod', target.mod);
   if (target.damage != null) params.set('damage', String(target.damage));
@@ -551,6 +577,7 @@ function scheduleFetch(delay) {
 // box holds (it may still be an expression being typed - see
 // updateCraftPlanAmount).
 export function openCraftPlan(it, amountValue) {
+  placePanel(document.getElementById('craftRequestError'));
   target = it;
   choices = {};
   openState = new Map();
@@ -573,6 +600,38 @@ export function updateCraftPlanAmount(amountValue, delay = FETCH_DELAY_MS) {
   if (!target || !amountValue || amountValue < 1 || amountValue === amount) return;
   amount = amountValue;
   scheduleFetch(delay);
+}
+
+// The kit dialog's plan, for its blocks requested together:
+// kit = {kit: controller game data key, count, targets: [[item key,
+// amount]]}, the panel going before `before`. Called again as the
+// amounts change, it plans again, keeping what's open in the tree and
+// the patterns picked.
+export function openKitPlan(kit, before) {
+  const same = target && target.targets && target.kit === kit.kit;
+  placePanel(before);
+  if (same && JSON.stringify(target.targets) === JSON.stringify(kit.targets) && target.count === kit.count) return;
+  target = kit;
+  amount = 1;
+  if (!same) {
+    choices = {};
+    openState = new Map();
+    filterTerms = [];
+    filterOpen = new Map();
+    document.getElementById('craftPlanFilter').value = '';
+    missingExpanded = false;
+    lastPlan = null;
+    itemsByKey = new Map();
+    startSearch();
+    render();
+    showNote('Working out what these take…');
+  }
+  scheduleFetch(same ? FETCH_DELAY_MS : 0);
+}
+
+// Whether the panel is showing a kit's plan.
+export function kitPlanOpen() {
+  return !!(target && target.targets);
 }
 
 export function closeCraftPlan() {

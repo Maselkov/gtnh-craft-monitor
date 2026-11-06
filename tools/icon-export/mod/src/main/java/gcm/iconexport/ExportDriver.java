@@ -615,6 +615,9 @@ public final class ExportDriver {
 
     private void finish() throws Exception {
         enterStage(Stage.DONE);
+        // The multiblocks' block textures are drawn with the icon renderer, so before it goes.
+        Map<String, Object> structureReport = new LinkedHashMap<>();
+        Structures.Result structures = Structures.collect(structureReport, renderer);
         int translucentRenders = renderer.translucentRenders();
         renderer.destroy();
 
@@ -646,7 +649,8 @@ public final class ExportDriver {
         report.put("blank", blank);
         report.put("random", random);
         output.finishAnimations(sequences, 50);
-        output.finish(jobs, report);
+        report.putAll(structureReport);
+        output.finish(jobs, report, structures);
 
         IconExportMod.LOG.info("Icon export complete: {}", config.outDir.getAbsolutePath());
         exit(0);

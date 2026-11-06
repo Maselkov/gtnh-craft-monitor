@@ -155,10 +155,36 @@ open(out + "/item_info.json", "w").write(json.dumps({
     "rarity": {"by_key": {nt: "d"}},
     "fluids": {"water": {"temperature": 295, "gaseous": False, "formula": "H\\u2082O"}},
     "mods": {"gregtech": "GregTech", "minecraft": "Minecraft"}}))
+# Neutronium Ingot stands in for a multiblock controller: its kit takes
+# 1000 Iron Ingots, or Gold Ingots at its second coil tier.
+iron, gold = "minecraft:iron_ingot:0", "minecraft:gold_ingot:0"
+with gzip.open(out + "/structures.json.gz", "wt") as f:
+    json.dump({"format": 1, "names": {nt: "Neutronium Ingot", iron: "Iron Ingot", gold: "Gold Ingot"},
+               "multiblocks": {nt: {"channels": [{"name": "coil", "min": 1, "max": 2}], "base": {iron: 1000},
+                                    "tiers": {"coil": {"1": {}, "2": {iron: -1000, gold: 1000}}}}}}, f)
+# Where its blocks go, for the 3D view: the controller and two iron blocks
+# above it, gold at the second coil tier.
+def pack(x, y, z):
+    return (x + 512) << 20 | (y + 512) << 10 | (z + 512)
+irons = sorted([pack(0, 1, 0), pack(0, 2, 0)])
+with gzip.open(out + "/layouts.json.gz", "wt") as f:
+    json.dump({"format": 1, "tile": 16, "columns": 1,
+               # Iron as the game draws it (BlockMeshes.java), here one quad.
+               "blocks": {"mte:" + nt: {"item": nt}, "minecraft:iron_block:0": {"item": iron, "mesh": {
+                   "t": [0], "p": [0, 0, 0, 256, 0, 0, 256, 256, 0, 0, 256, 0],
+                   "uv": [0, 0, 256, 0, 256, 256, 0, 256], "c": [0xffffff] * 4}},
+                          "minecraft:gold_block:0": {"item": gold, "faces": [0] * 6, "tint": 0xffcc00}},
+               # The two iron blocks join up, as connected textures do (ctm.js).
+               "ctm": [{"tiles": [0, 0, 0, 0, 0], "blocks": ["minecraft:iron_block:0"], "connect": "block"}],
+               "multiblocks": {nt: {"base": {"mte:" + nt: [pack(0, 0, 0)],
+                                             "minecraft:iron_block:0": [irons[0], irons[1] - irons[0]]},
+                                    "tiers": {"coil": {"1": {}, "2": {"swap": {"minecraft:iron_block:0":
+                                                                                  "minecraft:gold_block:0"}}}}}}}, f)
+open(out + "/layouts.png", "wb").write(png(16))
 for bundle in (out, out + "/next"):
     files = {}
     for name in ("images.zip", "images-faithful32.zip", "icons_lookup.json", "item_catalog.txt", "ore_dict.json",
-                 "item_info.json", "recipes.json.gz"):
+                 "item_info.json", "recipes.json.gz", "structures.json.gz", "layouts.json.gz", "layouts.png"):
         data = open((bundle if name in ("recipes.json.gz", "item_catalog.txt") else out) + "/" + name, "rb").read()
         files[name] = {"size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
     open(bundle + "/data.json", "w").write(
@@ -166,7 +192,7 @@ for bundle in (out, out + "/next"):
 `;
 const BUNDLE_FILES = [
   'data.json', 'images.zip', 'images-faithful32.zip', 'icons_lookup.json', 'item_catalog.txt', 'ore_dict.json',
-  'item_info.json', 'recipes.json.gz',
+  'item_info.json', 'recipes.json.gz', 'structures.json.gz', 'layouts.json.gz', 'layouts.png',
 ];
 // The files E2E_NEXT_VERSION has of its own; the rest are the same.
 const NEXT_FILES = ['data.json', 'recipes.json.gz', 'item_catalog.txt'];
@@ -2329,6 +2355,38 @@ async function main() {
     await click(`$('#itemHistoryShiftBtn')`);
     await waitFor('dialog Shift text', `$('#itemHistoryDescription').textContent === 'Structure: 33x24x33\\nGregTech'
       && $('#itemHistoryShiftBtn').getAttribute('aria-pressed') === 'true'`);
+    // Its multiblock kit (the bundle's structures.json.gz): what's
+    // missing of each block to request, and none of a block without a
+    // pattern. Escape closes the kit before the item dialog under it.
+    await waitFor('kit button', `visible($('#itemHistoryKitBtn'))`);
+    await click(`$('#itemHistoryKitBtn')`);
+    await waitFor('kit', `visible($('#kitModal')) && $('#kitTitle').textContent === 'Neutronium Ingot'
+      && $$('#kitRows .kit-row:not(.kit-head)').length === 1 && $('#kitRows .kit-name').textContent === 'Iron Ingot'
+      && $('#kitRows .kit-request')?.value === '0' && $('#kitRequestBtn').textContent === 'Nothing to request'`);
+    await evaluate(`(() => { const c = $('#kitCount'); c.value = '2'; c.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+    await waitFor('kit for two', `$('#kitRows .kit-request')?.value === '766' && $('#kitRequestBtn').textContent === 'Request 1 craft'
+      && $('#kitRows .kit-row.kit-short') && $('#kitRows .kit-slider').value === '766' && $('#kitRows .kit-slider').max === '2000'`);
+    // The slider under the block and its box follow each other.
+    await evaluate(`(() => { const s = $('#kitRows .kit-slider'); s.value = '500'; s.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+    await waitFor('slider sets the box', `$('#kitRows .kit-request').value === '500'`);
+    // The plan for what Request would ask for, all together: the craft
+    // dialog's plan panel, moved into the kit.
+    await waitFor('plan button', `visible($('#kitPlanBtn'))`);
+    await click(`$('#kitPlanBtn')`);
+    await waitFor('kit plan', `visible($('#kitModal #craftPlan')) && $('#craftPlanSummary').textContent.includes('steps')
+      && $('#kitPlanBtn').textContent === 'Hide the plan'`);
+    await evaluate(`(() => { const s = $('#kitControls select'); s.value = '2'; s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+    await waitFor('gold coils', `$('#kitRows .kit-name').textContent === 'Gold Ingot' && $('#kitRows .kit-no-pattern')
+      && $('#kitRequestBtn').disabled && $('#craftPlanNote').textContent === 'Nothing to request, so nothing to plan.'`);
+    // The 3D view, open from the start (three.js, loaded as it opens):
+    // the controller and the two blocks above it.
+    await waitFor('3D view drawn', `visible($('#kitView')) && visible($('#kitViewBtn'))
+      && $('#kitViewBtn').getAttribute('aria-pressed') === 'true' && $('#kitCanvas').dataset.blocks === '3'
+      && $('#kitLayerText').textContent === 'All layers'`);
+    await evaluate(`(() => { const l = $('#kitLayer'); l.value = l.min; l.dispatchEvent(new Event('input')); return true; })()`);
+    await waitFor('bottom layer only', `$('#kitLayerText').textContent === 'Layer 1 of 3'`);
+    await evaluate(`pressKey('Escape'), true`);
+    await waitFor('kit closed', `!visible($('#kitModal')) && visible($('#itemHistoryModal'))`);
     await click(`byText('.history-ore-name', 'ingotNeutronium')`);
     await waitFor('searched by ore name', `!visible($('#itemHistoryModal')) && $('#networkSearch').value === '$ingotNeutronium'
       && $$('#networkList .network-cell').length === 1 && $('#networkSearchHighlight .search-hl-ore')`);

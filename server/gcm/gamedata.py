@@ -42,7 +42,8 @@ BASE_FILES = ("data.json", "icons_lookup.json", "item_catalog.txt")
 # Fetched with the base files when a release has them; older releases
 # don't, and work without (no ore-dictionary substitutions in plans, no
 # item descriptions or mod names, no recipe check against them).
-OPTIONAL_FILES = ("ore_dict.json", "item_info.json", "recipes.json.gz")
+OPTIONAL_FILES = ("ore_dict.json", "item_info.json", "recipes.json.gz", "structures.json.gz", "layouts.json.gz",
+                  "layouts.png")
 TEXTURES = {
     "default": {"file": "images.zip", "name": "Default"},
     "faithful32": {

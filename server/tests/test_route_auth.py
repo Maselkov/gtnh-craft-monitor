@@ -19,6 +19,10 @@ VIEWER_ENDPOINTS = {
     "network.network_info_get",  # game data about the item list's items
     "network.network_history_get",
     "network.network_history_chart_png",
+    "network.multiblocks_get",  # game data: the multiblocks with kits
+    "network.multiblock_kit_get",  # one's kit, with the network's stock
+    "network.multiblock_layout_get",  # where its blocks go, for the 3D view
+    "network.multiblock_atlas_get",  # the block textures that view draws with
 }
 # Anyone, always: the page itself, game data icons, and signing in.
 PUBLIC_ENDPOINTS = {

@@ -211,6 +211,9 @@
           <button class="range-btn active" data-range="day" data-action="network-change-range">Day</button>
           <button class="range-btn" data-range="week" data-action="network-change-range">Week</button>
         </div>
+        <div class="range-buttons" id="networkKitButton" hidden>
+          <button class="range-btn" data-action="open-kit" title="Every block a multiblock is built from, to request at once">Multiblocks</button>
+        </div>
         <div class="range-buttons view-toggle">
           <button class="range-btn active" data-view="grid" data-action="network-view" title="Grid" aria-label="Grid"><svg class="ui-icon" viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true"><g fill="currentColor"><rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1"/><rect x="9" y="1.5" width="5.5" height="5.5" rx="1"/><rect x="1.5" y="9" width="5.5" height="5.5" rx="1"/><rect x="9" y="9" width="5.5" height="5.5" rx="1"/></g></svg></button>
           <button class="range-btn" data-view="list" data-action="network-view" title="List, with item names" aria-label="List"><svg class="ui-icon" viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true"><g fill="currentColor"><rect x="1.5" y="2" width="3" height="3" rx="0.7"/><rect x="6" y="2.6" width="8.5" height="1.8" rx="0.9"/><rect x="1.5" y="6.5" width="3" height="3" rx="0.7"/><rect x="6" y="7.1" width="8.5" height="1.8" rx="0.9"/><rect x="1.5" y="11" width="3" height="3" rx="0.7"/><rect x="6" y="11.6" width="8.5" height="1.8" rx="0.9"/></g></svg></button>
@@ -374,7 +377,54 @@
         <div id="stockTargetNote" class="modal-note stock-panel-note" hidden></div>
         <div id="stockError" class="modal-error" hidden></div>
       </div>
-      <button class="modal-btn primary history-craft-btn" id="itemHistoryCraftBtn" style="display:none;" data-action="craft-from-history">Request Craft</button>
+      <div class="history-buttons">
+        <button class="modal-btn secondary" id="itemHistoryKitBtn" hidden data-action="kit-from-history" title="Every block this multiblock is built from">Multiblock kit</button>
+        <button class="modal-btn primary history-craft-btn" id="itemHistoryCraftBtn" style="display:none;" data-action="craft-from-history">Request Craft</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- After itemHistoryModal: opened from it. -->
+  <div id="kitModal" class="modal-overlay" style="display:none;">
+    <div class="modal-box kit-box">
+      <div class="modal-header">
+        <img id="kitIcon" class="modal-icon" src="" alt="" hidden>
+        <div class="history-name-wrap">
+          <div id="kitTitle" class="modal-item-name">Multiblock kit</div>
+          <div class="history-current">Every block it's built from, for the parts you pick</div>
+        </div>
+        <button class="history-close-btn" data-action="close-kit" title="Close">&times;</button>
+      </div>
+      <div class="kit-top">
+        <label class="kit-control">
+          <span class="kit-control-label">Multiblock</span>
+          <input id="kitPicker" class="modal-amount-input kit-picker" list="kitPickerList" placeholder="Find a multiblock&hellip;" spellcheck="false" autocomplete="off">
+        </label>
+        <label class="kit-control kit-count">
+          <span class="kit-control-label">How many</span>
+          <input id="kitCount" class="modal-amount-input" type="number" min="1" max="64" value="1">
+        </label>
+      </div>
+      <datalist id="kitPickerList"></datalist>
+      <div id="kitControls" class="kit-controls"></div>
+      <div class="kit-view-bar">
+        <button class="range-btn" id="kitViewBtn" data-action="kit-view" aria-pressed="false" hidden title="The multiblock as configured, block by block">3D view</button>
+      </div>
+      <div id="kitView" class="kit-view" hidden>
+        <canvas id="kitCanvas" class="kit-canvas" aria-label="The multiblock in 3D: drag to turn it, scroll or pinch to zoom"></canvas>
+        <div id="kitViewMessage" class="kit-view-message" hidden></div>
+        <div class="kit-layer">
+          <input type="range" id="kitLayer" min="0" max="0" value="0" aria-label="Highest layer shown">
+          <span id="kitLayerText" class="kit-control-label"></span>
+        </div>
+      </div>
+      <div id="kitRows" class="kit-rows"></div>
+      <div class="modal-note kit-note">No hatches, buses, mufflers or maintenance hatches: pick your own. Every spot that takes a hatch or a casing counts as a casing, so lower the casings for your hatches and for walls you share with another multiblock.</div>
+      <div id="kitError" class="modal-error" hidden></div>
+      <div class="modal-buttons">
+        <button class="modal-btn secondary" id="kitPlanBtn" data-action="kit-plan" aria-pressed="false" hidden title="What requesting these would take, all together, before you request them">Check the plan</button>
+        <button class="modal-btn primary" id="kitRequestBtn" data-action="kit-request" hidden>Request</button>
+      </div>
     </div>
   </div>
 

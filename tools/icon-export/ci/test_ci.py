@@ -1,6 +1,7 @@
 """Tests for the gtnh-data workflow's helper scripts. Run with
 python -m pytest tools/icon-export/ci (CI does, in ci.yml)."""
 
+import gzip
 import json
 import os
 import sys
@@ -182,11 +183,19 @@ def faithful_export(tmp_path, textured):
         {"by_keyEntries": 50000, "fluids_by_keyEntries": 2000, "aspects_by_keyEntries": 60, "oreNames": 5000,
          "catalogIds": 9000, "tooltipsByKey": 20000, "shiftTooltipsByKey": 500, "fluidInfo": 2000, "modNames": 300,
          "formulasByKey": 26000, "fluidFormulas": 800, "recipes": 175000, "recipeMapsWithMachines": 138,
+         "multiblocks": 334, "layoutBlocks": 600, "layoutTextures": 600, "layoutMeshes": 600, "ctmUsed": 121,
          "itemsRendered": 100, "itemsFailed": 0}))
     (tmp_path / "item_info.json").write_text(json.dumps(
         {"tooltips": {"by_key": {"gregtech:gt.blockmachines:1": "Machine Type: Plasma Forge | DTPF"}}}))
     (tmp_path / "data.json").write_text(json.dumps(
         {"textures": {"faithful32": {"default_fallbacks": 0}}}))
+    with gzip.open(tmp_path / "structures.json.gz", "wt") as f:
+        json.dump({"multiblocks": {"gregtech:gt.blockmachines:1000": {
+            "base": {"gregtech:gt.blockcasings5:0": 16}}}}, f)
+    with gzip.open(tmp_path / "layouts.json.gz", "wt") as f:
+        json.dump({"multiblocks": {"gregtech:gt.blockmachines:1000": {
+            "base": {"gregtech:gt.blockcasings5:0": [1] * 16}}}}, f)
+    (tmp_path / "layouts.png").write_bytes(b"png")
     return tmp_path
 
 

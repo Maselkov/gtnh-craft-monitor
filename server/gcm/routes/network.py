@@ -7,9 +7,9 @@ import logging
 import secrets
 import time
 
-from flask import abort, Blueprint, g, jsonify, request, Response
+from flask import abort, Blueprint, g, jsonify, request, Response, send_file
 
-from gcm import auth, charts, gamedata, icons, inventory, item_info, memory, patterns, planner, state, stock, store
+from gcm import auth, charts, gamedata, icons, inventory, item_info, memory, multiblocks, patterns, planner, state, stock, store
 
 log = logging.getLogger(__name__)
 
@@ -297,8 +297,61 @@ def network_history_get():
             "latest": {"t": latest[0], "size": latest[1]} if latest else None,
             "trend": trend,
             "info": {**item_info.describe(item), "mod_name": item_info.mod_name(mod)},
+            # Its multiblock kit (gcm/multiblocks.py), for a controller.
+            "multiblock": kind == "item" and not variant and multiblocks.available(mod, internal, damage),
         }
     )
+
+
+@bp.route("/api/multiblocks", methods=["GET"])
+@auth.viewer_required
+def multiblocks_get():
+    """Every multiblock with a kit, by name: {multiblocks: [{key, name}]}."""
+    return jsonify({"multiblocks": [{"key": k, "name": n} for k, n in multiblocks.controllers()]})
+
+
+@bp.route("/api/multiblocks/kit", methods=["GET"])
+@auth.viewer_required
+def multiblock_kit_get():
+    """A multiblock's kit: ?key=mod:internal:damage&count=n, and a
+    channel's tier as ?tier.<channel>=n (gcm/multiblocks.kit())."""
+    key = request.args.get("key") or ""
+    tiers = {name[len("tier."):]: value for name, value in request.args.items() if name.startswith("tier.")}
+    try:
+        count = int(request.args.get("count") or 1)
+    except ValueError:
+        return jsonify({"error": "count must be a number"}), 400
+    result = multiblocks.kit(key, tiers, count) if key.count(":") >= 2 else None
+    if result is None:
+        return jsonify({"error": "no kit for that item"}), 404
+    return jsonify(result)
+
+
+@bp.route("/api/multiblocks/layout", methods=["GET"])
+@auth.viewer_required
+def multiblock_layout_get():
+    """Where each block of a multiblock goes, for the kit's 3D view:
+    ?key= and ?tier.<channel>= as the kit takes them
+    (gcm/multiblocks.layout()), and the URL of the textures it uses."""
+    key = request.args.get("key") or ""
+    tiers = {name[len("tier."):]: value for name, value in request.args.items() if name.startswith("tier.")}
+    result = multiblocks.layout(key, tiers) if key.count(":") >= 2 else None
+    if result is None:
+        return jsonify({"error": "no layout for that item"}), 404
+    version = gamedata.selected_version()
+    result["atlas"] = f"/api/multiblocks/atlas?v={gamedata.build_id(version)}" if multiblocks.atlas_path() else None
+    return jsonify(result)
+
+
+@bp.route("/api/multiblocks/atlas", methods=["GET"])
+@auth.viewer_required
+def multiblock_atlas_get():
+    """The block textures the 3D view draws with (layouts.png). Its URL
+    names the game data's build, so it's cached for long."""
+    path = multiblocks.atlas_path()
+    if not path:
+        abort(404)
+    return send_file(path, mimetype="image/png", max_age=7 * 24 * 3600)
 
 
 @bp.route("/api/network/changes", methods=["GET"])
@@ -408,6 +461,25 @@ def network_patterns_get():
 # The most a plan can be asked for: AE2 takes a long, but a plan for
 # more than this is no use to anyone.
 MAX_PLAN_AMOUNT = 10**12
+# The most items one plan can be for (a multiblock kit's blocks).
+MAX_PLAN_TARGETS = 100
+
+
+def _plan_targets(raw):
+    """?targets= as [(item key, amount)], and an error or None."""
+    try:
+        parsed = json.loads(raw)
+    except ValueError:
+        return None, "targets must be JSON"
+    if not isinstance(parsed, list) or len(parsed) > MAX_PLAN_TARGETS:
+        return None, f"targets must be a list of at most {MAX_PLAN_TARGETS}"
+    targets = []
+    for t in parsed:
+        if not (isinstance(t, list) and len(t) == 2 and isinstance(t[0], str) and t[0].count("|") >= 3
+                and isinstance(t[1], int) and not isinstance(t[1], bool) and 1 <= t[1] <= MAX_PLAN_AMOUNT):
+            return None, "each target must be [item key, amount]"
+        targets.append((t[0], t[1]))
+    return targets, None
 
 
 @bp.route("/api/network/plan", methods=["GET"])
@@ -426,9 +498,18 @@ def network_plan_get():
     answer's version gets the next level under it, or {stale: true} if
     the patterns or stock have changed since. reveal=<item key>... with
     the version gets the way to each place those items are at
-    (planner.reveal), for the tree's filter box."""
+    (planner.reveal), for the tree's filter box.
+
+    For a multiblock kit, ?targets=[[item key, amount], ...] in place of
+    the item plans them all together (planner.plan_many), under a step
+    for the kit: ?kit=<its controller's mod:internal:damage>&count=n."""
+    targets = None
+    if request.args.get("targets") is not None:
+        targets, error = _plan_targets(request.args.get("targets"))
+        if error:
+            return jsonify({"error": error}), 400
     internal = request.args.get("internal")
-    if not internal:
+    if not internal and targets is None:
         return jsonify({"error": "missing internal"}), 400
     try:
         amount = int(request.args.get("amount", "1"))
@@ -452,7 +533,7 @@ def network_plan_get():
     key = store.items.item_key(
         request.args.get("mod") or None, internal, damage,
         request.args.get("kind") or "item", request.args.get("variant") or None,
-    )
+    ) if targets is None else None
     pattern_list, patterns_at = patterns.current()
     if patterns_at is None:
         return jsonify({"plan": None, "reason": patterns.missing_reason("crafting plan"),
@@ -471,8 +552,15 @@ def network_plan_get():
         return jsonify({"stale": True})
 
     rules = planner.rules_for_user(g.user["id"])
-    result = planner.cached_plan(pattern_list, stock_levels, stock_version, key, amount, choices, rules,
-                                 describe=inventory.describe)
+    if targets is not None:
+        root = multiblocks.plan_root(request.args.get("kit") or "", request.args.get("count"))
+        result = planner.cached_plan_many(pattern_list, stock_levels, stock_version, targets, root, choices, rules,
+                                          describe=inventory.describe)
+        if result is None:
+            return jsonify({"plan": None, "reason": "Nothing to request, so nothing to plan."})
+    else:
+        result = planner.cached_plan(pattern_list, stock_levels, stock_version, key, amount, choices, rules,
+                                     describe=inventory.describe)
     if result is None:
         return jsonify({"plan": None, "reason": "None of the network's patterns makes this item."})
     if path is not None:
