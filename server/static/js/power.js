@@ -154,14 +154,30 @@ export function machineButtonText(m) {
   return fillText(machineFill(m));
 }
 
+// The machine the tab's red dot is about (powerBadge's machine), whose
+// button is tinted red; null with no dot.
+let alertMachine = null;
+
+// The tab badge, from the default machine's data (/api/power without
+// ?machine=), and which machine it's about.
+function setPowerBadge(data) {
+  const badge = powerBadge(data.latest && { ...data.latest, name: data.machine }, data.trend, data.machines);
+  alertMachine = badge ? badge.machine : null;
+  setTabBadge('power', badge);
+}
+
 function renderMachines(data) {
   const box = document.getElementById('powerMachines');
   const machines = orderMachines(data.machines);
   box.hidden = machines.length < 2;
   box.innerHTML = machines.map(m => {
     const fill = machineButtonText(m);
-    return `<button class="range-btn${m.name === data.machine ? ' active' : ''}"
-    data-action="power-machine" data-machine="${escapeHtml(m.name)}">${escapeHtml(machineLabel(m.name))}${
+    const classes = ['range-btn'];
+    if (m.name === data.machine) classes.push('active');
+    if (m.name === alertMachine) classes.push('alert');
+    return `<button class="${classes.join(' ')}"
+    data-action="power-machine" data-machine="${escapeHtml(m.name)}"${
+      m.name === alertMachine ? ' title="What the Power tab\'s red dot is about"' : ''}>${escapeHtml(machineLabel(m.name))}${
       fill ? ` <span class="machine-fill">${escapeHtml(fill)}</span>` : ''}</button>`;
   }).join('');
 }
@@ -229,26 +245,51 @@ function buildPowerTrendHtml(latest) {
 // to or drew from the network over the past hour, from its own averages
 // (EU/t), and when drawing, the most its threshold can refill - one
 // threshold's worth per 5-minute rebalance.
-export function wirelessLscText(latest) {
+// As parts, [{text, tone}]: the amount is 'up' (green) when it sends,
+// 'down' (red) when it draws, as the arrow beside it.
+export function wirelessLscParts(latest) {
   const refill = `${formatEU(latest.wireless_threshold / 300)} EU/s`;
-  if (latest.avg_eu_in_1h == null || latest.avg_eu_out_1h == null) return `Refills up to ${refill}`;
+  if (latest.avg_eu_in_1h == null || latest.avg_eu_out_1h == null) return [{ text: `Refills up to ${refill}` }];
   const net = (latest.avg_eu_in_1h - latest.avg_eu_out_1h) * 20;
-  if (net >= 0) return `Sending ${formatEU(net)} EU/s to the wireless network over the past hour`;
-  return `Drawing ${formatEU(-net)} EU/s from the wireless network over the past hour \u00b7 refills up to ${refill}`;
+  if (net >= 0) {
+    return [{ text: 'Sending ' }, { text: `${formatEU(net)} EU/s`, tone: 'up' },
+      { text: ' to the wireless network over the past hour' }];
+  }
+  return [{ text: 'Drawing ' }, { text: `${formatEU(-net)} EU/s`, tone: 'down' },
+    { text: ` from the wireless network over the past hour \u00b7 refills up to ${refill}` }];
+}
+
+export function wirelessLscText(latest) {
+  return partsText(wirelessLscParts(latest));
+}
+
+function partsText(parts) {
+  return parts.map(p => p.text).join('');
 }
 
 // "Full in 3h 5m · +1.20G EU/h over the past hour", from the server's
 // fit to the last hour of readings (gcm/rates.py) - steadier than the
 // 5s in/out arrow, which follows every machine switching on and off.
-export function powerEtaText(trend) {
-  if (!trend) return '';
+// As parts, [{text, tone}]: only the rate is coloured, by its sign. The
+// fit is over an hour, steady enough for a colour to mean something;
+// "Empty in" stays plain, the tab's red dot being the warning.
+export function powerEtaParts(trend) {
+  if (!trend) return [];
   const rate = formatRate(trend.per_second, ' EU');
-  if (!rate) return '';
-  const parts = [];
-  if (trend.seconds_to_full != null) parts.push(`Full in ${formatDuration(trend.seconds_to_full)}`);
-  if (trend.seconds_to_empty != null) parts.push(`Empty in ${formatDuration(trend.seconds_to_empty)}`);
-  parts.push(`${rate} over the past hour`);
-  return parts.join(' \u00b7 ');
+  if (!rate) return [];
+  const lead = [];
+  if (trend.seconds_to_full != null) lead.push(`Full in ${formatDuration(trend.seconds_to_full)}`);
+  if (trend.seconds_to_empty != null) lead.push(`Empty in ${formatDuration(trend.seconds_to_empty)}`);
+  const tone = trend.per_second > 0 ? 'up' : trend.per_second < 0 ? 'down' : undefined;
+  return [
+    ...(lead.length ? [{ text: lead.join(' \u00b7 ') + ' \u00b7 ' }] : []),
+    { text: rate, tone },
+    { text: ' over the past hour' },
+  ];
+}
+
+export function powerEtaText(trend) {
+  return partsText(powerEtaParts(trend));
 }
 
 // Off the Power tab too, for its tab badge: the last hour is enough
@@ -257,16 +298,17 @@ export async function fetchPowerBadge() {
   try {
     const res = await fetch('/api/power?range=hour');
     const data = await res.json();
-    setTabBadge('power', powerBadge(data.latest, data.trend, data.machines));
+    setPowerBadge(data);
     setPowerTabFill(data.machines);
   } catch (e) { /* keep the last badge */ }
 }
 
 function renderPower(data) {
   const points = data.points || [];
+  // Before the buttons, which tint the machine the badge is about.
+  if (powerMachine == null) setPowerBadge(data);
   renderMachines(data);
   setPowerTabFill(data.machines);
-  if (powerMachine == null) setTabBadge('power', powerBadge(data.latest, data.trend, data.machines));
   const empty = document.getElementById('powerEmpty');
   const chartWrap = document.getElementById('powerChartWrap');
   const canvas = document.getElementById('powerChart');
@@ -291,7 +333,14 @@ function renderPower(data) {
     // An LSC in wireless mode is refilled every 5 minutes: an hour's
     // drift between refills says nothing about when it runs out.
     // wirelessLscText says what it trades with the network instead.
-    eta.textContent = threshold > 0 ? wirelessLscText(data.latest) : powerEtaText(data.trend);
+    const parts = threshold > 0 ? wirelessLscParts(data.latest) : powerEtaParts(data.trend);
+    eta.append(...parts.map(part => {
+      if (!part.tone) return document.createTextNode(part.text);
+      const span = document.createElement('span');
+      span.className = part.tone === 'up' ? 'power-trend-up' : 'power-trend-down';
+      span.textContent = part.text;
+      return span;
+    }));
     // Always there, a line high even when empty, so switching machines
     // doesn't move the chart up and down.
     document.getElementById('powerCurrent').append(eta);
@@ -323,6 +372,11 @@ function renderPower(data) {
     x: p.t * 1000, y: byThreshold ? (p.wireless_threshold > 0 ? p.wireless_threshold : null) : p.capacity,
   }));
   const noCapacity = !byThreshold && points.every(p => !(p.capacity > 0));
+  // An LSC in wireless mode spends its time just above its threshold
+  // (6.00P to 6.37P, say), so the axis would start right on the threshold
+  // and hide its line in the bottom edge: leave some room around the data.
+  // Not for a capacity, where room below would mean negative EU.
+  const yGrace = byThreshold ? '10%' : 0;
 
   const nowMs = Date.now();
   const rangeSeconds = CHART_RANGE_SECONDS_JS[data.range];
@@ -340,6 +394,7 @@ function renderPower(data) {
     powerChart.data.datasets[1].data = capacityData;
     powerChart.data.datasets[1].label = sizeLabel;
     powerChart.data.datasets[1].hidden = noCapacity;
+    powerChart.options.scales.y.grace = yGrace;
     powerChart.options.scales.x.min = axisMin;
     powerChart.options.scales.x.max = axisMax;
     powerChart.update('none');
@@ -365,12 +420,12 @@ function renderPower(data) {
         {
           label: sizeLabel,
           data: capacityData,
-          borderColor: 'rgba(140,140,140,0.5)',
+          borderColor: colors.muted,
           borderDash: [4, 4],
           hidden: noCapacity,
           fill: false,
           pointRadius: 0,
-          borderWidth: 1,
+          borderWidth: 1.5,
         },
       ],
     },
@@ -418,7 +473,11 @@ function renderPower(data) {
           ticks: chartXTicks(colors),
           grid: { color: 'rgba(128,128,128,0.1)' },
         },
-        y: { ticks: { color: colors.muted, callback: (v) => formatEU(v) }, grid: { color: 'rgba(128,128,128,0.1)' } },
+        y: {
+          grace: yGrace,
+          ticks: { color: colors.muted, callback: (v) => formatEU(v) },
+          grid: { color: 'rgba(128,128,128,0.1)' },
+        },
       },
     },
   });

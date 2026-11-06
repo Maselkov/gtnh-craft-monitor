@@ -1277,7 +1277,8 @@ async function main() {
     await waitFor('power tab', `visible($('#powerTab')) && location.pathname === '/power'`);
     await waitFor('reading shown', `$('#powerCurrent').textContent.includes('EU')`);
     // +200k EU over 30 minutes leaves 700k to go: 1h 45m.
-    await waitFor('eta shown', `$('#powerEta')?.textContent === 'Full in 1h 45m \u00b7 +400.0k EU/h over the past hour'`);
+    await waitFor('eta shown', `$('#powerEta')?.textContent === 'Full in 1h 45m \u00b7 +400.0k EU/h over the past hour'
+      && $('#powerEta .power-trend-up')?.textContent === '+400.0k EU/h'`);
     await waitFor('one machine: no machine buttons', `$('#powerMachines').hidden`);
     await waitFor('fill on the tab button', `$('#tabBtnPower .tab-fill')?.textContent === '30%'`);
     await game(base, '/api/power', { stored: 250, capacity: 1000, machine: 'Batteries' });
@@ -1322,6 +1323,9 @@ async function main() {
       && !Chart.getChart($('#powerChart')).data.datasets[1].hidden
       && $('#powerEta').textContent
         === 'Drawing 1.00k EU/s from the wireless network over the past hour \u00b7 refills up to 20.00T EU/s'`);
+    // Above its threshold the whole time, its axis still starts below the
+    // threshold line, rather than on it, where the line would be hidden.
+    await waitFor('threshold line inside the chart', `Chart.getChart($('#powerChart')).scales.y.min < 6e15`);
     // Its averages are EU/t: 60 EU/t is 1.2k EU/s.
     await waitFor('arrow in EU/s', `$('#powerCurrent .power-trend').textContent.includes('1.20k EU/s')`);
     await evaluate(`window.lscChartTop = $('#powerChartWrap').getBoundingClientRect().top`);
@@ -1335,12 +1339,22 @@ async function main() {
     await click(`$('#powerMachines [data-machine=""]')`);
     await waitFor('main again', `location.pathname === '/power' && location.search === '?machine='
       && $('#powerMachines [data-machine=""]').classList.contains('active') && $('#powerEta').textContent !== ''`);
+    // An LSC drained under its threshold: the red dot, and its button in red.
+    await game(base, '/api/power', {
+      stored: 3e14, capacity: 9.2e18, machine: 'LSC', wireless_mode: true, capacitors: { UEV: 1 },
+    });
     // With no machine picked, the wireless network is the default.
     await cdp.send('Page.navigate', { url: base + '/power' });
     await waitFor('reloaded', `document.readyState === 'complete' && !window.byText`);
     await evaluate(PAGE_LIB);
     await waitFor('wireless by default', `$('#powerMachines [data-machine="Wireless"]')?.classList.contains('active')
       && $('#powerCurrent .big')?.textContent === '2.00E EU'`);
+    await waitFor('drained lsc in red', `$('#powerMachines [data-machine="LSC"]').classList.contains('alert')
+      && !$('#powerMachines [data-machine="Wireless"]').classList.contains('alert')
+      && $('#tabBtnPower .tab-badge.alert')?.getAttribute('aria-label') === 'LSC under 10% of its wireless threshold'`);
+    await game(base, '/api/power', {
+      stored: 6.3e15, capacity: 9.2e18, machine: 'LSC', wireless_mode: true, capacitors: { UEV: 1 },
+    });
     // The chart is in the theme's accent, and redrawn in the new one when the theme changes.
     const line = `Chart.getChart($('#powerChart')).data.datasets[0].borderColor`;
     const accent = `getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()`;

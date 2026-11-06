@@ -63,3 +63,13 @@ test('powerBadge measures an LSC in wireless mode by its threshold', () => {
   // A reading that's gone stale doesn't count.
   assert.equal(powerBadge(wireless, null, [lsc(3e14, now - 600)], now), null);
 });
+
+test('powerBadge says which machine it is about, for its button', () => {
+  const now = 10000;
+  const wireless = { name: 'Wireless', stored: 6.5e16, capacity: 0 };
+  assert.equal(powerBadge(wireless, { seconds_to_empty: 3600 }, [], now).machine, 'Wireless');
+  const lsc = { name: 'LSC', t: now, stored: 3e14, capacity: 9.2e18, wireless_threshold: 6e15 };
+  assert.equal(powerBadge(wireless, null, [lsc], now).machine, 'LSC');
+  const main = { name: '', stored: 5, capacity: 100 };
+  assert.equal(powerBadge(main, null, [], now).machine, '');
+});

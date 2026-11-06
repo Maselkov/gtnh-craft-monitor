@@ -272,7 +272,12 @@ stay fast. Readings are kept in `data/power.db`.
 Above the chart, an arrow shows the machine's net EU/s over the last 5
 seconds, from the LSC's own averages (hover it for input and output separately), and a line gives the
 rate over the past hour with the time until the machine is full or empty
-at that rate. The estimate needs at least 10 minutes of readings.
+at that rate. The estimate needs at least 10 minutes of readings. The
+arrow and the hour's rate are green while the machine fills and red while
+it drains.
+
+When the tab's red dot is on, the button of the machine it's about is red
+too.
 
 With several machines (`MACHINES` in
 [power_monitor.lua's settings](in-game.md#power_monitorlua)), buttons above
