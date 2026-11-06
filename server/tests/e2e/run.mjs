@@ -506,6 +506,8 @@ async function main() {
     await waitFor('W01 card', `card('W01')?.querySelector('.craft-title').textContent.includes('Iron Ingot')`);
     await waitFor('W02 in idle group', `$('details.idle-group') && card('W02')`);
     await waitFor('tab badge counts the busy one', `$('#tabBtnCrafts .tab-badge')?.textContent === '1'`);
+    // Busy crafts don't count in the title: nothing to do about them.
+    await waitFor('title names the tab', `document.title === 'Crafts · GTNH Monitor'`);
   });
 
   step('a CPU without a Crafting Monitor: "Starting job…" at first, then a hint', async () => {
@@ -790,6 +792,7 @@ async function main() {
     await sleep(3500);  // the crafts tab re-renders every 3s
     await waitFor('still open after re-render', `visible($('#ingredientsModal')) && $$('#ingredientsGrid .ingredient-cell').length === 2`);
     await waitFor('the same progress bar', `window.ingBar && $('#ingredientsProgress .progress-fill') === window.ingBar`);
+    await waitFor('title shows its progress', `document.title === '40% Iron Ingot · GTNH Monitor'`);
     // The filter box keeps what it matches through the next refresh.
     await evaluate(`typeInto('#ingredientsFilter', 'ore'), true`);
     await waitFor('filtered to the ore', `$$('#ingredientsGrid .ingredient-cell').length === 1
@@ -825,9 +828,11 @@ async function main() {
     await waitFor('item over the dialog, still on crafts', `visible($('#itemHistoryModal')) && $('#itemHistoryName').textContent === 'Iron Ore'
       && visible($('#ingredientsModal')) && visible($('#craftsTab')) && $('#tabBtnCrafts').classList.contains('active')
       && location.pathname.startsWith('/network/item/')`);
+    await waitFor('title names the item', `document.title === 'Iron Ore · GTNH Monitor'`);
     await evaluate(`history.back(), true`);
     await waitFor('item closed, dialog still open', `!visible($('#itemHistoryModal')) && visible($('#ingredientsModal'))
       && visible($('#craftsTab')) && !location.pathname.startsWith('/network')`);
+    await waitFor('title names the craft again', `/^\\d+% Iron Ingot · GTNH Monitor$/.test(document.title)`);
     await evaluate(`history.back(), true`);
     await waitFor('dialog closed, still on crafts', `!visible($('#ingredientsModal')) && visible($('#craftsTab'))`);
     await evaluate(`history.forward(), true`);
@@ -839,7 +844,7 @@ async function main() {
     await waitFor('item closed by its button', `!visible($('#itemHistoryModal')) && visible($('#ingredientsModal'))
       && !location.pathname.startsWith('/network')`);
     await click(`$('#ingredientsModal [data-action="close-ingredients"]')`);
-    await waitFor('dialog closed by its button', `!visible($('#ingredientsModal')) && visible($('#craftsTab'))
+    await waitFor('dialog closed by its button', `document.title === 'Crafts · GTNH Monitor' && !visible($('#ingredientsModal')) && visible($('#craftsTab'))
       && (history.state === null || history.state.view !== 'ingredients')`);
     await postCrafts(base, true);
   });
@@ -1176,11 +1181,21 @@ async function main() {
   step('pin a CPU, get its completion, acknowledge it', async () => {
     await click(`card('W01').querySelector('.pin-btn')`);
     await waitFor('pinned', `byText('.group-heading', 'Pinned (1)') && card('W01').querySelector('.pin-btn.pinned')`);
+    // It ends with its details open: the title says so, and counts it.
+    await click(`card('W01').querySelector('.ingredients-btn')`);
+    await waitFor('details open', `visible($('#ingredientsModal')) && /^\\d+% Iron Ingot · /.test(document.title)`);
     await postCrafts(base, false);
+    await waitFor('title says it finished', `document.title === '(1) Finished · Iron Ingot · GTNH Monitor'`);
+    await evaluate(`pressKey('Escape'), true`);
+    await waitFor('details closed', `!visible($('#ingredientsModal'))`);
     await waitFor('completion shown', `$('.completed-card')`);
     await waitFor('tab badge: a green dot, nothing busy', `$('#tabBtnCrafts .tab-badge.dot.done')`);
+    await waitFor('title counts it, favicon has a green dot', `document.title === '(1) Crafts · GTNH Monitor'
+      && $$('link[rel="icon"]').every(l => l.getAttribute('href').endsWith('&dot=done'))`);
     await click(`$('.completed-card .ack-btn')`);
     await waitFor('completion acknowledged', `!$('.completed-card') && !$('#tabBtnCrafts .tab-badge')`);
+    await waitFor('title and favicon back to plain', `document.title === 'Crafts · GTNH Monitor'
+      && $$('link[rel="icon"]').every(l => !l.getAttribute('href').includes('dot='))`);
   });
 
   step('acknowledge all completions', async () => {
@@ -1862,6 +1877,8 @@ async function main() {
     await waitFor('overview lists it as low', `visible($('#stockRules'))
       && $('#stockRulesSummary').textContent === 'Stock rules (1) · 1 low'`);
     await waitFor('tab badge', `$('#tabBtnNetwork .tab-badge.alert')?.textContent === '1'`);
+    await waitFor('title and favicon say so', `document.title === '(1) Network · GTNH Monitor'
+      && $$('link[rel="icon"]').every(l => l.getAttribute('href').endsWith('&dot=alert'))`);
     await waitFor('cell marked', `$('#networkList .network-cell.stock-low .network-cell-stock-badge')`);
 
     // Two idle CPUs, one kept free: the next scan (Iron Ingot still at

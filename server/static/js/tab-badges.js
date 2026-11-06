@@ -2,6 +2,8 @@
 // from whichever tab is open: active crafts (and finished ones not yet
 // acknowledged), low stock rules, power running out.
 
+import { notePageBadge } from './page-title.js';
+
 // Power runs out within this long, or is under POWER_LOW_FRACTION full.
 const POWER_SOON_SECONDS = 3600;
 const POWER_LOW_FRACTION = 0.1;
@@ -17,8 +19,10 @@ export function machineLabel(name) {
   return name || 'Main';
 }
 
-// A badge is {count, tone, label}, or null for none. count may be
-// null for a plain dot; tone is '' (neutral), 'done' or 'alert'.
+// A badge is {count, tone, label, attention}, or null for none. count
+// may be null for a plain dot; tone is '' (neutral), 'done' or 'alert'.
+// attention is how many things it's about that want the user: the page
+// title's count (pageTitle). Busy crafts don't: something nearly always is.
 export function craftsBadge(jobs, completed) {
   const busy = (jobs || []).filter(j => j.busy).length;
   const finished = (completed || []).length;
@@ -26,11 +30,11 @@ export function craftsBadge(jobs, completed) {
   const parts = [];
   if (busy) parts.push(`${busy} crafting`);
   if (finished) parts.push(`${finished} finished`);
-  return { count: busy || null, tone: finished ? 'done' : '', label: parts.join(', ') };
+  return { count: busy || null, tone: finished ? 'done' : '', label: parts.join(', '), attention: finished };
 }
 
 export function stockBadge(lowCount) {
-  return lowCount ? { count: lowCount, tone: 'alert', label: `${lowCount} low` } : null;
+  return lowCount ? { count: lowCount, tone: 'alert', label: `${lowCount} low`, attention: lowCount } : null;
 }
 
 // latest and trend are the tab's default machine's (latest.name its
@@ -39,7 +43,7 @@ export function stockBadge(lowCount) {
 // machine is the one it's about.
 export function powerBadge(latest, trend, machines = [], now = Date.now() / 1000) {
   if (!latest) return null;
-  const alert = (label, machine = latest.name) => ({ count: null, tone: 'alert', label, machine });
+  const alert = (label, machine = latest.name) => ({ count: null, tone: 'alert', label, machine, attention: 1 });
   const wireless = !(latest.capacity > 0);
   const soonSeconds = wireless ? WIRELESS_SOON_SECONDS : POWER_SOON_SECONDS;
   const refilled = latest.wireless_threshold > 0;  // by the network, every 5 minutes
@@ -70,6 +74,7 @@ const TAB_BUTTONS = { crafts: 'tabBtnCrafts', power: 'tabBtnPower', network: 'ta
 export function setTabBadge(tab, badge) {
   const button = document.getElementById(TAB_BUTTONS[tab]);
   let el = button.querySelector('.tab-badge');
+  notePageBadge(tab, badge);
   if (!badge) {
     if (el) el.remove();
     return;

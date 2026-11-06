@@ -10,6 +10,7 @@ import {
   toggleNetworkItemPin,
 } from './network.js';
 import { hideStockPanel, showStockPanel, stockThresholdsFor } from './stock.js';
+import { setPageView } from './page-title.js';
 import { ingredientsCpu } from './ingredients.js';
 import { activeTab, switchTab } from './tabs.js';
 import {
@@ -210,8 +211,9 @@ export function openItemHistory(it, pushUrl) {
     btn.classList.toggle('active', btn.dataset.range === 'day');
   });
 
-  document.getElementById('itemHistoryName').textContent =
-    nameText(it.name || '?') + (it.variant_name ? ' (' + nameText(it.variant_name) + ')' : '');
+  const itemName = nameText(it.name || '?') + (it.variant_name ? ' (' + nameText(it.variant_name) + ')' : '');
+  document.getElementById('itemHistoryName').textContent = itemName;
+  setPageView('item', itemName);
   const iconEl = document.getElementById('itemHistoryIcon');
   if (it.icon) {
     iconEl.src = iconUrl(it.icon);
@@ -258,6 +260,7 @@ export function closeItemHistory() {
 
 export function hideItemHistory() {
   document.getElementById('itemHistoryModal').style.display = 'none';
+  setPageView('item', '');
   itemHistoryTarget = null;
   itemHistoryData = null;
   hideStockPanel();

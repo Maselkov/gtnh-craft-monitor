@@ -11,6 +11,7 @@ import { bindCellTooltip, hideTooltip, showTooltip, tooltipVisible } from './too
 import { nameHtml, nameText } from './description.js';
 import { itemMatchesSearch, parseSearchQuery } from './search.js';
 import { showToast } from './craft-actions.js';
+import { craftView, setPageView } from './page-title.js';
 import {
   bindFilterInput, copyText, delegateActions, escapeHtml, formatQty, iconClass, iconUrl, jobPath, onBackdropClick,
   updateHtml,
@@ -20,6 +21,7 @@ let openCpu = null;       // CPU name the modal is showing, null when closed
 let shownItems = new Map(); // item key -> merged item, from the last render
 let hoveredKey = null;    // item key the tooltip was last shown for
 let lastJob = null;       // the job last drawn, redrawn as the filter changes
+let shownTitle = '';     // the page title's name for it (page-title.js's craftView)
 let afterLinkedClose = () => {};
 // Grid (the game's own screen) or tree (job-tree.js), per viewer.
 const VIEW_KEY = 'gtnhCraftMonitor.ingredientsView';
@@ -125,8 +127,10 @@ function renderHead(job) {
   const icon = job.final_output_icon
     ? `<img class="${iconClass('craft-icon', job.final_output_icon)}" src="${iconUrl(job.final_output_icon)}" alt="" loading="lazy" data-remove-on-error>`
     : '';
-  updateHtml(document.getElementById('ingredientsTitle'),
-    `${icon}<span>${escapeHtml(nameText(job.final_output || 'Crafting job'))}</span>`);
+  const title = nameText(job.final_output || 'Crafting job');
+  updateHtml(document.getElementById('ingredientsTitle'), `${icon}<span>${escapeHtml(title)}</span>`);
+  shownTitle = title;
+  setPageView('craft', craftView(title, job.progress_percent, false));
   document.getElementById('ingredientsCpu').textContent =
     `CPU ${job.name || '?'} · storage ${job.storage ?? '?'} · coprocessors ${job.coprocessors ?? '?'}`;
   const progress = document.getElementById('ingredientsProgress');
@@ -208,6 +212,8 @@ export function openIngredientsModal(cpuName, data, pushUrl) {
     document.getElementById(id).innerHTML = '';
   }
   document.getElementById('ingredientsCpu').textContent = `CPU ${cpuName}`;
+  shownTitle = `CPU ${cpuName}`;  // until its job is drawn
+  setPageView('craft', shownTitle);
   document.getElementById('ingredientsLinkBtn').hidden = true;  // until its job is drawn
   document.getElementById('ingredientsGrid').scrollTop = 0;
   document.getElementById('ingredientsModal').style.display = 'flex';
@@ -248,6 +254,7 @@ export function hideIngredientsModal() {
   lastJob = null;
   hideTooltip();
   document.getElementById('ingredientsModal').style.display = 'none';
+  setPageView('craft', '');
 }
 
 // Called after every crafts poll. Once the job is over (the CPU went
@@ -261,6 +268,7 @@ export function refreshIngredientsModal(data) {
   note.style.display = live ? 'none' : '';
   if (!live) {
     note.textContent = 'This CPU has finished - showing the last snapshot.';
+    setPageView('craft', craftView(shownTitle, null, true));
     return;
   }
   renderHead(job);

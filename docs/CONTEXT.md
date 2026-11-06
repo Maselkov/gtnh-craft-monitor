@@ -1735,6 +1735,11 @@ The icons use fixed colours: a favicon can't follow the page's theme.
 `ICON_COLOR` swaps the maze's blue for another colour (`gcm/app_icons.py`,
 from the same files, so a new icon needs nothing more), for a dev or
 test server's tab to stand out; `dev.py` sets it to red.
+The favicon also comes with a status dot (`?dot=done|alert`, `badged()`),
+which `static/js/page-title.js` swaps in while something wants attention;
+the page title counts the same things. It's a dot rather than a recoloured
+icon so the icon still says which server it is, and the server draws it,
+since the CSP's `img-src 'self'` would block a canvas-made `data:` favicon.
 The header has no logo; the mockups found it competed with the title.
 
 **Run-to-run differences.** Two exports of the same pack with the same
