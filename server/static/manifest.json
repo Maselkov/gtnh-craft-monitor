@@ -8,9 +8,22 @@
   "theme_color": "#0f1115",
   "icons": [
     {
-      "src": "/icons?key=appliedenergistics2%3Atile.BlockInterface%3A0&notification=1",
+      "src": "/static/icons/icon-192.png",
       "type": "image/png",
-      "sizes": "192x192"
+      "sizes": "192x192",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icons/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icons/maskable-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable"
     }
   ]
 }
