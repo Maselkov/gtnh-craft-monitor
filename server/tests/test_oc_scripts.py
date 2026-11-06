@@ -187,6 +187,29 @@ def test_lsc_in_wireless_mode_lands_with_its_threshold(game, client):
     assert lsc["wireless_threshold"] == 6e15
 
 
+def test_two_computers_with_unnamed_lscs_get_a_chart_each(game, flask_app, api_key, client):
+    # Each computer's LSC, unnamed; real component addresses are random
+    # UUIDs, the harness's count from 1 per computer, so they're given.
+    other = OcGame(flask_app.test_client(), api_key)
+    try:
+        for g, address, stored in ((game, "lsc-home", 4e9), (other, "lsc-nether", 7e9)):
+            g.lua(
+                f"""
+                gt.new(env, {{ address = {lua_string(address)}, stored = {stored}, capacity = 1e10,
+                  wireless_eu = '0' }})
+                env:start_service("power_monitor")
+                """
+            )
+        game.run(1)
+        other.run(1)
+        game.run(60)
+    finally:
+        other.close()
+    data = client.get("/api/power").get_json()
+    stored = {m["name"]: m["stored"] for m in data["machines"]}
+    assert stored == {"LSC 1": 4e9, "LSC 2": 7e9}
+
+
 def test_network_scan_lands(game, client):
     game.write_file("/home/item_catalog.txt", "testmod:a\ntestmod:b\n")
     game.lua(

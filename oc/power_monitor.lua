@@ -43,6 +43,10 @@
     Set MACHINES in config.lua's power_monitor table to a list of
     { address = ..., name = ... }; each is read and POSTed every poll
     with its name, and gets its own chart on the Power tab.
+    Each post also carries the machine's component address, so unnamed
+    machines on several computers get charts of their own ("LSC 1",
+    "LSC 2") rather than one mixed chart; an admin can rename any of
+    them on the Power tab.
 
   WIRELESS:
     A Lapotronic Supercapacitor's sensor information also carries the
@@ -351,7 +355,7 @@ local function json_string(s)
   end) .. '"'
 end
 
-local function post_reading(stored, capacity, trend, name)
+local function post_reading(stored, capacity, trend, name, address)
   -- Deliberately NOT sending a timestamp here. OpenComputers' os.time()
   -- is not a Unix timestamp - it's reimplemented to return in-game
   -- seconds since the world was created, on the game's own clock (which
@@ -372,6 +376,9 @@ local function post_reading(stored, capacity, trend, name)
   }
   if name then
     parts[#parts + 1] = '"machine":' .. json_string(name)
+  end
+  if address then
+    parts[#parts + 1] = '"address":' .. json_string(address)
   end
   -- Only included when actually present - trend fields are entirely
   -- optional server-side, so a storage structure that doesn't report
@@ -464,7 +471,7 @@ local function service_loop()
       if not read_err then
         local trend = read_power_trend(machine.proxy)
         wireless_eu = wireless_eu or trend.wireless_eu
-        post_ok, post_err = post_reading(stored, capacity, trend, machine.name)
+        post_ok, post_err = post_reading(stored, capacity, trend, machine.name, machine.proxy.address)
       end
       results[#results + 1] = {
         name = machine.name, stored = stored, capacity = capacity,

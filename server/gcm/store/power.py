@@ -1,6 +1,7 @@
 """power.db: stored-energy readings from power_monitor.lua."""
 
 import math
+import threading
 import time
 
 from gcm import db
@@ -159,6 +160,165 @@ def machines():
             (name, conn.execute("SELECT MAX(ts) FROM power_readings WHERE machine = ?", (name,)).fetchone()[0])
             for name in names
         ]
+
+
+# ---------- Which machine a post is
+#
+# power_monitor.lua posts each machine under the name in its MACHINES,
+# or '' without, plus (from 2026-11) the gt_machine component's address.
+# power_machines maps those to the name the readings are stored under:
+# two computers each posting an unnamed LSC used to mix into one chart.
+# Readings are stored under a machine's current name, so a rename moves
+# them, and everything keyed on the name (URLs, health, the MCP tool,
+# link previews) follows with no mapping of its own.
+
+# Posts from several scripts at once mustn't both claim '' or a number.
+_machines_lock = threading.Lock()
+
+NUMBERED_KINDS = ("LSC", "Storage")
+
+
+class NameInUse(ValueError):
+    pass
+
+
+class UnknownMachine(LookupError):
+    pass
+
+
+def _name_in_use(conn, name):
+    return bool(
+        conn.execute("SELECT 1 FROM power_machines WHERE name = ?", (name,)).fetchone()
+        or conn.execute("SELECT 1 FROM power_readings WHERE machine = ? LIMIT 1", (name,)).fetchone()
+    )
+
+
+def _move(conn, old, new):
+    """Renames a machine in the readings and the table, in conn's
+    transaction."""
+    conn.execute("UPDATE power_readings SET machine = ? WHERE machine = ?", (new, old))
+    conn.execute("UPDATE power_machines SET name = ? WHERE name = ?", (new, old))
+
+
+def _next_number_name(conn, kind, start=1):
+    # From 1: the first unnamed machine, renamed "LSC 1" just before, has
+    # it when it's the same kind; a first LSC after two Storage ones is
+    # "LSC 1", not "LSC 3".
+    n = start
+    while _name_in_use(conn, f"{kind} {n}"):
+        n += 1
+    return f"{kind} {n}"
+
+
+def resolve(reported, address, is_lsc):
+    """(name, renamed): the name a post's reading is stored under, and
+    [(old, new)] machines this renamed (for the caller to move what it
+    keeps by name).
+
+    reported: the name the script posted ('' without); address: its
+    gt_machine's component address, None from older scripts; is_lsc:
+    the post carried an LSC's wireless_mode.
+
+    - A posted name is used as it is, or as an admin renamed it. One
+      newly set in MACHINES for a machine already numbered takes over
+      that machine's history if the name is free.
+    - Unnamed: the first address keeps '' (and the history from before
+      addresses were sent); each further one gets a number ("LSC 2"),
+      and '' then becomes "LSC 1". Without an address, as before: the
+      first unnamed machine's name."""
+    kind = "LSC" if is_lsc else "Storage"
+    with _machines_lock, db.transaction(db.power_db) as conn:
+        by_address = (
+            conn.execute("SELECT name, reported FROM power_machines WHERE address = ?", (address,)).fetchone()
+            if address else None
+        )
+        if reported:
+            row = conn.execute(
+                "SELECT name, address, reported FROM power_machines WHERE reported = ?", (reported,)
+            ).fetchone()
+            if not row:
+                # A machine an admin gave this name: it's this one only if
+                # it has no address yet or the same one. Another machine's
+                # name isn't taken over - this one is numbered ("Batteries 2").
+                named = conn.execute(
+                    "SELECT name, address, reported FROM power_machines WHERE name = ?", (reported,)
+                ).fetchone()
+                if named and address and named[1] not in (None, address) and not by_address:
+                    name = _next_number_name(conn, reported, start=2)
+                    conn.execute(
+                        "INSERT INTO power_machines (name, address, reported, kind, first_unnamed)"
+                        " VALUES (?, ?, ?, ?, 0)",
+                        (name, address, reported, kind),
+                    )
+                    return name, []
+                row = named
+            if row:
+                if address and row[1] is None and not by_address:
+                    conn.execute("UPDATE power_machines SET address = ? WHERE name = ?", (address, row[0]))
+                if row[2] != reported:
+                    conn.execute("UPDATE power_machines SET reported = ? WHERE name = ?", (reported, row[0]))
+                return row[0], []
+            if by_address and by_address[1] == "" and not _name_in_use(conn, reported):
+                # Numbered, and now named in MACHINES: it keeps its history.
+                _move(conn, by_address[0], reported)
+                conn.execute("UPDATE power_machines SET reported = ? WHERE name = ?", (reported, reported))
+                return reported, [(by_address[0], reported)]
+            if by_address:
+                return by_address[0], []
+            conn.execute(
+                "INSERT INTO power_machines (name, address, reported, kind, first_unnamed) VALUES (?, ?, ?, ?, 0)",
+                (reported, address, reported, kind),
+            )
+            return reported, []
+
+        if by_address:
+            return by_address[0], []
+        first = conn.execute(
+            "SELECT name, kind FROM power_machines WHERE first_unnamed = 1"
+        ).fetchone()
+        if not address:
+            return (first[0] if first else ""), []
+        if not first:
+            conn.execute(
+                "INSERT INTO power_machines (name, address, reported, kind, first_unnamed) VALUES ('', ?, '', ?, 1)",
+                (address, kind),
+            )
+            return "", []
+        renamed = []
+        if first[0] == "":
+            one = f"{first[1]} 1"
+            if not _name_in_use(conn, one):
+                _move(conn, "", one)
+                renamed.append(("", one))
+        name = _next_number_name(conn, kind)
+        conn.execute(
+            "INSERT INTO power_machines (name, address, reported, kind, first_unnamed) VALUES (?, ?, '', ?, 0)",
+            (name, address, kind),
+        )
+        return name, renamed
+
+
+def rename(old, new):
+    """Renames machine `old` to `new`, keeping its history. A machine
+    with no row yet (posted by an older script, without an address)
+    gets one, so its posts under `old` keep landing under `new`.
+    Raises UnknownMachine, or NameInUse."""
+    with _machines_lock, db.transaction(db.power_db) as conn:
+        if not conn.execute("SELECT 1 FROM power_readings WHERE machine = ? LIMIT 1", (old,)).fetchone():
+            raise UnknownMachine(old)
+        if _name_in_use(conn, new):
+            raise NameInUse(new)
+        if not conn.execute("SELECT 1 FROM power_machines WHERE name = ?", (old,)).fetchone():
+            # The unnamed one becomes the first unnamed machine, so older
+            # scripts' unnamed posts follow it - unless one already is.
+            first = old == "" and not conn.execute(
+                "SELECT 1 FROM power_machines WHERE first_unnamed = 1"
+            ).fetchone()
+            conn.execute(
+                "INSERT INTO power_machines (name, address, reported, kind, first_unnamed) VALUES (?, NULL, ?, NULL, ?)",
+                (old, old, 1 if first else 0),
+            )
+        _move(conn, old, new)
 
 
 # How recent the wireless network's last reading must be for it to be

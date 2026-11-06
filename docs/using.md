@@ -286,7 +286,20 @@ the readout switch between them, and the page's URL
 In Discord, a link to the tab previews the latest reading and the day's
 chart.
 The unnamed machine shows as **Main**, and the tab badge follows it
-(the wireless network instead, while it reports).
+(the wireless network instead, while it reports). The buttons put the
+wireless network first, then the machines by size, largest first (an LSC
+in wireless mode by its threshold).
+
+Unnamed machines on different computers each get a chart of their own.
+When a second one reports, **Main** becomes **LSC 1** (keeping its
+history) and the new one **LSC 2**; a storage machine that isn't an LSC is
+numbered **Storage 1**, **Storage 2**. A machine keeps its number for good:
+a bigger one later only changes the order of the buttons.
+
+Admins can rename the machine shown with **Rename…** beside the buttons.
+Its history keeps the new name, and so do its script's readings from then
+on; nothing needs changing in the game. A link to its old name opens the
+default machine instead.
 
 With an LSC reporting and EU in your wireless network, there's also a
 **Wireless** entry, first among the buttons. The network has no capacity, so

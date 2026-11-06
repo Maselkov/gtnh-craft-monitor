@@ -743,7 +743,30 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
 }
 .power-machines {
   flex-wrap: wrap;
+}
+.power-machine-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px;
+}
+/* Its room only when something in it shows: with one machine and no
+   rename button (not an admin) it takes none, as before the button. */
+.power-machine-row:has(> .power-machines:not([hidden])),
+body.is-admin .power-machine-row:has(> .power-rename-btn:not([hidden])) {
   margin: 4px 0 12px;
+}
+/* After the machine buttons, set apart from them: it acts on the one shown. */
+.power-rename-btn {
+  margin-left: auto;
+}
+.power-rename-btn[hidden] {
+  display: none;
+}
+.power-rename-input {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 8px 0;
 }
 .power-head {
   display: flex;

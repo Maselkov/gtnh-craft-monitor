@@ -13,13 +13,13 @@ end
 test("posts stored, capacity and the sensor's trend fields", function()
   local env = t.env()
   gt.new(env, {
-    stored = 4e9, capacity = 1e10,
+    address = "lsc-1", stored = 4e9, capacity = 1e10,
     trend = { avg_eu_in_5s = 1200, avg_eu_out_5s = 800, avg_eu_in_1h = 1100, time_to_empty_minutes = 10.06 },
   })
   env:start_service("power_monitor")
   env:run({ seconds = 1 })
   t.eq(readings(env), { {
-    stored = 4000000000, capacity = 10000000000, poll_seconds = 60,
+    stored = 4000000000, capacity = 10000000000, poll_seconds = 60, address = "lsc-1",
     avg_eu_in_5s = 1200, avg_eu_out_5s = 800, avg_eu_in_1h = 1100, time_to_empty_minutes = 10.06,
   } })
 end)
@@ -87,6 +87,17 @@ test("the wireless network is posted once, under WIRELESS_NAME, with several LSC
   local r = readings(env)
   t.eq(#r, 3)
   t.eq(r[3], { machine = "Team grid", stored = 7000, capacity = 0, poll_seconds = 60 })
+end)
+
+test("posts each machine's component address; the wireless network has none", function()
+  local env = t.env()
+  gt.new(env, { address = "lsc-addr-1", wireless_eu = "5000" })
+  env:start_service("power_monitor")
+  env:run({ seconds = 1 })
+  local r = readings(env)
+  t.eq(r[1].address, "lsc-addr-1")
+  t.eq(r[2].machine, "Wireless")
+  t.eq(r[2].address, nil)
 end)
 
 test("posts the LSC's wireless mode and capacitors, for its wireless threshold", function()
@@ -169,12 +180,12 @@ end)
 
 test("falls back to the sensor text when stored > capacity", function()
   local env = t.env()
-  local machine = gt.new(env, { stored = 5, capacity = 10 })
+  local machine = gt.new(env, { address = "lsc-1", stored = 5, capacity = 10 })
   machine.sensor = { "Operational Data:", "EU Stored: 7 EU", "EU Capacity: 10 EU" }
   machine.stored = 50
   env:start_service("power_monitor")
   env:run({ seconds = 1 })
-  t.eq(readings(env)[1], { stored = 7, capacity = 10, poll_seconds = 60 })
+  t.eq(readings(env)[1], { stored = 7, capacity = 10, poll_seconds = 60, address = "lsc-1" })
 end)
 
 test("sends nothing when no reading can be had", function()

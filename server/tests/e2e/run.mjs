@@ -1369,6 +1369,45 @@ async function main() {
     await waitFor('menu closed', `!visible($('#settingsMenu'))`);
   });
 
+  step('power: unnamed machines on two computers get a number each; an admin renames one', async () => {
+    // The first address keeps the unnamed history; a second one numbers both.
+    await game(base, '/api/power', { stored: 6e9, capacity: 1e10, address: 'lsc-a', wireless_mode: false });
+    await game(base, '/api/power', { stored: 9e9, capacity: 2e10, address: 'lsc-b', wireless_mode: false });
+    await click(`$('#tabBtnPower')`);
+    await click(`$('#powerTab [data-range="week"]')`);
+    // Wireless, then by size: the wireless-mode LSC by its 6P threshold, then 20G, 10G, 1k.
+    await waitFor('numbered, by size', `$$('#powerMachines .range-btn').map((b) => b.dataset.machine).join()
+      === 'Wireless,LSC,LSC 2,LSC 1,Batteries'`);
+    await click(`$('#powerMachines [data-machine="LSC 2"]')`);
+    await waitFor('lsc 2 shown', `location.search === '?machine=LSC%202' && visible($('#powerRenameBtn'))
+      && $('#powerMachines [data-machine="LSC 2"]').classList.contains('active')
+      && $('#powerCurrent .big').textContent === '9.00G EU'`);
+    await click(`$('#powerRenameBtn')`);
+    await waitFor('rename dialog', `visible($('#powerRenameModal')) && $('#powerRenameInput').value === 'LSC 2'`);
+    // Unchanged, it just closes.
+    await click(`$('#powerRenameSubmitBtn')`);
+    await waitFor('unchanged closes', `!visible($('#powerRenameModal')) && location.search === '?machine=LSC%202'`);
+    await click(`$('#powerRenameBtn')`);
+    await waitFor('rename dialog again', `visible($('#powerRenameModal'))`);
+    // A name in use is refused in the dialog.
+    await evaluate(`typeInto('#powerRenameInput', 'LSC 1')`);
+    await click(`$('#powerRenameSubmitBtn')`);
+    await waitFor('name in use', `visible($('#powerRenameError'))
+      && $('#powerRenameError').textContent === "There's already a machine named LSC 1."`);
+    await evaluate(`typeInto('#powerRenameInput', 'Nether LSC')`);
+    await click(`$('#powerRenameSubmitBtn')`);
+    await waitFor('renamed', `!visible($('#powerRenameModal')) && location.search === '?machine=Nether%20LSC'
+      && $('#powerMachines [data-machine="Nether LSC"]').classList.contains('active')
+      && !$('#powerMachines [data-machine="LSC 2"]')
+      && $('#powerCurrent .big').textContent === '9.00G EU'`);
+    // Its script's next reading, from the same address, lands under the new name.
+    await game(base, '/api/power', { stored: 8e9, capacity: 2e10, address: 'lsc-b', wireless_mode: false });
+    await click(`$('#powerTab [data-range="day"]')`);
+    await waitFor('later reading kept', `$('#powerCurrent .big').textContent === '8.00G EU'
+      && !$('#powerMachines [data-machine="LSC 2"]')
+      && Chart.getChart($('#powerChart')).data.datasets[0].data.length === 2`);
+  });
+
   step('a network_browser crash shows on the Network tab until a scan finishes', async () => {
     await game(base, '/api/network/crashed', { error: 'not enough memory', phase: 'Batch 30', free_memory: 2048 });
     await click(`$('#tabBtnCrafts')`);
@@ -2431,6 +2470,9 @@ async function main() {
       && !visible($('#settingsUser')) && !visible($('#notifToggle')) && !visible($('#signOutBtn'))
       && !visible($('#assistantBtn'))`);
     await evaluate(`pressKey('Escape'), true`);
+    // Only an admin renames machines.
+    await click(`$('#tabBtnPower')`);
+    await waitFor('no rename button', `visible($('#powerTab')) && $('#powerCurrent .big') && !visible($('#powerRenameBtn'))`);
     // Pinning and cancelling both need a user, so the cards drop them.
     await click(`$('#tabBtnCrafts')`);
     await waitFor('no pin or cancel buttons', `$$('#root .card').length > 0 && !$('#root .pin-btn') && !$('#root .cancel-btn')`);
