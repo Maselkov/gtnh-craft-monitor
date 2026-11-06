@@ -9,7 +9,7 @@
 import { AUTH_USER, closeSettingsMenu } from './auth.js';
 import { showToast } from './craft-actions.js';
 import {
-  closeNote, delegateActions, escapeHtml, formatDuration, formatQty, formatRelativeTime, noteClosed, onBackdropClick,
+  closeNote, copyText, delegateActions, escapeHtml, formatDuration, formatQty, formatRelativeTime, noteClosed, onBackdropClick,
 } from './util.js';
 
 const REFRESH_MS = 5000;
@@ -368,25 +368,6 @@ async function loadConnect() {
   const input = document.getElementById('connectServerUrl');
   if (!input.value) input.value = connectInfo.public_url || location.origin;
   renderConnect();
-}
-
-// navigator.clipboard only exists on HTTPS or localhost, and this page is
-// often opened over plain HTTP on a LAN; execCommand still works there.
-async function copyText(text) {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch (e) {
-    const field = document.createElement('textarea');
-    field.value = text;
-    field.style.position = 'fixed';
-    field.style.opacity = '0';
-    document.body.appendChild(field);
-    field.select();
-    const copied = document.execCommand('copy');
-    field.remove();
-    return copied;
-  }
 }
 
 async function copyConnect() {

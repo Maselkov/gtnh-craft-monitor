@@ -293,7 +293,8 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
   white-space: nowrap;
 }
 .badge.auto { background: color-mix(in srgb, var(--accent) 25%, transparent); color: var(--accent); }
-.pin-btn {
+/* .link-btn: copy a link to a running craft, beside the pin. */
+.pin-btn, .link-btn {
   flex-shrink: 0;
   background: none;
   border: 1px solid var(--border-strong);
@@ -317,6 +318,23 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
   background: color-mix(in srgb, var(--accent) 20%, transparent);
   border-color: var(--accent);
   color: var(--accent);
+}
+/* The linked craft's card (job-link.js). */
+.card.linked {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+/* What the note says, beside its icon, taking the row so the close
+   button stays at its end. */
+#jobLinkNoteText {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.job-link-note .item-history-link {
+  font-weight: 600;
 }
 .pin-btn:disabled {
   opacity: 0.3;

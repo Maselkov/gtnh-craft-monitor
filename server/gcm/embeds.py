@@ -91,6 +91,12 @@ def item(label, desc, icon_url, chart_url, page_url):
     return container(children)
 
 
+def job(label, desc_md, icon_url, page_url):
+    """One crafting job (gcm/job_links.py). desc_md is markdown already,
+    any game text in it escaped: it can carry Discord timestamps."""
+    return container([section(f"## {md_escape(label)}\n{desc_md}", icon_url), open_button(page_url)])
+
+
 def power(title, desc, chart_url, page_url):
     children = [text(f"## {md_escape(title)}\n{md_escape(desc)}")]
     if chart_url:

@@ -11,6 +11,7 @@ import {
   tryOpenItemFromUrl,
 } from './history.js';
 import { hideIngredientsModal, ingredientsCpu, openIngredientsModal } from './ingredients.js';
+import { clearJobLink, readJobLinkFromUrl } from './job-link.js';
 import { fetchNetwork, fetchNetworkPins, tickNetworkSourceLine } from './network.js';
 import { fetchPower, powerMachineFromUrl, powerPath, tickPowerSourceLine } from './power.js';
 import { fetchStockRules } from './stock.js';
@@ -52,6 +53,7 @@ export function switchTab(tab, pushUrl) {
   document.getElementById('networkTab').style.display = tab === 'network' ? '' : 'none';
 
   if (pushUrl) {
+    clearJobLink();  // a tab clicked: the link's URL is left behind
     history.pushState({ view: tab }, '', tabToPath(tab));
   }
 
@@ -107,6 +109,7 @@ function applyHistoryState(state) {
   const tab = state.tab || pathToTab(location.pathname);
   if (tab === 'power') powerMachineFromUrl();
   switchTab(tab, false);  // reacting to a nav that already happened - don't push another
+  readJobLinkFromUrl();
 
   if (state.cpu) {
     if (ingredientsCpu() !== state.cpu) openIngredientsModal(state.cpu, lastData, false);

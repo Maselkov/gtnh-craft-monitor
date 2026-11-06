@@ -2462,6 +2462,43 @@ async function main() {
     await waitFor('power tab', `visible($('#powerTab')) && $('#tabBtnPower').classList.contains('active')`);
   });
 
+  step('a link to a craft: copied from its card, opens its details while it runs, says how it went after', async () => {
+    const load = async (url) => {
+      await cdp.send('Page.navigate', { url });
+      await waitFor('reloaded', `document.readyState === 'complete' && !window.byText`);
+      await evaluate(PAGE_LIB);
+    };
+    await postCrafts(base, true);
+    await load(base + '/crafts');
+    await waitFor('link button', `card('W01')?.querySelector('[data-action="copy-job-link"]')`);
+    await evaluate(`navigator.clipboard.writeText = async (text) => { window.copied = text; }, true`);
+    await click(`card('W01').querySelector('[data-action="copy-job-link"]')`);
+    const link = await waitFor('copied', `window.copied`);
+    if (!/^http:\/\/127\.0\.0\.1:\d+\/crafts\?cpu=W01&job=\d+$/.test(link)) throw new Error('copied ' + link);
+    await waitFor('said so', `$$('.toast').some((t) => t.textContent === 'Link to this craft copied.')`);
+
+    await load(link);
+    await waitFor('its details open', `visible($('#ingredientsModal')) && $('#ingredientsCpu').textContent.startsWith('CPU W01 ')`);
+    await evaluate(`pressKey('Escape'), true`);
+    await waitFor('closed onto its card, outlined', `!visible($('#ingredientsModal')) && location.search.includes('job=')
+      && card('W01')?.classList.contains('linked') && $('#jobLinkNote').hidden`);
+    await postCrafts(base, false);
+    await waitFor('how it went', `!$('#jobLinkNote').hidden && $('#jobLinkNoteText').textContent.includes('Iron Ingot')
+      && $('#jobLinkNoteText').textContent.includes('on CPU W01') && !$('#root .card.linked')`);
+    await postCrafts(base, true);
+    await waitFor('the next job isn\'t the link\'s', `card('W01')?.querySelector('.progress-fill') && !$('#root .card.linked')`);
+    await click(`$('#jobLinkNote .note-dismiss')`);
+    await waitFor('dismissed', `$('#jobLinkNote').hidden && location.search === '' && location.pathname === '/crafts'`);
+
+    // On a CPU with no history: on W01, the first job the server saw was
+    // already running then, so it's taken as an earlier link's job.
+    await load(base + '/crafts?cpu=W09&job=1000');
+    await waitFor('a link to nothing says so', `!$('#jobLinkNote').hidden
+      && $('#jobLinkNoteText').textContent.includes("how it went wasn't recorded")`);
+    await click(`$('#tabBtnPower')`);
+    await waitFor('another tab leaves the link', `$('#jobLinkNote').hidden && location.pathname === '/power'`);
+  });
+
   step('a private server: signed out shows only a notice and fetches nothing; signing in shows it all', async () => {
     await evaluate(`typeInto('#accessTokenInput', ${JSON.stringify(adminToken)})`);
     await click(`$('#authBtn')`);

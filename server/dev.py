@@ -626,15 +626,18 @@ def backfill_history(days=7):
         it = BY_NAME[name]
         took = random.uniform(1800, 7200) if cpu == "M00" else random.uniform(5, 900)
         stopped = random.random() < 0.08
+        # Seen from its start, or first seen part way through.
+        seen_at = ended - took if random.random() >= 0.05 else ended - took / 2
         events.append((cpu, name, icons.resolve_icon(it["mod"], it["internal"], it["damage"], name),
                        "incomplete" if stopped else "finished", random.randint(5, 90) if stopped else 100,
-                       ended, None if random.random() < 0.05 else ended - took,
+                       ended, seen_at if seen_at == ended - took else None,
                        it["mod"], it["internal"], it["damage"],
-                       int(cpu != "M00" and random.random() < 0.25)))
+                       int(cpu != "M00" and random.random() < 0.25), seen_at))
     with db.transaction(db.app_db) as conn:
         conn.executemany(
             "INSERT INTO craft_events (cpu_name, item_label, item_icon, status, progress_at_end, occurred_at, "
-            "started_at, item_mod, item_internal, item_damage, auto) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", events
+            "started_at, item_mod, item_internal, item_damage, auto, first_seen_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", events
         )
 
     # Time jobs were held up at some of the dev patterns' machines, for

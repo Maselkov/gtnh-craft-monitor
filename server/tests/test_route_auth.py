@@ -10,6 +10,7 @@ VIEWER_ENDPOINTS = {
     "crafts.crafts_stats_get",  # totals over the same history
     "crafts.crafts_tree_get",  # the job tree: what the crafts list shows, arranged
     "crafts.crafts_steps_get",
+    "crafts.crafts_job_get",  # one of those jobs, or its history row, for a link to it
     "power.power_get",
     "stock.stock_rules_get",
     "power.power_chart_png",

@@ -7,7 +7,10 @@ from collections import Counter
 
 from flask import Blueprint, g, jsonify, request, Response
 
-from gcm import auth, bottlenecks, config, craft_stats, gamedata_check, icons, job_tree, patterns, planner, state, store, tracking
+from gcm import (
+    auth, bottlenecks, config, craft_stats, gamedata_check, icons, job_links, job_tree, patterns, planner, state, store,
+    tracking,
+)
 
 
 bp = Blueprint("crafts", __name__)
@@ -228,6 +231,24 @@ def crafts_steps_get(cpu):
         "stall_seconds": config.CRAFT_STALL_SECONDS,
         "now": time.time(),
     })
+
+
+@bp.route("/api/crafts/job", methods=["GET"])
+@auth.viewer_required
+def crafts_job_get():
+    """The job a link names (?cpu=&job=, see gcm/job_links.py): {state:
+    live|ending|ended|gone, cpu}, with started_at (the running job's, to
+    find its card) when live, and the history event when ended."""
+    named = job_links.parse(request.args)
+    if named is None:
+        return jsonify({"error": "cpu and job are required"}), 400
+    found = job_links.lookup(*named)
+    out = {"state": found["state"], "cpu": found["cpu"]}
+    if "job" in found:
+        out["started_at"] = found["job"]["started_at"]
+    if "event" in found:
+        out["event"] = found["event"]
+    return jsonify(out)
 
 
 # Most rows /api/crafts/history returns at once.

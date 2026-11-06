@@ -163,7 +163,7 @@ export function setupCraftHistoryLinks() {
   // links in the crafts container, the ingredients grid and the craft
   // history come and go with every poll's redraw, so per-element
   // listeners would need rebinding each time.
-  for (const id of ['root', 'ingredientsModal', 'craftHistory', 'craftStats']) {
+  for (const id of ['root', 'jobLinkNote', 'ingredientsModal', 'craftHistory', 'craftStats']) {
     const container = document.getElementById(id);
     container.addEventListener('click', (e) => {
       const link = e.target.closest('.item-history-link');
