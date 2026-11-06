@@ -1,5 +1,12 @@
-// NEI is only compiled against: every GTNH pack ships it, and the export
-// uses its item list and item renderer so the output matches what NEI shows.
+// Everything here is only compiled against: every GTNH pack ships these mods, and the export runs
+// without them (no structures.json then). NEI's item list and item renderer make the output match
+// what NEI shows. Structures.java builds multiblocks the way BlockRenderer6343's NEI preview does,
+// with StructureLib; GregTech itself is read by reflection, like Recipes.java, since its jar pulls
+// in half the pack. Versions are 2.9.0's.
 dependencies {
     compileOnly("com.github.GTNewHorizons:NotEnoughItems:2.8.130-GTNH:dev")
+    compileOnly("com.github.GTNewHorizons:StructureLib:1.4.47:dev") { transitive = false }
+    compileOnly("com.github.GTNewHorizons:BlockRenderer6343:1.4.25:dev") { transitive = false }
+    compileOnly("com.github.GTNewHorizons:GTNHLib:0.11.54:dev") { transitive = false }
+    compileOnly("it.unimi.dsi:fastutil:8.5.15")
 }

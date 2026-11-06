@@ -11,6 +11,9 @@ with the gcmiconexport mod added, and collects what the mod writes:
     ore_dict.json       the ore dictionary
     item_info.json      item tooltips and rarity, fluid details, mod names
     recipes.json.gz     GregTech's recipe maps and the machines for each
+    structures.json.gz  the blocks each GregTech multiblock is built from
+    layouts.json.gz     where those blocks go, for the page's 3D view,
+    layouts.png         and their textures
     export-report.json  counts and anything that failed to render
     data.json           the bundle manifest: GTNH version, counts, the
                         texture sets, and each file's size and SHA-256
@@ -58,7 +61,8 @@ MOD_JAR = Path(os.environ.get("GCM_MOD_JAR", "/opt/gcm/gcmiconexport.jar"))
 # What the mod writes; export.py adds data.json once they're all there.
 GAME_OUTPUTS = (
     "images.zip", "icons_lookup.json", "item_catalog.txt", "ore_dict.json",
-    "item_info.json", "recipes.json.gz", "export-report.json",
+    "item_info.json", "recipes.json.gz", "structures.json.gz",
+    "layouts.json.gz", "layouts.png", "export-report.json",
 )
 # icons_lookup.json's key -> image path tables. Its "bleed" table maps the
 # paths of icons drawn past the item box to how far, in 1/16ths of it.

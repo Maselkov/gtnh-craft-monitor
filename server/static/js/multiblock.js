@@ -1,0 +1,363 @@
+// Multiblock kits: every block a multiblock is built from, for the
+// coils, glass and size picked, with the network's stock, to request
+// the missing ones at once (gcm/multiblocks.py). Opened from an item
+// dialog of a controller, or the Network tab's Multiblocks button.
+//
+// Each row's Request box starts at what's missing and can be lowered by
+// hand: the kit counts every spot that takes a hatch or a casing as a
+// casing, and walls shared with another multiblock need fewer.
+
+import { AUTH_USER, isOperator } from './auth.js';
+import { closeCraftPlan, kitPlanOpen, openKitPlan } from './craft-plan.js';
+import { hideLayout, setupLayoutView, showLayout } from './multiblock-view.js';
+import { fetchCraftRequests, showToast } from './craft-actions.js';
+import { nameText } from './description.js';
+import { delegateActions, escapeHtml, formatQty, iconClass, iconUrl, onBackdropClick, updateHtml } from './util.js';
+
+let controllers = null;   // [{key, name, label}] once fetched, for the picker
+let openKey = null;       // the controller shown, null when closed
+let kit = null;           // its last fetched kit
+let tiers = {};           // channel -> tier picked
+let count = 1;
+let edits = new Map();    // row key -> request amount typed in
+let fetchSeq = 0;
+// Whether the crafting plan for the blocks to request is showing.
+let planWanted = false;
+// Whether the 3D view is open: it is unless this viewer closed it.
+const VIEW_KEY = 'gtnhCraftMonitor.kitViewClosed';
+
+function viewWanted() {
+  try { return localStorage.getItem(VIEW_KEY) !== '1'; } catch (e) { return true; }
+}
+
+function setViewWanted(on) {
+  try {
+    if (on) localStorage.removeItem(VIEW_KEY); else localStorage.setItem(VIEW_KEY, '1');
+  } catch (e) { /* per-viewer nicety only */ }
+}
+
+// The 3D view, open where it's wanted and the game data has a layout.
+function updateView() {
+  const btn = document.getElementById('kitViewBtn');
+  const has = !!(kit && kit.layout);
+  const open = has && viewWanted();
+  btn.hidden = !has;
+  btn.setAttribute('aria-pressed', String(open));
+  btn.classList.toggle('active', open);
+  document.getElementById('kitView').hidden = !open;
+  if (open) showLayout(kit.controller.key, kit.channels.reduce((t, c) => ({ ...t, [c.name]: c.tier }), {}));
+  else hideLayout();
+}
+
+function channelLabel(name) {
+  const words = String(name).replace(/_/g, ' ');
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+// The picker's entries. A few multiblocks share a name (GregTech's and
+// GT++'s Pyrolyse Oven): those are told apart by their id.
+async function loadControllers() {
+  if (controllers) return controllers;
+  let list;
+  try {
+    const res = await fetch('/api/multiblocks');
+    if (!res.ok) return [];  // signed out of a private server: try again later
+    list = (await res.json()).multiblocks || [];
+  } catch (e) {
+    return [];
+  }
+  const seen = new Map();
+  for (const c of list) seen.set(nameText(c.name), (seen.get(nameText(c.name)) || 0) + 1);
+  controllers = list.map(c => {
+    const name = nameText(c.name);
+    return { ...c, label: seen.get(name) > 1 ? `${name} (${c.key.split(':').pop()})` : name };
+  });
+  document.getElementById('kitPickerList').innerHTML = controllers
+    .map(c => `<option value="${escapeHtml(c.label)}"></option>`).join('');
+  return controllers;
+}
+
+function labelOf(key) {
+  const found = (controllers || []).find(c => c.key === key);
+  return found ? found.label : null;
+}
+
+// The Network tab's button, only where the game data has kits.
+export async function showKitButton() {
+  const list = await loadControllers();
+  document.getElementById('networkKitButton').hidden = list.length === 0;
+}
+
+// key: the controller's game data key (mod:internal:damage), or null to
+// pick one first.
+export function openKit(key) {
+  openKey = null;
+  kit = null;
+  tiers = {};
+  count = 1;
+  edits = new Map();
+  document.getElementById('kitPicker').value = '';
+  document.getElementById('kitCount').value = '1';
+  document.getElementById('kitControls').innerHTML = '';
+  document.getElementById('kitRows').innerHTML = '';
+  document.getElementById('kitError').hidden = true;
+  document.getElementById('kitRequestBtn').hidden = true;
+  document.getElementById('kitTitle').textContent = 'Multiblock kit';
+  document.getElementById('kitIcon').hidden = true;
+  document.getElementById('kitViewBtn').hidden = true;
+  document.getElementById('kitView').hidden = true;
+  hideLayout();
+  viewDrawn = null;
+  planWanted = false;
+  updatePlan();
+  document.getElementById('kitModal').style.display = 'flex';
+  loadControllers();
+  if (key) {
+    selectController(key);
+  } else {
+    document.getElementById('kitPicker').focus();
+  }
+}
+
+export function closeKit() {
+  document.getElementById('kitModal').style.display = 'none';
+  hideLayout();
+  viewDrawn = null;
+  planWanted = false;
+  if (kitPlanOpen()) closeCraftPlan();
+  openKey = null;
+  kit = null;
+}
+
+export function kitOpen() {
+  return document.getElementById('kitModal').style.display !== 'none';
+}
+
+function selectController(key) {
+  if (key === openKey) return;
+  openKey = key;
+  tiers = {};
+  edits = new Map();
+  fetchKit();
+}
+
+async function fetchKit() {
+  if (!openKey) return;
+  const seq = ++fetchSeq;
+  const params = new URLSearchParams({ key: openKey, count: String(count) });
+  for (const [name, tier] of Object.entries(tiers)) params.set('tier.' + name, String(tier));
+  const errorEl = document.getElementById('kitError');
+  try {
+    const res = await fetch('/api/multiblocks/kit?' + params.toString());
+    if (seq !== fetchSeq) return;
+    if (!res.ok) {
+      errorEl.textContent = res.status === 404 ? 'The game data has no structure for that multiblock.'
+        : 'Could not load the kit.';
+      errorEl.hidden = false;
+      return;
+    }
+    kit = await res.json();
+    errorEl.hidden = true;
+    renderKit();
+    renderView();
+  } catch (e) {
+    if (seq !== fetchSeq) return;
+    errorEl.textContent = 'Could not reach server.';
+    errorEl.hidden = false;
+  }
+}
+
+// What a row's Request box holds: what was typed, else what's missing
+// of a craftable block.
+function requestOf(row) {
+  if (edits.has(row.key)) return edits.get(row.key);
+  return row.craftable ? Math.max(0, row.need - row.have) : 0;
+}
+
+function renderKit() {
+  const c = kit.controller;
+  document.getElementById('kitTitle').textContent = nameText(c.name);
+  const iconEl = document.getElementById('kitIcon');
+  if (c.icon) {
+    iconEl.src = iconUrl(c.icon);
+    iconEl.className = iconClass('modal-icon', c.icon);
+    iconEl.hidden = false;
+  } else {
+    iconEl.hidden = true;
+  }
+  const picker = document.getElementById('kitPicker');
+  if (document.activeElement !== picker) picker.value = labelOf(c.key) || nameText(c.name);
+
+  const controls = kit.channels.map(ch => {
+    const options = ch.options.map(o =>
+      `<option value="${o.tier}"${o.tier === ch.tier ? ' selected' : ''}>${escapeHtml(nameText(o.label))}</option>`,
+    ).join('');
+    return `<label class="kit-control" data-key="channel-${escapeHtml(ch.name)}">
+      <span class="kit-control-label">${escapeHtml(channelLabel(ch.name))}</span>
+      <select class="modal-amount-input kit-select" data-channel="${escapeHtml(ch.name)}">${options}</select>
+    </label>`;
+  }).join('');
+  updateHtml(document.getElementById('kitControls'), controls);
+
+  const operator = isOperator();
+  const head = `<div class="kit-row kit-head" data-key="head">
+      <span></span><span>Block</span><span class="kit-num">Need</span><span class="kit-num">In network</span>
+      ${operator ? '<span class="kit-num">Request</span>' : ''}
+    </div>`;
+  const rows = kit.rows.map(r => {
+    const icon = r.icon
+      ? `<img class="${iconClass('kit-icon', r.icon)}" src="${escapeHtml(iconUrl(r.icon))}" alt="">`
+      : '<span class="kit-icon"></span>';
+    const short = r.have < r.need;
+    const request = operator
+      ? (r.craftable
+        ? `<input class="modal-amount-input kit-request" type="number" min="0" data-row="${escapeHtml(r.key)}" value="${requestOf(r)}" aria-label="Request ${escapeHtml(nameText(r.name))}">`
+        : '<span class="kit-num kit-no-pattern" title="The network has no pattern for it">no pattern</span>')
+      : '';
+    // Below a block that can be requested: a slider from none to all the
+    // multiblock needs, starting at what's missing.
+    const slider = operator && r.craftable
+      ? `<input class="kit-slider" type="range" min="0" max="${r.need}" step="1" data-row="${escapeHtml(r.key)}" value="${Math.min(requestOf(r), r.need)}" aria-label="Request ${escapeHtml(nameText(r.name))}">`
+      : '';
+    return `<div class="kit-row${short ? ' kit-short' : ''}" data-key="${escapeHtml(r.key)}">
+      ${icon}<span class="kit-name">${escapeHtml(nameText(r.name))}</span>
+      <span class="kit-num">${r.need.toLocaleString()}</span>
+      <span class="kit-num kit-have">${formatQty(r.have)}</span>
+      ${request}${slider}
+    </div>`;
+  }).join('');
+  const rowsEl = document.getElementById('kitRows');
+  rowsEl.classList.toggle('kit-rows-operator', operator);
+  updateHtml(rowsEl, head + rows);
+  updateRequestButton();
+}
+
+// What the 3D view shows only changes with the multiblock and its tiers,
+// not the count.
+let viewDrawn = null;
+
+function renderView() {
+  const drawn = kit ? JSON.stringify([kit.controller.key, kit.channels.map(c => c.tier)]) : null;
+  if (drawn === viewDrawn && !document.getElementById('kitView').hidden) return;
+  viewDrawn = drawn;
+  updateView();
+}
+
+function requests() {
+  if (!kit) return [];
+  return kit.rows
+    .filter(r => r.craftable && requestOf(r) > 0)
+    .map(r => ({ label: r.name, mod: r.mod, internal: r.internal, damage: r.damage, amount: requestOf(r) }));
+}
+
+// The plan for what Request would ask for, all together (craft-plan.js),
+// under the rows, or put away.
+function updatePlan() {
+  const btn = document.getElementById('kitPlanBtn');
+  btn.hidden = !AUTH_USER || !kit;
+  btn.setAttribute('aria-pressed', String(planWanted));
+  btn.classList.toggle('active', planWanted);
+  btn.textContent = planWanted ? 'Hide the plan' : 'Check the plan';
+  if (!planWanted || !kit) {
+    if (kitPlanOpen()) closeCraftPlan();
+    return;
+  }
+  const targets = kit.rows.filter(r => r.craftable && requestOf(r) > 0).map(r => [r.item, requestOf(r)]);
+  openKitPlan({ kit: kit.controller.key, count: kit.count, targets }, document.getElementById('kitError'));
+}
+
+function updateRequestButton() {
+  const btn = document.getElementById('kitRequestBtn');
+  const n = requests().length;
+  btn.hidden = !isOperator() || !kit;
+  btn.disabled = n === 0;
+  btn.textContent = n === 0 ? 'Nothing to request' : `Request ${n} craft${n === 1 ? '' : 's'}`;
+  updatePlan();
+}
+
+async function submitKit() {
+  const list = requests();
+  if (!list.length) return;
+  const btn = document.getElementById('kitRequestBtn');
+  const errorEl = document.getElementById('kitError');
+  btn.disabled = true;
+  btn.textContent = 'Submitting…';
+  try {
+    const res = await fetch('/api/craft/request-batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requests: list }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      errorEl.textContent = err.error || 'Request failed.';
+      errorEl.hidden = false;
+      updateRequestButton();
+      return;
+    }
+    showToast(`Requested ${list.length} craft${list.length === 1 ? '' : 's'} for ${nameText(kit.controller.name)}`);
+    closeKit();
+    fetchCraftRequests();
+  } catch (e) {
+    errorEl.textContent = 'Could not reach server.';
+    errorEl.hidden = false;
+    updateRequestButton();
+  }
+}
+
+export function setupKitActions() {
+  delegateActions(document.getElementById('kitModal'), {
+    'close-kit': () => closeKit(),
+    'kit-request': () => submitKit(),
+    'kit-plan': () => {
+      planWanted = !planWanted;
+      updatePlan();
+      if (planWanted) document.getElementById('craftPlan').scrollIntoView({ block: 'nearest' });
+    },
+    'kit-view': () => {
+      setViewWanted(!viewWanted());
+      viewDrawn = null;
+      updateView();
+    },
+  });
+  setupLayoutView();
+  onBackdropClick('kitModal', closeKit);
+  delegateActions(document.getElementById('networkKitButton'), {
+    'open-kit': () => openKit(null),
+  });
+
+  document.getElementById('kitPicker').addEventListener('change', (e) => {
+    const label = e.target.value.trim().toLowerCase();
+    const found = (controllers || []).find(c => c.label.toLowerCase() === label);
+    if (found) selectController(found.key);
+  });
+  document.getElementById('kitControls').addEventListener('change', (e) => {
+    if (e.target.dataset.channel) {
+      tiers[e.target.dataset.channel] = Number(e.target.value);
+      fetchKit();
+    }
+  });
+  document.getElementById('kitCount').addEventListener('change', (e) => {
+    const n = Math.max(1, Math.min(64, Math.round(Number(e.target.value)) || 1));
+    e.target.value = n;
+    if (n !== count) {
+      count = n;
+      // Amounts picked were for the old count.
+      edits = new Map();
+      fetchKit();
+    }
+  });
+  // The box and the slider below it follow each other.
+  document.getElementById('kitRows').addEventListener('input', (e) => {
+    const key = e.target.dataset.row;
+    if (!key) return;
+    const n = Math.max(0, Math.round(Number(e.target.value)) || 0);
+    edits.set(key, n);
+    const row = e.target.closest('.kit-row');
+    const box = row.querySelector('.kit-request');
+    const slider = row.querySelector('.kit-slider');
+    if (e.target !== box) box.value = String(n);
+    if (e.target !== slider) slider.value = String(Math.min(n, Number(slider.max)));
+    updateRequestButton();
+  });
+}

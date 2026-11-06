@@ -885,6 +885,92 @@ color alone differentiates the highlighted terms now.
 
 ## Design decisions worth knowing (not bugs, but non-obvious choices)
 
+**Multiblock kits come from building the structures, not from their
+tooltips.** A controller's shift tooltip (`MultiblockTooltipBuilder`) is
+hand-written ("1250-1270 Dimensional Injection Casing", "1+ Input Bus: any
+injection casing"), worded differently across GregTech's addons, and names
+no item ids, so parsing it would be wrong often and quietly. The exporter
+(`StructureBuilder.java`) instead places each controller in
+BlockRenderer6343's dummy world, has StructureLib build it the way the
+hologram projector does in creative mode, and counts the blocks by item key:
+all 334 of GTNH 2.9's multiblocks build, in about 6 s. It's the creative
+build (`IConstructable.construct`), not the survival one BlockRenderer6343's
+preview uses: without the hatch channel set, a survival build stops at the
+first spot only a hatch can fill, which left an EBF at 6 of its 16 coils.
+Creative fills hatch-or-casing spots with the casing and skips hatch-only
+ones, so a kit's casings are the most it needs and it has no hatches,
+which players pick themselves. Channels (coil, glass, length...) come from
+BlockRenderer6343's own scan (`GTConstructableScan`, `ConstructableData`):
+the structure is built once per tier of each, and the kit adds up each
+tier's change from the base build. Six multiblocks' channels interact (an
+assembly line's glass comes with its length), which the exporter finds by
+comparing that sum against a real build, and stores every combination for
+instead. Shared walls aren't worked out: that would need the player's
+layout, so the page lets each row be lowered by hand.
+
+**The kit's 3D view draws the geometry the game draws.** The same builds
+record where each block goes (`Layouts.java`), and each kind of block is
+drawn once with the world's own `RenderBlocks` while GTNHLib's
+`TessellatorManager` captures the quads instead of drawing them
+(`BlockMeshes.java`). GTNHLib redirects the game's `Tessellator` to its own
+manager, so this works without Angelica, which the export runs without
+(see `disable_angelica` in export.py), and no private fields are read.
+That also means no connected textures from the capture: MCPatcher's,
+which GTNH's glass, coils and many casings use, ship inside Angelica (see
+below for how they're done instead). Each kind is captured
+where it's first placed, so a GregTech machine has its tile entity and draws
+its real faces and overlays; with every face drawn whatever its neighbours,
+and ambient occlusion off, so a face darkened by its surroundings isn't
+reused where it's out in the open. Each quad's texture coordinates are
+turned into the sprite they fall in (a 16-px grid over the block atlas
+finds it) and where in it; the sprite is drawn into `layouts.png` by the
+icon renderer. The game's per-vertex colours (face shading, biome and
+material tints) are kept, so the page (`multiblock-view.js`, one three.js
+instanced mesh per kind of block) draws them unlit and they look as in the
+game. What's not captured: animation (one frame), anything drawn by a tile-entity renderer rather
+than as a block, and three blocks whose renderer draws nothing in the dummy
+world (a Thaumcraft block and two Chisel ones in 2.9), which fall back to
+cubes with `Block.getIcon` faces. three.js
+(r170, the last single-file build) is vendored and only loaded when the
+view first opens. Tiers are stored as changes from the base
+build, nearly all a swap of one block for another, which keeps the
+positions of all 334 multiblocks to about 330 KB; the server puts the tiers
+together (`multiblocks.layout()`), so the page only draws.
+
+**A kit's plan counts its blocks against one stock.** `planner.plan_many()`
+runs each block on the same `_Planner`, one after another, so what an
+earlier block takes from stock or leaves over is gone or there for the
+next, and the blocks' trees sit under one "kit" step. AE2 itself plans each
+requested craft alone, against what's in storage as it starts; all of a
+kit's crafts start together, so two that need the same plates can each
+plan fine and one then come up short. The shared plan shows that before
+anything's requested. The page reuses the craft dialog's plan panel
+(`craft-plan.js`) by moving it into the kit dialog, as only one plan is on
+screen at a time; `/api/network/plan` takes `targets` for it, and the
+tree's branches and filter work as for one item.
+
+**Connected textures are joined up in the browser, not captured.**
+Capturing them would take a second game launch with Angelica on (it
+can't be on for the icons) and a mesh for every way a block's neighbours
+can be arranged. But GTNH's are nearly all MCPatcher's "compact" method
+(137 of 2.9's 138 definitions; `compact_expanded` builds the same picture
+from the same five tiles), which is simple enough to redo: each face of a
+matching block is split into quarters, and each quarter takes one of five
+tiles from whether its two side neighbours and the diagonal between them
+connect (Angelica's `CompactCtmQuadProcessor`). The exporter
+(`CtmDefinitions.java`) reads the definitions and their tiles from the mod
+jars, keeps the ones for blocks or textures the multiblocks use (121), and
+puts the tiles in `layouts.png`; the page (`ctm.js`) works out each block's
+tiles from the layout, so it follows every tier and size without the
+export knowing them. "Left" and "up" are read from each captured quad's own
+texture coordinates rather than MCPatcher's per-face tables, so they can't
+disagree with how the face was drawn. Blocks whose faces join the same way
+share an instanced mesh, so a DTPF's 2,112 coils are a few dozen meshes.
+See-through blocks also leave out faces against the same block, as the
+game does, so glass walls aren't full of inner faces. Not done: the one
+full 47-tile `ctm` definition, `innerSeams`, and the lit coil overlay
+(`litcoil`), which only shows while the machine runs.
+
 **The MCP endpoint is hand-written, stateless and dual-era.** `/mcp`
 (`gcm/mcp/`) doesn't use the MCP Python SDK: the SDK is ASGI and this
 server is WSGI, and an endpoint that answers every request with one JSON

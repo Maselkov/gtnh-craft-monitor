@@ -306,6 +306,13 @@ checked, with about 200 MB of memory). Only the versions in use, the one before 
 checked against are kept there. Game data built before recipes were
 exported can't be compared until it's rebuilt.
 
+It also holds the blocks each GregTech multiblock is built from
+(`structures.json.gz`, about 110 KB), for
+[multiblock kits](using.md#multiblock-kits), and where each block goes,
+with the blocks' textures (`layouts.json.gz` and `layouts.png`, about
+500 KB together), for their 3D view. Game data built before them has no
+kits, or no 3D view.
+
 To pin the version without the page, set `GTNH_VERSION` (e.g.
 `2.9.0-beta-3`), and optionally `GTNH_TEXTURES=faithful32`; the server
 installs it at startup if it isn't already.

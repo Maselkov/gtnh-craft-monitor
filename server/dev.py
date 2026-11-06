@@ -135,6 +135,13 @@ ITEMS = [
     ("Diamond Dust", "dust", (110, 230, 230)),
     ("Block of Diamond", "block", (110, 230, 230)),
     ("Dimensionally Transcendent Plasma Forge", "block", (90, 40, 140)),
+    # What it's built from (STRUCTURES), for its multiblock kit.
+    ("Dimensionally Transcendent Casing", "block", (60, 30, 90)),
+    ("Dimensional Injection Casing", "block", (120, 60, 160)),
+    ("Dimensional Bridge", "block", (200, 120, 240)),
+    ("Cupronickel Coil Block", "block", (200, 120, 60)),
+    ("Kanthal Coil Block", "block", (190, 160, 110)),
+    ("Nichrome Coil Block", "block", (200, 190, 230)),
     # A real name with formatting codes in it, as AE2's storage parts have.
     ("\u00a7a16k\u00a7r ME Storage Component", "circuit", (60, 140, 60)),
     # Newer than the selected game data: see NEWER_ITEM.
@@ -212,6 +219,13 @@ PATTERNS = [
     ("Circuit Assembler", False, [("\u00a7a16k\u00a7r ME Storage Component", 1)],
      [("SMD Capacitor", 4), ("Silicon Wafer", 1), ("Glass Dust", 2)]),
     ("Molecular Assembler", True, [(NEWER_ITEM, 1)], [("Neutronium Plate", 6), ("Titanium Gear", 1)]),
+    # The DTPF's blocks, for its multiblock kit's plan: the casings share
+    # Neutronium Plates, so asking for many of both comes up short.
+    ("Assembler", False, [("Dimensionally Transcendent Casing", 1)], [("Neutronium Plate", 4), ("Iridium Screw", 2)]),
+    ("Assembler", False, [("Dimensional Injection Casing", 1)], [("Neutronium Plate", 2), ("Europium Foil", 4)]),
+    ("Assembler", False, [("Cupronickel Coil Block", 1)], [("Fine Platinum Wire", 8), ("Steel Bolt", 2)]),
+    ("Assembler", False, [("Kanthal Coil Block", 1)], [("Kanthal Dust", 8), ("Steel Bolt", 2)]),
+    ("Assembler", False, [("Nichrome Coil Block", 1)], [("Nichrome Ingot", 8), ("Steel Bolt", 2)]),
 ]
 # Some items' tooltips below their name, as the bundle's item_info.json
 # has them (gcm/item_info.py): formatting codes and all, so the page's
@@ -273,6 +287,107 @@ RARITY = {"Lapotron Crystal": "b", "Ultimate Circuit": "d"}
 # formula if it has one.
 FLUID_INFO = {"Radon Plasma": (10000, True, "Rn"), "Molten Inconel-625": (1700, False, "Ni\u2083CrMoNb"),
               "Bacterial Sludge": (300, False, None), "Water": (295, False, "H\u2082O")}
+# The DTPF's structure, as the bundle's structures.json.gz and
+# layouts.json.gz have it (tools/icon-export's Structures.java and
+# Layouts.java): a small stand-in for the real one, its coil channel
+# swapping the coils. The network has patterns for the casings and coils
+# (KIT_CRAFTABLE), not the bridges, which the kit shows as having none.
+DTPF = "Dimensionally Transcendent Plasma Forge"
+DTPF_COILS = ["Cupronickel Coil Block", "Kanthal Coil Block", "Nichrome Coil Block"]
+KIT_CRAFTABLE = {"Dimensionally Transcendent Casing", "Dimensional Injection Casing", *DTPF_COILS}
+
+
+def _game_key(name):
+    it = BY_NAME[name]
+    return f"{it['mod']}:{it['internal']}:{it['damage']}"
+
+
+def dtpf_layout():
+    """{(x, y, z): block name} relative to the controller, which is in the
+    middle of the front wall's bottom layer: an injection casing floor
+    and roof, casing walls, a ring of coils inside and a bridge pillar in
+    each corner."""
+    blocks = {}
+    for y in range(0, 7):
+        for x in range(-4, 5):
+            for z in range(-8, 1):
+                edge_x, edge_z = abs(x) == 4, z in (-8, 0)
+                if y in (0, 6):
+                    blocks[(x, y, z)] = "Dimensional Injection Casing"
+                elif edge_x and edge_z:
+                    blocks[(x, y, z)] = "Dimensional Bridge"
+                elif edge_x or edge_z:
+                    blocks[(x, y, z)] = "Dimensionally Transcendent Casing"
+                elif 2 <= y <= 4 and (abs(x) == 2 and -6 <= z <= -2 or z in (-6, -2) and abs(x) <= 2):
+                    blocks[(x, y, z)] = DTPF_COILS[0]
+    blocks[(0, 0, 0)] = DTPF
+    return blocks
+
+
+def _pack(x, y, z):
+    return (x + 512) << 20 | (y + 512) << 10 | (z + 512)
+
+
+def _deltas(positions):
+    out, last = [], 0
+    for p in sorted(positions):
+        out.append(p - last)
+        last = p
+    return out
+
+
+def _block_key(name):
+    return "mte:" + _game_key(name) if name == DTPF else "gregtech:dev.block:" + str(BY_NAME[name]["damage"])
+
+
+def structures():
+    layout = dtpf_layout()
+    counts = {}
+    for name in layout.values():
+        if name != DTPF:
+            counts[_game_key(name)] = counts.get(_game_key(name), 0) + 1
+    coil, n = _game_key(DTPF_COILS[0]), counts[_game_key(DTPF_COILS[0])]
+    tiers = {str(i + 1): ({} if i == 0 else {coil: -n, _game_key(name): n}) for i, name in enumerate(DTPF_COILS)}
+    names = [DTPF, "Dimensionally Transcendent Casing", "Dimensional Injection Casing", "Dimensional Bridge",
+             *DTPF_COILS]
+    return {
+        "format": 1,
+        "names": {_game_key(n): n for n in names},
+        "multiblocks": {_game_key(DTPF): {
+            "channels": [{"name": "coil", "min": 1, "max": len(DTPF_COILS)}],
+            "base": counts,
+            "tiers": {"coil": tiers},
+        }},
+    }
+
+
+def layouts():
+    """layouts.json.gz's contents, and its atlas: one texture per block."""
+    from PIL import Image
+
+    layout = dtpf_layout()
+    textured = [n for n in dict.fromkeys(layout.values()) if n != DTPF] + DTPF_COILS[1:]
+    textured = list(dict.fromkeys(textured))
+    atlas = Image.new("RGBA", (16 * len(textured), 16))
+    blocks = {_block_key(DTPF): {"item": _game_key(DTPF)}}
+    for i, name in enumerate(textured):
+        atlas.paste(_frame("block", BY_NAME[name]["colour"]), (16 * i, 0))
+        blocks[_block_key(name)] = {"item": _game_key(name), "faces": [i] * 6}
+    by_key = {}
+    for (x, y, z), name in layout.items():
+        by_key.setdefault(_block_key(name), []).append(_pack(x, y, z))
+    coil = _block_key(DTPF_COILS[0])
+    tiers = {str(i + 1): ({} if i == 0 else {"swap": {coil: _block_key(name)}}) for i, name in enumerate(DTPF_COILS)}
+    data = {
+        "format": 1, "tile": 16, "columns": len(textured), "blocks": blocks,
+        "multiblocks": {_game_key(DTPF): {"base": {k: _deltas(v) for k, v in by_key.items()},
+                                          "tiers": {"coil": tiers}}},
+    }
+    out = io.BytesIO()
+    atlas.save(out, format="PNG")
+    return data, out.getvalue()
+
+
 # What the ore dictionary says about CATALOG (gcm/oredict.py).
 ORE_DICT = {"gemDiamond": ["Diamond", "Industrial Diamond"], "ingotIron": ["Iron Ingot"],
             "dustKanthal": ["Kanthal Dust"], "ingotTungstenSteel": ["Tungstensteel Ingot"]}
@@ -433,6 +548,13 @@ def install_icons(data_dir, prerelease=False):
         json.dump(ore_dict(), f)
     with open(os.path.join(bundle, "item_info.json"), "w", encoding="utf-8") as f:
         json.dump(item_info(), f)
+    with gzip.open(os.path.join(bundle, "structures.json.gz"), "wt", encoding="utf-8") as f:
+        json.dump(structures(), f)
+    layout_data, atlas = layouts()
+    with gzip.open(os.path.join(bundle, "layouts.json.gz"), "wt", encoding="utf-8") as f:
+        json.dump(layout_data, f)
+    with open(os.path.join(bundle, "layouts.png"), "wb") as f:
+        f.write(atlas)
     _write_catalog(bundle, newer=False)
     # Its hash is the bundle's build id, which busts icon caches: new
     # icons after a change here get new URLs.
@@ -991,7 +1113,8 @@ class FakeGame:
     def _scanned(self, it):
         """`it` as a scan reports it, or None when AE2 wouldn't list it."""
         size = self.stock[it["name"]]
-        craftable = it["name"] in SMALL_JOBS or it["name"] in PATTERN_OUTPUTS or it["shape"] in ("ingot", "plate", "gear")
+        craftable = (it["name"] in SMALL_JOBS or it["name"] in PATTERN_OUTPUTS or it["name"] in KIT_CRAFTABLE
+                     or it["shape"] in ("ingot", "plate", "gear"))
         if not size and not craftable:
             return None
         entry = {k: it[k] for k in ("name", "mod", "internal", "damage", "kind")}

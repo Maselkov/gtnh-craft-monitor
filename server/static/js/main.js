@@ -18,6 +18,7 @@ import {
 } from './crafts.js';
 import { setupGameDataActions } from './gamedata.js';
 import { setupIngredientsActions } from './ingredients.js';
+import { setupKitActions, showKitButton } from './multiblock.js';
 import { readJobLinkFromUrl, setupJobLink } from './job-link.js';
 import {
   parseItemUrlPath,
@@ -60,6 +61,7 @@ setupAgentsActions();
 setupWebhooksActions();
 setupAssistantActions();
 setupIngredientsActions();
+setupKitActions();
 setupTabActions();
 setupPowerActions();
 setupNetworkActions();
@@ -107,6 +109,7 @@ function start() {
   // Network tab also fetches stock rules as it opens.
   fetchStockRules();
   fetchPowerBadge();
+  showKitButton();
   setInterval(() => { fetchStockRules(); fetchPowerBadge(); }, 60000);
   // Hidden tabs keep polling (slowly, as the browser allows): the
   // completions poll is what shows a notification without Web Push.

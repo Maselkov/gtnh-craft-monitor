@@ -16,6 +16,10 @@ from gcm import auth, commands, stock, store, tracking
 
 bp = Blueprint("craft_requests", __name__)
 
+# The most requests one batch may queue: a multiblock kit has at most a
+# few dozen blocks.
+MAX_BATCH = 100
+
 
 @bp.route("/api/craft/request", methods=["POST"])
 @auth.login_required
@@ -41,6 +45,33 @@ def craft_request_post():
         user_id, label, mod, internal, damage, amount, kind, variant, variant_name
     )
     return jsonify({"ok": True, "id": req_id})
+
+
+@bp.route("/api/craft/request-batch", methods=["POST"])
+@auth.login_required
+@auth.operator_required
+def craft_request_batch_post():
+    """Several craft requests at once (a multiblock kit's): {requests:
+    [{label, mod, internal, damage, amount}]}, all items. Each is queued
+    as its own request, as if made one by one; none is if any is wrong."""
+    payload = request.get_json(silent=True) or {}
+    rows = payload.get("requests")
+    if not isinstance(rows, list) or not rows:
+        return jsonify({"error": "requests must be a non-empty list"}), 400
+    if len(rows) > MAX_BATCH:
+        return jsonify({"error": f"at most {MAX_BATCH} requests at once"}), 400
+    for i, row in enumerate(rows):
+        if not isinstance(row, dict):
+            return jsonify({"error": f"request {i + 1} isn't an object"}), 400
+        error = commands.craft_request_error(row.get("label"), row.get("internal"), row.get("amount"), "item", None)
+        if error:
+            return jsonify({"error": f"{row.get('label') or f'request {i + 1}'}: {error}"}), 400
+    ids = [
+        commands.queue_craft(g.user["id"], row["label"], row.get("mod"), row["internal"], row.get("damage"),
+                             row["amount"], "item")
+        for row in rows
+    ]
+    return jsonify({"ok": True, "ids": ids})
 
 
 @bp.route("/api/craft/requests", methods=["GET"])

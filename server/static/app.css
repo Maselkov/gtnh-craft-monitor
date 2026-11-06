@@ -2816,3 +2816,172 @@ body.oauth-page {
 .assistant-call-meta { color: var(--muted); font-size: 11px; }
 .assistant-call-args { color: var(--muted); font-family: monospace; font-size: 11px; overflow-wrap: anywhere; }
 .assistant-call-error { color: var(--stale); overflow-wrap: anywhere; }
+
+/* Multiblock kit (multiblock.js). Opened from the item dialog: above it,
+   as the craft dialog is. */
+#kitModal {
+  z-index: 2001;
+}
+.history-buttons {
+  display: flex;
+  gap: 8px;
+}
+.history-buttons .history-craft-btn {
+  flex: 1;
+}
+.kit-box {
+  width: min(640px, calc(100vw - 32px));
+}
+.kit-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 12px;
+}
+.kit-control {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.kit-control.kit-count {
+  flex: 0 0 96px;
+}
+.kit-control-label {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.kit-rows {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 12px;
+  border-top: 1px solid var(--border);
+}
+.kit-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 64px 80px;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-faint);
+  font-size: 13px;
+}
+.kit-rows-operator .kit-row {
+  grid-template-columns: 24px minmax(0, 1fr) 64px 80px 88px;
+}
+.kit-head {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.kit-icon {
+  width: 24px;
+  height: 24px;
+  image-rendering: pixelated;
+}
+.kit-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kit-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.kit-short .kit-have {
+  color: var(--busy);
+}
+.kit-no-pattern {
+  color: var(--muted);
+  font-size: 12px;
+}
+.modal-amount-input.kit-request {
+  margin: 0;
+  padding: 4px 8px;
+  text-align: right;
+}
+.kit-note {
+  margin-top: 0;
+}
+@media (max-width: 520px) {
+  .kit-row,
+  .kit-rows-operator .kit-row {
+    grid-template-columns: 24px minmax(0, 1fr) 52px 72px;
+    gap: 8px;
+  }
+  .kit-head span:nth-child(4),
+  .kit-have {
+    display: none;
+  }
+}
+.kit-view-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+.kit-view {
+  position: relative;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  overflow: hidden;
+}
+.kit-canvas {
+  display: block;
+  width: 100%;
+  touch-action: none;
+  cursor: grab;
+}
+.kit-canvas:active {
+  cursor: grabbing;
+}
+.kit-view-message {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 13px;
+  pointer-events: none;
+}
+.kit-layer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--border-faint);
+}
+.kit-layer input {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
+}
+.kit-layer .kit-control-label {
+  margin: 0;
+  min-width: 92px;
+  text-align: right;
+}
+.kit-top {
+  display: flex;
+  gap: 0 12px;
+}
+.kit-top .kit-control:first-child {
+  flex: 1 1 auto;
+}
+.kit-slider {
+  grid-column: 2 / -1;
+  width: 100%;
+  margin: 0;
+  accent-color: var(--accent);
+}
+/* The kit's crafting plan (craft-plan.js's panel, moved into the kit
+   dialog): its own scroll, under the blocks. */
+.kit-box .craft-plan {
+  margin-bottom: 12px;
+}
+.kit-box .craft-plan-body {
+  max-height: min(60vh, 480px);
+}

@@ -12,6 +12,7 @@ import {
 import { hideStockPanel, showStockPanel, stockThresholdsFor } from './stock.js';
 import { setPageView } from './page-title.js';
 import { ingredientsCpu } from './ingredients.js';
+import { openKit } from './multiblock.js';
 import { activeTab, switchTab } from './tabs.js';
 import {
   chartColors, copyText, delegateActions, escapeHtml, formatDuration, formatQty, formatRate, iconClass, iconUrl, onBackdropClick,
@@ -233,6 +234,7 @@ export function openItemHistory(it, pushUrl) {
   updateItemHistoryPinButton(it);
 
   document.getElementById('itemHistoryCraftBtn').style.display = (it.isCraftable && isOperator()) ? '' : 'none';
+  document.getElementById('itemHistoryKitBtn').hidden = true;
   showStockPanel(it);
   document.getElementById('itemHistoryModal').style.display = 'flex';
 
@@ -286,6 +288,7 @@ async function fetchItemHistory() {
     const res = await fetch('/api/network/history?' + params.toString());
     const data = await res.json();
     updateItemHistoryInfo(data.info);
+    document.getElementById('itemHistoryKitBtn').hidden = !data.multiblock;
     renderItemHistoryChart(data);
   } catch (e) {
     const emptyEl = document.getElementById('itemHistoryEmpty');
@@ -622,6 +625,10 @@ export function setupHistoryActions() {
     'close-history': () => closeItemHistory(),
     'copy-item-link': () => copyItemLink(),
     'craft-from-history': () => requestCraftFromHistory(),
+    'kit-from-history': () => {
+      const it = itemHistoryTarget;
+      if (it) openKit(`${it.mod}:${it.internal}:${it.damage}`);
+    },
     'history-shift': () => {
       itemHistoryShift = !itemHistoryShift;
       renderItemHistoryInfo();

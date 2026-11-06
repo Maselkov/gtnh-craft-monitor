@@ -8,6 +8,7 @@
 - [Power tab](#power-tab)
 - [Network tab](#network-tab)
 - [Requesting and cancelling crafts](#requesting-and-cancelling-crafts)
+- [Multiblock kits](#multiblock-kits)
 - [Stock rules](#stock-rules)
 - [Limitations](#limitations)
 
@@ -481,6 +482,56 @@ under a second to several minutes, and the request survives closing the tab.
 
 To cancel a running job, click **×** on its card in the Crafts tab.
 
+## Multiblock kits
+
+A kit lists every block a GregTech multiblock is built from: its casings,
+coils, glass, pipes and so on, with how many the network has. Open one with
+**Multiblock kit** in a controller's item dialog, or **Multiblocks** in the
+Network tab to pick any multiblock by name. It needs game data built since
+kits were added; the button isn't there without it.
+
+Multiblocks with tiered parts have a picker for each, named after the
+hologram projector's channel for it: **Coil** and **Glass** list the blocks
+they take, and **Length**, **Height** and the like are sizes. **How many**,
+beside the multiblock's name, multiplies the kit.
+
+- **Need** is the most the multiblock takes. Hatches, buses, mufflers and
+  maintenance hatches aren't in the kit, as you pick your own; every spot
+  that takes either a hatch or a casing counts as a casing.
+- **In network** is from the last scan, orange where it's short.
+- **Request** (operators and admins) starts at what's missing of each
+  block the network has a pattern for. Type an amount, or drag the slider
+  under the block, from none to all the kit needs. Lower it for the hatches
+  you'll put in casing spots, and for walls you share with another
+  multiblock. A block without a pattern says so and can't be requested.
+
+**Request** queues each block as its own craft, as if you'd requested them
+one by one, and they show as pending cards like any other request.
+
+**Check the plan** (signed in) shows the [crafting plan](#requesting-and-cancelling-crafts)
+for everything Request would ask for, all together, before you request it:
+the same List and Tree views as a single craft, with one root for the kit
+and each block under it, and one Missing list for the lot. It follows the
+Request amounts as you change them. Unlike AE2, which plans each craft on
+its own as it starts, the plan counts the blocks against the same stock,
+one after another: two blocks that need the same plates aren't both
+counted as having them, which is what happens when all the crafts start at
+once and one of them comes up short.
+
+**3D view** shows the multiblock as you've configured it, block by block,
+with the game's textures: change a coil or the length and it follows. Drag
+to turn it, and scroll or pinch to zoom. The slider below it hides the
+layers above the one you pick, to see inside. Blocks are drawn with the
+geometry and textures the game draws them with, the controller's front
+face included, and glass, coils and casings join up with their neighbours
+as they do in the game. Animated textures are still. It's open
+unless you close it with the **3D view** button; the page remembers that.
+
+The counts come from building each multiblock in the game when the game data
+is made, the way NEI's multiblock preview does (see
+[Bundle format](../tools/icon-export/README.md#bundle-format)). A
+multiblock whose structure isn't built with StructureLib has no kit.
+
 ## Stock rules
 
 Set them in an item's popup on the Network tab. Every rule is checked after
@@ -578,6 +629,7 @@ What it can look at:
 | `power` | Stored EU over time and its trend |
 | `find_recipes` | How the game makes an item: GregTech machine recipes for your GTNH version, cheapest first |
 | `game_item` | Any item's tooltip, including a multiblock's structure (its shift tooltip) |
+| `multiblock_kit` | Every block a multiblock is built from, for the coils, glass or size asked for, with the network's stock |
 | `base_patterns` | How your base makes an item: its patterns and the machines they're in |
 | `pattern_check` | After a GTNH update, the patterns it broke (operators, as on the page) |
 

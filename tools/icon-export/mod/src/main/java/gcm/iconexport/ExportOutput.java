@@ -105,7 +105,8 @@ final class ExportOutput {
         writeJson("animations.json", json, false);
     }
 
-    void finish(List<ExportJob> jobs, Map<String, Object> report) throws IOException {
+    /** structures: the multiblocks (Structures.collect), or null. */
+    void finish(List<ExportJob> jobs, Map<String, Object> report, Structures.Result structures) throws IOException {
         zip.close();
         Files.move(zipTmp.toPath(), new File(outDir, "images.zip").toPath(), StandardCopyOption.REPLACE_EXISTING);
 
@@ -153,6 +154,17 @@ final class ExportOutput {
         report.put("recipes", recipes.recipeCount);
         report.put("recipeMaps", recipeFile == null ? 0 : ((Map<?, ?>) recipeFile.get("maps")).size());
         report.put("recipeMapsWithMachines", recipes.mapsWithMachines);
+
+        new File(outDir, "structures.json.gz").delete();
+        new File(outDir, "layouts.json.gz").delete();
+        new File(outDir, "layouts.png").delete();
+        if (structures != null) {
+            writeGzipJson("structures.json.gz", structures.structures);
+            if (structures.layouts != null) {
+                writeGzipJson("layouts.json.gz", structures.layouts.file);
+                ImageIO.write(structures.layouts.atlas, "png", new File(outDir, "layouts.png"));
+            }
+        }
 
         report.put("catalogIds", catalog.size());
         for (Map.Entry<String, Object> table : lookup.entrySet()) {

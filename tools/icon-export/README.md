@@ -1,9 +1,8 @@
 # Icon export
 
 Builds a game data bundle (item icons, the icon lookup, the item catalog,
-the ore dictionary, item info and GregTech's recipes) from a GTNH client
-pack. CI runs it for
-every GTNH release and publishes the result (see
+the ore dictionary, item info, GregTech's recipes and the blocks of its
+multiblocks) from a GTNH client pack. CI runs it for every GTNH release and publishes the result (see
 [Game data](../../docs/server.md#game-data)), so you only need it for a
 pack CI doesn't cover (a nightly, a modified pack), or to build the data
 yourself.
@@ -121,6 +120,36 @@ chance?]], "g": [[fluid, mB]], "e": EU/t, "d": ticks, "s": special value}`,
 indices into the tables, n 0 for an input that isn't used up, chance in
 1/10000 only below 100%. Fake (NEI-only) and disabled recipes are left out.
 Bundles made before it existed can't be compared.
+
+`structures.json.gz` holds the blocks each GregTech multiblock is built
+from, for [multiblock kits](../../docs/using.md#multiblock-kits): 334
+multiblocks in GTNH 2.9, about 110 KB gzipped, built in a few seconds. The
+export builds each one in BlockRenderer6343's dummy world (the world NEI's
+multiblock preview uses), with StructureLib's creative build, and counts
+the blocks by item key. It builds once with no channel set, then again for
+each tier of each channel (a coil or glass channel's tiers are the blocks
+it takes; a length or height channel's are sizes). `base` is the first
+build, and each tier holds what changes from it. Where channels interact
+(an assembly line's glass comes with its length), `combos` holds every
+combination, built. Hatches and buses aren't built, so the spots that take
+either a hatch or a casing count as casings. `Structures.java` describes
+the format. Bundles made before it existed have no kits.
+
+`layouts.json.gz` and `layouts.png` are where those blocks go, for the
+kit's 3D view: about 330 KB and 150 KB for GTNH 2.9. The same builds note
+each block's position and the block as placed (`mod:name:meta`, or `mte:`
+and the item key for a GregTech machine), and each kind of block's geometry
+as the game draws it (`BlockMeshes.java`: the block is drawn with the
+world's own block renderer while GTNHLib captures the quads instead of
+drawing them), with the textures it uses copied from the game's block atlas
+into a small atlas of its own (`layouts.png`, 16 px a tile). 938 of the 941
+kinds of block in 2.9 are captured; the rest fall back to cubes with their
+face textures. A tier is stored as what changes from the base build: most
+are a swap of one block for another (a coil tier), the rest blocks added
+and removed. It also holds the pack's connected textures for those blocks
+(MCPatcher's compact definitions, read from the mod jars by
+`CtmDefinitions.java`, their tiles in `layouts.png`), which the page uses to
+join glass, coils and casings up. `Layouts.java` describes the format.
 
 ## Credits
 

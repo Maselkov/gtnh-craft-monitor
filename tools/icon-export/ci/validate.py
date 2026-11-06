@@ -26,6 +26,7 @@ actually applied.
 
 Needs Pillow.
 """
+import gzip
 import json
 import random
 import sys
@@ -58,7 +59,22 @@ MINIMUMS = {
     # GregTech (Recipes.java) or NEI's catalysts broke.
     "recipes": 100000,
     "recipeMapsWithMachines": 100,
+    # GTNH 2.9 has 334 GregTech multiblocks, and every one builds: far
+    # fewer means the build in StructureBuilder.java broke.
+    "multiblocks": 250,
+    # The blocks they're built from, with textures for 3D (Layouts.java):
+    # about 600 kinds in 2.9, nearly all with textures.
+    "layoutBlocks": 300,
+    "layoutTextures": 300,
+    # And their geometry as the game draws it (BlockMeshes.java): all but
+    # a handful in 2.9; far fewer means the capture broke.
+    "layoutMeshes": 300,
+    # The connected textures for their blocks (CtmDefinitions.java): 121
+    # in 2.9.
+    "ctmUsed": 60,
 }
+# The EBF: 16 coils, the first coil channel tier's (Cupronickel).
+KNOWN_STRUCTURE = ("gregtech:gt.blockmachines:1000", "gregtech:gt.blockcasings5:0", 16)
 # A tooltip line every GTNH version since the DTPF's has.
 KNOWN_TOOLTIP = "dtpf"
 MAX_FAILED_SHARE = 0.05
@@ -112,6 +128,22 @@ def check(out_dir):
     tooltips = json.loads((out_dir / "item_info.json").read_text())["tooltips"]
     if not any(KNOWN_TOOLTIP in text.lower() for text in tooltips["by_key"].values()):
         problems.append(f"no tooltip mentions {KNOWN_TOOLTIP.upper()}")
+
+    with gzip.open(out_dir / "structures.json.gz") as f:
+        structures = json.load(f)["multiblocks"]
+    controller, block, count = KNOWN_STRUCTURE
+    built = structures.get(controller, {}).get("base", {}).get(block)
+    if built != count:
+        problems.append(f"{controller} has {built} of {block}, expected {count}")
+    # Its layout places the same coils (Cupronickel is gt.blockcasings5
+    # with meta 0, as its item is).
+    with gzip.open(out_dir / "layouts.json.gz") as f:
+        layout = json.load(f)["multiblocks"].get(controller, {}).get("base", {})
+    placed = len(layout.get(block, []))
+    if placed != count:
+        problems.append(f"{controller}'s layout places {placed} of {block}, expected {count}")
+    if not (out_dir / "layouts.png").is_file():
+        problems.append("no layouts.png")
 
     lookup = json.loads((out_dir / "icons_lookup.json").read_text())
     with zipfile.ZipFile(out_dir / "images.zip") as zf:

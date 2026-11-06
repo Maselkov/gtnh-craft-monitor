@@ -96,7 +96,8 @@ if $install; then
     rm -f "$dest"/images*.zip
     cp "$out/data.json" "$out"/images*.zip "$out/icons_lookup.json" \
         "$out/item_catalog.txt" "$out/ore_dict.json" "$out/item_info.json" \
-        "$out/recipes.json.gz" "$dest/"
+        "$out/recipes.json.gz" "$out/structures.json.gz" \
+        "$out/layouts.json.gz" "$out/layouts.png" "$dest/"
     # Same format gcm/gamedata.py writes; "previous" keeps the last
     # version around for switching back. Default textures; with --faithful,
     # the Game data page switches to Faithful without downloading anything.

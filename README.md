@@ -24,6 +24,9 @@ Basically, it's web AE2 for your base.
 - **[Remote crafting](docs/using.md#requesting-and-cancelling-crafts)** —
   request or cancel AE2 crafts from the browser, with a preview of the
   crafting plan (with an ME Interface Terminal connected).
+- **[Multiblock kits](docs/using.md#multiblock-kits)** — every block a
+  GregTech multiblock is built from, for the coils, glass and size you
+  pick, with what the network has; request the missing ones at once.
 - **[Stock rules](docs/using.md#stock-rules)** — get a notification when an
   item runs low, or have the server queue a craft to keep it stocked.
 - **[Pattern check](docs/using.md#pattern-check)** — before or after a GTNH

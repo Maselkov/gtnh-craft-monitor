@@ -282,6 +282,28 @@ final class IconRenderer {
         return toImage(pixels, false);
     }
 
+    /**
+     * A block face texture from the blocks atlas, flat as the fluids are drawn (Layouts' atlas);
+     * null if nothing visible was drawn.
+     */
+    BufferedImage renderSprite(IIcon icon) {
+        capture(() -> {
+            resetState();
+            GL11.glDisable(GL11.GL_LIGHTING);
+            GL11.glEnable(GL11.GL_BLEND);
+            OpenGlHelper.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ONE, GL11.GL_ZERO);
+            try {
+                GL11.glColor4f(1f, 1f, 1f, 1f);
+                Minecraft.getMinecraft().getTextureManager().bindTexture(TextureMap.locationBlocksTexture);
+                gui.drawTexturedModelRectFromIcon(0, 0, icon, 16, 16);
+            } finally {
+                resetTessellator();
+                RenderHelper.enableGUIStandardItemLighting();
+            }
+        }, pixels);
+        return toImage(pixels, false);
+    }
+
     /** How many renders needed the second, white-background pass. */
     int translucentRenders() {
         return translucentRenders;
