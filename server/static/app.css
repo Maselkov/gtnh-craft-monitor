@@ -22,6 +22,9 @@
   --border-mid: rgba(128,128,128,0.25);
   --border-strong: rgba(128,128,128,0.3);
   --border-stronger: rgba(128,128,128,0.35);
+  /* The network grid's counts (.network-cell-qty). */
+  --qty-text: #fff;
+  --qty-outline: #000;
   /* NEI's yellow and aqua for its # and $ search prefixes, GregTech's
      green for its =. */
   --search-tooltip: #f2d43d;
@@ -58,6 +61,8 @@
     --border-mid: #c4c9d1;
     --border-strong: #b9bfc8;
     --border-stronger: #aeb5bf;
+    --qty-text: #1a1d24;
+    --qty-outline: #fff;
   }
 }
 :root[data-theme="light"] {
@@ -84,6 +89,8 @@
   --border-mid: #c4c9d1;
   --border-strong: #b9bfc8;
   --border-stronger: #aeb5bf;
+  --qty-text: #1a1d24;
+  --qty-outline: #fff;
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
@@ -991,11 +998,14 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
   bottom: 2px;
   font-size: 10px;
   font-weight: 700;
-  /* Like the game's inventory counts, in either theme: white with a
-     black outline reads on any icon, black ones (fluids) included. */
-  color: #fff;
-  text-shadow: 1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000,
-    1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000;
+  /* A sharp outline in the opposite colour reads on any icon, black
+     ones (fluids) included: white on black on dark, like the game's
+     counts, and dark on white on light, where the cells are white. */
+  color: var(--qty-text);
+  text-shadow: 1px 0 0 var(--qty-outline), -1px 0 0 var(--qty-outline),
+    0 1px 0 var(--qty-outline), 0 -1px 0 var(--qty-outline),
+    1px 1px 0 var(--qty-outline), -1px -1px 0 var(--qty-outline),
+    1px -1px 0 var(--qty-outline), -1px 1px 0 var(--qty-outline);
   font-variant-numeric: tabular-nums;
   z-index: 3;
 }

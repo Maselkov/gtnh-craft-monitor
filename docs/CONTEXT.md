@@ -1152,9 +1152,12 @@ black glow behind dark text. Now `app.css`'s light blocks set each
 colour used as text to a deeper shade of the same hue, at 4.5:1 or
 more on white (an e2e step checks it), borders to solid greys
 (`--border-faint` to `--border-stronger`, the same five strengths). The
-grid's counts are drawn like the game's in both themes, white with a
-sharp black outline, which reads on any icon, black fluids included. Apart from the counts, the dark values are
-exactly what was there before. The charts read the same colours (`chartColors()`), since a
+grid's counts have a sharp outline in the opposite colour, which reads
+on any icon, black fluids included: white on black in dark, like the
+game's, and dark on white in light. The game's white-on-black only
+works on its grey slots; on light's white cells the outline was all
+you saw, thick and blobby at 10 px. Apart from the counts' sharp outline, the
+dark values are exactly what was there before. The charts read the same colours (`chartColors()`), since a
 canvas can't use `var()`, and rebuild when the theme changes. The
 item tooltip stays dark in both themes, like the game's.
 
