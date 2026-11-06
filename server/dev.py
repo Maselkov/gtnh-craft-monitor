@@ -12,6 +12,9 @@ Starts the real app on a throwaway data directory with:
   and restart, network scans, power readings, and craft/cancel requests
   from the page accepted (or refused when every CPU is busy).
 
+Its favicon and app icons are red (ICON_COLOR), so a dev tab doesn't
+pass for a real server's.
+
 Options: --port, --host (0.0.0.0 to try it from a phone), --data-dir to
 keep the data between runs, --no-icons, --open to open a browser.
 Nothing here touches server/data/.
@@ -61,6 +64,9 @@ os.environ["CRAFT_BLOCK_GRACE_SECONDS"] = "10"
 # (and auto-update holds back, as it never updates past the latest).
 os.environ["GCM_SCRIPTS_VERSION"] = "v1.1.0"
 os.environ["GCM_VERSION"] = "v1.1.0"
+# The favicon and app icons in red (gcm/app_icons.py), so a dev tab
+# doesn't pass for a real server's.
+os.environ["ICON_COLOR"] = "#ff6b6b"
 
 from gcm import bottlenecks, create_app, db, icons, patterns, store  # noqa: E402
 from gcm.routes.crafts import name_cpus  # noqa: E402

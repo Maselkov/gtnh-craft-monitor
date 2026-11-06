@@ -6,6 +6,7 @@ monkeypatching take effect everywhere."""
 
 import ipaddress
 import os
+import re
 import secrets
 
 
@@ -54,6 +55,21 @@ SERVER_VERSION = os.environ.get("GCM_VERSION", "").strip() or None
 SCRIPTS_VERSION = os.environ.get("GCM_SCRIPTS_VERSION", "").strip() or None
 GTNH_VERSION = os.environ.get("GTNH_VERSION", "").strip()
 GTNH_TEXTURES = os.environ.get("GTNH_TEXTURES", "").strip()
+
+
+def _parse_icon_color(value):
+    """ICON_COLOR, '#rrggbb' or 'rrggbb', as (r, g, b); None when unset."""
+    value = value.strip().lstrip("#")
+    if not value:
+        return None
+    if not re.fullmatch(r"[0-9a-fA-F]{6}", value):
+        raise RuntimeError(f"Invalid ICON_COLOR: {value!r} (a colour as #rrggbb, e.g. #ff6b6b)")
+    return tuple(int(value[i:i + 2], 16) for i in (0, 2, 4))
+
+
+# The favicon and app icons' maze in this colour instead of blue
+# (gcm/app_icons.py): a test server's tab apart from the real one's.
+ICON_COLOR = _parse_icon_color(os.environ.get("ICON_COLOR", ""))
 # A directory of bundles (<version>/ each, as in DATA_DIR/gamedata) that
 # several servers on one host read without copying - may be read-only.
 # A version found there needs no download; downloads still go to

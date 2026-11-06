@@ -1730,6 +1730,9 @@ rsvg-convert -w 128 favicon.svg | magick -size 180x180 xc:'#0f1115' - -gravity c
 ```
 
 The icons use fixed colours: a favicon can't follow the page's theme.
+`ICON_COLOR` swaps the maze's blue for another colour (`gcm/app_icons.py`,
+from the same files, so a new icon needs nothing more), for a dev or
+test server's tab to stand out; `dev.py` sets it to red.
 The header has no logo; the mockups found it competed with the title.
 
 **Run-to-run differences.** Two exports of the same pack with the same

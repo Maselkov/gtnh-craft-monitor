@@ -221,3 +221,9 @@ def test_patterns_give_plans_that_show_each_case(game, client, tmp_path):
     assert [s["name"] for s in diamond["substitutes"]] == ["Industrial Diamond"]
     assert any(c.get("substitute") and c["pattern"]["provider"] == "Electric Implosion Compressor"
                for c in diamond["children"])
+
+
+
+def test_a_dev_server_has_the_icons_in_red():
+    # Read by gcm.config at import, like the rest of dev.py's settings.
+    assert config._parse_icon_color(dev.os.environ["ICON_COLOR"]) == (0xFF, 0x6B, 0x6B)
