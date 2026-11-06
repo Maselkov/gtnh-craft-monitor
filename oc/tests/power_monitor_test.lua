@@ -89,6 +89,54 @@ test("the wireless network is posted once, under WIRELESS_NAME, with several LSC
   t.eq(r[3], { machine = "Team grid", stored = 7000, capacity = 0, poll_seconds = 60 })
 end)
 
+test("posts the LSC's wireless mode and capacitors, for its wireless threshold", function()
+  local env = t.env()
+  gt.new(env, { stored = 6e15, capacity = 9e18, wireless_eu = "5000", wireless_mode = true,
+    capacitors = { UEV = 1, UIV = 2 } })
+  env:start_service("power_monitor")
+  env:run({ seconds = 1 })
+  local lsc = readings(env)[1]
+  t.eq(lsc.wireless_mode, true)
+  t.eq(lsc.capacitors, { UHV = 0, UEV = 1, UIV = 2, UMV = 0 })
+  t.eq(wireless(env)[1].wireless_mode, nil)  -- the network itself has none
+end)
+
+test("posts wireless_mode false for an LSC that isn't in wireless mode", function()
+  local env = t.env()
+  gt.new(env, { wireless_eu = "5000", wireless_mode = false })
+  env:start_service("power_monitor")
+  env:run({ seconds = 1 })
+  t.eq(readings(env)[1].wireless_mode, false)
+end)
+
+test("reads a real LSC's sensor lines (GTNH 2.9.0)", function()
+  local env = t.env()
+  local p = "kekztech.infodata.lapotronic_super_capacitor."
+  gt.new(env, { stored = 6214599855272868, capacity = 9223382236854775807, sensor = {
+    "kekztech.infodata.operational_data",
+    p .. "eu_stored\\\\6,214,599,855,272,868",
+    p .. "avg_eu_in.sec\\\\109,951,162,122\\\\5",
+    p .. "avg_eu_out.sec\\\\59,123,779,149\\\\5",
+    p .. "time_to.full\\\\105.15 days",
+    "kekztech.infodata.multi.maintenance_status.ok",
+    p .. "wireless_mode.enabled",
+    p .. "capacitors\\\\\194\1674\194\167nUHV\194\167r\\\\0",
+    p .. "capacitors\\\\\194\1675\194\167nUEV\194\167r\\\\1",
+    p .. "capacitors\\\\\194\1671\194\167l\194\167nUIV\194\167r\\\\0",
+    p .. "capacitors\\\\\194\167c\194\167l\194\167nUMV\194\167r\\\\0",
+    p .. "wireless_eu\\\\\194\167c64,975,224,327,465,740",
+    p .. "wireless_eu\\\\\194\167c6.50x10^16",
+  } })
+  env:start_service("power_monitor")
+  env:run({ seconds = 1 })
+  local r = readings(env)
+  t.eq(r[1].avg_eu_in_5s, 109951162122)
+  t.eq(r[1].wireless_mode, true)
+  t.eq(r[1].capacitors, { UHV = 0, UEV = 1, UIV = 0, UMV = 0 })
+  t.eq(r[2].machine, "Wireless")
+  t.truthy(math.abs(r[2].stored / 64975224327465740 - 1) < 1e-12)  -- past 2^53
+end)
+
 test("the status screen shows the wireless network without a capacity", function()
   local env = t.env({ config = { power_monitor = { SHOW_STATUS = true } } })
   gt.new(env, { stored = 4e9, capacity = 1e10, wireless_eu = "5000" })

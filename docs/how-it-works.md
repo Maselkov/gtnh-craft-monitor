@@ -274,3 +274,12 @@ when they're in one), whether or not the LSC's own wireless mode is on.
 Once that's above 0, the script posts it as one more machine with a
 capacity of 0, which the page reads as "no capacity". The value can be
 past 2⁶³, so it's sent as a float and loses its last digits.
+
+The LSC's own reading also carries its wireless mode (in the line's key:
+`wireless_mode.enabled`) and its count of each wireless capacitor tier
+(`capacitors` lines, UHV to UMV). From these the server works out the LSC's
+wireless threshold: 6×10¹³ EU per UHV capacitor, ×100 a tier. That's the
+EU the LSC keeps; every 5 minutes it uploads what's above it to the network
+and downloads up to it. The script posts the raw counts and leaves the
+arithmetic to the server, so a change to it doesn't need a script update.
+The LSC's averaged EU in/out are per tick; the page shows them per second.

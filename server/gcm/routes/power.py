@@ -1,6 +1,7 @@
 """Power monitor: SQLite-backed time series of a GT machine's energy
 level, fed by oc/power_monitor.lua."""
 
+import math
 import time
 
 from flask import Blueprint, jsonify, request, Response
@@ -31,6 +32,14 @@ TREND_FIELDS = (
 )
 
 
+def _finite(v):
+    """v as a float when it's a finite number, else None: one Infinity
+    stored would make every later /api/power reply invalid JSON."""
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+        return None
+    return float(v)
+
+
 @bp.route("/api/power", methods=["POST"])
 @auth.api_key_required
 def power_post():
@@ -43,6 +52,9 @@ def power_post():
     ts = payload.get("timestamp")
     if stored is None or capacity is None:
         return jsonify({"error": "missing stored/capacity"}), 400
+    stored, capacity = _finite(stored), _finite(capacity)
+    if stored is None or capacity is None:
+        return jsonify({"error": "stored/capacity must be finite numbers"}), 400
     now = time.time()
     if ts is None:
         ts = now
@@ -57,15 +69,18 @@ def power_post():
         # All optional - older power_monitor.lua deployments (or a
         # component that doesn't report these at all) simply won't send
         # them, and that's fine, not an error.
-        v = payload.get(key)
-        return float(v) if v is not None else None
+        # Anything but a finite number is left out like a missing one.
+        return _finite(payload.get(key))
 
+    wireless_mode = payload.get("wireless_mode")
     store.power.add_reading(
         float(ts),
-        float(stored),
-        float(capacity),
+        stored,
+        capacity,
         {key: _f(key) for key in TREND_FIELDS},
         machine.strip(),
+        threshold=store.power.wireless_threshold(wireless_mode, payload.get("capacitors")),
+        wireless_mode=wireless_mode if isinstance(wireless_mode, bool) else None,
     )
     with state.power_lock:
         state.power_poll_seconds[machine.strip()] = state.reported_interval(payload.get("poll_seconds"))
@@ -75,9 +90,18 @@ def power_post():
 
 def _machine_entry(name, t, latest=None):
     """A machine for the picker and the tab's fill: its name, last
-    reading time and that reading's stored/capacity."""
+    reading time and that reading's stored/capacity/wireless threshold."""
     row = latest or store.power.latest(name)
-    return {"name": name, "t": t, "stored": row[1] if row else None, "capacity": row[2] if row else None}
+    return {
+        "name": name,
+        "t": t,
+        "stored": row[1] if row else None,
+        "capacity": row[2] if row else None,
+        "wireless_threshold": row[5] if row else None,
+        # An LSC's wireless mode, as its sensor says; None for any other
+        # machine, or an LSC on a script from before it was read.
+        "wireless_mode": None if not row or row[8] is None else bool(row[8]),
+    }
 
 
 @bp.route("/api/power", methods=["GET"])
@@ -98,7 +122,7 @@ def power_get():
             "machine": machine,
             "machines": [_machine_entry(name, t, latest if name == machine else None) for name, t in machines],
             "range": range_key,
-            "points": [{"t": r[0], "stored": r[1], "capacity": r[2]} for r in rows],
+            "points": [{"t": r[0], "stored": r[1], "capacity": r[2], "wireless_threshold": r[3]} for r in rows],
             "latest": (
                 {
                     "t": latest[0],
@@ -106,6 +130,9 @@ def power_get():
                     "capacity": latest[2],
                     "avg_eu_in_5s": latest[3],
                     "avg_eu_out_5s": latest[4],
+                    "wireless_threshold": latest[5],
+                    "avg_eu_in_1h": latest[6],
+                    "avg_eu_out_1h": latest[7],
                 }
                 if latest
                 else None

@@ -218,6 +218,74 @@ class TestMachines:
         self.post(client, api_headers, 1, "LSC")
         assert client.get("/api/power?machine=nope").get_json()["machine"] == "LSC"
 
+    def test_wireless_network_is_the_default_while_it_reports(self, client, api_headers):
+        # An LSC in wireless mode sits near empty; the network holds the power.
+        self.post(client, api_headers, 1, "LSC")
+        client.post("/api/power", json={"stored": 6.5e16, "capacity": 0, "machine": "Wireless"}, headers=api_headers)
+        data = client.get("/api/power").get_json()
+        assert (data["machine"], data["latest"]["stored"]) == ("Wireless", 6.5e16)
+        assert client.get("/api/power?machine=LSC").get_json()["machine"] == "LSC"
+        assert 'content="Power · Wireless"' in client.get("/power").get_data(as_text=True)
+
+    def test_lsc_in_wireless_mode_gets_its_threshold(self, client, api_headers):
+        body = {"stored": 6.2e15, "capacity": 9.2e18, "machine": "LSC"}
+        caps = {"UHV": 1, "UEV": 1, "UIV": 0, "UMV": 0, "UXV": 9, "bad": "x"}  # unknown tiers ignored
+        client.post(
+            "/api/power",
+            json={**body, "wireless_mode": True, "capacitors": caps, "avg_eu_in_1h": 7, "avg_eu_out_1h": 5},
+            headers=api_headers,
+        )
+        data = client.get("/api/power?machine=LSC").get_json()
+        assert (data["latest"]["avg_eu_in_1h"], data["latest"]["avg_eu_out_1h"]) == (7, 5)
+        assert data["latest"]["wireless_threshold"] == 6e13 + 6e15
+        assert data["points"][-1]["wireless_threshold"] == 6e13 + 6e15
+        assert data["machines"][0]["wireless_threshold"] == 6e13 + 6e15
+        html = client.get("/power?machine=LSC").get_data(as_text=True)
+        assert "102.3% of its 6.06P EU wireless threshold" in html
+
+    def test_non_finite_numbers_are_refused_or_left_out(self, client, api_headers):
+        # One Infinity stored would make every /api/power reply invalid JSON.
+        post = lambda body: client.post("/api/power", json=body, headers=api_headers)  # noqa: E731
+        assert post({"stored": float("inf"), "capacity": 1, "machine": "LSC"}).status_code == 400
+        assert post({"stored": 1, "capacity": float("nan"), "machine": "LSC"}).status_code == 400
+        assert post({"stored": "1", "capacity": 2, "machine": "LSC"}).status_code == 400
+        assert post({
+            "stored": 1, "capacity": 2, "machine": "LSC", "avg_eu_in_5s": float("inf"), "avg_eu_out_5s": "x",
+            "wireless_mode": True, "capacitors": {"UEV": float("inf"), "UHV": 1},
+        }).status_code == 200
+        res = client.get("/api/power?machine=LSC")
+        assert "Infinity" not in res.get_data(as_text=True) and "NaN" not in res.get_data(as_text=True)
+        latest = res.get_json()["latest"]
+        assert (latest["avg_eu_in_5s"], latest["avg_eu_out_5s"], latest["wireless_threshold"]) == (None, None, 6e13)
+
+    def test_wireless_mode_is_kept_for_the_badge(self, client, api_headers):
+        # An LSC that says it's not in wireless mode, one on an older
+        # script that doesn't say, and batteries that never do.
+        for machine, mode in (("Normal LSC", False), ("Old script", None), ("Batteries", "yes")):
+            body = {"stored": 1, "capacity": 10, "machine": machine}
+            if mode is not None:
+                body["wireless_mode"] = mode
+            client.post("/api/power", json=body, headers=api_headers)
+        modes = {m["name"]: m["wireless_mode"] for m in client.get("/api/power").get_json()["machines"]}
+        assert modes == {"Normal LSC": False, "Old script": None, "Batteries": None}
+
+    def test_no_threshold_without_wireless_mode(self, client, api_headers):
+        body = {"stored": 1, "capacity": 9, "machine": "LSC", "capacitors": {"UEV": 1}}
+        client.post("/api/power", json={**body, "wireless_mode": False}, headers=api_headers)
+        client.post("/api/power", json=body, headers=api_headers)
+        client.post("/api/power", json={**body, "wireless_mode": True, "capacitors": {"UEV": 0}}, headers=api_headers)
+        rows = conn_rows("SELECT wireless_threshold FROM power_readings")
+        assert rows == [(None,), (None,), (None,)]
+
+    def test_stale_wireless_network_is_not_the_default(self, client, api_headers):
+        self.post(client, api_headers, 1, "LSC")
+        client.post(
+            "/api/power",
+            json={"stored": 6.5e16, "capacity": 0, "machine": "Wireless", "timestamp": time.time() - 600},
+            headers=api_headers,
+        )
+        assert client.get("/api/power").get_json()["machine"] == "LSC"
+
     def test_bad_names_rejected(self, client, api_headers):
         assert self.post(client, api_headers, 1, 5).status_code == 400
         assert self.post(client, api_headers, 1, "x" * 65).status_code == 400
@@ -251,7 +319,7 @@ class TestPowerDownsampling:
         rows = [(now - 60 * i, 1000 + i, 5000) for i in range(10)]
         self._seed(rows)
         result = store.power.readings(now - 3600, max_points=100)
-        assert result == sorted(rows)
+        assert result == [(*row, None) for row in sorted(rows)]  # no wireless threshold
 
     def test_over_the_cap_is_averaged_into_ordered_buckets(self):
         now = time.time()
@@ -299,7 +367,7 @@ class TestTimestamps:
                 "INSERT INTO power_readings (ts, stored, capacity) VALUES (?, ?, ?)",
                 [(1500000000, 1, 2), (now - 40 * 86400, 3, 4), (now, 5, 6), (now + 3 * 86400, 7, 8)],
             )
-            conn.execute(f"PRAGMA user_version = {len(db.POWER_MIGRATIONS) - 1}")
+            conn.execute(f"PRAGMA user_version = {db.POWER_MIGRATIONS.index(db._power_drop_impossible_times)}")
             conn.commit()
         finally:
             conn.close()

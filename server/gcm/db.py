@@ -282,6 +282,17 @@ def _power_machines(conn):
     conn.execute("CREATE INDEX idx_power_readings_machine_ts ON power_readings (machine, ts)")
 
 
+def _power_wireless_lsc(conn):
+    # An LSC's wireless mode (1/0; NULL for other machines and older
+    # scripts) and, in wireless mode, the threshold it keeps and trades
+    # the rest above with the wireless network.
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(power_readings)")}
+    if "wireless_threshold" not in existing:
+        conn.execute("ALTER TABLE power_readings ADD COLUMN wireless_threshold REAL")
+    if "wireless_mode" not in existing:
+        conn.execute("ALTER TABLE power_readings ADD COLUMN wireless_mode INTEGER")
+
+
 # 2026-01-01: before this project's earliest data (its history predates
 # the repository by a few days), so no real reading is older.
 POWER_EARLIEST_REAL_TS = 1767225600
@@ -724,7 +735,7 @@ APP_MIGRATIONS = [
     _app_mcp_calls,
     _app_cancel_source,
 ]
-POWER_MIGRATIONS = [_power_baseline, _power_machines, _power_drop_impossible_times]
+POWER_MIGRATIONS = [_power_baseline, _power_machines, _power_drop_impossible_times, _power_wireless_lsc]
 ITEM_HISTORY_MIGRATIONS = [
     _item_history_baseline,
     _item_history_variants,

@@ -30,3 +30,36 @@ test('powerBadge warns when power is running out or nearly gone', () => {
   // An empty buffer of no size isn't "low".
   assert.equal(powerBadge({ stored: 0, capacity: 0 }, null), null);
 });
+
+test('powerBadge warns about the wireless network only when it empties within a day', () => {
+  const wireless = { stored: 6.5e16, capacity: 0 };
+  assert.equal(powerBadge(wireless, null), null);
+  assert.equal(powerBadge(wireless, { seconds_to_empty: 30 * 3600 }), null);
+  assert.equal(powerBadge(wireless, { seconds_to_empty: 20 * 3600 }).label, 'running out within a day');
+});
+
+test('powerBadge measures an LSC in wireless mode by its threshold', () => {
+  const now = 10000;
+  const wireless = { stored: 6.5e16, capacity: 0 };
+  const lsc = (stored, t = now) => ({ name: 'LSC', t, stored, capacity: 9.2e18, wireless_threshold: 6e15 });
+  // Under 1% of its capacity, but right at its threshold: fine.
+  assert.equal(powerBadge(lsc(6e15), null, [lsc(6e15)], now), null);
+  assert.equal(powerBadge(lsc(6.3e15), null, [lsc(6.3e15)], now), null);
+  // Drained between refills, whichever machine is the default.
+  assert.equal(powerBadge(wireless, null, [lsc(3e14), { ...wireless, t: now }], now).label,
+    'LSC under 10% of its wireless threshold');
+  assert.equal(powerBadge(lsc(3e14), null, [lsc(3e14)], now).label, 'LSC under 10% of its wireless threshold');
+  // An LSC that says it's not in wireless mode still warns when low, even
+  // with the wireless network the default; one on an older script doesn't
+  // say, so its capacity (meaningless in wireless mode) isn't judged.
+  const normal = { name: 'LSC', t: now, stored: 5, capacity: 100, wireless_mode: false };
+  assert.equal(powerBadge(wireless, null, [normal], now).label, 'LSC under 10% full');
+  assert.equal(powerBadge(wireless, null, [{ ...normal, wireless_mode: null }], now), null);
+  assert.equal(powerBadge(wireless, null, [{ ...normal, stored: 50 }], now), null);
+  assert.equal(powerBadge(wireless, null, [{ ...normal, name: '', t: now - 600 }], now), null);
+  assert.equal(powerBadge(wireless, null, [{ ...normal, name: '' }], now).label, 'Main under 10% full');
+  // Draining between refills isn't running out.
+  assert.equal(powerBadge(lsc(5e15), { seconds_to_empty: 600 }, [lsc(5e15)], now), null);
+  // A reading that's gone stale doesn't count.
+  assert.equal(powerBadge(wireless, null, [lsc(3e14, now - 600)], now), null);
+});

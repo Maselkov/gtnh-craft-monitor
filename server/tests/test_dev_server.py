@@ -33,7 +33,9 @@ def test_tick_reports_crafts_power_and_a_scan(game, client):
     assert len(jobs["M00"]["pending"]) + len(jobs["M00"]["active"]) >= 20
     assert not jobs["B01"]["busy"]
 
-    assert client.get("/api/power").get_json()["latest"]["capacity"] == dev.CAPACITY
+    assert client.get("/api/power?machine=").get_json()["latest"]["capacity"] == dev.CAPACITY
+    # The wireless network, reporting, is the default.
+    assert client.get("/api/power").get_json()["machine"] == dev.WIRELESS
     assert len(client.get("/api/network").get_json()["items"]) > 20
 
 

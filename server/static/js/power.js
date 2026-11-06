@@ -1,7 +1,7 @@
 // Power tab: readings, trend and chart.
 
 import { CHART_RANGE_SECONDS_JS, CHART_TIME_CONFIG, CHART_X_TICKS } from './history.js';
-import { powerBadge, setTabBadge } from './tab-badges.js';
+import { machineLabel, powerBadge, setTabBadge } from './tab-badges.js';
 import { delegateActions, escapeHtml, formatDuration, formatRate } from './util.js';
 
 // ---------- Power chart ----------
@@ -53,7 +53,21 @@ export function formatEU(n) {
   return String(Math.round(n));
 }
 
-// The Power tab's URL: /power, or /power?machine=... once one is picked.
+// "64.9P": three digits and no unit, short enough for the tab button.
+export function compactEU(n) {
+  if (n == null) return '';
+  const units = ['', 'k', 'M', 'G', 'T', 'P', 'E'];
+  let i = 0;
+  while (i < units.length - 1 && Math.abs(n) >= 1000 ** (i + 1)) i++;
+  let digits = (n / 1000 ** i).toPrecision(3);
+  // 999.96T rounds to "1.00e+3": that's 1.00P.
+  if (Math.abs(Number(digits)) >= 1000 && i < units.length - 1) digits = (n / 1000 ** ++i).toPrecision(3);
+  if (Math.abs(Number(digits)) >= 1000) return n.toExponential(1);  // past E
+  return i === 0 ? String(Math.round(n)) : digits + units[i];
+}
+
+// The Power tab's URL: /power, or /power?machine=... once one is picked
+// (?machine= for the unnamed one).
 export function powerPath() {
   return powerMachine == null ? '/power' : `/power?machine=${encodeURIComponent(powerMachine)}`;
 }
@@ -64,31 +78,44 @@ export function powerMachineFromUrl() {
 }
 
 function setPowerMachine(name) {
-  powerMachine = name || null;  // the unnamed one is the default whenever it exists
+  // '' is the unnamed machine, picked like any other (?machine=), not
+  // the default: that's the wireless network while it reports.
+  powerMachine = name ?? null;
   history.replaceState({ view: 'power' }, '', powerPath());
   fetchPower();
 }
 
-// The unnamed machine is the one reported before machines had names.
-export function machineLabel(name) {
-  return name || 'Main';
-}
+export { machineLabel };
 
 // A machine that hasn't reported for this long (health.py's
 // POWER_STALE_SECONDS) is left out of the tab's fill, so one taken down
 // doesn't hold the total at its last reading forever.
 const FILL_STALE_SECONDS = 300;
 
+// What a machine's fill is measured against: an LSC in wireless mode
+// keeps only its wireless threshold (it trades the rest with the
+// network every 5 minutes), so that, not its capacity, is its "full".
+export function fillSize(m) {
+  return m.wireless_threshold > 0 ? m.wireless_threshold : m.capacity;
+}
+
+// One machine's fill, which goes past 1 for an LSC holding more than its
+// wireless threshold until the next upload. null without a size.
+export function machineFill(m) {
+  const size = fillSize(m);
+  return size > 0 && m.stored != null ? Math.max(0, m.stored / size) : null;
+}
+
 // How full every machine is together, 0..1: total stored over total
-// capacity, so a small buffer counts for its size, not as much as the
-// LSC. null when nothing has a capacity.
+// size, so a small buffer counts for its size, not as much as the
+// LSC. null when nothing has a size.
 export function powerFill(machines, now = Date.now() / 1000) {
-  const known = (machines || []).filter(m => m.capacity > 0 && m.stored != null);
+  const known = (machines || []).filter(m => fillSize(m) > 0 && m.stored != null);
   const fresh = known.filter(m => now - m.t <= FILL_STALE_SECONDS);
   const counted = fresh.length ? fresh : known;
-  const capacity = counted.reduce((sum, m) => sum + m.capacity, 0);
-  if (!capacity) return null;
-  return Math.min(1, Math.max(0, counted.reduce((sum, m) => sum + m.stored, 0) / capacity));
+  const size = counted.reduce((sum, m) => sum + fillSize(m), 0);
+  if (!size) return null;
+  return Math.min(1, Math.max(0, counted.reduce((sum, m) => sum + m.stored, 0) / size));
 }
 
 // "61%", or "<1%" rather than a misleading 0% while there's some left.
@@ -98,18 +125,41 @@ export function fillText(fraction) {
   return `${Math.round(fraction * 100)}%`;
 }
 
-// The fill on the Power tab button. Its span is always there, empty
-// without data, so the tabs after it keep their place.
+// What the Power tab button shows: the wireless network's EU while it
+// reports (an LSC in wireless mode moves all but its threshold there,
+// so its own fill stays under 1%), else how full the machines are.
+export function powerTabText(machines, now = Date.now() / 1000) {
+  const wireless = (machines || []).find(m =>
+    !(m.capacity > 0) && m.stored != null && now - m.t <= FILL_STALE_SECONDS);
+  return wireless ? compactEU(wireless.stored) : fillText(powerFill(machines, now));
+}
+
+// Its span is always there, empty without data, so the tabs after it
+// keep their place.
 function setPowerTabFill(machines) {
-  document.getElementById('tabFillPower').textContent = fillText(powerFill(machines));
+  document.getElementById('tabFillPower').textContent = powerTabText(machines);
+}
+
+// The machine buttons' order: the wireless network (no capacity) first,
+// as it's where the base's power is, then the rest as the server lists them.
+export function orderMachines(machines) {
+  const all = machines || [];
+  return [...all.filter(m => !(m.capacity > 0)), ...all.filter(m => m.capacity > 0)];
+}
+
+// What a machine button shows after its name: its fill, or for the
+// wireless network, which has no "full", its EU.
+export function machineButtonText(m) {
+  if (!(m.capacity > 0)) return m.stored != null ? compactEU(m.stored) : '';
+  return fillText(machineFill(m));
 }
 
 function renderMachines(data) {
   const box = document.getElementById('powerMachines');
-  const machines = data.machines || [];
+  const machines = orderMachines(data.machines);
   box.hidden = machines.length < 2;
   box.innerHTML = machines.map(m => {
-    const fill = m.capacity > 0 && m.stored != null ? fillText(m.stored / m.capacity) : '';
+    const fill = machineButtonText(m);
     return `<button class="range-btn${m.name === data.machine ? ' active' : ''}"
     data-action="power-machine" data-machine="${escapeHtml(m.name)}">${escapeHtml(machineLabel(m.name))}${
       fill ? ` <span class="machine-fill">${escapeHtml(fill)}</span>` : ''}</button>`;
@@ -145,9 +195,11 @@ export async function fetchPower() {
 // (server-side, in case they're wanted for something else later),
 // just not surfaced here anymore.
 function buildPowerTrendHtml(latest) {
-  const avgIn = latest.avg_eu_in_5s;
-  const avgOut = latest.avg_eu_out_5s;
-  if (avgIn == null || avgOut == null) return '';
+  if (latest.avg_eu_in_5s == null || latest.avg_eu_out_5s == null) return '';
+  // The LSC averages EU/t (its "time to full" only works out that way):
+  // 20 ticks a second.
+  const avgIn = latest.avg_eu_in_5s * 20;
+  const avgOut = latest.avg_eu_out_5s * 20;
 
   const net = avgIn - avgOut;
   let arrowHtml;
@@ -172,6 +224,19 @@ function buildPowerTrendHtml(latest) {
   `;
 }
 
+// The line under an LSC in wireless mode's readout, in place of "Full
+// in"/"Empty in" (the network refills it every 5 minutes): what it sent
+// to or drew from the network over the past hour, from its own averages
+// (EU/t), and when drawing, the most its threshold can refill - one
+// threshold's worth per 5-minute rebalance.
+export function wirelessLscText(latest) {
+  const refill = `${formatEU(latest.wireless_threshold / 300)} EU/s`;
+  if (latest.avg_eu_in_1h == null || latest.avg_eu_out_1h == null) return `Refills up to ${refill}`;
+  const net = (latest.avg_eu_in_1h - latest.avg_eu_out_1h) * 20;
+  if (net >= 0) return `Sending ${formatEU(net)} EU/s to the wireless network over the past hour`;
+  return `Drawing ${formatEU(-net)} EU/s from the wireless network over the past hour \u00b7 refills up to ${refill}`;
+}
+
 // "Full in 3h 5m · +1.20G EU/h over the past hour", from the server's
 // fit to the last hour of readings (gcm/rates.py) - steadier than the
 // 5s in/out arrow, which follows every machine switching on and off.
@@ -192,7 +257,7 @@ export async function fetchPowerBadge() {
   try {
     const res = await fetch('/api/power?range=hour');
     const data = await res.json();
-    setTabBadge('power', powerBadge(data.latest, data.trend));
+    setTabBadge('power', powerBadge(data.latest, data.trend, data.machines));
     setPowerTabFill(data.machines);
   } catch (e) { /* keep the last badge */ }
 }
@@ -201,25 +266,35 @@ function renderPower(data) {
   const points = data.points || [];
   renderMachines(data);
   setPowerTabFill(data.machines);
-  if (powerMachine == null) setTabBadge('power', powerBadge(data.latest, data.trend));
+  if (powerMachine == null) setTabBadge('power', powerBadge(data.latest, data.trend, data.machines));
   const empty = document.getElementById('powerEmpty');
   const chartWrap = document.getElementById('powerChartWrap');
   const canvas = document.getElementById('powerChart');
   document.getElementById('powerConnectNote').hidden = Boolean(data.latest);
 
   if (data.latest) {
-    const { stored, capacity } = data.latest;
-    // No capacity: the wireless network, which holds any amount.
-    const ofCapacity = capacity > 0
-      ? ` / ${formatEU(capacity)} EU (${(stored / capacity * 100).toFixed(1)}%)` : '';
+    const { stored, capacity, wireless_threshold: threshold } = data.latest;
+    // No capacity: the wireless network, which holds any amount. An LSC
+    // in wireless mode: its threshold, the 5-minute buffer it keeps.
+    let ofCapacity = '';
+    if (threshold > 0) {
+      ofCapacity = ` / ${formatEU(threshold)} EU wireless threshold (${(stored / threshold * 100).toFixed(1)}%)`;
+    } else if (capacity > 0) {
+      ofCapacity = ` / ${formatEU(capacity)} EU (${(stored / capacity * 100).toFixed(1)}%)`;
+    }
     const trendHtml = ' ' + buildPowerTrendHtml(data.latest);
     document.getElementById('powerCurrent').innerHTML =
       `<span class="big">${formatEU(stored)} EU</span>${ofCapacity}${trendHtml}`;
     const eta = document.createElement('div');
     eta.className = 'power-eta';
     eta.id = 'powerEta';
-    eta.textContent = powerEtaText(data.trend);
-    if (eta.textContent) document.getElementById('powerCurrent').append(eta);
+    // An LSC in wireless mode is refilled every 5 minutes: an hour's
+    // drift between refills says nothing about when it runs out.
+    // wirelessLscText says what it trades with the network instead.
+    eta.textContent = threshold > 0 ? wirelessLscText(data.latest) : powerEtaText(data.trend);
+    // Always there, a line high even when empty, so switching machines
+    // doesn't move the chart up and down.
+    document.getElementById('powerCurrent').append(eta);
   } else {
     document.getElementById('powerCurrent').textContent = 'No readings yet';
   }
@@ -239,8 +314,15 @@ function renderPower(data) {
   // parallel label list, which is what caused uneven, misleading
   // tick spacing on a category axis.
   const storedData = points.map(p => ({ x: p.t * 1000, y: p.stored }));
-  const capacityData = points.map(p => ({ x: p.t * 1000, y: p.capacity }));
-  const noCapacity = points.every(p => !(p.capacity > 0));
+  // The second line is the capacity, or for an LSC in wireless mode its
+  // threshold: against a capacity of 9.22E its few P would lie flat on 0.
+  // Readings from before it was in wireless mode have none, and leave a gap.
+  const byThreshold = points.some(p => p.wireless_threshold > 0);
+  const sizeLabel = byThreshold ? 'Wireless threshold' : 'Capacity';
+  const capacityData = points.map(p => ({
+    x: p.t * 1000, y: byThreshold ? (p.wireless_threshold > 0 ? p.wireless_threshold : null) : p.capacity,
+  }));
+  const noCapacity = !byThreshold && points.every(p => !(p.capacity > 0));
 
   const nowMs = Date.now();
   const rangeSeconds = CHART_RANGE_SECONDS_JS[data.range];
@@ -256,6 +338,7 @@ function renderPower(data) {
   if (powerChart) {
     powerChart.data.datasets[0].data = storedData;
     powerChart.data.datasets[1].data = capacityData;
+    powerChart.data.datasets[1].label = sizeLabel;
     powerChart.data.datasets[1].hidden = noCapacity;
     powerChart.options.scales.x.min = axisMin;
     powerChart.options.scales.x.max = axisMax;
@@ -279,7 +362,7 @@ function renderPower(data) {
           tension: 0.15,
         },
         {
-          label: 'Capacity',
+          label: sizeLabel,
           data: capacityData,
           borderColor: 'rgba(140,140,140,0.5)',
           borderDash: [4, 4],
@@ -309,8 +392,9 @@ function renderPower(data) {
           callbacks: {
             label: (item) => {
               // Only the "Stored EU" line (dataset 0) gets a
-              // percentage - pull the matching Capacity value at
-              // this same point from dataset 1 to compute it against.
+              // percentage - pull the matching Capacity (or wireless
+              // threshold) value at this same point from dataset 1 to
+              // compute it against.
               // .y since each point is now a {x,y} object, not a
               // plain number, on a genuine time scale.
               if (item.datasetIndex === 0) {

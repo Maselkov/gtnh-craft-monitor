@@ -37,7 +37,7 @@ def slope(points):
 
 def power_trend(rows, now):
     """{per_second, window_seconds, seconds_to_full, seconds_to_empty}
-    from the last POWER_WINDOW_SECONDS of (ts, stored, capacity) rows
+    from the last POWER_WINDOW_SECONDS of (ts, stored, capacity, ...) rows
     (ascending), or None when they span too little time. Fitted rather
     than first-to-last, so one noisy reading at either end doesn't
     decide it."""
@@ -47,7 +47,7 @@ def power_trend(rows, now):
     rate = slope([(r[0], r[1]) for r in recent])
     if rate is None:
         return None
-    _, stored, capacity = recent[-1]
+    stored, capacity = recent[-1][1], recent[-1][2]
     return {
         "per_second": rate,
         "window_seconds": recent[-1][0] - recent[0][0],

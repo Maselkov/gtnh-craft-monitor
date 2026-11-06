@@ -50,6 +50,9 @@
     LSC's own wireless mode is set to. Once that holds any EU, it's
     posted every poll too, as a machine named WIRELESS_NAME with no
     capacity; a base that doesn't use wireless never gets the entry.
+    The LSC's own reading also carries its wireless mode and how many
+    capacitors of each wireless tier (UHV and up) it has, from which the
+    server works out its wireless threshold.
 
   SETUP:
     1. Edit the CONFIG block below.
@@ -255,6 +258,35 @@ local function find_sensor_text_number(info, suffix)
   return nil
 end
 
+-- The LSC's wireless mode is in the key itself, with no value:
+-- "...lapotronic_super_capacitor.wireless_mode.enabled" (or .disabled).
+-- true, false, or nil when there's no such line.
+local function find_wireless_mode(info)
+  for _, line in ipairs(info) do
+    if line:find("wireless_mode.enabled", 1, true) then return true end
+    if line:find("wireless_mode.disabled", 1, true) then return false end
+  end
+  return nil
+end
+
+-- One line per wireless capacitor tier, the tier name in colour codes
+-- and the count after it: "...capacitors\\§5§nUEV§r\\1" (§ is \194\167).
+-- A list of {tier, count}, in the LSC's order, or nil when there are none.
+local function find_capacitors(info)
+  local found = {}
+  for _, line in ipairs(info) do
+    if line:find("lapotronic_super_capacitor.capacitors", 1, true) then
+      local parts = sensor_line_parts(line)
+      local tier = parts[2] and parts[2]:gsub("\194\167.", "")
+      local count = parts[3] and tonumber(parts[3])
+      if tier and tier:match("^%u+$") and count then
+        found[#found + 1] = { tier = tier, count = count }
+      end
+    end
+  end
+  return #found > 0 and found or nil
+end
+
 -- Returns a table of trend fields - any of which may be nil if this
 -- particular storage structure doesn't report them, getSensorInformation()
 -- itself fails, or the component has no such method at all. Confirmed
@@ -274,6 +306,8 @@ local function read_power_trend(gt)
     avg_eu_out_1h = find_sensor_value(info, "avg_eu_out.hour1"),
     time_to_empty_minutes = find_sensor_text_number(info, "time_to.empty"),
     wireless_eu = find_sensor_digits(info, "wireless_eu"),
+    wireless_mode = find_wireless_mode(info),
+    capacitors = find_capacitors(info),
   }
 end
 
@@ -353,6 +387,16 @@ local function post_reading(stored, capacity, trend, name)
     -- number (correct for EU amounts, wrong for a decimal minutes value
     -- like 10.06).
     parts[#parts + 1] = string.format('"time_to_empty_minutes":%s', tostring(trend.time_to_empty_minutes))
+  end
+  if trend.wireless_mode ~= nil then
+    parts[#parts + 1] = '"wireless_mode":' .. tostring(trend.wireless_mode)
+  end
+  if trend.capacitors then
+    local caps = {}
+    for _, c in ipairs(trend.capacitors) do
+      caps[#caps + 1] = json_string(c.tier) .. ":" .. json_encode_number(c.count)
+    end
+    parts[#parts + 1] = '"capacitors":{' .. table.concat(caps, ",") .. "}"
   end
   local body = "{" .. table.concat(parts, ",") .. "}"
   local ok, result = http.request_with_timeout(CONFIG.URL, body, {

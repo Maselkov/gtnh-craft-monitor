@@ -647,7 +647,12 @@ def power(user, args):
             "average_in_last_5s": _round(latest[3]),
             "average_out_last_5s": _round(latest[4]),
         }
-    if trend:
+        if latest[5]:
+            out["latest"]["wireless_threshold"] = latest[5]
+            out["latest"]["percent_of_wireless_threshold"] = _round(100 * latest[1] / latest[5], 1)
+    # An LSC in wireless mode is refilled every 5 minutes, so its drift
+    # between refills isn't a trend.
+    if trend and not (latest and latest[5]):
         out["trend"] = {
             "eu_per_second": _round(trend["per_second"]),
             "hours_to_empty": _round(trend["seconds_to_empty"] / 3600, 1) if trend.get("seconds_to_empty") else None,
@@ -1295,9 +1300,19 @@ TOOLS = [
     {
         "name": "power",
         "title": "Power storage",
-        "description": "EU stored in a power storage machine (an LSC, batteries, wireless) over time, its trend and EU/t in and out.",
+        "description": (
+            "EU stored in a power storage machine (an LSC, batteries, wireless) over time, its trend and EU/t "
+            "in and out. An LSC in wireless mode keeps only its wireless threshold and moves the rest to the "
+            "wireless network every 5 minutes, so its own fill near empty is normal: judge it by "
+            "percent_of_wireless_threshold (under 100% between rebalances means it's draining faster than "
+            "it's refilled; near 0 means it needs more or higher-tier capacitors), and the base's power by "
+            "the wireless network."
+        ),
         "inputSchema": _schema({
-            "machine": {"type": "string", "description": "Which machine; the first one if left out."},
+            "machine": {
+                "type": "string",
+                "description": "Which machine; the wireless network while it reports, else the first one, if left out.",
+            },
             "range": _range_arg(POWER_RANGES, "day", "How far back to look."),
         }),
         "annotations": READ_ONLY,

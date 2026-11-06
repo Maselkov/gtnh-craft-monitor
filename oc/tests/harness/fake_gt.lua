@@ -6,7 +6,8 @@
   machine.sensor is getSensorInformation()'s lines (built from those and
   machine.trend and machine.wireless_eu unless set directly; wireless_eu
   is a string of digits, as it can be past what a Lua number holds
-  exactly). machine:fail(method, message)
+  exactly; with it come machine.wireless_mode (true for enabled) and
+  machine.capacitors, counts by tier: { UEV = 1 }). machine:fail(method, message)
   makes a method raise; machine.methods_missing lists ones to leave out.
 --]]
 
@@ -37,7 +38,13 @@ local function sensor_lines(m)
     -- As the real LSC words it: a colour code ("§c" in UTF-8) and
     -- grouping, then the same key again in standard form.
     local grouped = m.wireless_eu:reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
-    add("wireless_mode", "\194\167cdisabled\194\167r")
+    -- As a real LSC words them (a 2.9.0 dump): the mode in the key, and
+    -- one line per wireless capacitor tier.
+    lines[#lines + 1] = prefix .. "wireless_mode." .. (m.wireless_mode and "enabled" or "disabled")
+    local codes = { UHV = "4", UEV = "5", UIV = "1\194\167l", UMV = "c\194\167l" }
+    for _, tier in ipairs({ "UHV", "UEV", "UIV", "UMV" }) do
+      add("capacitors", "\194\167" .. codes[tier] .. "\194\167n" .. tier .. "\194\167r\\" .. ((m.capacitors or {})[tier] or 0))
+    end
     add("wireless_eu", "\194\167c" .. grouped)
     add("wireless_eu", "\194\167c" .. string.format("%.2fE%d", tonumber(m.wireless_eu:sub(1, 3)) / 100, #m.wireless_eu - 1))
   end
@@ -51,6 +58,8 @@ function M.new(env, opts)
     capacity = opts.capacity or 1e10,
     trend = opts.trend,
     wireless_eu = opts.wireless_eu,
+    wireless_mode = opts.wireless_mode,
+    capacitors = opts.capacitors,
     sensor = opts.sensor,
     failures = {},
   }, Machine)

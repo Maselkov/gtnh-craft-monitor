@@ -1,5 +1,6 @@
 """power.db: stored-energy readings from power_monitor.lua."""
 
+import math
 import time
 
 from gcm import db
@@ -19,16 +20,40 @@ RANGE_SECONDS = {
 MAX_POINTS = 800
 
 
-def add_reading(ts, stored, capacity, trends, machine=""):
+# Each wireless capacitor tier's share of an LSC's wireless threshold
+# (wiki: Lapotronic Supercapacitor; ×100 a tier from UHV's 60T).
+WIRELESS_THRESHOLD_PER_CAPACITOR = {"UHV": 6e13, "UEV": 6e15, "UIV": 6e17, "UMV": 6e19}
+
+
+def wireless_threshold(wireless_mode, capacitors):
+    """The EU an LSC in wireless mode keeps: every 5 minutes it uploads
+    what's above it to the wireless network and downloads up to it.
+    None when wireless mode is off or unknown, or it has no wireless
+    capacitors. capacitors: {tier: count}, as power_monitor.lua posts."""
+    if wireless_mode is not True or not isinstance(capacitors, dict):
+        return None
+    total = sum(
+        WIRELESS_THRESHOLD_PER_CAPACITOR[tier] * count
+        for tier, count in capacitors.items()
+        if tier in WIRELESS_THRESHOLD_PER_CAPACITOR
+        and isinstance(count, (int, float)) and not isinstance(count, bool)
+        and math.isfinite(count) and count > 0
+    )
+    return total or None
+
+
+def add_reading(ts, stored, capacity, trends, machine="", threshold=None, wireless_mode=None):
     """trends: the optional trend fields power_monitor.lua may send
     (avg_eu_in_5s ... time_to_empty_minutes), each a float or None.
-    machine: its name, '' for one reported without."""
+    machine: its name, '' for one reported without.
+    threshold: see wireless_threshold().
+    wireless_mode: an LSC's, True/False; None when not reported."""
     with db.transaction(db.power_db) as conn:
         conn.execute(
             "INSERT INTO power_readings "
             "(machine, ts, stored, capacity, avg_eu_in_5s, avg_eu_out_5s, avg_eu_in_5m, avg_eu_out_5m, "
-            "avg_eu_in_1h, avg_eu_out_1h, time_to_empty_minutes) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "avg_eu_in_1h, avg_eu_out_1h, time_to_empty_minutes, wireless_threshold, wireless_mode) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 machine,
                 ts,
@@ -41,13 +66,15 @@ def add_reading(ts, stored, capacity, trends, machine=""):
                 trends.get("avg_eu_in_1h"),
                 trends.get("avg_eu_out_1h"),
                 trends.get("time_to_empty_minutes"),
+                threshold,
+                None if wireless_mode is None else int(wireless_mode),
             ),
         )
 
 
 def readings(since, max_points, machine=""):
-    """(ts, stored, capacity) rows of one machine from `since` on (None:
-    all), ascending.
+    """(ts, stored, capacity, wireless_threshold) rows of one machine
+    from `since` on (None: all), ascending.
     Over max_points readings, they're averaged into max_points equal
     time buckets inside SQLite, so a long range never pulls every raw
     reading into Python."""
@@ -62,14 +89,14 @@ def readings(since, max_points, machine=""):
         ).fetchone()
         if count <= max_points:
             return conn.execute(
-                f"SELECT ts, stored, capacity FROM power_readings {where} ORDER BY ts ASC",
+                f"SELECT ts, stored, capacity, wireless_threshold FROM power_readings {where} ORDER BY ts ASC",
                 params,
             ).fetchall()
         # The newest reading lands exactly on bucket max_points, so it's
         # folded into the last one.
         width = (last - first) / max_points
         return conn.execute(
-            f"SELECT AVG(ts), AVG(stored), AVG(capacity) FROM power_readings {where} "
+            f"SELECT AVG(ts), AVG(stored), AVG(capacity), AVG(wireless_threshold) FROM power_readings {where} "
             "GROUP BY MIN(CAST((ts - ?) / ? AS INTEGER), ?) ORDER BY 1",
             params + (first, width, max_points - 1),
         ).fetchall()
@@ -107,7 +134,8 @@ def latest(machine=""):
     separate queries) and efficiency."""
     with db.transaction(db.power_db) as conn:
         return conn.execute(
-            "SELECT ts, stored, capacity, avg_eu_in_5s, avg_eu_out_5s "
+            "SELECT ts, stored, capacity, avg_eu_in_5s, avg_eu_out_5s, wireless_threshold, avg_eu_in_1h, avg_eu_out_1h, "
+            "wireless_mode "
             "FROM power_readings WHERE machine = ? ORDER BY ts DESC LIMIT 1",
             (machine,),
         ).fetchone()
@@ -133,12 +161,29 @@ def machines():
         ]
 
 
-def pick(wanted):
+# How recent the wireless network's last reading must be for it to be
+# the default machine (health.POWER_STALE_SECONDS).
+WIRELESS_FRESH_SECONDS = 300
+
+
+def pick(wanted, now=None):
     """(machine, machines): `wanted` when it has readings, else the
-    first one ('' when there is one, as before machines had names),
-    plus machines() for the caller to reuse."""
+    wireless network if it's reporting, else the first one ('' when
+    there is one, as before machines had names), plus machines() for
+    the caller to reuse.
+
+    The wireless network is the one posted without a capacity. Once it
+    is in use, an LSC in wireless mode keeps only its threshold and
+    moves the rest there every 5 minutes, so the network is where the
+    base's power is."""
     found = machines()
     names = [name for name, _ in found]
     if wanted in names:
         return wanted, found
+    now = time.time() if now is None else now
+    for name, last in found:
+        if last is not None and now - last <= WIRELESS_FRESH_SECONDS:
+            row = latest(name)
+            if row and not row[2]:
+                return name, found
     return (names[0] if names else ""), found
