@@ -5,14 +5,14 @@ import { connectNoteHtml } from './agents.js';
 import { AUTH_USER, isOperator } from './auth.js';
 import { refreshCraftHistory } from './craft-history.js';
 import { refreshCraftStats } from './craft-stats.js';
-import { openCancelConfirmModal, pendingCancelCpus, showToast } from './craft-actions.js';
+import { openCancelConfirmModal, pendingCancelCpus } from './craft-actions.js';
 import { ingredientCount, openIngredientsModal, refreshIngredientsModal } from './ingredients.js';
-import { afterCraftsRender, isLinkedJob, jobPath } from './job-link.js';
+import { afterCraftsRender, isLinkedJob } from './job-link.js';
 import { nameText } from './description.js';
 import { craftsBadge, setTabBadge } from './tab-badges.js';
 import {
-  copyText, delegateActions, docsUrl, escapeHtml, formatDuration, formatRelativeTime, iconClass, iconUrl,
-  LINK_ICON, PIN_ICON, updateHtml,
+  delegateActions, docsUrl, escapeHtml, formatDuration, formatRelativeTime, iconClass, iconUrl, PIN_ICON,
+  updateHtml,
 } from './util.js';
 
 // Toggle-open state of the idle-CPU section, which has to survive the
@@ -98,19 +98,11 @@ export function setupCraftsActions() {
   const root = document.getElementById('root');
   delegateActions(root, {
     'toggle-pin': (el) => togglePin(el.dataset.cpu),
-    'copy-job-link': (el) => copyJobLink(el.dataset.cpu, Number(el.dataset.started)),
     'cancel-craft': (el) => openCancelConfirmModal(el.dataset.cpu),
     'open-ingredients': (el) => openIngredientsModal(el.dataset.cpu, lastData),
     'acknowledge': (el) => acknowledgePin(el.dataset.completionId),
     'acknowledge-all': () => acknowledgeAllPins(),
   });
-}
-
-// A link to the job, which keeps working after it ends (job-link.js).
-async function copyJobLink(cpu, startedAt) {
-  const url = location.origin + jobPath(cpu, startedAt);
-  if (await copyText(url)) showToast('Link to this craft copied.');
-  else showToast('Could not copy the link.', true);
 }
 
 async function togglePin(name) {
@@ -549,11 +541,6 @@ function renderCard(job) {
     ? `<button class="pin-btn ${isPinned ? 'pinned' : ''}" ${canPin ? '' : 'disabled'} data-action="toggle-pin" data-cpu="${escapeHtml(job.name)}" title="${pinTitle}">${PIN_ICON}</button>`
     : '';
 
-  // A job's link needs its start, which the server sends for a busy CPU.
-  const linkBtn = (job.busy && job.started_at != null)
-    ? `<button class="link-btn" data-action="copy-job-link" data-cpu="${escapeHtml(job.name)}" data-started="${escapeHtml(job.started_at)}" title="Copy a link to this craft">${LINK_ICON}</button>`
-    : '';
-
   const isCancelPending = pendingCancelCpus.has(job.name);
   const cancelBtn = (job.busy && isOperator())
     ? `<button class="cancel-btn${isCancelPending ? ' pending' : ''}" ${isCancelPending ? 'disabled' : ''} data-action="cancel-craft" data-cpu="${escapeHtml(job.name)}" title="${isCancelPending ? 'Cancelling…' : 'Cancel this craft'}">&times;</button>`
@@ -565,7 +552,6 @@ function renderCard(job) {
         <span class="card-cpu">CPU ${escapeHtml(job.name || '?')}</span>${job.auto_named ? AUTO_NAME_MARK : ''}
         ${autoBadge}
         <div class="head-right">
-          ${linkBtn}
           ${pinBtn}
           ${cancelBtn}
         </div>

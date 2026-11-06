@@ -109,7 +109,7 @@ function applyHistoryState(state) {
   const tab = state.tab || pathToTab(location.pathname);
   if (tab === 'power') powerMachineFromUrl();
   switchTab(tab, false);  // reacting to a nav that already happened - don't push another
-  readJobLinkFromUrl();
+  if (state.view !== 'ingredients') readJobLinkFromUrl();
 
   if (state.cpu) {
     if (ingredientsCpu() !== state.cpu) openIngredientsModal(state.cpu, lastData, false);

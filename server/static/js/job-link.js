@@ -1,14 +1,15 @@
 // A link to one crafting job: /crafts?cpu=<name>&job=<time>, the time
-// the server first saw the job (gcm/job_links.py). The page asks the
-// server which job that is now: still running, its details (the
-// Ingredients dialog) open over its card, which is outlined; ended, a
-// note above the CPUs says how it went (it lives outside #root, which
-// the 3s redraw replaces). The link stays good after the job ends.
+// the server first saw the job (gcm/job_links.py). It's the URL of the
+// job's details (the Ingredients dialog, which has a button to copy it).
+// Opened, the page asks the server which job that is now: still running,
+// its details open over its card, which is outlined; ended, a note above
+// the CPUs says how it went (it lives outside #root, which the 3s redraw
+// replaces). The link stays good after the job ends.
 
 import { nameText } from './description.js';
-import { ingredientCount, openIngredientsModal } from './ingredients.js';
+import { ingredientCount, onLinkedIngredientsClosed, openIngredientsModal } from './ingredients.js';
 import {
-  delegateActions, escapeHtml, formatDuration, formatRelativeTime, iconClass, iconUrl,
+  delegateActions, escapeHtml, formatDuration, formatRelativeTime, iconClass, iconUrl, jobPath,
 } from './util.js';
 
 // A job whose end the game is still reporting is asked about again after this.
@@ -19,11 +20,6 @@ let found = null;       // the server's last answer about it
 let shown = false;      // its card and details have been shown once
 let asking = false;
 let onChange = () => {};
-
-export function jobPath(cpu, startedAt) {
-  const query = new URLSearchParams({ cpu, job: String(Math.floor(startedAt)) });
-  return '/crafts?' + query.toString();
-}
 
 function fromUrl() {
   if (location.pathname !== '/' && location.pathname !== '/crafts') return null;
@@ -40,10 +36,17 @@ export function setupJobLink(changed) {
   delegateActions(document.getElementById('jobLinkNote'), {
     'dismiss-job-link': () => clearJobLink(),
   });
+  // Closing the details a link opened is done with the link, unless the
+  // job has ended: then its note, behind them, is what's left to read.
+  onLinkedIngredientsClosed(() => {
+    if (found && found.state !== 'live') history.replaceState(null, '', location.href);
+    else clearJobLink();
+  });
 }
 
 // The page opened on, or Back/Forward landed on, a URL: follow its link
-// if it has one.
+// if it has one. Not for a history entry of the details dialog, whose URL
+// is its job's link too: that's the dialog reopening (tabs.js).
 export function readJobLinkFromUrl() {
   const next = fromUrl();
   if (next && linked && next.cpu === linked.cpu && next.t === linked.t) return;
@@ -61,7 +64,7 @@ export function clearJobLink() {
   found = null;
   renderNote();
   onChange();
-  if (fromUrl()) history.replaceState(history.state, '', '/crafts');
+  if (fromUrl()) history.replaceState(null, '', '/crafts');
 }
 
 // Whether a report's job is the one linked to, for its card's outline.
@@ -83,11 +86,10 @@ export function afterCraftsRender(data) {
   const card = [...document.querySelectorAll('#root .card')].find(c => c.dataset.id === `cpu:${linked.cpu}`);
   if (!card) return;
   shown = true;
-  card.scrollIntoView({ block: 'center' });
-  // Its details, as its Ingredients button opens them, unless it has none
-  // to show yet. Without a history entry of their own: the link's is the
-  // page's, so closing them leaves the outlined card.
-  if (ingredientCount(job) > 0) openIngredientsModal(job.name, data, false);
+  // Its details, as its Ingredients button opens them, in the link's own
+  // history entry, the page's first. Its card when it has none to show yet.
+  if (ingredientCount(job) > 0) openIngredientsModal(job.name, data, 'link');
+  else card.scrollIntoView({ block: 'center' });
 }
 
 async function ask() {

@@ -2462,33 +2462,58 @@ async function main() {
     await waitFor('power tab', `visible($('#powerTab')) && $('#tabBtnPower').classList.contains('active')`);
   });
 
-  step('a link to a craft: copied from its card, opens its details while it runs, says how it went after', async () => {
+  step('a link to a craft: its details\' URL, copied from them, opens them while it runs, says how it went after', async () => {
     const load = async (url) => {
       await cdp.send('Page.navigate', { url });
       await waitFor('reloaded', `document.readyState === 'complete' && !window.byText`);
       await evaluate(PAGE_LIB);
     };
+    const stubClipboard = () => evaluate(`navigator.clipboard.writeText = async (text) => { window.copied = text; }, true`);
     await postCrafts(base, true);
     await load(base + '/crafts');
-    await waitFor('link button', `card('W01')?.querySelector('[data-action="copy-job-link"]')`);
-    await evaluate(`navigator.clipboard.writeText = async (text) => { window.copied = text; }, true`);
-    await click(`card('W01').querySelector('[data-action="copy-job-link"]')`);
+    await waitFor('W01 busy, with no link button on its card', `card('W01')?.querySelector('.ingredients-btn')
+      && !$('#root [data-action="copy-craft-link"]')`);
+    await click(`card('W01').querySelector('.ingredients-btn')`);
+    await waitFor('its details at its link', `visible($('#ingredientsModal')) && visible($('#ingredientsLinkBtn'))
+      && location.pathname === '/crafts' && new URLSearchParams(location.search).get('cpu') === 'W01'
+      && Number(new URLSearchParams(location.search).get('job')) > 0`);
+    await stubClipboard();
+    await click(`$('#ingredientsLinkBtn')`);
     const link = await waitFor('copied', `window.copied`);
-    if (!/^http:\/\/127\.0\.0\.1:\d+\/crafts\?cpu=W01&job=\d+$/.test(link)) throw new Error('copied ' + link);
+    if (link !== await evaluate('location.href')) throw new Error('copied ' + link);
     await waitFor('said so', `$$('.toast').some((t) => t.textContent === 'Link to this craft copied.')`);
+    await evaluate(`pressKey('Escape'), true`);
+    await waitFor('closed, back at /crafts', `!visible($('#ingredientsModal')) && location.pathname + location.search === '/crafts'`);
 
     await load(link);
-    await waitFor('its details open', `visible($('#ingredientsModal')) && $('#ingredientsCpu').textContent.startsWith('CPU W01 ')`);
+    await waitFor('the link opens its details', `visible($('#ingredientsModal')) && $('#ingredientsCpu').textContent.startsWith('CPU W01 ')
+      && card('W01')?.classList.contains('linked')`);
     await evaluate(`pressKey('Escape'), true`);
-    await waitFor('closed onto its card, outlined', `!visible($('#ingredientsModal')) && location.search.includes('job=')
-      && card('W01')?.classList.contains('linked') && $('#jobLinkNote').hidden`);
+    await waitFor('closed, done with the link', `!visible($('#ingredientsModal')) && location.pathname + location.search === '/crafts'
+      && !$('#root .card.linked') && $('#jobLinkNote').hidden`);
+
+    await load(link);
+    await waitFor('open again', `visible($('#ingredientsModal'))`);
     await postCrafts(base, false);
-    await waitFor('how it went', `!$('#jobLinkNote').hidden && $('#jobLinkNoteText').textContent.includes('Iron Ingot')
-      && $('#jobLinkNoteText').textContent.includes('on CPU W01') && !$('#root .card.linked')`);
+    await waitFor('how it went, behind the details', `!$('#jobLinkNote').hidden
+      && $('#jobLinkNoteText').textContent.includes('Iron Ingot') && $('#jobLinkNoteText').textContent.includes('on CPU W01')`);
+    await evaluate(`pressKey('Escape'), true`);
+    await waitFor('closed onto the note, at the link', `!visible($('#ingredientsModal')) && !$('#jobLinkNote').hidden
+      && location.search.includes('job=')`);
     await postCrafts(base, true);
     await waitFor('the next job isn\'t the link\'s', `card('W01')?.querySelector('.progress-fill') && !$('#root .card.linked')`);
     await click(`$('#jobLinkNote .note-dismiss')`);
     await waitFor('dismissed', `$('#jobLinkNote').hidden && location.search === '' && location.pathname === '/crafts'`);
+
+    // The item dialog copies its URL the same way.
+    await click(`card('W01').querySelector('.item-history-link')`);
+    await waitFor('item open', `visible($('#itemHistoryModal')) && location.pathname.startsWith('/network/item/')`);
+    await stubClipboard();  // the page has been reloaded since
+    await click(`$('#itemHistoryModal [data-action="copy-item-link"]')`);
+    await waitFor('item link copied', `window.copied === location.href
+      && $$('.toast').some((t) => t.textContent === 'Link to this item copied.')`);
+    await click(`$('#itemHistoryModal .history-close-btn')`);
+    await waitFor('item closed', `!visible($('#itemHistoryModal'))`);
 
     // On a CPU with no history: on W01, the first job the server saw was
     // already running then, so it's taken as an earlier link's job.

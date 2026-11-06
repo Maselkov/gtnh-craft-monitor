@@ -1,7 +1,7 @@
 // Item history popup and its chart.
 
 import { AUTH_USER, isOperator } from './auth.js';
-import { openCraftRequestModal } from './craft-actions.js';
+import { openCraftRequestModal, showToast } from './craft-actions.js';
 import { descriptionHtml, descriptionPlainText, nameText } from './description.js';
 import {
   lastNetworkData,
@@ -13,7 +13,7 @@ import { hideStockPanel, showStockPanel, stockThresholdsFor } from './stock.js';
 import { ingredientsCpu } from './ingredients.js';
 import { activeTab, switchTab } from './tabs.js';
 import {
-  chartColors, delegateActions, escapeHtml, formatDuration, formatQty, formatRate, iconClass, iconUrl, onBackdropClick,
+  chartColors, copyText, delegateActions, escapeHtml, formatDuration, formatQty, formatRate, iconClass, iconUrl, onBackdropClick,
   onThemeChange,
 } from './util.js';
 
@@ -598,6 +598,13 @@ function requestCraftFromHistory() {
   openCraftRequestModal(it);
 }
 
+// The dialog's URL is the item's page (with its range and machine, if
+// any): what the link button copies.
+async function copyItemLink() {
+  if (await copyText(location.href)) showToast('Link to this item copied.');
+  else showToast('Could not copy the link.', true);
+}
+
 export function setupHistoryActions() {
   // A chart takes its colours when built (chartColors), so a new theme rebuilds it.
   onThemeChange(() => {
@@ -610,6 +617,7 @@ export function setupHistoryActions() {
     'history-range': (el) => setItemHistoryRange(el.dataset.range),
     'history-pin': () => toggleNetworkItemPin(itemHistoryTarget),
     'close-history': () => closeItemHistory(),
+    'copy-item-link': () => copyItemLink(),
     'craft-from-history': () => requestCraftFromHistory(),
     'history-shift': () => {
       itemHistoryShift = !itemHistoryShift;

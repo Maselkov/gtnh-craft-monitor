@@ -87,10 +87,13 @@ with what it's crafting and that item's icon, and an **Open** button.
 
 ### Linking one craft
 
-The link button on a busy CPU's card copies a link to that craft
-(`/crafts?cpu=…&job=…`). Opened while the craft runs, the page opens its
-details (the Ingredients dialog, with its grid and tree); closing them shows
-its card, outlined. The link keeps working after the craft ends: the
+A craft's details (its **Ingredients** dialog) have their own link,
+`/crafts?cpu=…&job=…`: it's in the address bar while they're open, and the
+link button beside the close button copies it, for the installed app, which
+has no address bar. If the CPU moves on to another craft while they're
+open, the link follows. Opened while the craft runs, the link opens its
+details over its card, which is outlined. The link keeps working after the
+craft ends: the
 page then says how it went (finished, or stopped at what progress), when,
 and how long it took, with the item's name opening its stock history, over
 the CPUs as they are now. In Discord, it previews the same, with the item's
@@ -314,7 +317,8 @@ minute, but its data changes only when a scan finishes.
 
 - Click an item to open its stock history chart. Each item has its own URL
   (`/network/item/<mod:internal:damage>`, `/network/item/@<aspect>` for
-  essentia) that can be shared; link previews
+  essentia) that can be shared, and the link button in its dialog copies
+  it; link previews
   include the item's icon, the current amount and a chart. Discord reuses
   its preview of a link for about half an hour; to get a current one, post
   the link with a query string added (`?v=2`). Discord's

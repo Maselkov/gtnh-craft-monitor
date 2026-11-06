@@ -293,8 +293,7 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
   white-space: nowrap;
 }
 .badge.auto { background: color-mix(in srgb, var(--accent) 25%, transparent); color: var(--accent); }
-/* .link-btn: copy a link to a running craft, beside the pin. */
-.pin-btn, .link-btn {
+.pin-btn {
   flex-shrink: 0;
   background: none;
   border: 1px solid var(--border-strong);
@@ -1717,7 +1716,8 @@ body.private-locked #networkTab {
   min-height: 18px;
   margin-top: 4px;
 }
-.history-pin-btn {
+/* .history-link-btn: copy the dialog's link (ingredients.js, history.js). */
+.history-pin-btn, .history-link-btn {
   flex-shrink: 0;
   background: none;
   border: 1px solid var(--border-strong);

@@ -57,8 +57,12 @@ export function kindTooltipHtml(kind) {
 // rather than the 📌 emoji, whose own colours ignore the page's.
 export const PIN_ICON = '<svg class="ui-icon" viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true"><g transform="rotate(45 8 8)" fill="currentColor"><rect x="5" y="1" width="6" height="2" rx="0.6"/><path d="M6.2 3h3.6l1 5H5.2z"/><rect x="3.5" y="7.6" width="9" height="1.8" rx="0.9"/><rect x="7.35" y="9" width="1.3" height="6" rx="0.65"/></g></svg>';
 
-// A chain link: copy a link to a running craft (crafts.js, job-link.js).
-export const LINK_ICON = '<svg class="ui-icon" viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6.8 9.2a3 3 0 0 0 4.2 0l2.2-2.2a3 3 0 0 0-4.2-4.2l-1 1"/><path d="M9.2 6.8a3 3 0 0 0-4.2 0L2.8 9a3 3 0 0 0 4.2 4.2l1-1"/></g></svg>';
+// The page of one crafting job (job-link.js, gcm/job_links.py): its CPU
+// and when the server first saw it, which is its started_at.
+export function jobPath(cpu, startedAt) {
+  const query = new URLSearchParams({ cpu, job: String(Math.floor(startedAt)) });
+  return '/crafts?' + query.toString();
+}
 
 // Same idea for stock rules (stock.js): an alert, and a keep-in-stock target.
 export const BELL_ICON = '<svg class="ui-icon" viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true"><path fill="currentColor" d="M8 1.2a1 1 0 0 1 1 1v.7a4.6 4.6 0 0 1 3.6 4.5v3l1.3 1.7a.6.6 0 0 1-.5 1H2.6a.6.6 0 0 1-.5-1l1.3-1.7v-3A4.6 4.6 0 0 1 7 2.9v-.7a1 1 0 0 1 1-1zM6.2 14.3h3.6a1.8 1.8 0 0 1-3.6 0z"/></svg>';
