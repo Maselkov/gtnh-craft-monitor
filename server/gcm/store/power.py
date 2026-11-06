@@ -172,8 +172,12 @@ def machines():
 # them, and everything keyed on the name (URLs, health, the MCP tool,
 # link previews) follows with no mapping of its own.
 
-# Posts from several scripts at once mustn't both claim '' or a number.
-_machines_lock = threading.Lock()
+# Posts from several scripts at once mustn't both claim '' or a number,
+# and a rename mustn't land between a post's resolve() and its insert
+# (its reading would go under the old name: a one-reading phantom
+# machine). The POST handler holds it across both; re-entrant, as
+# resolve() and rename() take it too.
+machines_lock = threading.RLock()
 
 NUMBERED_KINDS = ("LSC", "Storage")
 
@@ -227,7 +231,7 @@ def resolve(reported, address, is_lsc):
       and '' then becomes "LSC 1". Without an address, as before: the
       first unnamed machine's name."""
     kind = "LSC" if is_lsc else "Storage"
-    with _machines_lock, db.transaction(db.power_db) as conn:
+    with machines_lock, db.transaction(db.power_db) as conn:
         by_address = (
             conn.execute("SELECT name, reported FROM power_machines WHERE address = ?", (address,)).fetchone()
             if address else None
@@ -239,11 +243,14 @@ def resolve(reported, address, is_lsc):
             if not row:
                 # A machine an admin gave this name: it's this one only if
                 # it has no address yet or the same one. Another machine's
-                # name isn't taken over - this one is numbered ("Batteries 2").
+                # isn't taken over: this one keeps its own chart if it has
+                # one, else it's numbered ("Batteries 2").
                 named = conn.execute(
                     "SELECT name, address, reported FROM power_machines WHERE name = ?", (reported,)
                 ).fetchone()
-                if named and address and named[1] not in (None, address) and not by_address:
+                if named and address and named[1] not in (None, address):
+                    if by_address:
+                        return by_address[0], []
                     name = _next_number_name(conn, reported, start=2)
                     conn.execute(
                         "INSERT INTO power_machines (name, address, reported, kind, first_unnamed)"
@@ -274,10 +281,18 @@ def resolve(reported, address, is_lsc):
         if by_address:
             return by_address[0], []
         first = conn.execute(
-            "SELECT name, kind FROM power_machines WHERE first_unnamed = 1"
+            "SELECT name, kind, address FROM power_machines WHERE first_unnamed = 1"
         ).fetchone()
         if not address:
             return (first[0] if first else ""), []
+        if first and first[2] is None:
+            # Renamed by an admin while its script sent no address: its
+            # script, updated, now does. It's that machine, not a new one.
+            conn.execute(
+                "UPDATE power_machines SET address = ?, kind = COALESCE(kind, ?) WHERE name = ?",
+                (address, kind, first[0]),
+            )
+            return first[0], []
         if not first:
             conn.execute(
                 "INSERT INTO power_machines (name, address, reported, kind, first_unnamed) VALUES ('', ?, '', ?, 1)",
@@ -303,7 +318,7 @@ def rename(old, new):
     with no row yet (posted by an older script, without an address)
     gets one, so its posts under `old` keep landing under `new`.
     Raises UnknownMachine, or NameInUse."""
-    with _machines_lock, db.transaction(db.power_db) as conn:
+    with machines_lock, db.transaction(db.power_db) as conn:
         if not conn.execute("SELECT 1 FROM power_readings WHERE machine = ? LIMIT 1", (old,)).fetchone():
             raise UnknownMachine(old)
         if _name_in_use(conn, new):

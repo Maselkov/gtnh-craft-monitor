@@ -799,7 +799,10 @@ are stored under, through `power_machines`:
   addresses were sent: first come, first served. On a base where the second
   computer's script updates first, that one gets the old history.
   Unnamed posts without an address (older scripts) go to that first
-  machine.
+  machine. If an admin renamed that machine before its script sent
+  addresses, its row has no address; the first unnamed address then
+  claims it, rather than splitting the LSC into a stale renamed chart and
+  a new "LSC 1".
 - Numbering is per kind, from 1, skipping names in use. The kind is "LSC"
   when the post has `wireless_mode`, which only an LSC's sensor reports,
   else "Storage". The first unnamed machine becomes "<kind> 1" when the
@@ -811,6 +814,10 @@ are stored under, through `power_machines`:
   configured name never takes that over, and the newcomer is numbered
   ("Batteries 2"). Otherwise two machines would mix without either player
   having asked for it.
+- `store.power.machines_lock` (re-entrant) is held by the POST handler
+  across `resolve()` and the insert, and by `rename()`. Otherwise a rename
+  landing in between stored the reading under the old name: a one-reading
+  phantom machine whose health entry then goes stale.
 - A replaced Adapter means a new address, so a new machine. There's no
   merge; renaming the new one and letting the old go stale is the
   workaround.

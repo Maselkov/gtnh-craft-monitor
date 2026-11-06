@@ -81,18 +81,21 @@ def power_post():
     wireless_mode = payload.get("wireless_mode")
     if not isinstance(wireless_mode, bool):
         wireless_mode = None
-    # Only an LSC's sensor says its wireless mode: numbered "LSC 2", not "Storage 2".
-    name, renamed = store.power.resolve(machine.strip(), address, is_lsc=wireless_mode is not None)
+    # Held across both, so a rename can't land between them and leave this
+    # reading under the old name.
+    with store.power.machines_lock:
+        # Only an LSC's sensor says its wireless mode: numbered "LSC 2", not "Storage 2".
+        name, renamed = store.power.resolve(machine.strip(), address, is_lsc=wireless_mode is not None)
+        store.power.add_reading(
+            float(ts),
+            stored,
+            capacity,
+            {key: _f(key) for key in TREND_FIELDS},
+            name,
+            threshold=store.power.wireless_threshold(wireless_mode, payload.get("capacitors")),
+            wireless_mode=wireless_mode,
+        )
     _moved_poll_seconds(renamed)
-    store.power.add_reading(
-        float(ts),
-        stored,
-        capacity,
-        {key: _f(key) for key in TREND_FIELDS},
-        name,
-        threshold=store.power.wireless_threshold(wireless_mode, payload.get("capacitors")),
-        wireless_mode=wireless_mode,
-    )
     with state.power_lock:
         state.power_poll_seconds[name] = state.reported_interval(payload.get("poll_seconds"))
 

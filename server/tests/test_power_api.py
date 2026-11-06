@@ -506,3 +506,46 @@ class TestMachineNames:
         assert self.names(client) == ["Batteries", "Batteries 2", "LSC 1"]
         assert self.stored(client, "Batteries") == [2, 5]
         assert self.stored(client, "Batteries 2") == [3, 4]
+
+    def test_a_rename_before_the_script_sends_addresses_keeps_the_machine(self, client, api_headers):
+        # Main renamed while its computer ran an older script; the updated
+        # script's first post with an address is that machine, not a new one.
+        self.post(client, api_headers, 1)
+        login_as(client, "boss", role="admin")
+        assert self.rename(client, "", "Home").status_code == 200
+        self.post(client, api_headers, 2, address="a")
+        self.post(client, api_headers, 3, address="b")
+        assert self.names(client) == ["Home", "LSC 1"]
+        assert self.stored(client, "Home") == [1, 2]
+        assert self.stored(client, "LSC 1") == [3]
+
+    def test_a_known_machine_named_like_another_keeps_its_own_chart(self, client, api_headers):
+        self.post(client, api_headers, 1, address="a")
+        self.post(client, api_headers, 2, address="b")
+        login_as(client, "boss", role="admin")
+        assert self.rename(client, "LSC 1", "Batteries").status_code == 200
+        # b, numbered LSC 2, is now named "Batteries" in its MACHINES.
+        self.post(client, api_headers, 3, "Batteries", address="b")
+        assert self.stored(client, "Batteries") == [1]
+        assert self.stored(client, "LSC 2") == [2, 3]
+
+    def test_a_rename_during_a_post_leaves_no_phantom_machine(self, client, api_headers, monkeypatch):
+        import threading
+        self.post(client, api_headers, 1, address="a")
+        self.post(client, api_headers, 2, address="b")
+        real_resolve = store.power.resolve
+        renamed = threading.Event()
+
+        def resolve_then_rename(*args, **kwargs):
+            result = real_resolve(*args, **kwargs)
+            # An admin's rename, from another thread, right after the lookup.
+            t = threading.Thread(target=lambda: (store.power.rename("LSC 2", "Nether"), renamed.set()))
+            t.start()
+            t.join(0.2)  # it waits for the post to finish, if the lock covers both
+            return result
+
+        monkeypatch.setattr(store.power, "resolve", resolve_then_rename)
+        self.post(client, api_headers, 3, address="b")
+        assert renamed.wait(5)
+        assert self.names(client) == ["LSC 1", "Nether"]
+        assert self.stored(client, "Nether") == [2, 3]
