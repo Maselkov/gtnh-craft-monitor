@@ -221,3 +221,26 @@ def test_patterns_give_plans_that_show_each_case(game, client, tmp_path):
     assert [s["name"] for s in diamond["substitutes"]] == ["Industrial Diamond"]
     assert any(c.get("substitute") and c["pattern"]["provider"] == "Electric Implosion Compressor"
                for c in diamond["children"])
+
+
+def test_a_dev_server_has_the_icons_in_red(tmp_path):
+    import io
+
+    from gcm import create_app
+    from PIL import Image
+
+    app = create_app(data_dir=str(tmp_path), api_key=TEST_API_KEY)
+    dev.serve_red_icons(app)
+    client = app.test_client()
+
+    svg = client.get("/static/icons/favicon.svg")
+    assert svg.mimetype == "image/svg+xml"
+    assert "#ff6b6b" in svg.get_data(as_text=True) and "#5fb3ff" not in svg.get_data(as_text=True)
+    for name in ("favicon-32.png", "icon-192.png", "icon-512.png", "maskable-512.png", "apple-touch-icon.png"):
+        response = client.get(f"/static/icons/{name}")
+        assert response.mimetype == "image/png", name
+        colours = {c[:3] for _, c in Image.open(io.BytesIO(response.data)).convert("RGBA").getcolors(1 << 16)}
+        assert dev.DEV_ICON_RED in colours and dev.ICON_BLUE not in colours, name
+    # Anything else under static/ is the real file.
+    assert client.get("/static/manifest.json").get_json()["name"] == "GTNH Monitor"
+    assert client.get("/static/icons/nothing.png").status_code == 404
