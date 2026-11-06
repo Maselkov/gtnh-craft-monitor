@@ -313,6 +313,10 @@ def resolve(reported, address, is_lsc):
         return name, renamed
 
 
+# What the unnamed machine ('') is called on the page and in its URL.
+UNNAMED_LABEL = "Main"
+
+
 def rename(old, new):
     """Renames machine `old` to `new`, keeping its history. A machine
     with no row yet (posted by an older script, without an address)
@@ -322,6 +326,10 @@ def rename(old, new):
         if not conn.execute("SELECT 1 FROM power_readings WHERE machine = ? LIMIT 1", (old,)).fetchone():
             raise UnknownMachine(old)
         if _name_in_use(conn, new):
+            raise NameInUse(new)
+        # The unnamed machine is shown as "Main": a second one would look
+        # the same, and take its ?machine=Main links.
+        if new == UNNAMED_LABEL and old != "" and _name_in_use(conn, ""):
             raise NameInUse(new)
         if not conn.execute("SELECT 1 FROM power_machines WHERE name = ?", (old,)).fetchone():
             # The unnamed one becomes the first unnamed machine, so older
@@ -353,6 +361,10 @@ def pick(wanted, now=None):
     base's power is."""
     found = machines()
     names = [name for name, _ in found]
+    # The page labels the unnamed machine "Main", and links to it as
+    # ?machine=Main, unless a machine is really called that.
+    if wanted == UNNAMED_LABEL and wanted not in names:
+        wanted = ""
     if wanted in names:
         return wanted, found
     now = time.time() if now is None else now

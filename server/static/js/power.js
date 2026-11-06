@@ -68,10 +68,14 @@ export function compactEU(n) {
   return i === 0 ? String(Math.round(n)) : digits + units[i];
 }
 
-// The Power tab's URL: /power, or /power?machine=... once one is picked
-// (?machine= for the unnamed one).
+// The Power tab's URL: /power, or /power?machine=... once one is picked.
+// The unnamed machine is ?machine=Main, as its button reads (the server
+// takes that for it), unless a machine is really called "Main".
 export function powerPath() {
-  return powerMachine == null ? '/power' : `/power?machine=${encodeURIComponent(powerMachine)}`;
+  if (powerMachine == null) return '/power';
+  const named = (lastPowerData?.machines || []).some(m => m.name === 'Main');
+  const shown = powerMachine === '' && !named ? 'Main' : powerMachine;
+  return `/power?machine=${encodeURIComponent(shown)}`;
 }
 
 // After loading on, or navigating back to, a /power URL.
@@ -204,6 +208,8 @@ export async function fetchPower() {
     const data = await res.json();
     if (seq !== powerFetchSeq) return;
     lastPowerData = data;
+    // ?machine=Main found the unnamed machine: that's the one picked.
+    if (powerMachine === 'Main' && data.machine === '') powerMachine = '';
     renderPower(data);
     tickPowerSourceLine();
   } catch (e) {
