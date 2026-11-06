@@ -56,6 +56,37 @@ def power_trend(rows, now):
     }
 
 
+# An LSC in wireless mode rebalances every 6000 ticks: 5 minutes at 20 TPS.
+LSC_REBALANCE_SECONDS = 300
+# Readings it takes for their average to stand for the whole cycle.
+MIN_WIRELESS_READINGS = 10
+
+
+def wireless_trade(rows, now):
+    """EU/s an LSC in wireless mode sent to (positive) or drew from
+    (negative) the wireless network over the last POWER_WINDOW_SECONDS
+    of (ts, stored, capacity, wireless_threshold) rows, or None.
+
+    Its own in/out averages can't say: a rebalance counts what it
+    uploads as output and what it downloads as input, so over an hour
+    they differ by little more than its passive loss. But each rebalance
+    resets it to its threshold, and between them its own surplus (or
+    deficit) builds up steadily from there. Readings land all over the
+    cycle, so on average they catch half a cycle's worth: the rate is
+    twice the average distance from the threshold, over a cycle. Server
+    lag stretches a cycle past 5 real minutes, so it reads a little high
+    then."""
+    recent = [r for r in rows if r[0] >= now - POWER_WINDOW_SECONDS and r[3]]
+    if not recent:
+        return None
+    threshold = recent[-1][3]  # one changed capacitor makes a new baseline
+    recent = [r for r in recent if r[3] == threshold]
+    if len(recent) < MIN_WIRELESS_READINGS or recent[-1][0] - recent[0][0] < MIN_SPAN_SECONDS:
+        return None
+    surplus = sum(r[1] - threshold for r in recent) / len(recent)
+    return 2 * surplus / LSC_REBALANCE_SECONDS
+
+
 def stock_trend(rows, now):
     """{per_second, window_seconds, seconds_to_empty} from an item's
     (recorded_at, size) change rows (ascending, the first one holding

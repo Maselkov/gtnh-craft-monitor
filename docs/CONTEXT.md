@@ -780,6 +780,20 @@ a gap before wireless mode. That dump checked out: 6.21P stored against
 1 UEV's 6.00P. The hourly "Empty in" fit is hidden for such an LSC, as the
 network refills it every 5 minutes.
 
+**What an LSC in wireless mode sends to the network is worked out from its
+readings, not its averages.** `rebalance()` in GT5-Unofficial's
+`MTELapotronicSuperCapacitor` adds an upload to `outputLastTick` and a
+download to `inputLastTick`, so its 1h in and out include the transfers and
+differ by little more than its passive loss: their sign is noise (a base
+sending 1.6P/h read as "Drawing 10G EU/s"). Each rebalance resets it to its
+threshold, and its own surplus builds up steadily until the next, so
+readings taken all over the 5-minute cycle average half a cycle's surplus:
+`rates.wireless_trade()` takes twice the average distance from the
+threshold over 300 s. Checked against a real base: 1.53P/h from the LSC's
+readings, while its wireless network rose 1.64P/h. 300 s assumes 20 TPS, so
+it reads high on a lagging server; the readings are about a minute apart,
+which doesn't line up with 300 s, so they drift across the cycle.
+
 The LSC's `wireless_mode` is stored too (1/0, NULL when not posted). With the
 wireless network as the default, the badge still warns about another machine
 under 10% full, but only when it's posted `wireless_mode: false`. An LSC on a

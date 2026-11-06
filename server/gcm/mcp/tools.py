@@ -632,9 +632,8 @@ def power(user, args):
     range_key, rows = store.power.range_readings(range_key, machine)
     latest = store.power.latest(machine)
     now = time.time()
-    trend = rates.power_trend(
-        store.power.readings(now - rates.POWER_WINDOW_SECONDS, store.power.MAX_POINTS, machine), now
-    )
+    recent = store.power.readings(now - rates.POWER_WINDOW_SECONDS, store.power.MAX_POINTS, machine)
+    trend = rates.power_trend(recent, now)
     stored = [r[1] for r in rows]
     out = {
         "machine": machine or UNNAMED,
@@ -657,6 +656,9 @@ def power(user, args):
         if latest[5]:
             out["latest"]["wireless_threshold"] = latest[5]
             out["latest"]["percent_of_wireless_threshold"] = _round(100 * latest[1] / latest[5], 1)
+            trade = rates.wireless_trade(recent, now)
+            if trade is not None:
+                out["latest"]["sent_to_wireless_eu_per_second_last_hour"] = _round(trade)
     # An LSC in wireless mode is refilled every 5 minutes, so its drift
     # between refills isn't a trend.
     if trend and not (latest and latest[5]):
@@ -1315,8 +1317,9 @@ TOOLS = [
             "in and out. An LSC in wireless mode keeps only its wireless threshold and moves the rest to the "
             "wireless network every 5 minutes, so its own fill near empty is normal: judge it by "
             "percent_of_wireless_threshold (under 100% between rebalances means it's draining faster than "
-            "it's refilled; near 0 means it needs more or higher-tier capacitors), and the base's power by "
-            "the wireless network."
+            "it's refilled; near 0 means it needs more or higher-tier capacitors) and "
+            "sent_to_wireless_eu_per_second_last_hour (negative when it draws from the network), and the "
+            "base's power by the wireless network."
         ),
         "inputSchema": _schema({
             "machine": {
