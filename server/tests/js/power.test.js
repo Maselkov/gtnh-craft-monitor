@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  compactEU, fillText, formatEU, machineButtonText, machineFill, orderMachines, powerEtaText, powerFill,
-  powerTabText, wirelessLscText,
+  compactEU, fillText, formatEU, machineButtonText, machineFill, orderMachines, powerEtaParts, powerEtaText,
+  powerFill, powerTabText, wirelessLscParts, wirelessLscText,
 } from '../../static/js/power.js';
 
 test('powerEtaText leads with the ETA, then the hourly rate', () => {
@@ -108,4 +108,17 @@ test('wirelessLscText: what an LSC in wireless mode trades with the network', ()
     'Sending 91.60G EU/s to the wireless network over the past hour');
   assert.equal(wirelessLscText({ ...lsc, avg_eu_in_1h: 1e9, avg_eu_out_1h: 6e9 }),
     'Drawing 100.00G EU/s from the wireless network over the past hour \u00b7 refills up to 20.00T EU/s');
+});
+
+test('only the rate is coloured, by its sign', () => {
+  const toned = (parts) => parts.filter(p => p.tone).map(p => [p.text, p.tone]);
+  assert.deepEqual(toned(powerEtaParts({ per_second: 1e6, seconds_to_full: 3600, seconds_to_empty: null })),
+    [['+3.60G EU/h', 'up']]);
+  assert.deepEqual(toned(powerEtaParts({ per_second: -1e6, seconds_to_full: null, seconds_to_empty: 3600 })),
+    [['\u22123.60G EU/h', 'down']]);
+  assert.deepEqual(powerEtaParts(null), []);
+  const lsc = { wireless_threshold: 6e15 };
+  assert.deepEqual(toned(wirelessLscParts({ ...lsc, avg_eu_in_1h: 3e9, avg_eu_out_1h: 1e9 })), [['40.00G EU/s', 'up']]);
+  assert.deepEqual(toned(wirelessLscParts({ ...lsc, avg_eu_in_1h: 1e9, avg_eu_out_1h: 3e9 })), [['40.00G EU/s', 'down']]);
+  assert.deepEqual(toned(wirelessLscParts(lsc)), []);
 });

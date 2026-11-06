@@ -855,6 +855,14 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
   border-color: var(--accent);
   color: var(--accent);
 }
+/* A Power tab machine button: the machine the tab's red dot is about. */
+.range-btn.alert {
+  border-color: var(--stale);
+  color: var(--stale);
+}
+.range-btn.alert.active {
+  background: color-mix(in srgb, var(--stale) 18%, transparent);
+}
 .range-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;

@@ -33,12 +33,13 @@ export function stockBadge(lowCount) {
   return lowCount ? { count: lowCount, tone: 'alert', label: `${lowCount} low` } : null;
 }
 
-// latest and trend are the tab's default machine's; machines are all of
-// them, for an LSC in wireless mode that isn't the default (the wireless
-// network is, while it reports).
+// latest and trend are the tab's default machine's (latest.name its
+// name); machines are all of them, for an LSC in wireless mode that isn't
+// the default (the wireless network is, while it reports). The badge's
+// machine is the one it's about.
 export function powerBadge(latest, trend, machines = [], now = Date.now() / 1000) {
   if (!latest) return null;
-  const alert = (label) => ({ count: null, tone: 'alert', label });
+  const alert = (label, machine = latest.name) => ({ count: null, tone: 'alert', label, machine });
   const wireless = !(latest.capacity > 0);
   const soonSeconds = wireless ? WIRELESS_SOON_SECONDS : POWER_SOON_SECONDS;
   const refilled = latest.wireless_threshold > 0;  // by the network, every 5 minutes
@@ -49,7 +50,7 @@ export function powerBadge(latest, trend, machines = [], now = Date.now() / 1000
   // refills: it needs more, or higher-tier, capacitors.
   const drained = (machines || []).find(m => m.wireless_threshold > 0 && m.stored != null
     && now - m.t <= POWER_FRESH_SECONDS && m.stored / m.wireless_threshold < POWER_LOW_FRACTION);
-  if (drained) return alert(`${machineLabel(drained.name)} under 10% of its wireless threshold`);
+  if (drained) return alert(`${machineLabel(drained.name)} under 10% of its wireless threshold`, drained.name);
   // That LSC's capacity says nothing: it keeps only its threshold.
   if (!wireless && !(latest.wireless_threshold > 0) && latest.stored / latest.capacity < POWER_LOW_FRACTION) {
     return alert('under 10% full');
@@ -60,7 +61,7 @@ export function powerBadge(latest, trend, machines = [], now = Date.now() / 1000
   // its capacity means nothing.
   const low = (machines || []).find(m => m.wireless_mode === false && m.capacity > 0 && m.stored != null
     && now - m.t <= POWER_FRESH_SECONDS && m.stored / m.capacity < POWER_LOW_FRACTION);
-  if (low) return alert(`${machineLabel(low.name)} under 10% full`);
+  if (low) return alert(`${machineLabel(low.name)} under 10% full`, low.name);
   return null;
 }
 
