@@ -257,3 +257,28 @@ def test_craft_events_written_before_step_6_list_without_start_or_item(tmp_path)
     finally:
         conn.close()
     assert row == ("W01", None, None, None, None, 0)
+
+
+def test_craft_events_are_first_seen_when_they_started(tmp_path):
+    # Links to a job (gcm/job_links.py) find it by when it was first
+    # seen; a row from before that was recorded has its start, if known.
+    path = str(tmp_path / "app.db")
+    steps = db.APP_MIGRATIONS
+    first_seen = steps.index(db._app_craft_event_first_seen)
+    db.migrate(lambda: sqlite3.connect(path), steps[:first_seen])
+    conn = sqlite3.connect(path)
+    try:
+        conn.executescript("""
+            INSERT INTO craft_events (cpu_name, status, occurred_at, started_at) VALUES ('W01', 'finished', 9, 5);
+            INSERT INTO craft_events (cpu_name, status, occurred_at) VALUES ('W02', 'finished', 9);
+        """)
+        conn.commit()
+    finally:
+        conn.close()
+    db.migrate(lambda: sqlite3.connect(path), steps)
+    conn = sqlite3.connect(path)
+    try:
+        rows = conn.execute("SELECT cpu_name, first_seen_at FROM craft_events ORDER BY cpu_name").fetchall()
+    finally:
+        conn.close()
+    assert rows == [("W01", 5.0), ("W02", None)]

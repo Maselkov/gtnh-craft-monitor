@@ -7,6 +7,7 @@ import { refreshCraftHistory } from './craft-history.js';
 import { refreshCraftStats } from './craft-stats.js';
 import { openCancelConfirmModal, pendingCancelCpus } from './craft-actions.js';
 import { ingredientCount, openIngredientsModal, refreshIngredientsModal } from './ingredients.js';
+import { afterCraftsRender, isLinkedJob } from './job-link.js';
 import { nameText } from './description.js';
 import { craftsBadge, setTabBadge } from './tab-badges.js';
 import {
@@ -546,7 +547,7 @@ function renderCard(job) {
     : '';
 
   return `
-    <div class="card" data-id="cpu:${escapeHtml(job.name || '')}">
+    <div class="card${isLinkedJob(job) ? ' linked' : ''}" data-id="cpu:${escapeHtml(job.name || '')}">
       <div class="card-top">
         <span class="card-cpu">CPU ${escapeHtml(job.name || '?')}</span>${job.auto_named ? AUTO_NAME_MARK : ''}
         ${autoBadge}
@@ -671,4 +672,5 @@ export function render(data) {
     bar.style.width = `${Number(bar.dataset.progress)}%`;
   }
   refreshIngredientsModal(data);
+  afterCraftsRender(data);
 }

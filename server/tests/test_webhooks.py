@@ -1,4 +1,5 @@
 import json
+import re
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -24,7 +25,8 @@ class TestEvents:
         [event] = webhook_events
         assert (event["event"], event["title"]) == ("crafts", "Craft finished")
         assert event["body"] == "Iron Ingot is done crafting."
-        assert event["url"] == "https://gtnh.example.test/network/item/minecraft:iron_ingot"
+        # The job's page, which says how it went and links the item.
+        assert re.fullmatch(r"https://gtnh\.example\.test/crafts\?cpu=W01&job=\d+", event["url"])
 
     def test_unpinned_craft_is_not_sent(self, client, api_headers, webhook_events):
         end_pinned_job(client, api_headers, pinned=False)

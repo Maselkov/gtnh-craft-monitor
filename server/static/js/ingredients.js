@@ -10,8 +10,9 @@ import { hideJobTree, refreshJobTree, setJobTreeFilter, setupJobTreeActions, sho
 import { bindCellTooltip, hideTooltip, showTooltip, tooltipVisible } from './tooltip.js';
 import { nameHtml, nameText } from './description.js';
 import { itemMatchesSearch, parseSearchQuery } from './search.js';
+import { showToast } from './craft-actions.js';
 import {
-  bindFilterInput, delegateActions, escapeHtml, formatQty, iconClass, iconUrl, onBackdropClick,
+  bindFilterInput, copyText, delegateActions, escapeHtml, formatQty, iconClass, iconUrl, jobPath, onBackdropClick,
   updateHtml,
 } from './util.js';
 
@@ -19,6 +20,7 @@ let openCpu = null;       // CPU name the modal is showing, null when closed
 let shownItems = new Map(); // item key -> merged item, from the last render
 let hoveredKey = null;    // item key the tooltip was last shown for
 let lastJob = null;       // the job last drawn, redrawn as the filter changes
+let afterLinkedClose = () => {};
 // Grid (the game's own screen) or tree (job-tree.js), per viewer.
 const VIEW_KEY = 'gtnhCraftMonitor.ingredientsView';
 let view = 'grid';
@@ -173,12 +175,27 @@ export function ingredientsCpu() {
   return openCpu;
 }
 
-// Opening it pushes a history entry at the same URL, so Back closes it
-// rather than leaving the page (applyHistoryState in tabs.js);
-// pushUrl false when it's reopened by a Forward.
+// Its job's link (job-link.js), the dialog's URL and what its link
+// button copies. The job last drawn: once it's over, still that one.
+function shownJobPath() {
+  return lastJob && lastJob.started_at != null ? jobPath(lastJob.name, lastJob.started_at) : null;
+}
+
+// Opening it pushes a history entry at its job's link, so Back closes it
+// rather than leaving the page (applyHistoryState in tabs.js), and the
+// address bar has a link to share. pushUrl false when it's reopened by a
+// Forward; 'link' when a link to the job opened the page, whose own
+// entry it then takes.
 export function openIngredientsModal(cpuName, data, pushUrl) {
   if (pushUrl === undefined) pushUrl = true;
-  if (pushUrl) history.pushState({ view: 'ingredients', tab: 'crafts', cpu: cpuName }, '');
+  const job = data && (data.jobs || []).find(j => j.name === cpuName && j.busy);
+  const entry = { view: 'ingredients', tab: 'crafts', cpu: cpuName };
+  if (pushUrl === 'link') {
+    history.replaceState({ ...entry, fromLink: true }, '');
+  } else if (pushUrl) {
+    const path = job && job.started_at != null ? jobPath(cpuName, job.started_at) : undefined;
+    history.pushState(entry, '', path);
+  }
   openCpu = cpuName;
   // Cleared first: if the CPU went idle since its card was drawn, the
   // refresh below keeps what's here, which would be another CPU's grid.
@@ -191,6 +208,7 @@ export function openIngredientsModal(cpuName, data, pushUrl) {
     document.getElementById(id).innerHTML = '';
   }
   document.getElementById('ingredientsCpu').textContent = `CPU ${cpuName}`;
+  document.getElementById('ingredientsLinkBtn').hidden = true;  // until its job is drawn
   document.getElementById('ingredientsGrid').scrollTop = 0;
   document.getElementById('ingredientsModal').style.display = 'flex';
   hideJobTree();
@@ -199,14 +217,27 @@ export function openIngredientsModal(cpuName, data, pushUrl) {
 }
 
 // Closing it by hand goes back past the entry it pushed; the popstate
-// that follows hides it.
+// that follows hides it. Opened by a link, there's nothing to go back
+// to: it's closed where it is, and the link with it (job-link.js).
 export function closeIngredientsModal() {
   const state = history.state;
-  if (state && state.view === 'ingredients' && state.cpu === openCpu) {
+  if (state && state.view === 'ingredients' && state.cpu === openCpu && !state.fromLink) {
     history.back();
     return;
   }
   hideIngredientsModal();
+  if (state && state.fromLink) afterLinkedClose();
+}
+
+export function onLinkedIngredientsClosed(fn) {
+  afterLinkedClose = fn;
+}
+
+async function copyJobLink() {
+  const path = shownJobPath();
+  if (!path) return;
+  if (await copyText(location.origin + path)) showToast('Link to this craft copied.');
+  else showToast('Could not copy the link.', true);
 }
 
 export function hideIngredientsModal() {
@@ -235,6 +266,14 @@ export function refreshIngredientsModal(data) {
   renderHead(job);
   renderGrid(job);
   if (view === 'tree') refreshJobTree();
+  // The CPU moved on to another job: the URL follows, as the dialog does.
+  const state = history.state;
+  const path = shownJobPath();
+  if (path && state && state.view === 'ingredients' && state.cpu === openCpu
+      && location.pathname + location.search !== path) {
+    history.replaceState(state, '', path);
+  }
+  document.getElementById('ingredientsLinkBtn').hidden = !path;
 }
 
 export function setupIngredientsActions() {
@@ -242,6 +281,7 @@ export function setupIngredientsActions() {
   view = readView();
   delegateActions(modal, {
     'close-ingredients': () => closeIngredientsModal(),
+    'copy-craft-link': () => copyJobLink(),
     'ingredients-view': (el) => {
       view = el.dataset.view === 'tree' ? 'tree' : 'grid';
       writeView();

@@ -2,6 +2,7 @@
 unfurling) and icon images."""
 
 import hashlib
+import math
 import os
 import re
 from html import escape as html_escape
@@ -9,7 +10,7 @@ from urllib.parse import quote, unquote
 
 from flask import abort, Blueprint, request, Response, send_from_directory
 
-from gcm import auth, charts, config, embeds, icons, inventory, mctext, security, state, store
+from gcm import auth, charts, config, embeds, icons, inventory, job_links, mctext, security, state, store
 
 
 bp = Blueprint("pages", __name__)
@@ -85,6 +86,57 @@ def parse_item_url_path(identifier):
     }
 
 
+def _job_preview(named, icon_url, page_url):
+    """(title, description, component embed) for a link to one job
+    (gcm/job_links.py), as it is now. Discord keeps a preview, so the
+    embed's times are Discord timestamps, which it keeps current."""
+    cpu, t = named
+    found = job_links.lookup(cpu, t)
+    on_cpu = f"CPU {mctext.plain(cpu)}"
+    md_cpu = f"CPU {embeds.md_escape(cpu)}"
+    if found["state"] == "live":
+        job = found["job"]
+        title = mctext.plain(job.get("final_output") or "") or "Craft"
+        parts = []
+        if job.get("progress_percent") is not None:
+            parts.append(f"{job['progress_percent']}%")
+        desc = " · ".join([f"Crafting on {on_cpu}", *parts])
+        md = " · ".join([f"Crafting on {md_cpu}", *parts])
+        eta = job.get("eta_seconds")
+        if eta is not None:
+            desc += f" · ~{job_links.duration(eta)} left"
+            if job.get("reported_at"):
+                # A countdown Discord keeps going: "due in 25 minutes",
+                # and "due 5 minutes ago" once the estimate has passed.
+                md += f" · due <t:{math.floor(job['reported_at'] + eta)}:R>"
+            else:
+                md += f" · ~{job_links.duration(eta)} left"
+        if job.get("started_known"):
+            md += f"\n-# Started <t:{math.floor(job['started_at'])}:R>"
+        icon = job.get("final_output_icon")
+    elif found["state"] == "ended":
+        event = found["event"]
+        title = mctext.plain(event.get("itemName") or "") or "Craft"
+        if event["status"] == "incomplete":
+            progress = f" at {event['progress']}%" if event.get("progress") is not None else ""
+            verb, md_verb = f"Stopped{progress} on {on_cpu}", f"Stopped{progress} on {md_cpu}"
+        else:
+            verb, md_verb = f"Finished on {on_cpu}", f"Finished on {md_cpu}"
+        took = ""
+        if event.get("startedAt") is not None:
+            took = f", took {job_links.duration(event['finishedAt'] - event['startedAt'])}"
+        desc = verb + took
+        md = f"{md_verb} <t:{math.floor(event['finishedAt'])}:R>{took}"
+        icon = event.get("icon")
+    elif found["state"] == "ending":
+        title, desc, icon = "Craft", f"Just ended on {on_cpu}", None
+        md = f"Just ended on {md_cpu}"
+    else:
+        title, desc, icon = "Craft", f"This craft on {on_cpu} has ended", None
+        md = f"This craft on {md_cpu} has ended"
+    return title, desc, embeds.job(title, md, icon_url(icon), page_url)
+
+
 def _build_og_tags(path, args):
     base = request.url_root.rstrip("/")
     # request.full_path always appends a trailing "?" even with no query
@@ -108,6 +160,9 @@ def _build_og_tags(path, args):
     if auth.is_private():
         # Link previews are fetched signed out, by anyone the link reaches.
         pass
+    elif path in ("/", "/crafts") and job_links.parse(args):
+        title, desc, embed = _job_preview(job_links.parse(args), icon_url, page_url)
+
     elif path in ("/", "/crafts"):
         with state.crafts_lock:
             jobs = state.crafts.get("jobs", [])

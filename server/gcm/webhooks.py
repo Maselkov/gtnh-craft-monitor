@@ -154,7 +154,9 @@ def generic_payload(ev):
     return {**{k: ev[k] for k in ("event", "title", "body", "icon", "url")}, "text": text}
 
 
-def craft_ended(label, icon, status, item):
+def craft_ended(label, icon, status, item, job_path=None):
+    """job_path: the job's page (gcm/job_links.py), linked instead of the
+    item's: it says how the job went and links the item."""
     if not enabled("crafts"):
         return
     what = label or "A pinned craft"
@@ -162,6 +164,8 @@ def craft_ended(label, icon, status, item):
         ev = event("crafts", "Craft stopped", f"{what} stopped before finishing.", "warn", icon, item)
     else:
         ev = event("crafts", "Craft finished", f"{what} is done crafting.", "good", icon, item)
+    if job_path and _absolute(job_path):
+        ev["url"] = _absolute(job_path)
     _put(ev)
 
 

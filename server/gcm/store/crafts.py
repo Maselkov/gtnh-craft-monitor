@@ -36,7 +36,8 @@ def drop_cpu_pins(cpu_name):
         conn.execute("DELETE FROM user_pins WHERE cpu_name = ?", (cpu_name,))
 
 
-def record_job_end(cpu_name, label, icon, status, progress, started_at=None, item=None, auto=False):
+def record_job_end(cpu_name, label, icon, status, progress, started_at=None, item=None, auto=False,
+                   first_seen_at=None):
     """Logs a craft_events row for a job that just left cpu_name, gives
     every user who had that CPU pinned a completion for it, and clears
     those pins - all in one transaction. Returns the new completions as
@@ -44,16 +45,18 @@ def record_job_end(cpu_name, label, icon, status, progress, started_at=None, ite
 
     started_at is None when the job's start wasn't seen; item is the
     output's {mod, internal, damage}, or None when it wasn't reported;
-    auto, whether a keep-in-stock target started the job."""
+    auto, whether a keep-in-stock target started the job; first_seen_at,
+    when the server first saw it (started_at when that's known)."""
     occurred_at = time.time()
     item = item or {}
     with db.transaction(db.app_db) as conn:
         event_id = conn.execute(
             "INSERT INTO craft_events (cpu_name, item_label, item_icon, status, progress_at_end, occurred_at, "
-            "started_at, item_mod, item_internal, item_damage, auto) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "started_at, item_mod, item_internal, item_damage, auto, first_seen_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (cpu_name, label, icon, status, progress, occurred_at,
-             started_at, item.get("mod"), item.get("internal"), item.get("damage"), int(auto)),
+             started_at, item.get("mod"), item.get("internal"), item.get("damage"), int(auto),
+             first_seen_at if first_seen_at is not None else started_at),
         ).lastrowid
         conn.execute(
             "INSERT INTO user_completions (user_id, craft_event_id, created_at) "
@@ -65,6 +68,53 @@ def record_job_end(cpu_name, label, icon, status, progress, started_at=None, ite
             "SELECT user_id, id FROM user_completions WHERE craft_event_id = ?",
             (event_id,),
         ).fetchall()
+
+
+_EVENT_COLUMNS = (
+    "SELECT id, cpu_name, item_label, item_icon, status, progress_at_end, occurred_at, "
+    "started_at, item_mod, item_internal, item_damage, auto, first_seen_at FROM craft_events"
+)
+
+
+def _event(r):
+    return {
+        "id": r[0],
+        "cpu": r[1],
+        "itemName": r[2],
+        "icon": icons.current_path(r[3]),
+        "status": r[4],
+        "progress": r[5],
+        "finishedAt": r[6],
+        "startedAt": r[7],
+        "mod": r[8],
+        "internal": r[9],
+        "damage": r[10],
+        "auto": bool(r[11]),
+        "firstSeenAt": r[12],
+    }
+
+
+def job_end_seen_at(cpu_name, seen_from, seen_until):
+    """The end of the job on cpu_name the server first saw in
+    [seen_from, seen_until), as history() gives it, or None."""
+    with db.transaction(db.app_db) as conn:
+        row = conn.execute(
+            _EVENT_COLUMNS + " WHERE cpu_name = ? AND first_seen_at >= ? AND first_seen_at < ? "
+            "ORDER BY first_seen_at LIMIT 1",
+            (cpu_name, seen_from, seen_until),
+        ).fetchone()
+    return _event(row) if row else None
+
+
+def next_job_end(cpu_name, seen_from):
+    """The end of the first job on cpu_name the server first saw at or
+    after seen_from, or None."""
+    with db.transaction(db.app_db) as conn:
+        row = conn.execute(
+            _EVENT_COLUMNS + " WHERE cpu_name = ? AND first_seen_at >= ? ORDER BY first_seen_at LIMIT 1",
+            (cpu_name, seen_from),
+        ).fetchone()
+    return _event(row) if row else None
 
 
 def history(before=None, after=None, limit=50, query="", status=None):
@@ -87,8 +137,7 @@ def history(before=None, after=None, limit=50, query="", status=None):
         where.append("status = 'incomplete'")
     terms = search.parse(query)
     sql = (
-        "SELECT id, cpu_name, item_label, item_icon, status, progress_at_end, occurred_at, "
-        "started_at, item_mod, item_internal, item_damage, auto FROM craft_events"
+        _EVENT_COLUMNS
         + (" WHERE " + " AND ".join(where) if where else "")
         + " ORDER BY id DESC"
     )
@@ -104,23 +153,7 @@ def history(before=None, after=None, limit=50, query="", status=None):
                         break
         else:
             rows = conn.execute(sql + " LIMIT ?", (*params, limit + 1)).fetchall()
-    events = [
-        {
-            "id": r[0],
-            "cpu": r[1],
-            "itemName": r[2],
-            "icon": icons.current_path(r[3]),
-            "status": r[4],
-            "progress": r[5],
-            "finishedAt": r[6],
-            "startedAt": r[7],
-            "mod": r[8],
-            "internal": r[9],
-            "damage": r[10],
-            "auto": bool(r[11]),
-        }
-        for r in rows[:limit]
-    ]
+    events = [_event(r) for r in rows[:limit]]
     return events, len(rows) > limit
 
 

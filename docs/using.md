@@ -85,6 +85,27 @@ jobs still running.
 Pasted into Discord, a link to the Crafts tab previews the busy CPUs, each
 with what it's crafting and that item's icon, and an **Open** button.
 
+### Linking one craft
+
+A craft's details (its **Ingredients** dialog) have their own link,
+`/crafts?cpu=…&job=…`: it's in the address bar while they're open, and the
+link button beside the close button copies it, for the installed app, which
+has no address bar. If the CPU moves on to another craft while they're
+open, the link follows. Opened while the craft runs, the link opens its
+details over its card, which is outlined. The link keeps working after the
+craft ends: the
+page then says how it went (finished, or stopped at what progress), when,
+and how long it took, with the item's name opening its stock history, over
+the CPUs as they are now. In Discord, it previews the same, with the item's
+icon; a running craft's preview counts down to when it's due, once the
+server has an estimate. Discord keeps a link's preview for a while, so an
+old preview can still say the craft is running; the times in it stay
+current, and **Open** shows how it is now.
+
+A link only says "how it went wasn't recorded" when the server was down
+as the craft ended. A craft that was already running when the server
+restarted is still the link's, though the page can't say how long it ran.
+
 ## Theme
 
 The page follows your system's light or dark setting. To pick one for
@@ -142,8 +163,9 @@ dialog picks what's sent:
 | `autocraft` | a keep-in-stock target's auto-craft fails |
 | `stock` | a low-stock alert fires. Off by default, since alerts are each user's own; on, it posts once per item, without saying whose alert it was. |
 
-Icons and the link to the item's page need `PUBLIC_URL`, the address the page
-is reached at from outside; without it, posts are text only. **Send test** in
+A post about a craft links to [that craft](#linking-one-craft), and the
+others to the item's page. Icons and links need `PUBLIC_URL`, the address the
+page is reached at from outside; without it, posts are text only. **Send test** in
 the dialog saves it and posts a test message to every URL.
 
 On the server, `WEBHOOK_URLS` (and `WEBHOOK_EVENTS`, with the event names
@@ -295,7 +317,8 @@ minute, but its data changes only when a scan finishes.
 
 - Click an item to open its stock history chart. Each item has its own URL
   (`/network/item/<mod:internal:damage>`, `/network/item/@<aspect>` for
-  essentia) that can be shared; link previews
+  essentia) that can be shared, and the link button in its dialog copies
+  it; link previews
   include the item's icon, the current amount and a chart. Discord reuses
   its preview of a link for about half an hour; to get a current one, post
   the link with a query string added (`?v=2`). Discord's

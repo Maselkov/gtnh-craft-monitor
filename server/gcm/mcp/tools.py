@@ -20,7 +20,7 @@ import re
 import time
 
 from gcm import (
-    auth, bottlenecks, commands, config, craft_stats, gamedata, inventory, item_info, patterns, planner, rates,
+    auth, bottlenecks, commands, config, craft_stats, gamedata, inventory, item_info, job_links, patterns, planner, rates,
     mctext, recipe_index, recipes, search, state, stock, store, tracking,
 )
 
@@ -380,6 +380,11 @@ def _started_by(cpu):
     return store.users.display_name(user_id) or "a deleted user"
 
 
+def _job_link(cpu, first_seen):
+    """The job's page, to share (gcm/job_links.py), or None."""
+    return job_links.url(cpu, first_seen) if cpu and first_seen is not None else None
+
+
 def current_crafts(user, args):
     with state.crafts_lock:
         jobs = list(state.crafts["jobs"])
@@ -399,6 +404,7 @@ def current_crafts(user, args):
             "steps_total": job.get("steps_total"),
             "running_seconds": _round(job.get("running_seconds"), 0),
             "eta_seconds": _round(job.get("eta_seconds"), 0),
+            "link": _job_link(job.get("name"), job.get("started_at")),
         })
     return {
         "reported_at": _iso(received_at),
@@ -462,6 +468,7 @@ def craft_history(user, args):
                 "progress_percent": e.get("progress"),
                 "started_at": _iso(e.get("startedAt")),
                 "ended_at": _iso(e.get("finishedAt")),
+                "link": _job_link(e.get("cpu"), e.get("firstSeenAt")),
             }
             for e in events
         ],
@@ -1231,7 +1238,10 @@ TOOLS = [
     {
         "name": "current_crafts",
         "title": "Crafting CPUs now",
-        "description": "What each AE2 crafting CPU is making right now, how far along it is, and which are idle.",
+        "description": (
+            "What each AE2 crafting CPU is making right now, how far along it is, and which are idle. "
+            "Each job's link is its page, to share: it keeps working after the job ends."
+        ),
         "inputSchema": _schema({}),
         "annotations": READ_ONLY,
         "handler": current_crafts,

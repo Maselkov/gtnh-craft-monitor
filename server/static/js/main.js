@@ -13,9 +13,12 @@ import { setupAgentsActions } from './agents.js';
 import { setupCraftStats } from './craft-stats.js';
 import { setupDialogs } from './dialogs.js';
 import { setupCraftPlanActions } from './craft-plan.js';
-import { pollCrafts, refresh, setupCraftsActions, setupNotifications, tickSourceLine } from './crafts.js';
+import {
+  lastData, pollCrafts, refresh, render, setupCraftsActions, setupNotifications, tickSourceLine,
+} from './crafts.js';
 import { setupGameDataActions } from './gamedata.js';
 import { setupIngredientsActions } from './ingredients.js';
+import { readJobLinkFromUrl, setupJobLink } from './job-link.js';
 import {
   parseItemUrlPath,
   setPendingItemFromUrl,
@@ -50,6 +53,7 @@ setupAdminActions();
 setupGameDataActions();
 setupRecipeCheckActions();
 setupCraftsActions();
+setupJobLink(() => { if (lastData) render(lastData); });
 setupCraftHistory();
 setupCraftStats();
 setupAgentsActions();
@@ -78,6 +82,7 @@ function initFromUrl() {
   switchTab(initialTab, false);  // false: don't push a new history entry
                                   // over the URL we just loaded
   if (location.pathname === '/network') focusNetworkSearch();  // not under an item's popup
+  readJobLinkFromUrl();
 }
 
 setupNotifications();

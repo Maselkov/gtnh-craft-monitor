@@ -1235,6 +1235,25 @@ block is never run, so the CSP doesn't apply to it. Discord takes the
 `media`, so the dark one comes last. Unfurled `components` embeds are
 output only: webhooks still send a classic embed.
 
+**A link to a craft names it by CPU and first sight, and works after it
+ends.** `/crafts?cpu=<name>&job=<time>` (gcm/job_links.py): the time is
+when the server first saw the job (whole seconds), known from its first
+report, so a link can be shared while it runs. `craft_events.first_seen_at`
+keeps it (`started_at` stays NULL for a job seen part way, for durations),
+so `/api/crafts/job` and the preview can answer live, ending (held for the
+game's outcome), ended (the history row) or gone. A query, not a path:
+CPU names can contain `/`, which proxies mangle in a path. Running jobs'
+state isn't persisted, so after a restart a running job is seen anew at a
+later time: with no row first seen at the link's time, the first job seen
+after it on that CPU is the link's if it wasn't seen from its start. That
+misattributes a link only when its job ended and another started while the
+server was down. The preview's times are Discord timestamps (`<t:…:R>`),
+since Discord keeps a preview for a while: a running job's estimate is
+"due <t:report time + eta_seconds:R>", a countdown that turns into "due …
+ago" once it passes (the OG description, plain text, says "~25m left"). Webhook posts about a craft link
+to it; push notifications don't, since tapping one already opens the page
+with the finished card.
+
 **Two deployments, one script, two keys.** A release tag deploys
 production (publish.yml); each push to main deploys testing
 (testing.yml), both through deploy.yml and the same forced command,

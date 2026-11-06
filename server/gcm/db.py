@@ -719,6 +719,15 @@ def _app_cancel_source(conn):
     conn.execute("ALTER TABLE craft_cancel_history ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'")
 
 
+def _app_craft_event_first_seen(conn):
+    # When the server first saw the job: started_at, or when a job
+    # already running at a restart was first seen. With cpu_name it names
+    # the job in a link to it (gcm/job_links.py), from while it runs.
+    conn.execute("ALTER TABLE craft_events ADD COLUMN first_seen_at REAL")
+    conn.execute("UPDATE craft_events SET first_seen_at = started_at")
+    conn.execute("CREATE INDEX idx_craft_events_cpu_seen ON craft_events (cpu_name, first_seen_at)")
+
+
 APP_MIGRATIONS = [
     _app_baseline,
     _app_drop_orphaned_user_rows,
@@ -734,6 +743,7 @@ APP_MIGRATIONS = [
     _app_oauth,
     _app_mcp_calls,
     _app_cancel_source,
+    _app_craft_event_first_seen,
 ]
 POWER_MIGRATIONS = [_power_baseline, _power_machines, _power_drop_impossible_times, _power_wireless_lsc]
 ITEM_HISTORY_MIGRATIONS = [
