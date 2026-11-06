@@ -10,10 +10,23 @@ from urllib.parse import quote, unquote
 
 from flask import abort, Blueprint, request, Response, send_from_directory
 
-from gcm import auth, charts, config, embeds, icons, inventory, job_links, mctext, security, state, store
+from gcm import app_icons, auth, charts, config, embeds, icons, inventory, job_links, mctext, security, state, store
 
 
 bp = Blueprint("pages", __name__)
+
+
+@bp.before_app_request
+def recolored_icon():
+    """With ICON_COLOR set, static/icons/ in that colour (gcm/app_icons.py)
+    instead of the files as they are."""
+    if config.ICON_COLOR is None or not request.path.startswith("/static/icons/"):
+        return None
+    made = app_icons.recolored(request.path.rsplit("/", 1)[1], config.ICON_COLOR)
+    if made is None:
+        return None
+    data, mimetype = made
+    return Response(data, mimetype=mimetype)
 
 
 @bp.route("/icons")

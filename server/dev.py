@@ -12,7 +12,7 @@ Starts the real app on a throwaway data directory with:
   and restart, network scans, power readings, and craft/cancel requests
   from the page accepted (or refused when every CPU is busy).
 
-Its favicon and app icons are the real ones in red, so a dev tab doesn't
+Its favicon and app icons are red (ICON_COLOR), so a dev tab doesn't
 pass for a real server's.
 
 Options: --port, --host (0.0.0.0 to try it from a phone), --data-dir to
@@ -64,9 +64,11 @@ os.environ["CRAFT_BLOCK_GRACE_SECONDS"] = "10"
 # (and auto-update holds back, as it never updates past the latest).
 os.environ["GCM_SCRIPTS_VERSION"] = "v1.1.0"
 os.environ["GCM_VERSION"] = "v1.1.0"
+# The favicon and app icons in red (gcm/app_icons.py), so a dev tab
+# doesn't pass for a real server's.
+os.environ["ICON_COLOR"] = "#ff6b6b"
 
 from gcm import bottlenecks, create_app, db, icons, patterns, store  # noqa: E402
-from gcm.routes import pages  # noqa: E402
 from gcm.routes.crafts import name_cpus  # noqa: E402
 
 API_KEY = "dev-" + secrets.token_hex(24)
@@ -1075,55 +1077,6 @@ def admin_token():
     return store.users.create(ADMIN_NAME, "admin")[1]
 
 
-# The icon's blue maze (static/icons/), and the red a dev server draws it
-# in: the page's own red (--stale on dark).
-ICON_BLUE = (0x5F, 0xB3, 0xFF)
-DEV_ICON_RED = (0xFF, 0x6B, 0x6B)
-
-
-def red_icon(name):
-    """static/icons/<name> with its blue made red, as (bytes, mimetype), or
-    None for a file that isn't there. The icons are flat colours, so the
-    blue is one exact colour in the SVG and every PNG."""
-    path = os.path.join(pages.STATIC_DIR, "icons", os.path.basename(name))
-    if not os.path.isfile(path):
-        return None
-    if path.endswith(".svg"):
-        with open(path, encoding="utf-8") as f:
-            svg = f.read()
-        return svg.replace("#%02x%02x%02x" % ICON_BLUE, "#%02x%02x%02x" % DEV_ICON_RED).encode(), "image/svg+xml"
-    from PIL import Image
-
-    image = Image.open(path).convert("RGBA")
-    pixels = bytearray(image.tobytes())
-    blue, red = bytes(ICON_BLUE), bytes(DEV_ICON_RED)
-    for i in range(0, len(pixels), 4):
-        if pixels[i:i + 3] == blue:
-            pixels[i:i + 3] = red
-    out = io.BytesIO()
-    Image.frombytes("RGBA", image.size, bytes(pixels)).save(out, format="PNG")
-    return out.getvalue(), "image/png"
-
-
-def serve_red_icons(app):
-    """Answers /static/icons/ with red_icon(), in place of the real files."""
-    from flask import Response, request
-
-    made = {}
-
-    @app.before_request
-    def dev_icon():
-        if not request.path.startswith("/static/icons/"):
-            return None
-        name = request.path.rsplit("/", 1)[1]
-        if name not in made:
-            made[name] = red_icon(name)
-        if made[name] is None:
-            return None
-        data, mimetype = made[name]
-        return Response(data, mimetype=mimetype, headers={"Cache-Control": "no-cache"})
-
-
 def run(args, data_dir):
     fresh = not os.path.exists(os.path.join(data_dir, "app.db"))
     if not args.no_icons:
@@ -1132,7 +1085,6 @@ def run(args, data_dir):
         shutil.rmtree(os.path.join(data_dir, "gamedata"), ignore_errors=True)
 
     app = create_app(data_dir=data_dir, api_key=API_KEY)
-    serve_red_icons(app)
     stock = backfill_history() if fresh else None
     token = admin_token()
     if fresh:

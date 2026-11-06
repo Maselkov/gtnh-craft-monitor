@@ -37,8 +37,9 @@ and cancel requests from the page are answered the way the in-game
 scripts would. `--host 0.0.0.0` makes it reachable from a phone on the
 same network; `--no-icons` runs without game data. It never touches
 `server/data/`.
-Its favicon and app icons are the project's in red, so a dev tab is
-easy to tell from a real server's.
+Its favicon and app icons are red (it sets `ICON_COLOR`, which a test
+deployment can set too), so a dev tab is easy to tell from a real
+server's.
 
 Look at a change to the page in both themes (the settings menu's
 Theme). Colours are the custom properties at the top of

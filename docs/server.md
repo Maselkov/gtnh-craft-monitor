@@ -113,6 +113,7 @@ Everything else:
 | `HISTORY_DAILY_AFTER_DAYS` | `365` | ...and older than this, one per day. `0`: off. |
 | `MAX_SCAN_ITEMS` | `100000` | Most items (each NBT variant counts) one network scan may send; a bigger scan is refused, and the Status dialog says so. |
 | `MAX_SCAN_PATTERNS` | `25000` | Most patterns one pattern scan may send. |
+| `ICON_COLOR` | empty | The favicon and app icons in this colour instead of blue, as `#rrggbb` (e.g. `#ff6b6b`, red): tells a test server's tab or installed app from the real one's. Anything but a colour stops the server at startup. |
 | `CHART_CACHE_TTL_SECONDS` | `60` | Cache time for chart PNGs. |
 | `CHART_CACHE_MAX_ENTRIES` | `64` | Chart PNGs kept in the cache. |
 | `CHART_RATE_LIMIT_PER_MINUTE` | `30` | Chart PNG requests allowed per client per minute. |
