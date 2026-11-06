@@ -319,7 +319,9 @@ button and readout say how full that 5-minute buffer is, past 100% while
 it holds a surplus waiting for the next upload, and its chart draws the
 threshold where the capacity line would be. Instead of an "Empty in" line
 it says what it sent to or drew from the network over the past hour, from
-its own averages. When it's drawing, the line also gives the most it can
+how far above or below its threshold it climbs between rebalances (it
+needs about 10 minutes of readings first; server lag makes it read a little
+high). When it's drawing, the line also gives the most it can
 refill: one threshold every 5 minutes (20T EU/s for one UEV capacitor). A
 draw near that needs more capacitors. If it drops under 10% of its threshold,
 the tab's red dot comes on: it's draining faster than the network can

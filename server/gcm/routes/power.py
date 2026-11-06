@@ -161,9 +161,8 @@ def power_get():
     range_key, rows = store.power.range_readings(request.args.get("range", "day"), machine)
     latest = store.power.latest(machine)
     now = time.time()
-    trend = rates.power_trend(
-        store.power.readings(now - rates.POWER_WINDOW_SECONDS, store.power.MAX_POINTS, machine), now
-    )
+    recent = store.power.readings(now - rates.POWER_WINDOW_SECONDS, store.power.MAX_POINTS, machine)
+    trend = rates.power_trend(recent, now)
 
     return jsonify(
         {
@@ -186,6 +185,9 @@ def power_get():
                 else None
             ),
             "trend": trend,
+            # An LSC in wireless mode: EU/s sent to (+) or drawn from (-)
+            # the network over the past hour.
+            "wireless_trade": rates.wireless_trade(recent, now) if latest and latest[5] else None,
         }
     )
 

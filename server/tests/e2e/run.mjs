@@ -1321,8 +1321,8 @@ async function main() {
       && $('#powerCurrent').textContent.includes('6.30P EU / 6.00P EU wireless threshold (105.0%)')
       && Chart.getChart($('#powerChart')).data.datasets[1].label === 'Wireless threshold'
       && !Chart.getChart($('#powerChart')).data.datasets[1].hidden
-      && $('#powerEta').textContent
-        === 'Drawing 1.00k EU/s from the wireless network over the past hour \u00b7 refills up to 20.00T EU/s'`);
+      // One reading isn't enough to tell what it trades with the network.
+      && $('#powerEta').textContent === 'Refills up to 20.00T EU/s'`);
     // Above its threshold the whole time, its axis still starts below the
     // threshold line, rather than on it, where the line would be hidden.
     await waitFor('threshold line inside the chart', `Chart.getChart($('#powerChart')).scales.y.min < 6e15`);

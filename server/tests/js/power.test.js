@@ -108,11 +108,11 @@ test('the wireless network comes first among the machine buttons, with its EU', 
 
 test('wirelessLscText: what an LSC in wireless mode trades with the network', () => {
   const lsc = { wireless_threshold: 6e15 };  // 1 UEV: 6P a rebalance, 20T EU/s
-  assert.equal(wirelessLscText(lsc), 'Refills up to 20.00T EU/s');
-  // Its averages are EU/t: 4.58G EU/t is 91.6G EU/s.
-  assert.equal(wirelessLscText({ ...lsc, avg_eu_in_1h: 107.636e9, avg_eu_out_1h: 103.056e9 }),
+  assert.equal(wirelessLscText(lsc, null), 'Refills up to 20.00T EU/s');
+  // The server's wireless_trade, EU/s; its own in/out averages don't decide it.
+  assert.equal(wirelessLscText({ ...lsc, avg_eu_in_1h: 1e9, avg_eu_out_1h: 6e9 }, 91.6e9),
     'Sending 91.60G EU/s to the wireless network over the past hour');
-  assert.equal(wirelessLscText({ ...lsc, avg_eu_in_1h: 1e9, avg_eu_out_1h: 6e9 }),
+  assert.equal(wirelessLscText(lsc, -100e9),
     'Drawing 100.00G EU/s from the wireless network over the past hour \u00b7 refills up to 20.00T EU/s');
 });
 
@@ -124,7 +124,7 @@ test('only the rate is coloured, by its sign', () => {
     [['\u22123.60G EU/h', 'down']]);
   assert.deepEqual(powerEtaParts(null), []);
   const lsc = { wireless_threshold: 6e15 };
-  assert.deepEqual(toned(wirelessLscParts({ ...lsc, avg_eu_in_1h: 3e9, avg_eu_out_1h: 1e9 })), [['40.00G EU/s', 'up']]);
-  assert.deepEqual(toned(wirelessLscParts({ ...lsc, avg_eu_in_1h: 1e9, avg_eu_out_1h: 3e9 })), [['40.00G EU/s', 'down']]);
-  assert.deepEqual(toned(wirelessLscParts(lsc)), []);
+  assert.deepEqual(toned(wirelessLscParts(lsc, 40e9)), [['40.00G EU/s', 'up']]);
+  assert.deepEqual(toned(wirelessLscParts(lsc, -40e9)), [['40.00G EU/s', 'down']]);
+  assert.deepEqual(toned(wirelessLscParts(lsc, null)), []);
 });

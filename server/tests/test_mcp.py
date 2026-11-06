@@ -359,6 +359,14 @@ class TestPowerTool:
         assert found["machine"] == "(unnamed)" and found["machines"] == ["(unnamed)"]
         assert found["latest"]["stored"] == 2500 and found["latest"]["percent_full"] == 25
         assert ok(client, token, "power", machine="(unnamed)")["latest"]["capacity"] == 10000
+        assert "sent_to_wireless_eu_per_second_last_hour" not in found["latest"]
+
+    def test_what_an_lsc_sends_to_the_network(self, client, token):
+        now = time.time()
+        for t in range(int(now - 3600), int(now), 64):
+            store.power.add_reading(t, 6e15 + 1e9 * (t % 300), 9.2e18, {}, threshold=6e15, wireless_mode=True)
+        latest = ok(client, token, "power")["latest"]
+        assert latest["sent_to_wireless_eu_per_second_last_hour"] == pytest.approx(1e9, rel=0.1)
 
 
 def test_numbers_are_compacted_and_names_plain():

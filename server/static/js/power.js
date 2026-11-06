@@ -258,15 +258,15 @@ function buildPowerTrendHtml(latest) {
 
 // The line under an LSC in wireless mode's readout, in place of "Full
 // in"/"Empty in" (the network refills it every 5 minutes): what it sent
-// to or drew from the network over the past hour, from its own averages
-// (EU/t), and when drawing, the most its threshold can refill - one
-// threshold's worth per 5-minute rebalance.
+// to or drew from the network over the past hour (the server's
+// wireless_trade, EU/s: not its own in/out averages, which count the
+// transfers too), and when drawing, the most its threshold can refill -
+// one threshold's worth per 5-minute rebalance.
 // As parts, [{text, tone}]: the amount is 'up' (green) when it sends,
 // 'down' (red) when it draws, as the arrow beside it.
-export function wirelessLscParts(latest) {
+export function wirelessLscParts(latest, net) {
   const refill = `${formatEU(latest.wireless_threshold / 300)} EU/s`;
-  if (latest.avg_eu_in_1h == null || latest.avg_eu_out_1h == null) return [{ text: `Refills up to ${refill}` }];
-  const net = (latest.avg_eu_in_1h - latest.avg_eu_out_1h) * 20;
+  if (net == null) return [{ text: `Refills up to ${refill}` }];
   if (net >= 0) {
     return [{ text: 'Sending ' }, { text: `${formatEU(net)} EU/s`, tone: 'up' },
       { text: ' to the wireless network over the past hour' }];
@@ -275,8 +275,8 @@ export function wirelessLscParts(latest) {
     { text: ` from the wireless network over the past hour \u00b7 refills up to ${refill}` }];
 }
 
-export function wirelessLscText(latest) {
-  return partsText(wirelessLscParts(latest));
+export function wirelessLscText(latest, net) {
+  return partsText(wirelessLscParts(latest, net));
 }
 
 function partsText(parts) {
@@ -351,7 +351,7 @@ function renderPower(data) {
     // An LSC in wireless mode is refilled every 5 minutes: an hour's
     // drift between refills says nothing about when it runs out.
     // wirelessLscText says what it trades with the network instead.
-    const parts = threshold > 0 ? wirelessLscParts(data.latest) : powerEtaParts(data.trend);
+    const parts = threshold > 0 ? wirelessLscParts(data.latest, data.wireless_trade) : powerEtaParts(data.trend);
     eta.append(...parts.map(part => {
       if (!part.tone) return document.createTextNode(part.text);
       const span = document.createElement('span');
