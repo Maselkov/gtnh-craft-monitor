@@ -1,7 +1,7 @@
 // Craft request and cancel modals, pending craft requests.
 
 import { evaluateAmountExpression } from './amount.js';
-import { AUTH_USER, closeAdminUsersModal, closeBackupsModal, closeSettingsMenu } from './auth.js';
+import { AUTH_USER, closeAdminUsersModal, closeBackupsModal, closeSettingsMenu, expireAuthentication } from './auth.js';
 import { closeCraftPlan, openCraftPlan, updateCraftPlanAmount } from './craft-plan.js';
 import { nameText } from './description.js';
 import { lastData, render } from './crafts.js';
@@ -285,9 +285,18 @@ async function submitCraftRequest() {
 let craftRequests = [];
 
 export async function fetchCraftRequests() {
+  const user = AUTH_USER;
+  if (!user) {
+    craftRequests = [];
+    renderCraftRequests();
+    return;
+  }
   try {
     const res = await fetch('/api/craft/requests');
+    if (res.status === 401) { expireAuthentication(user); return; }
+    if (!res.ok) return;
     const data = await res.json();
+    if (AUTH_USER !== user) return;
     craftRequests = data.requests || [];
     renderCraftRequests();
   } catch (e) {

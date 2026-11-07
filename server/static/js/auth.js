@@ -2,7 +2,7 @@
 
 import { updateRelease, updateScriptsNotice } from './agents.js';
 import { updateRecipeNotice } from './recipe-check.js';
-import { showToast } from './craft-actions.js';
+import { fetchCraftRequests, showToast } from './craft-actions.js';
 import {
   clearPins,
   dropPushSubscription,
@@ -13,7 +13,7 @@ import {
   updateNotifToggle,
 } from './crafts.js';
 import { openGameDataModal, updateGameDataNotice } from './gamedata.js';
-import { updateGameDataNote, updateTerminalNote } from './network.js';
+import { fetchNetworkPins, updateGameDataNote, updateTerminalNote } from './network.js';
 import { nameText } from './description.js';
 import {
   dayLabel, delegateActions, escapeHtml, formatQty, formatRelativeTime, iconClass, iconUrl, loadDismissedNotes,
@@ -43,6 +43,9 @@ export function isOperator() {
 }
 
 function updateAuthenticationControl() {
+  // Refresh personal state on sign-in, and clear it on sign-out.
+  fetchNetworkPins();
+  fetchCraftRequests();
   const input = document.getElementById('accessTokenInput');
   const button = document.getElementById('authBtn');
   const adminButton = document.getElementById('adminBtn');
@@ -93,6 +96,17 @@ export async function loadAuthentication() {
   SERVER_PRIVATE = Boolean(data.private);
   updateAuthenticationControl();
   if (data.setup_required) showSetupModal();
+}
+
+// A polling request may discover an expired session before the user
+// signs out. Ignore responses belonging to a previous sign-in.
+export function expireAuthentication(user) {
+  if (!user || AUTH_USER !== user) return;
+  AUTH_USER = null;
+  clearPins();
+  updateAuthenticationControl();
+  if (SERVER_PRIVATE) location.reload();
+  else if (lastData) render(lastData);
 }
 
 // The server makes the zip first (a few seconds with a lot of history),

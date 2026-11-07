@@ -12,6 +12,11 @@
 - [Stock rules](#stock-rules)
 - [Limitations](#limitations)
 
+The tab content is in a main landmark for screen-reader navigation.
+On a public base, browsing while signed out only fetches shared data;
+personal pins and craft requests load when you sign in. If your session
+expires, personal updates stop until you sign in again.
+
 ## Crafts tab
 
 One card per crafting CPU, updated within a second of each report from the
@@ -113,6 +118,8 @@ The page follows your system's light or dark setting. To pick one for
 this browser instead, use **Theme** in the settings (⚙) menu: sun for
 light, moon for dark, the half circle to follow the system again. It's
 there signed out too.
+
+The Power tab's small energy value keeps readable contrast in both themes.
 
 ## Pins and notifications
 

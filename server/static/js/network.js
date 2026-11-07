@@ -1,6 +1,6 @@
 // Network tab: item grid, tooltip, pins, infinite scroll.
 
-import { AUTH_USER, isOperator } from './auth.js';
+import { AUTH_USER, expireAuthentication, isOperator } from './auth.js';
 import { openCraftRequestModal } from './craft-actions.js';
 import { descriptionHtml, descriptionPlainText, formulaSearchText, nameHtml, nameText } from './description.js';
 import { openItemHistory, tryOpenItemFromUrl, updateItemHistoryPinButton } from './history.js';
@@ -118,9 +118,18 @@ export function networkItemKey(mod, internal, damage, kind, variant) {
 }
 
 export async function fetchNetworkPins() {
+  const user = AUTH_USER;
+  if (!user) {
+    pinnedItemKeys = new Set();
+    renderNetworkList();
+    return;
+  }
   try {
     const res = await fetch('/api/network/pins');
+    if (res.status === 401) { expireAuthentication(user); return; }
+    if (!res.ok) return;
     const data = await res.json();
+    if (AUTH_USER !== user) return;
     pinnedItemKeys = new Set((data.pins || []).map(p => networkItemKey(p.mod, p.internal, p.damage, p.kind, p.variant)));
     // Whichever of fetchNetwork()/fetchNetworkPins() resolves second
     // is what actually needs to trigger the correctly-pinned render -

@@ -2,7 +2,7 @@
 // notifications.
 
 import { connectNoteHtml } from './agents.js';
-import { AUTH_USER, isOperator } from './auth.js';
+import { AUTH_USER, expireAuthentication, isOperator } from './auth.js';
 import { refreshCraftHistory } from './craft-history.js';
 import { refreshCraftStats } from './craft-stats.js';
 import { openCancelConfirmModal, pendingCancelCpus } from './craft-actions.js';
@@ -154,6 +154,7 @@ async function acknowledgeAllPins() {
 }
 
 export async function refreshPinsAndCompletions() {
+  const user = AUTH_USER;
   if (!AUTH_USER) {
     pinnedCpus = new Set();
     completedPins = [];
@@ -164,8 +165,14 @@ export async function refreshPinsAndCompletions() {
       fetch('/api/pins'),
       fetch('/api/completions'),
     ]);
+    if (pinsRes.status === 401 || completionsRes.status === 401) {
+      expireAuthentication(user);
+      return;
+    }
+    if (!pinsRes.ok || !completionsRes.ok) return;
     const pinsData = await pinsRes.json();
     const completionsData = await completionsRes.json();
+    if (AUTH_USER !== user) return;
     pinnedCpus = new Set(pinsData.pins || []);
     completedPins = completionsData.completions || [];
     notifyNewCompletions(completedPins);

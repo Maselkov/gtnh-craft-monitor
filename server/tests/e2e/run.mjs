@@ -512,6 +512,14 @@ async function main() {
   await cdp.send('Runtime.enable');
   await cdp.send('Log.enable');
   await cdp.send('Page.enable');
+  const personalRequests = [];
+  await cdp.send('Network.enable');
+  cdp.on('Network.requestWillBeSent', ({ request }) => {
+    const pathname = new URL(request.url).pathname;
+    if (['/api/network/pins', '/api/craft/requests', '/api/pins', '/api/completions'].includes(pathname)) {
+      personalRequests.push(pathname);
+    }
+  });
   await cdp.send('Page.navigate', { url: base + '/' });
   await waitFor('page loaded', `document.readyState === 'complete'`);
   await evaluate(PAGE_LIB);
@@ -536,6 +544,53 @@ async function main() {
     await waitFor('tab badge counts the busy one', `$('#tabBtnCrafts .tab-badge')?.textContent === '1'`);
     // Busy crafts don't count in the title: nothing to do about them.
     await waitFor('title names the tab', `document.title === 'Crafts · GTNH Monitor'`);
+  });
+
+  step('anonymous network browsing skips personal requests; one main landmark contains all tabs', async () => {
+    await cdp.send('Page.navigate', { url: base + '/network' });
+    await waitFor('network loaded', `document.readyState === 'complete' && !window.byText`);
+    await evaluate(PAGE_LIB);
+    await waitFor('network shown', `visible($('#networkTab')) && $('#networkList .network-cell')`);
+    await sleep(3200);
+    if (personalRequests.length) throw new Error('anonymous personal requests: ' + personalRequests.join(', '));
+    await waitFor('single main contains the tabs', `$$('main, [role="main"]').length === 1
+      && ['craftsTab', 'powerTab', 'networkTab', 'privateNotice'].every(id => $('main').contains($('#' + id)))`);
+    await click(`$('#tabBtnCrafts')`);
+  });
+
+  step('power tab value meets text contrast in both themes, active and inactive', async () => {
+    await waitFor('power value', `$('#tabFillPower').textContent !== ''`);
+    const failures = await evaluate(`(() => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      const rgb = color => {
+        ctx.clearRect(0, 0, 1, 1);
+        ctx.fillStyle = color;
+        ctx.fillRect(0, 0, 1, 1);
+        return Array.from(ctx.getImageData(0, 0, 1, 1).data).slice(0, 3);
+      };
+      const lum = c => c.map(v => v / 255).map(v => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4)
+        .reduce((sum, v, i) => sum + v * [.2126, .7152, .0722][i], 0);
+      const failures = [];
+      const previous = document.documentElement.dataset.theme;
+      for (const theme of ['dark', 'light']) {
+        document.documentElement.dataset.theme = theme;
+        for (const active of [false, true]) {
+          $('#tabBtnPower').classList.toggle('active', active);
+          const style = getComputedStyle($('#tabFillPower'));
+          const bg = rgb(getComputedStyle(document.body).backgroundColor);
+          const fg = rgb(style.color).map((v, i) => v * Number(style.opacity) + bg[i] * (1 - Number(style.opacity)));
+          const [hi, lo] = [lum(fg), lum(bg)].sort((a, b) => b - a);
+          const ratio = (hi + .05) / (lo + .05);
+          if (ratio < 4.5) failures.push(theme + ' active=' + active + ': ' + ratio);
+        }
+      }
+      $('#tabBtnPower').classList.remove('active');
+      if (previous) document.documentElement.dataset.theme = previous;
+      else delete document.documentElement.dataset.theme;
+      return failures;
+    })()`);
+    if (failures.length) throw new Error(failures.join(', '));
   });
 
   step('a CPU without a Crafting Monitor: "Starting job…" at first, then a hint', async () => {
@@ -641,6 +696,26 @@ async function main() {
     // what pressing Enter in the field does.
     await evaluate(`$('#signInForm').requestSubmit(), true`);
     await waitFor('signed in', `$('#settingsUser').textContent !== '' && $('#settingsUser').textContent.includes('Administrator')`);
+  });
+
+  step('an expired session stops personal polling, and signing in resumes it', async () => {
+    await click(`$('#tabBtnNetwork')`);
+    const before = personalRequests.length;
+    await sleep(2300);
+    if (personalRequests.length <= before) throw new Error('signed-in personal polling did not resume');
+    await evaluate(`fetch('/api/auth/logout', { method: 'POST' }).then(r => r.ok)`);
+    await waitFor('expired session signed out', `visible($('#authBtn')) && $('#settingsUser').textContent === ''`);
+    await sleep(500);
+    const expired = personalRequests.length;
+    await sleep(3200);
+    if (personalRequests.length !== expired) throw new Error('personal polling continued after expiry');
+    await waitFor('personal requests cleared', `$('#craftRequestsSection').textContent === ''`);
+    await evaluate(`typeInto('#accessTokenInput', ${JSON.stringify(adminToken)})`);
+    await click(`$('#authBtn')`);
+    await waitFor('signed in again', `!visible($('#authBtn'))`);
+    await waitFor('personal requests resumed', `performance.getEntriesByType('resource').some(e => new URL(e.name).pathname === '/api/network/pins')`);
+    if (personalRequests.length <= expired) throw new Error('no personal fetches on signing back in');
+    await click(`$('#tabBtnCrafts')`);
   });
 
   step('notifications switch in the settings menu', async () => {

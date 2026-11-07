@@ -737,6 +737,8 @@ body:not(.is-admin) .admin-only, body.is-admin .non-admin-only {
 }
 .tab-fill {
   line-height: 1;
+  opacity: 1;
+  color: color-mix(in srgb, var(--muted) 90%, var(--text));
 }
 .tab-fill:empty {
   display: none;
