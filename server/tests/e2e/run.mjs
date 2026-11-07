@@ -125,6 +125,17 @@ def recipes(path, ingots):
                                              "recipes": [{"i": [[0, ingots]], "o": [[1, 1]], "e": 30, "d": 100}]},
                      "gt.recipe.compressor": {"machines": [{"name": "Compressor", "key": None}],
                                               "recipes": [{"i": [[2, 1]], "o": [[0, 1]], "e": 30, "d": 100}]}}}
+    data["format"] = 2
+    data["coverage"] = {"handlers": ["gregtech", "crafting", "furnace"], "identity": "item_id_damage"}
+    for entry in data["maps"].values():
+        for r in entry["recipes"]: r["type"] = "gt"
+    data["maps"]["crafting"] = {"machines": [{"name": "Crafting Table", "key": "minecraft:crafting_table:0"}], "recipes": [
+        {"type": "shaped", "w": 2, "h": 2, "slots": [{"alts": [[0, 1]]}, None, {"alts": [[1, 1], [2, 1]], "od": "dustIron"}, None], "o": [[3, 1]]},
+        {"type": "shapeless", "slots": [{"alts": [[3, 1]]}], "o": [[2, 1]]}]}
+    data["maps"]["furnace"] = {"machines": [{"name": "Furnace", "key": "minecraft:furnace:0"}], "recipes": [
+        {"type": "furnace", "i": [[1, 1]], "o": [[3, 1]], "d": 200}]}
+    data["maps"]["gt.recipe.viewer_assembler"] = {"machines": [{"name": "Assembler", "key": None}], "recipes": [
+        {"type": "gt", "i": [[3, 1]], "o": [[0, 1]], "e": 30, "d": 20 + i} for i in range(30)]}
     with gzip.open(path, "wt") as f:
         json.dump(data, f)
 recipes(out + "/recipes.json.gz", 1)
@@ -2775,6 +2786,101 @@ async function main() {
     await click(`$('#tabBtnCrafts')`);
     await click(`$('#tabBtnNetwork')`);
     await waitFor('faithful icon', `$$('#networkList img.network-cell-icon').some((i) => i.src.includes('~faithful32') && i.complete && i.naturalWidth === 32)`);
+  });
+
+  step('recipes: grid, drilldown, browser Back/Forward, Uses, category and paging', async () => {
+    await evaluate(`openItem('Iron Ingot'), true`);
+    await click(`$('#itemHistoryRecipesBtn')`);
+    await waitFor('recipe grid', `visible($('#recipeViewerModal')) && $('#recipeViewerList .recipe-grid')`);
+    await waitFor('recipe URL', `location.pathname === '/recipes' && $('#recipeViewerTitle').textContent === 'Iron Ingot'`);
+    await click(`$('#recipeViewerList [data-action="recipe-open"][data-key="gregtech:gt.metaitem.01:11028"]')`);
+    await waitFor('ingredient opened', `$('#recipeViewerTitle').textContent === 'Neutronium Ingot' && $$('#recipeViewerTrail button').length === 2`);
+    await click(`$('#recipeViewerBack')`);
+    await waitFor('Back restored iron', `$('#recipeViewerTitle').textContent === 'Iron Ingot' && $('#recipeViewerList .recipe-grid')`);
+    await evaluate(`history.forward(), true`);
+    await waitFor('Forward restored ingredient', `$('#recipeViewerTitle').textContent === 'Neutronium Ingot' && $$('#recipeViewerTrail button').length === 2`);
+    await click(`$('#recipeViewerTrail button')`);
+    await waitFor('breadcrumb returned', `$('#recipeViewerTitle').textContent === 'Iron Ingot' && $$('#recipeViewerTrail button').length === 1`);
+    await click(`$('#recipeViewerUsing')`);
+    await waitFor('Uses first page', `$('#recipeViewerUsing').getAttribute('aria-pressed') === 'true' && $('#recipeViewerStatus').textContent === '20 of 31 recipes'`);
+    await click(`$('#recipeViewerMaps [data-map="gt.recipe.viewer_assembler"]')`);
+    await waitFor('category selected', `$('#recipeViewerStatus').textContent === '20 of 30 recipes'`);
+    await click(`$('#recipeViewerMaps [data-map=""]')`);
+    await waitFor('all uses', `$('#recipeViewerStatus').textContent === '20 of 31 recipes'`);
+    await click(`$('#recipeViewerMore')`);
+    await waitFor('next page appended', `$$('#recipeViewerList .recipe-viewer-row').length === 31 && $('#recipeViewerStatus').textContent === '31 of 31 recipes'`);
+    await evaluate(`$('#recipeViewerList').scrollTop = 160, true`);
+    await click(`$$('#recipeViewerList .recipe-outputs [data-action="recipe-open"]')[3]`);
+    await waitFor('drilled after paging', `$$('#recipeViewerTrail button').length === 2 && $('#recipeViewerTitle').textContent === 'Neutronium Ingot'`);
+    await click(`$('#recipeViewerBack')`);
+    await waitFor('pages and scroll restored', `$('#recipeViewerTitle').textContent === 'Iron Ingot' && $$('#recipeViewerList .recipe-viewer-row').length === 31 && $('#recipeViewerList').scrollTop >= 150`);
+    await click(`$('[data-action="recipe-close"]')`);
+    await waitFor('close returned to item', `!visible($('#recipeViewerModal')) && visible($('#itemHistoryModal')) && location.pathname.startsWith('/network/item/')`);
+    await evaluate(`pressKey('Escape'), true`);
+    await waitFor('item closed', `!visible($('#itemHistoryModal'))`);
+  });
+
+  step('recipes: cancelled requests cannot replace a newer selection', async () => {
+    await evaluate(`(() => {
+      window.recipeFetch = window.fetch; window.heldRecipe = false;
+      window.fetch = async (...args) => {
+        const result = await window.recipeFetch(...args);
+        if (String(args[0]).startsWith('/api/recipes?') && !window.heldRecipe) {
+          window.heldRecipe = true; const body = await result.text();
+          await new Promise(resolve => { window.releaseRecipe = resolve; });
+          return new Response(body, { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        return result;
+      }; return true;
+    })()`);
+    await evaluate(`openItem('Iron Ingot'), true`);
+    await click(`$('#itemHistoryRecipesBtn')`);
+    await waitFor('first page held', `typeof window.releaseRecipe === 'function'`);
+    await click(`$('#recipeViewerUsing')`);
+    await waitFor('new selection ready', `$('#recipeViewerStatus').textContent === '20 of 31 recipes'`);
+    await evaluate(`window.releaseRecipe(); window.fetch = window.recipeFetch; true`);
+    await sleep(100);
+    await waitFor('old grid did not overwrite Uses', `!$('#recipeViewerList .recipe-grid-w2') && $('#recipeViewerUsing').getAttribute('aria-pressed') === 'true' && $('#recipeViewerStatus').textContent === '20 of 31 recipes'`);
+    await evaluate(`pressKey('Escape'), true`);
+    await waitFor('Escape closes only recipes', `!visible($('#recipeViewerModal')) && visible($('#itemHistoryModal'))`);
+    await evaluate(`pressKey('Escape'), true`);
+    await waitFor('item closed', `!visible($('#itemHistoryModal'))`);
+  });
+
+  step('recipes: direct links outside the network, stock pages, keyboard Uses and close origin', async () => {
+    await cdp.send('Page.navigate', { url: base + '/recipes?key=gregtech:gt.metaitem.01:2032' });
+    await waitFor('recipe page loaded', `document.readyState === 'complete' && !window.byText`);
+    await evaluate(PAGE_LIB);
+    await waitFor('outside-network item opens directly', `visible($('#recipeViewerModal')) && $('#recipeViewerTitle').textContent === 'Iron Dust' && $('#recipeViewerStatus').textContent === '1 of 1 recipes'`);
+    await waitFor('network arrived for stock links', `$('#networkList .network-cell')`);
+    await waitFor('stock link available', `$('#recipeViewerList [data-action="recipe-stock"][data-key="gregtech:gt.metaitem.01:11028"]')`);
+    await click(`$('#recipeViewerList [data-action="recipe-stock"][data-key="gregtech:gt.metaitem.01:11028"]')`);
+    await waitFor('stock page', `!visible($('#recipeViewerModal')) && visible($('#itemHistoryModal')) && $('#itemHistoryName').textContent === 'Neutronium Ingot'`);
+    await evaluate(`history.back(), true`);
+    await waitFor('Back to recipes', `visible($('#recipeViewerModal')) && $('#recipeViewerTitle').textContent === 'Iron Dust'`);
+    await evaluate(`(() => { const b = $('#recipeViewerList [data-action="recipe-open"]'); b.focus(); b.dispatchEvent(new KeyboardEvent('keydown', {key:'u', bubbles:true})); return true; })()`);
+    await waitFor('keyboard Uses', `$('#recipeViewerTitle').textContent === 'Neutronium Ingot' && $('#recipeViewerUsing').getAttribute('aria-pressed') === 'true' && $$('#recipeViewerTrail button').length === 2`);
+    await evaluate(`pressKey('Escape'), true`);
+    await waitFor('deep close returns to the in-app origin', `!visible($('#recipeViewerModal')) && !visible($('#itemHistoryModal')) && location.pathname === '/network'`);
+  });
+
+  step('recipes: reduced motion and a phone-sized viewport', async () => {
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+    await cdp.send('Page.navigate', { url: base + '/recipes?key=minecraft:iron_ingot:0' });
+    await waitFor('phone recipe page loaded', `document.readyState === 'complete' && !window.byText`);
+    await evaluate(PAGE_LIB);
+    await waitFor('phone recipe grid', `$('#recipeViewerList .recipe-grid-w2') && $('#recipeViewerList .recipe-outputs img')`);
+    await waitFor('dialog fits the phone', `(() => { const r = $('#recipeViewerModal .modal-box').getBoundingClientRect(); return r.left >= 0 && r.right <= document.documentElement.clientWidth && r.bottom <= innerHeight; })()`);
+    await waitFor('still icons', `$('#recipeViewerList .recipe-outputs img').src.includes('still=1')`);
+    const first = await evaluate(`$('#recipeViewerList .recipe-choice:nth-child(3) [data-action="recipe-open"]').dataset.key`);
+    await sleep(1100);
+    const after = await evaluate(`$('#recipeViewerList .recipe-choice:nth-child(3) [data-action="recipe-open"]').dataset.key`);
+    if (first !== after) throw new Error('alternatives cycled despite reduced motion');
+    await evaluate(`pressKey('Escape'), true`);
+    await waitFor('phone closed', `!visible($('#recipeViewerModal')) && location.pathname === '/network'`);
+    await cdp.send('Emulation.setEmulatedMedia', { features: [] });
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false });
   });
 
   step('kit choices survive a reload while quantities and stock shortages reset', async () => {

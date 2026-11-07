@@ -69,6 +69,7 @@ MAX_ALTERNATIVES = 5
 
 _lock = threading.Lock()
 _indexes = {}   # version -> (index path, recipe_index.RecipeIndex)
+_index_locks = {}  # serialize cold builds/opening of each version across requests
 _results = {}   # (from, to, patterns updated_at, oredict version) -> result
 _job = {"key": None, "error": None, "thread": None}
 
@@ -87,12 +88,50 @@ def source(version):
     return fetched if os.path.isfile(fetched) else None
 
 
+class RecipeUnavailable(ValueError):
+    def __init__(self, message, code, status=404):
+        super().__init__(message)
+        self.code = code
+        self.status = status
+
+
+def selected_index():
+    """Shared by the viewer and MCP; preserve missing-data versus build errors."""
+    version = gamedata.selected_version()
+    if not version:
+        raise RecipeUnavailable("No GTNH version is set in the game data. An admin picks one on the Game data page.",
+                                "missing_version")
+    try:
+        idx = index(version)
+    except ValueError as e:
+        raise RecipeUnavailable(str(e), "index_failed", 503) from None
+    if idx is None:
+        raise RecipeUnavailable(f"The game data for GTNH {version} has no recipes.", "missing_recipes")
+    return version, idx
+
+
+def coverage_summary(idx):
+    """Class diagnostics remain in the bundle, not every tool/API response."""
+    out = {k: v for k, v in idx.coverage.items() if k not in ("crafting", "furnace")}
+    for handler in ("crafting", "furnace"):
+        if handler in idx.coverage:
+            out[handler] = {k: v for k, v in idx.coverage[handler].items() if k != "classes"}
+    return out
+
+
 def index(version):
     """version's open RecipeIndex, or None without recipes for it. One
     that came with the bundle (recipe_index.FILE beside its recipes) is
     used as it is; otherwise it's built in this server's own directory
     first if it's missing or out of date. Raises ValueError if building
     it fails."""
+    with _lock:
+        version_lock = _index_locks.setdefault(version, threading.Lock())
+    with version_lock:
+        return _index(version)
+
+
+def _index(version):
     path = source(version)
     if path is None:
         return None
@@ -119,7 +158,7 @@ def index(version):
             log.error("Indexing the %s recipes failed (exit status %d):\n%s", version, result.returncode,
                       result.stderr.strip())
             # Killed without a word: most likely by a memory limit.
-            reason = ("it was killed, most likely for running out of memory (it takes about 200 MB)"
+            reason = ("it was killed, most likely for running out of memory"
                       if result.returncode < 0 else (result.stderr.strip().splitlines() or ["unknown error"])[-1])
             raise ValueError(f"Couldn't index GTNH {version}'s recipes: {reason}.")
         log.info("Indexed the %s recipes in %.1fs", version, time.monotonic() - started)
@@ -217,7 +256,10 @@ class _Matcher:
         self._ore = {}
 
     def making(self, idx, kind, key):
-        return idx.making(kind, key)
+        # Processing-pattern matching stays GT-only. Do it here so direct,
+        # finishing and broken-pattern fallback paths share the same rule.
+        return [r for r in idx.making(kind, key)
+                if r[1] not in recipe_index.NON_GT_MAPS and r[2].get("type", "gt") == "gt"]
 
     def _ore_names(self, key):
         if key not in self._ore:
@@ -405,6 +447,8 @@ def _maps_named(provider_name, idx):
     name = _norm(provider_name)
     best, maps = 0, set()
     for map_name in idx.maps():
+        if map_name in recipe_index.NON_GT_MAPS:
+            continue
         for machine in idx.machines(map_name):
             m = _norm(machine["name"])
             if m and (name == m or (name.startswith(m) and not name[len(m)].isalnum())):
@@ -492,7 +536,8 @@ def _classify(row, matcher, new_idx, names):
             ][:MAX_ALTERNATIVES]
             if not row["new_shown"]:
                 # Nothing makes it at all: removed, or made outside GregTech.
-                row["removed"] = (first_kind, first_key, new_idx.using(first_kind, first_key))
+                used = [m for m in new_idx.using(first_kind, first_key) if m not in recipe_index.NON_GT_MAPS]
+                row["removed"] = (first_kind, first_key, used)
         return
     old_sigs = {_omitted(row["in"], row["out"], m, matcher): m for m in old}
     new_sigs = {_omitted(row["in"], row["out"], m, matcher): m for m in new}

@@ -631,6 +631,27 @@ def recipe_maps(changed):
                 recipe.setdefault(kind, []).append([_recipe_key(name), size])
         entry = maps.setdefault(f"gt.recipe.{_slug(machine)}", {"machines": [machine], "recipes": []})
         entry["recipes"].append(recipe)
+    # A small viewer chain, plus enough uses of a circuit to exercise paging.
+    # These are illustrative fake-game recipes, not GTNH recipe knowledge.
+    circuit, wafer = _recipe_key("Any IV Circuit"), _recipe_key("Silicon Wafer")
+    foil, wire = _recipe_key("Electrum Foil"), _recipe_key("Fine Platinum Wire")
+    crafting = [{"type": "shaped", "w": 3, "h": 3, "mirrored": True,
+                 "slots": [{"alts": [[foil, 1]]}, {"alts": [[wire, 1]]}, {"alts": [[foil, 1]]},
+                           None, {"alts": [[wafer, 1]]}, None,
+                           {"alts": [[_recipe_key("SMD Capacitor"), 1], [_recipe_key("SMD Transistor"), 1]],
+                            "od": "componentCircuit"}, {"alts": [[wire, 1]]}, None], "o": [[circuit, 1]]}]
+    for _, is_crafting, outputs, inputs, *_ in PATTERNS:
+        if is_crafting:
+            crafting.append({"type": "shapeless", "slots": [{"alts": [[_recipe_key(n), 1]]} for n, count in inputs for _ in range(count)],
+                             "o": [[_recipe_key(n), count] for n, count in outputs]})
+    maps["crafting"] = {"machines": [{"name": "Crafting Table", "key": "minecraft:crafting_table:0"}], "recipes": crafting}
+    maps["furnace"] = {"machines": [{"name": "Furnace", "key": "minecraft:furnace:0"}], "recipes": [
+        {"type": "furnace", "i": [[_recipe_key("Tungstensteel Dust"), 1]], "o": [[_recipe_key("Inconel-625 Ingot"), 1]], "d": 200}]}
+    maps["gt.recipe.wafer_cutter"] = {"machines": ["Wafer Cutter"], "recipes": [
+        {"i": [[_recipe_key("Inconel-625 Plate"), 1]], "o": [[wafer, 4]], "e": 120, "d": 160}]}
+    maps["gt.recipe.viewer_assembler"] = {"machines": ["Assembler"], "recipes": [
+        {"i": [[circuit, 1], [_recipe_key("Iron Ingot"), 2]], "o": [[_recipe_key(it["name"]), 1]], "e": 30, "d": 20 + i}
+        for i, it in enumerate(CATALOG[:40]) if it["kind"] == "item" and it["name"] not in ("Any IV Circuit", "Ultimate Circuit")]}
     return maps
 
 
@@ -646,15 +667,20 @@ def write_recipes(path, maps):
     for map_name, entry in maps.items():
         recipes = []
         for r in entry["recipes"]:
-            recipe = {k: v for k, v in r.items() if k in ("e", "d")}
+            recipe = {k: v for k, v in r.items() if k not in ("i", "o", "f", "g", "slots")}
+            recipe.setdefault("type", "gt")
+            if "slots" in r:
+                recipe["slots"] = [None if slot is None else {**slot, "alts": [[index("items", key), size] for key, size in slot["alts"]]} for slot in r["slots"]]
             for side, table in (("i", "items"), ("o", "items"), ("f", "fluids"), ("g", "fluids")):
                 if side in r:
                     recipe[side] = [[index(table, key), size] for key, size in r[side]]
             recipes.append(recipe)
-        out[map_name] = {"machines": [{"name": m, "key": None} for m in entry["machines"]], "recipes": recipes}
+        out[map_name] = {"machines": [m if isinstance(m, dict) else {"name": m, "key": None} for m in entry["machines"]], "recipes": recipes}
     names = {_recipe_key(it["name"]): it["name"] for it in CATALOG if it["kind"] != "essentia"}
     data = {
-        "format": 1,
+        "format": 2,
+        "coverage": {"handlers": ["gregtech", "crafting", "furnace"], "identity": "item_id_damage",
+                     "limitations": ["Illustrative dev recipes; NBT and custom matching may differ"]},
         "items": list(tables["items"]), "item_names": [names[k] for k in tables["items"]],
         "fluids": list(tables["fluids"]), "fluid_names": [names[k] for k in tables["fluids"]],
         "maps": out,

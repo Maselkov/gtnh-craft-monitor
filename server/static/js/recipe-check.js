@@ -6,9 +6,12 @@
 // two versions are an admin's, from the Game data dialog: checking one
 // downloads its recipes.
 
+import { amountText, machineText, stackHtml, stepHtml } from './recipe-render.js';
+export { amountText, machineText };
+
 import { closeSettingsMenu, isOperator } from './auth.js';
 import {
-  TERMINAL_DOCS_URL, closeNote, delegateActions, escapeHtml, iconClass, iconUrl, noteClosed, onBackdropClick,
+  TERMINAL_DOCS_URL, closeNote, delegateActions, escapeHtml, noteClosed, onBackdropClick,
 } from './util.js';
 
 const POLL_MS = 1000;
@@ -32,44 +35,6 @@ export function versionsToCheck(picked, current, previous) {
   if (!picked) return null;
   if (picked !== current) return current ? { from: current, to: picked } : null;
   return previous ? { from: previous, to: current } : null;
-}
-
-// Recipe amounts are small enough to show whole: "1,000 mB", not "1.0k".
-export function amountText(e) {
-  if (e.size == null) return '?';
-  const n = Number(e.size).toLocaleString('en-US');
-  if (e.kind === 'fluid') return `${n} mB`;
-  if (e.size === 0) return 'not used up';
-  return `${n}x`;
-}
-
-function stackHtml(e) {
-  const chance = e.chance ? ` <span class="recipe-chance">${escapeHtml(String(e.chance))}%</span>` : '';
-  const icon = e.icon
-    ? `<img class="${iconClass('recipe-stack-icon', e.icon)}" src="${iconUrl(e.icon)}" alt="" loading="lazy" data-remove-on-error>`
-    : '';
-  return `<span class="recipe-stack" title="${escapeHtml(e.name || '')}">${icon}`
-    + `<span class="recipe-stack-amount">${escapeHtml(amountText(e))}</span>`
-    + `<span class="recipe-stack-name">${escapeHtml(e.name || '?')}</span>${chance}</span>`;
-}
-
-export function machineText(step) {
-  const [first, ...rest] = step.machines || [];
-  if (!first) return step.map;
-  return rest.length ? `${first} (or ${rest.length} more)` : first;
-}
-
-function stepHtml(step) {
-  const details = [step.tier, step.heat && step.special ? `${step.special.toLocaleString('en-US')} K` : '']
-    .filter(Boolean).join(', ');
-  return `<div class="recipe-step">
-    <div class="recipe-step-machine">${escapeHtml(machineText(step))}<span class="recipe-step-details">${escapeHtml(details)}</span></div>
-    <div class="recipe-step-sides">
-      <div class="recipe-side">${step.inputs.map(stackHtml).join('')}</div>
-      <div class="recipe-arrow" aria-hidden="true">&rarr;</div>
-      <div class="recipe-side">${step.outputs.map(stackHtml).join('')}</div>
-    </div>
-  </div>`;
 }
 
 function recipeHtml(label, steps) {

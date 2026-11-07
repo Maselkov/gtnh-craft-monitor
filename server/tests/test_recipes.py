@@ -4,7 +4,9 @@ import json
 import os
 import shutil
 import subprocess
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -399,6 +401,32 @@ def with_recipes(bundle, data, sha256=None):
 
 
 class TestIndexes:
+    def test_simultaneous_cold_requests_share_one_build_and_open_index(self, bundles, monkeypatch):
+        run = subprocess.run
+        entered, second_started, release = threading.Event(), threading.Event(), threading.Event()
+        calls = []
+
+        def building(args, **kwargs):
+            calls.append(args)
+            entered.set()
+            assert release.wait(5)
+            return run(args, **kwargs)
+
+        def second_request():
+            second_started.set()
+            return recipes.index("2.9.0")
+
+        monkeypatch.setattr(subprocess, "run", building)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            first = executor.submit(recipes.index, "2.9.0")
+            assert entered.wait(5)
+            second = executor.submit(second_request)
+            assert second_started.wait(5)
+            release.set()
+            a, b = first.result(10), second.result(10)
+        assert len(calls) == 1 and a is b
+        assert a.making(recipe_index.ITEM, HOT)
+
     @pytest.fixture()
     def shipped(self, tmp_path, bundles, monkeypatch):
         """Each version's recipes in a bundle directory of its own, with an

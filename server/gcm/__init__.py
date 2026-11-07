@@ -12,6 +12,7 @@ from gcm.routes import backup as backup_routes
 from gcm.routes import gamedata as gamedata_routes
 from gcm.routes import push as push_routes
 from gcm.routes import stock as stock_routes
+from gcm.routes import recipe_viewer as recipe_viewer_routes
 
 
 def create_app(data_dir=None, api_key=None):
@@ -41,6 +42,7 @@ def create_app(data_dir=None, api_key=None):
         power.bp,
         users.bp,
         gamedata_routes.bp,
+        recipe_viewer_routes.bp,
         push_routes.bp,
         agent.bp,
         backup_routes.bp,

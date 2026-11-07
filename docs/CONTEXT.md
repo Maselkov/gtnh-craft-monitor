@@ -1475,9 +1475,10 @@ provider's other patterns matched alone, else its own single match. Each
 version's recipes are a separate SQLite file (gcm/recipe_index.py,
 ~60 MB for 175k recipes), built in a subprocess like the game data index,
 because the check reads only the few recipes the patterns' outputs lead
-to. Building one takes ~200 MB, more than a hosted server's whole memory
-limit, so as with the game data index, one beside a bundle's recipes
-(`recipes.sqlite`, `app.py index-gamedata` builds it) is used as it is.
+to. The original whole-file builder took ~200 MB for GT alone; format 3 now
+streams recipes (see the format-2/format-3 notes below). A prebuilt index beside
+a bundle's recipes (`recipes.sqlite`, `app.py index-gamedata` builds it) is used
+as it is, avoiding a local build on every hosted instance.
 Nor does a check keep what it reads: it used to cache every recipe making
 each output it looked up, for both versions, and a real base's 4,700
 patterns reached 100,000 parsed recipes (one dust alone is made by 2,240)
@@ -2154,3 +2155,60 @@ not tried yet). A failed auto attempt shows again.
 because `running` stays true when a loop dies of an error; `start()`
 uses it too, so `rc <name> start` works again after such a crash.
 `rc.loaded` is from OpenOS's lib/rc.lua source, not yet confirmed in game.
+
+**Recipe data format 2 and index format 3.** `CraftingRecipes.java` shares
+`Recipes`' item interner, appending crafting/furnace maps without changing the
+existing GT recipe count. Typed shaped bodies carry exact row-major holes;
+shapeless bodies carry occupied slots. All alternatives are retained for input
+indexing. Empty mandatory alternatives skip the recipe and increment diagnostics,
+not the number of free grid slots. Virtual Forge `getInput()` calls matter:
+DreamCraft universal recipes expose `recipeXY` there, whereas inherited backing
+fields contain placeholders. AE2 crafting has separate ingredient interfaces;
+IC2 shaped recipes compact occupied inputs and keep a nine-bit occupancy mask.
+Dynamic NBT-dependent classes (notably Shulker conversions) remain unsupported.
+Per-recipe approximation flags and per-class export counts expose the limitations
+of ID/damage identity; NBT and arbitrary custom matching are not reproduced.
+
+`recipe_index.py` accepts source formats 1/2, normalizes types and persists coverage,
+source format and fingerprint. SQL pages both making and using, indexing every
+slot alternative, matching exact plus wildcard keys, deduplicating before LIMIT
+and COUNT, and sorting crafting/furnace/GT then absolute EU/t, ticks and recipe ID.
+Wildcard queries themselves mean the wildcard identity, not every concrete variant.
+`find_recipes` reads one page, batches names for at most 16 alternatives per slot,
+returns full alternative counts, and leaves inapplicable voltage/time fields out.
+It reports old bundles as GT-only. Pattern-check candidate and fallback queries,
+provider-name matching and uses/removal classification exclude pseudo-maps.
+Format-2 publication must follow compatible readers, and shared indexes must be
+rebuilt for format 3 before hosted instances need them. The first full-JSON build
+of 2.9.0's extended data took ~511 MiB; the two-pass standard-library reader now
+keeps only intern tables and one body, measuring 47,204 KiB (~46 MiB) peak RSS in
+4.05 s. The 242,717-recipe index is 141,996,032 bytes (~135 MiB). The first pass
+collects metadata/map names irrespective of JSON field order; the second indexes
+recipes. One open source descriptor keeps atomic file replacement from mixing
+bodies and fingerprints. Per-version locks serialize cold request builds and
+opening, so simultaneous MCP/check requests share one index instead of racing
+on the temporary file. On the real index, a 20-row Uses page of the circuit's
+14,337 matching recipes took ~7 ms median; a 20-row making page of 2,243 recipes
+took ~1.2 ms. All 242,717 normalized bodies matched independent full-JSON reading.
+The old ~200 MiB GT-only build figures above describe the pre-streaming builder.
+
+**The recipe viewer is independent of network membership.** `recipe_viewer.py`
+parses registry keys (wildcard damage stays wildcard; fluids use a `fluid:` prefix),
+batches names/icons, and presents at most 16 alternatives per occupied grid slot.
+`recipes.selected_index()` and `coverage_summary()` serve MCP and the two viewer
+GET routes. Both use viewer auth, including private bases, and pin list pages to
+selected version, recipe fingerprint and `icons.data_version()`, so switching
+textures also refreshes cached pages. Build errors remain distinct from absent
+data. Unknown recipe names can use a non-variant network entry's display name.
+
+`recipe-render.js` supplies static pattern-check stacks and interactive viewer
+stacks. `recipe-viewer.js` owns its list outside the Crafts root. Browser history
+is authoritative for a trail; direction/category changes replace the current
+entry, drilldown pushes, breadcrumbs go to ancestors, and Close goes back to the
+pre-viewer entry. A fresh shared URL creates a Network origin. Entries retain the
+original tab/item/ingredients state. A 100-frame cache retains recent pages and
+scroll; evicted frames refetch. Aborted/stale generations never replace another
+selection. Cycle timers clear on navigation/close, pause for hover/focus and stop
+under reduced motion. Network snapshot events update only stock links, without
+resetting loaded pages. `dev.py` supplies typed crafting/furnace/GT demo chains and
+34 circuit uses for paging. Its recipes are illustrative, not pack knowledge.

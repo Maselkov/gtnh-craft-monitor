@@ -7,6 +7,7 @@
 - [Pattern check](#pattern-check)
 - [Power tab](#power-tab)
 - [Network tab](#network-tab)
+- [Recipes and Uses](#recipes-and-uses)
 - [Requesting and cancelling crafts](#requesting-and-cancelling-crafts)
 - [Multiblock kits](#multiblock-kits)
 - [Stock rules](#stock-rules)
@@ -438,6 +439,47 @@ Elsewhere, item names on the Crafts tab and the cells in a CPU's ingredients
 are reached with **Tab** and open with **Enter**. **Tab** stays inside an open
 dialog, and closing one puts focus back where it was.
 
+## Recipes and Uses
+
+Open an item's stock page and choose **Recipes** or **Uses**. The separate
+recipe dialog works for items and fluids, including ingredients that are not
+in the ME network. It reads the GTNH version selected in
+[Game data](server.md#game-data).
+
+**Recipes** shows ways to make the item; **Uses** shows recipes that take it.
+Choose a machine category to narrow the list, or **All** to include every
+category. Recipes load 20 at a time; **Load more** adds the next page.
+Crafting comes first, then furnace recipes, then GregTech recipes by absolute
+EU/t and duration. Machine recipes show voltage, time, heat and output chances
+where available. Crafting recipes show their grid, or **Shapeless** when order
+does not matter. A zero-size input is labelled **not used up**.
+
+Select any ingredient or output to open its recipes. Choose the small **Uses**
+button, right-click, or Shift-click to see its uses instead. With a stack
+focused, **R** opens recipes and **U** opens uses. Slots with alternative
+ingredients cycle through a sample of their icons; holding the pointer or
+keyboard focus on a slot pauses it. Reduced-motion settings keep a still
+choice. The tooltip names the ore entry when known and says when the sample
+is smaller than the full alternative count. Every exported alternative is
+included in Uses searches.
+
+**Back**, the breadcrumbs and browser Back/Forward move through the trail.
+Loaded pages and scroll are kept when returning to a recent selection.
+Closing the dialog with **×**, Escape or its backdrop returns to where it was
+opened. A **Stock** link appears beside stacks found in the latest network
+snapshot; it opens their stock page, and browser Back returns to the recipes.
+The machine name narrows the list to that category. The `/recipes?key=...`
+address can be copied or bookmarked; a fresh link opens over the Network tab.
+
+The footer states coverage. New bundles include supported GregTech,
+crafting-table and furnace recipes; older bundles have GregTech only. Custom
+NBT-dependent conversions, Thaumcraft arcane/infusion/crucible, AE2 inscriber
+and other handlers may be missing. Approximation notes flag recipes whose
+NBT or custom matching rules are not fully represented. No results means
+there is no supported recipe for that selection in this bundle, rather than
+proof the item cannot be made. With no recipe data installed, the dialog says
+so; an admin can pick game data and then **Retry**.
+
 ## Requesting and cancelling crafts
 
 Requires an operator or admin account. Craftable items and fluids in the
@@ -709,7 +751,7 @@ What it can look at:
 | `plan_craft` | The [crafting plan](#requesting-and-cancelling-crafts) for an amount of an item |
 | `stock_rules` | Keep-in-stock targets and your alerts |
 | `power` | Stored EU over time and its trend |
-| `find_recipes` | How the game makes an item: GregTech machine recipes for your GTNH version, cheapest first |
+| `find_recipes` | How the game makes an item: supported crafting-table, furnace and GregTech recipes for your GTNH version |
 | `game_item` | Any item's tooltip, including a multiblock's structure (its shift tooltip) |
 | `multiblock_kit` | Every block a multiblock is built from, for the coils, glass or size asked for, with the network's stock |
 | `base_patterns` | How your base makes an item: its patterns and the machines they're in |
@@ -725,6 +767,20 @@ What it can change:
 | `set_stock_target`, `remove_stock_target` | The base's keep-in-stock targets | Operators, admins |
 | `request_craft` | Asks AE2 for an amount of an item, like **Craft** on the page | Operators, admins |
 | `cancel_craft` | Cancels a CPU's job, like **Cancel** on the page | Operators, admins |
+
+`find_recipes` reports what the installed game data covers. New bundles include
+supported crafting-table and furnace recipes alongside GregTech; older bundles
+contain only GregTech. Crafting recipes come first, then furnace recipes, then
+GregTech recipes ordered by absolute EU/t and duration. A crafting slot lists
+alternative ingredients, with at most 16 shown and the full alternative count.
+Those are choices for that slot, not ingredients to supply together.
+
+Recipe identity uses item ID and damage. NBT variants and custom matching rules
+can be approximate; dynamic recipes such as NBT-dependent Shulker conversions
+and handlers such as Thaumcraft infusion or the AE2 inscriber are not included.
+The tool reports approximation flags and export coverage, so an empty result
+means the bundle has no supported recipe for it, not that it cannot be made.
+The [pattern check](#pattern-check) continues to compare only GregTech recipes.
 
 `request_craft` works out the crafting plan first. If ingredients are
 missing it doesn't start, and tells the assistant what's missing; it only

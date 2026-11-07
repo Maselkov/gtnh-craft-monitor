@@ -28,7 +28,7 @@ def test_a_server_is_public_until_made_private(client, flask_app):
 def test_a_private_server_shows_its_data_only_to_signed_in_users(client, flask_app):
     auth.set_private(True)
     urls = viewer_urls(flask_app)
-    assert len(urls) == 18
+    assert len(urls) == 20
     for url in urls:
         response = client.get(url)
         assert response.status_code == 401, url

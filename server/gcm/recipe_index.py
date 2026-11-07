@@ -1,20 +1,23 @@
-"""One GTNH version's GregTech recipes (a game data bundle's
+"""One GTNH version's recipes (a game data bundle's
 recipes.json.gz, written by tools/icon-export/'s Recipes.java) as an
 SQLite file, read in place: a version has 100k+ recipes, and the pattern
 check (gcm/recipes.py) only ever looks at the few that make what the
 network's patterns make.
 
 gcm/recipes.py builds one per version by running this file as a script,
-as gamedata_index.py is built, so the memory parsing the JSON takes
-(~200 MB for GTNH 2.9) goes back to the OS when it exits. Standard
-library only, for the same reason. A host serving several servers the
+as gamedata_index.py is built. It streams recipes in two passes, retaining
+only intern tables and one recipe rather than the full parsed JSON (which
+used ~511 MiB with format 2). Standard library only, so it also runs in the
+isolated build subprocess. A host serving several servers the
 same bundles (gcm-hosting) can build each one beside its bundle's recipes
 instead, as FILE, so they don't each build their own.
 
 A recipe is kept as its JSON object with the file's item and fluid
 indices swapped for their keys: {"i": [[item key, n], ...], "f":
 [[fluid, mB], ...], "o": [[item key, n(, chance)], ...], "g": [[fluid,
-mB], ...], "e": EU/t, "d": ticks, "s": special value}. Item keys are
+mB], ...], "e": EU/t, "d": ticks, "s": special value}. Crafting has typed
+slots with full alternatives and null holes; furnace has item input/output
+and optional duration. Coverage and the source fingerprint are in meta. Item keys are
 "mod:internal:damage" (damage "*" for any), fluids their registry
 name."""
 
@@ -30,17 +33,20 @@ from urllib.parse import quote
 
 # Bumped when the schema or what goes in it changes: an index of another
 # format is built again.
-FORMAT = 2
+FORMAT = 3
 # An index built beside a bundle's recipes.json.gz is called this.
 FILE = "recipes.sqlite"
 ITEM, FLUID = 0, 1
+NON_GT_MAPS = frozenset({"crafting", "furnace"})
+PAGE_MAX = 100
 
 SCHEMA = """
 CREATE TABLE meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
 CREATE TABLE map (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE);
 -- What NEI lists as the map's machines, in its order: v is {"name", "key"}.
 CREATE TABLE machine (map INTEGER NOT NULL, seq INTEGER NOT NULL, v TEXT NOT NULL, PRIMARY KEY (map, seq)) WITHOUT ROWID;
-CREATE TABLE recipe (id INTEGER PRIMARY KEY, map INTEGER NOT NULL, body TEXT NOT NULL);
+CREATE TABLE recipe (id INTEGER PRIMARY KEY, map INTEGER NOT NULL,
+    priority INTEGER NOT NULL, eut INTEGER NOT NULL, ticks INTEGER NOT NULL, body TEXT NOT NULL);
 -- What each recipe makes, by kind (ITEM, FLUID) and key.
 CREATE TABLE output (kind INTEGER NOT NULL, k TEXT NOT NULL, recipe INTEGER NOT NULL,
     PRIMARY KEY (kind, k, recipe)) WITHOUT ROWID;
@@ -54,10 +60,14 @@ CREATE TABLE name (kind INTEGER NOT NULL, k TEXT NOT NULL, v TEXT NOT NULL, PRIM
 
 def fingerprint(source):
     """What the index has to match: the recipes file's own checksum."""
-    digest = hashlib.sha256()
     with open(source, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            digest.update(chunk)
+        return _fingerprint_file(f)
+
+
+def _fingerprint_file(f):
+    digest = hashlib.sha256()
+    for chunk in iter(lambda: f.read(1 << 20), b""):
+        digest.update(chunk)
     return json.dumps({"format": FORMAT, "source": digest.hexdigest()}, sort_keys=True)
 
 
@@ -82,70 +92,288 @@ def _stacks(raw, table):
     return out
 
 
+def _checked_stacks(raw, table, *, positive=False):
+    """Format 2 must not silently lose an unknown or malformed ingredient."""
+    if not isinstance(raw, list):
+        raise ValueError("recipe stacks must be a list")
+    for entry in raw:
+        if (not isinstance(entry, list) or len(entry) not in (2, 3)
+                or type(entry[0]) is not int or not 0 <= entry[0] < len(table)
+                or type(entry[1]) is not int or entry[1] < (1 if positive else 0)
+                or (len(entry) == 3 and (type(entry[2]) is not int or not 0 < entry[2] <= 10000))):
+            raise ValueError("invalid recipe stack or intern-table reference")
+    return _stacks(raw, table)
+
+
+def _body(recipe, map_name, items, fluids, source_format):
+    kind = recipe.get("type", "gt" if source_format == 1 else None)
+    allowed = {"shaped", "shapeless"} if map_name == "crafting" else {"furnace"} if map_name == "furnace" else {"gt"}
+    if kind not in allowed:
+        raise ValueError(f"invalid recipe type {kind!r} for map {map_name}")
+    body = {"type": kind}
+    for side, table in (("i", items), ("o", items), ("f", fluids), ("g", fluids)):
+        body[side] = (_checked_stacks(recipe.get(side, []), table) if source_format == 2
+                      else _stacks(recipe.get(side), table))
+    if source_format == 2 and not (body["o"] or body["g"]):
+        raise ValueError("recipe has no output")
+    if kind == "gt":
+        if source_format == 2 and not all(type(recipe.get(k)) is int for k in ("e", "d")):
+            raise ValueError("GT recipe needs EU/t and duration")
+        for k in ("e", "d", "s"):
+            value = recipe.get(k) or 0
+            if type(value) is not int:
+                raise ValueError(f"invalid recipe {k}")
+            body[k] = value
+    elif kind == "furnace":
+        if len(body["i"]) != 1 or len(body["o"]) != 1 or body["f"] or body["g"]:
+            raise ValueError("furnace recipe must have one item input and output")
+        if any(s[1] <= 0 for s in body["i"] + body["o"]):
+            raise ValueError("furnace amounts must be positive")
+        if "d" in recipe:
+            if type(recipe["d"]) is not int or recipe["d"] <= 0:
+                raise ValueError("invalid furnace duration")
+            body["d"] = recipe["d"]
+    else:
+        slots = recipe.get("slots")
+        if not isinstance(slots, list) or not 1 <= len(slots) <= 9:
+            raise ValueError("crafting recipe must have 1-9 slots")
+        if kind == "shaped":
+            w, h = recipe.get("w"), recipe.get("h")
+            if type(w) is not int or type(h) is not int or not 1 <= w <= 3 or not 1 <= h <= 3 or w * h != len(slots):
+                raise ValueError("invalid shaped crafting dimensions")
+            if type(recipe.get("mirrored", False)) is not bool:
+                raise ValueError("invalid mirrored flag")
+            body.update(w=w, h=h, mirrored=recipe.get("mirrored", False))
+        body["slots"] = []
+        for slot in slots:
+            if slot is None and kind == "shaped":
+                body["slots"].append(None)
+                continue
+            if not isinstance(slot, dict):
+                raise ValueError("invalid crafting ingredient")
+            alts = _checked_stacks(slot.get("alts"), items, positive=True)
+            if not alts:
+                raise ValueError("unresolved crafting ingredient")
+            normalized = {"alts": alts}
+            if "od" in slot:
+                if not isinstance(slot["od"], str) or not slot["od"]:
+                    raise ValueError("invalid ore-dictionary name")
+                normalized["od"] = slot["od"]
+            body["slots"].append(normalized)
+        if not any(body["slots"]) or body["i"] or body["f"] or body["g"] or len(body["o"]) != 1 or body["o"][0][1] <= 0:
+            raise ValueError("invalid crafting inputs or output")
+    if "approximate" in recipe:
+        flags = recipe["approximate"]
+        if not isinstance(flags, list) or not all(isinstance(f, str) and f for f in flags):
+            raise ValueError("invalid recipe approximation flags")
+        body["approximate"] = flags
+    return body
+
+
+class _JSONStream:
+    """Small standard-library JSON reader: decode individual values, not
+    the recipes array or a whole map. The JSON decoder still handles strings,
+    escapes, numbers and nested bodies. Chunk boundaries can fall anywhere."""
+
+    CHUNK = 1 << 16
+
+    def __init__(self, stream):
+        self.stream = stream
+        self.buffer = ""
+        self.pos = 0
+        self.eof = False
+        self.decoder = json.JSONDecoder()
+
+    def _more(self):
+        chunk = self.stream.read(self.CHUNK)
+        self.buffer = self.buffer[self.pos:] + chunk
+        self.pos = 0
+        self.eof = not chunk
+
+    def peek(self):
+        while True:
+            while self.pos < len(self.buffer) and self.buffer[self.pos] in " \t\r\n":
+                self.pos += 1
+            if self.pos < len(self.buffer):
+                return self.buffer[self.pos]
+            if self.eof:
+                return ""
+            self._more()
+
+    def expect(self, char):
+        if self.peek() != char:
+            raise ValueError(f"invalid recipes JSON: expected {char!r}")
+        self.pos += 1
+
+    def value(self):
+        self.peek()
+        while True:
+            try:
+                value, end = self.decoder.raw_decode(self.buffer, self.pos)
+                # A number might end exactly at the chunk edge, or before an
+                # incomplete exponent. Read its delimiter before accepting it.
+                if end < len(self.buffer) and self.buffer[end] in " \t\r\n,:]}":
+                    self.pos = end
+                    return value
+                if self.eof:
+                    if end != len(self.buffer):
+                        raise ValueError("invalid recipes JSON after value")
+                    self.pos = end
+                    return value
+            except json.JSONDecodeError:
+                if self.eof:
+                    raise ValueError("invalid or truncated recipes JSON") from None
+            self._more()
+
+    def keys(self):
+        self.expect("{")
+        if self.peek() == "}":
+            self.pos += 1
+            return
+        while True:
+            key = self.value()
+            if not isinstance(key, str):
+                raise ValueError("recipes JSON object keys must be strings")
+            self.expect(":")
+            yield key  # caller consumes this key's value
+            if self.peek() == "}":
+                self.pos += 1
+                return
+            self.expect(",")
+
+    def values(self):
+        self.expect("[")
+        if self.peek() == "]":
+            self.pos += 1
+            return
+        while True:
+            yield self.value()
+            if self.peek() == "]":
+                self.pos += 1
+                return
+            self.expect(",")
+
+
+def _source_events(source_file):
+    with gzip.open(source_file, "rt", encoding="utf-8") as f:
+        reader = _JSONStream(f)
+        for key in reader.keys():
+            if key != "maps":
+                yield "meta", key, reader.value()
+                continue
+            for map_name in reader.keys():
+                yield "map", map_name, None
+                for field in reader.keys():
+                    if field == "recipes":
+                        for body in reader.values():
+                            yield "recipe", map_name, body
+                    elif field == "machines":
+                        yield "machines", map_name, reader.value()
+                    else:
+                        reader.value()
+        if reader.peek():
+            raise ValueError("unexpected data after recipes JSON")
+
+
 def build(source, out_path):
-    """Builds the index of the recipes file `source` at out_path, through a
-    temporary file so a reader never sees half of one."""
-    with gzip.open(source, "rt", encoding="utf-8") as f:
-        raw = json.load(f)
-    if not isinstance(raw, dict) or raw.get("format") != 1:
-        raise ValueError(f"{source} isn't a recipes file this server knows")
+    """Build atomically, retaining intern tables and at most one recipe.
+    Two passes allow JSON fields in any order (including maps before items).
+    Keep one source descriptor so an atomic bundle replacement cannot mix
+    one generation's bodies with another generation's fingerprint."""
+    with open(source, "rb") as f:
+        signature = _fingerprint_file(f)
+        f.seek(0)
+        raw, map_names = {}, set()
+        for event, key, value in _source_events(f):
+            if event == "meta":
+                raw[key] = value
+            elif event == "map":
+                if key in map_names:
+                    raise ValueError("duplicate recipe map")
+                map_names.add(key)
+        if type(raw.get("format")) is not int or raw["format"] not in (1, 2):
+            raise ValueError(f"{source} isn't a recipes file this server knows")
+        if raw["format"] == 2 and (not isinstance(raw.get("coverage"), dict)
+                                   or not isinstance(raw["coverage"].get("handlers"), list)):
+            raise ValueError("format-2 recipes need coverage metadata")
+        f.seek(0)
+        _build(f, out_path, raw, {name: i for i, name in enumerate(sorted(map_names))}, signature)
+
+
+def _build(source_file, out_path, raw, map_ids, signature):
     items = [str(k) for k in raw.get("items") or []]
     fluids = [str(k) for k in raw.get("fluids") or []]
     tmp = out_path + ".tmp"
     if os.path.exists(tmp):
         os.remove(tmp)
     conn = sqlite3.connect(tmp)
+    complete = False
     try:
         conn.executescript(SCHEMA)
         recipe_id = 0
-        for map_id, (map_name, entry) in enumerate(sorted((raw.get("maps") or {}).items())):
-            conn.execute("INSERT INTO map VALUES (?, ?)", (map_id, map_name))
-            machines = [m for m in entry.get("machines") or [] if isinstance(m, dict) and m.get("name")]
-            conn.executemany(
-                "INSERT INTO machine VALUES (?, ?, ?)",
-                ((map_id, seq, json.dumps({"name": m["name"], "key": m.get("key")})) for seq, m in enumerate(machines)),
-            )
-            for recipe in entry.get("recipes") or []:
-                if not isinstance(recipe, dict):
-                    continue
-                body = {
-                    "i": _stacks(recipe.get("i"), items),
-                    "f": _stacks(recipe.get("f"), fluids),
-                    "o": _stacks(recipe.get("o"), items),
-                    "g": _stacks(recipe.get("g"), fluids),
-                    "e": recipe.get("e") or 0,
-                    "d": recipe.get("d") or 0,
-                    "s": recipe.get("s") or 0,
-                }
-                conn.execute("INSERT INTO recipe VALUES (?, ?, ?)", (recipe_id, map_id, json.dumps(body)))
-                outputs = {(ITEM, o[0]) for o in body["o"]} | {(FLUID, g[0]) for g in body["g"]}
-                conn.executemany("INSERT INTO output VALUES (?, ?, ?)", ((kind, k, recipe_id) for kind, k in outputs))
-                inputs = {(ITEM, i[0]) for i in body["i"]} | {(FLUID, f[0]) for f in body["f"]}
-                conn.executemany("INSERT INTO input VALUES (?, ?, ?)", ((kind, k, recipe_id) for kind, k in inputs))
-                recipe_id += 1
+        conn.executemany("INSERT INTO map VALUES (?, ?)", ((i, name) for name, i in map_ids.items()))
+        for event, map_name, value in _source_events(source_file):
+            if event not in ("machines", "recipe"):
+                continue
+            map_id = map_ids[map_name]
+            if event == "machines":
+                machines = [m for m in value or [] if isinstance(m, dict) and m.get("name")]
+                conn.executemany(
+                    "INSERT INTO machine VALUES (?, ?, ?)",
+                    ((map_id, seq, json.dumps({"name": m["name"], "key": m.get("key")})) for seq, m in enumerate(machines)),
+                )
+                continue
+            if not isinstance(value, dict):
+                if raw["format"] == 2:
+                    raise ValueError("invalid recipe body")
+                continue
+            body = _body(value, map_name, items, fluids, raw["format"])
+            priority = {"shaped": 0, "shapeless": 0, "furnace": 1, "gt": 2}[body["type"]]
+            conn.execute("INSERT INTO recipe VALUES (?, ?, ?, ?, ?, ?)",
+                         (recipe_id, map_id, priority, abs(body.get("e", 0)), body.get("d", 0), json.dumps(body)))
+            outputs = {(ITEM, o[0]) for o in body["o"]} | {(FLUID, g[0]) for g in body["g"]}
+            conn.executemany("INSERT INTO output VALUES (?, ?, ?)", ((kind, k, recipe_id) for kind, k in outputs))
+            inputs = {(ITEM, i[0]) for i in body["i"]} | {(FLUID, f[0]) for f in body["f"]}
+            inputs.update((ITEM, alt[0]) for slot in body.get("slots", []) if slot for alt in slot["alts"])
+            conn.executemany("INSERT INTO input VALUES (?, ?, ?)", ((kind, k, recipe_id) for kind, k in inputs))
+            recipe_id += 1
         for kind, keys, names in ((ITEM, items, raw.get("item_names")), (FLUID, fluids, raw.get("fluid_names"))):
             if isinstance(names, list):
                 conn.executemany(
                     "INSERT OR IGNORE INTO name VALUES (?, ?, ?)",
                     ((kind, k, str(v)) for k, v in zip(keys, names, strict=False) if v),
                 )
-        conn.execute("INSERT INTO meta VALUES ('fingerprint', ?)", (fingerprint(source),))
+        conn.execute("INSERT INTO meta VALUES ('fingerprint', ?)", (signature,))
         conn.execute("INSERT INTO meta VALUES ('recipes', ?)", (str(recipe_id),))
+        conn.execute("INSERT INTO meta VALUES ('source_format', ?)", (str(raw["format"]),))
+        coverage = raw.get("coverage") if raw["format"] == 2 else None
+        if not isinstance(coverage, dict):
+            coverage = {"handlers": ["gregtech"], "identity": "item_id_damage",
+                        "limitations": ["This bundle contains only GregTech recipes; NBT variants are not indexed"]}
+        conn.execute("INSERT INTO meta VALUES ('coverage', ?)", (json.dumps(coverage),))
         conn.commit()
+        complete = True
     finally:
         conn.close()
+        if not complete:
+            os.remove(tmp)
     os.replace(tmp, out_path)
 
 
 class RecipeIndex:
-    """A built index, read-only, shared by every thread (each query takes
-    microseconds)."""
+    """A built index, read-only, shared by every thread. Page queries decode
+    only the requested recipes, including for high-cardinality ingredients."""
 
     def __init__(self, path):
         self.path = path
         self._lock = threading.Lock()
         self._conn = sqlite3.connect(f"file:{quote(path)}?mode=ro&immutable=1", uri=True, check_same_thread=False)
         self._maps = dict(self._conn.execute("SELECT id, name FROM map"))
+        self._map_ids = {name: map_id for map_id, name in self._maps.items()}
+        meta = dict(self._conn.execute("SELECT k, v FROM meta"))
+        self.source_format = int(meta["source_format"])
+        self.fingerprint = meta["fingerprint"]
+        self.coverage = json.loads(meta["coverage"])
         self._machines = {}
         for map_id, v in self._conn.execute("SELECT map, v FROM machine ORDER BY map, seq"):
             self._machines.setdefault(self._maps[map_id], []).append(json.loads(v))
@@ -170,23 +398,70 @@ class RecipeIndex:
         """[{"name", "key"}, ...]: what NEI lists as the map's machines."""
         return self._machines.get(map_name, [])
 
+    def _where(self, kind, key, map_name):
+        if kind not in (ITEM, FLUID) or not isinstance(key, str) or not key:
+            raise ValueError("recipe lookup needs an item or fluid key")
+        # A concrete damage matches a wildcard ingredient/output as well. A
+        # wildcard query means the wildcard identity itself, not every variant.
+        keys = [key]
+        if kind == ITEM and not key.endswith(":*"):
+            keys.append(key.rpartition(":")[0] + ":*")
+        where = f"x.kind = ? AND x.k IN ({','.join('?' for _ in keys)})"
+        args = [kind, *keys]
+        if map_name is not None:
+            where += " AND r.map = ?"
+            args.append(self._map_ids.get(map_name, -1))
+        return where, args
+
+    def _rows(self, table, kind, key, map_name=None, limit=None, offset=0):
+        where, args = self._where(kind, key, map_name)
+        # DISTINCT precedes LIMIT: the same recipe can take both a concrete
+        # stack and a wildcard, or several alternatives with the same key.
+        sql = (f"SELECT DISTINCT r.id, r.map, r.body, r.priority, r.eut, r.ticks "
+               f"FROM {table} x JOIN recipe r ON r.id = x.recipe WHERE {where} "
+               "ORDER BY r.priority, r.eut, r.ticks, r.id")
+        if limit is not None:
+            sql += " LIMIT ? OFFSET ?"
+            args.extend((limit, offset))
+        return [(rid, self._maps[map_id], json.loads(body))
+                for rid, map_id, body, *_ in self._all(sql, args)]
+
     def making(self, kind, key):
-        """[(recipe id, map name, body), ...] for every recipe making key
-        (an ITEM key or a FLUID name)."""
+        """Every recipe making key, in the same stable order as made_by()."""
+        return self._rows("output", kind, key)
+
+    def _counts(self, table, kind, key, map_name=None):
+        where, args = self._where(kind, key, map_name)
         rows = self._all(
-            "SELECT r.id, r.map, r.body FROM output o JOIN recipe r ON r.id = o.recipe WHERE o.kind = ? AND o.k = ?",
-            (kind, key),
+            f"SELECT r.map, COUNT(DISTINCT r.id) FROM {table} x JOIN recipe r ON r.id = x.recipe "
+            f"WHERE {where} GROUP BY r.map ORDER BY r.map", args,
         )
-        return [(rid, self._maps[map_id], json.loads(body)) for rid, map_id, body in rows]
+        return {self._maps[map_id]: n for map_id, n in rows}
+
+    def counts_making(self, kind, key):
+        return self._counts("output", kind, key)
+
+    def counts_using(self, kind, key):
+        return self._counts("input", kind, key)
 
     def using(self, kind, key):
-        """The names of the maps with a recipe taking key, an ITEM key or a
-        FLUID name."""
-        rows = self._all(
-            "SELECT DISTINCT r.map FROM input i JOIN recipe r ON r.id = i.recipe WHERE i.kind = ? AND i.k = ?",
-            (kind, key),
-        )
-        return sorted(self._maps[map_id] for (map_id,) in rows)
+        """Map names with a recipe taking key, using the same wildcard rules."""
+        return sorted(self.counts_using(kind, key))
+
+    def _page(self, table, kind, key, map_name, limit, offset):
+        if type(limit) is not int or not 1 <= limit <= PAGE_MAX or type(offset) is not int or offset < 0:
+            raise ValueError(f"recipe page needs limit 1-{PAGE_MAX} and a nonnegative offset")
+        total = sum(self._counts(table, kind, key, map_name).values())
+        return self._rows(table, kind, key, map_name, limit, offset), total
+
+    def made_by(self, kind, key, map_name=None, *, limit=20, offset=0):
+        """(rows, total) making key. Crafting first, then furnace, then GT
+        by absolute EU/t and ticks, with recipe ID breaking all ties."""
+        return self._page("output", kind, key, map_name, limit, offset)
+
+    def used_by(self, kind, key, map_name=None, *, limit=20, offset=0):
+        """(rows, total) taking key; all slot alternatives are indexed."""
+        return self._page("input", kind, key, map_name, limit, offset)
 
     def find_names(self, query, limit=200):
         """[(kind, key, name), ...] for every named item and fluid whose

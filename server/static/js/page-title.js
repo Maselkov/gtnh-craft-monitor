@@ -37,13 +37,13 @@ export function dotHref(href, dot) {
 const badges = {};
 // The view's name: the open tab's, unless a dialog is open over it. The
 // item dialog can open over the ingredients dialog, so it comes first.
-const views = { tab: '', craft: '', item: '' };
+const views = { tab: '', craft: '', item: '', recipes: '' };
 let shownDot = null;
 let iconLinks = null;  // [[link, its own href]], read on the first change
 
 function apply() {
   if (typeof document === 'undefined') return;  // the unit tests
-  const title = pageTitle(views.item || views.craft || views.tab, badges);
+  const title = pageTitle(views.recipes || views.item || views.craft || views.tab, badges);
   if (document.title !== title) document.title = title;
 
   const dot = faviconDot(badges);
@@ -60,8 +60,8 @@ export function notePageBadge(tab, badge) {
   apply();
 }
 
-// which is 'tab', 'craft' (the ingredients dialog) or 'item' (the item
-// dialog); an empty label for a dialog that closed.
+// which is 'tab', 'craft', 'item' or 'recipes'; an empty label for a
+// dialog that closed.
 export function setPageView(which, label) {
   views[which] = label || '';
   apply();

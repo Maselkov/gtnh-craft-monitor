@@ -678,27 +678,19 @@ def power(user, args):
 
 GAME_MATCHES_MAX = 10
 RECIPES_MAX = 10
+RECIPE_ALTERNATIVES_MAX = 16
 TOOLTIP_MAX = 3000
 
 
 def _recipe_index(required=True):
     """(version, RecipeIndex) for the selected GTNH version. Without
     recipes: a ToolError saying why, or (version, None) if not required."""
-    version = gamedata.selected_version()
-    if not version:
-        if not required:
-            return None, None
-        raise ToolError("No GTNH version is set in the game data, so there are no recipes: an admin picks one "
-                        "on the Game data page.")
     try:
-        idx = recipes.index(version)
-    except ValueError as e:
+        return recipes.selected_index()
+    except recipes.RecipeUnavailable as e:
         if not required:
-            return version, None
+            return gamedata.selected_version(), None
         raise ToolError(str(e)) from None
-    if idx is None and required:
-        raise ToolError(f"The game data for GTNH {version} has no recipes.")
-    return version, idx
 
 
 def _recipe_key(key):
@@ -781,23 +773,45 @@ def find_recipes(user, args):
     if ask:
         return ask
     kind, rkey = _recipe_key(key)
-    found = idx.making(kind, rkey)
-    found.sort(key=lambda r: (abs(r[2]["e"]), r[2]["d"]))
-    item_keys = {s[0] for _, _, b in found[:limit] for side in ("i", "o") for s in b[side]}
-    fluid_keys = {s[0] for _, _, b in found[:limit] for side in ("f", "g") for s in b[side]}
+    found, total = idx.made_by(kind, rkey, limit=limit)
+    item_keys = {s[0] for _, _, b in found for side in ("i", "o") for s in b[side]}
+    item_keys.update(alt[0] for _, _, b in found for slot in b.get("slots", []) if slot
+                     for alt in slot["alts"][:RECIPE_ALTERNATIVES_MAX])
+    fluid_keys = {s[0] for _, _, b in found for side in ("f", "g") for s in b[side]}
     item_names = idx.names(recipe_index.ITEM, item_keys | ({rkey} if kind == recipe_index.ITEM else set()))
     fluid_names = idx.names(recipe_index.FLUID, fluid_keys | ({rkey} if kind == recipe_index.FLUID else set()))
     rows = []
-    for _, map_name, b in found[:limit]:
+    for _, map_name, b in found:
         machines = [m["name"] for m in idx.machines(map_name)]
         row = {
             "machine": machines[0] if machines else map_name,
-            "inputs": _stacks(b["i"], "item", item_names) + _stacks(b["f"], "fluid", fluid_names),
+            "type": b["type"],
             "outputs": _stacks(b["o"], "item", item_names, chances=True) + _stacks(b["g"], "fluid", fluid_names),
-            "eu_per_tick": b["e"],
-            "tier": recipes._tier(b["e"]),
-            "seconds": round(b["d"] / 20, 2),
         }
+        if b["type"] in ("shaped", "shapeless"):
+            row["slots"] = []
+            for slot in b["slots"]:
+                if slot is None:
+                    row["slots"].append(None)
+                    continue
+                sample = slot["alts"][:RECIPE_ALTERNATIVES_MAX]
+                alternatives = _stacks(sample, "item", item_names)
+                for entry, stack in zip(alternatives, sample, strict=True):
+                    entry["item"] = _key_from_recipe(recipe_index.ITEM, stack[0])
+                presented = {"alternatives": alternatives, "alternatives_total": len(slot["alts"])}
+                if slot.get("od"):
+                    presented["ore"] = slot["od"]
+                row["slots"].append(presented)
+            if b["type"] == "shaped":
+                row.update(width=b["w"], height=b["h"], mirrored=b["mirrored"])
+        else:
+            row["inputs"] = _stacks(b["i"], "item", item_names) + _stacks(b["f"], "fluid", fluid_names)
+        if b["type"] == "gt":
+            row.update(eu_per_tick=b["e"], tier=recipes._tier(b["e"]))
+        if "d" in b:
+            row["seconds"] = round(b["d"] / 20, 2)
+        if b.get("approximate"):
+            row["approximate"] = b["approximate"]
         if len(machines) > 1:
             row["other_machines"] = machines[1:4]
         if b.get("s"):
@@ -808,16 +822,25 @@ def find_recipes(user, args):
         machines = idx.machines(map_name)
         used_in.append(machines[0]["name"] if machines else map_name)
     names = item_names if kind == recipe_index.ITEM else fluid_names
+    has_crafting = "crafting" in idx.coverage.get("handlers", [])
+    coverage = recipes.coverage_summary(idx)
+    note = ("Supported GregTech, crafting-table and furnace recipes from the game data. "
+            "Crafting first, then furnace, then GregTech by absolute EU/t and duration. "
+            "Slot alternatives are samples; their totals include every exported alternative. "
+            "NBT variants, custom matching and other handlers may be missing or approximate." if has_crafting else
+            "GregTech machine recipes from this older bundle, cheapest first. Recipes for a crafting table, furnace and other "
+            "mods' recipes aren't included.")
+    if not found:
+        note = "No supported recipe in this bundle makes it. " + note
     return {
         "item": key,
         "name": mctext.plain(names.get(rkey) or query),
         "gtnh_version": version,
         "recipes": rows,
-        "recipes_total": len(found),
+        "recipes_total": total,
         "used_in_machines": sorted(set(used_in))[:20],
-        "note": ("GregTech machine recipes from the game data, cheapest first. Crafting-table and other "
-                 "mods' recipes aren't included." if found else
-                 "No GregTech machine makes it; it may be crafted on a crafting table or by another mod."),
+        "coverage": coverage,
+        "note": note,
     }
 
 
@@ -1412,11 +1435,13 @@ TOOLS = [
     },
     {
         "name": "find_recipes",
-        "title": "Look up GregTech recipes",
+        "title": "Look up game recipes",
         "description": (
-            "How the game makes an item or fluid: the GregTech machine recipes for it in the base's GTNH "
-            "version (machine, inputs, outputs with chances, EU/t, voltage tier, time, coil heat), "
-            "cheapest first, and which machines use it. Use this instead of remembering recipes. Takes an "
+            "How the game makes an item or fluid in the base's GTNH version: supported crafting-table, furnace "
+            "and GregTech recipes, plus which machines use it. Coverage depends on the installed bundle; "
+            "older bundles contain only GregTech. Crafting slots give sampled alternatives and their totals; "
+            "NBT/custom matching may be approximate. Crafting first, then furnace, then GT by absolute EU/t. "
+            "Use this instead of remembering recipes. Takes an "
             "item key or a name; it can be any item in the game, not just ones in the network."
         ),
         "inputSchema": _schema({

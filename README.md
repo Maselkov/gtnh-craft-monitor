@@ -21,6 +21,8 @@ Basically, it's web AE2 for your base.
 - **[Network](docs/using.md#network-tab)** — sortable list of every item,
   fluid and essentia in the ME network, with NEI-style search and per-item
   stock history charts that show how fast an item is running out.
+- **[Recipes and Uses](docs/using.md#recipes-and-uses)** — browse supported
+  game recipes, follow ingredients and outputs, and filter by machine category.
 - **[Remote crafting](docs/using.md#requesting-and-cancelling-crafts)** —
   request or cancel AE2 crafts from the browser, with a preview of the
   crafting plan (with an ME Interface Terminal connected).
@@ -36,8 +38,8 @@ Basically, it's web AE2 for your base.
   auto-crafts posted to a Discord channel or any other webhook.
 - **[AI assistants](docs/using.md#ai-assistants)** — an MCP endpoint, so
   Claude or another AI assistant can answer questions about the base (what's
-  running low, why a craft is slow, what a craft needs) and request crafts
-  or set stock rules for you.
+  running low, why a craft is slow, what a craft needs), look up supported
+  game recipes, and request crafts or set stock rules for you.
 - **[Accounts](docs/server.md#user-accounts)** — per-user tokens with
   viewer, operator, and admin roles, and a
   [private](docs/server.md#private-servers) setting so only signed-in

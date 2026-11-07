@@ -299,6 +299,7 @@ def _build_og_tags(path, args):
 @bp.route("/crafts", methods=["GET"])
 @bp.route("/power", methods=["GET"])
 @bp.route("/network", methods=["GET"])
+@bp.route("/recipes", methods=["GET"])
 @bp.route("/network/item/<identifier>", methods=["GET"])
 @auth.public
 def index(identifier=None):

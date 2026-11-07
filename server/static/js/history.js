@@ -13,6 +13,8 @@ import { hideStockPanel, showStockPanel, stockThresholdsFor } from './stock.js';
 import { setPageView } from './page-title.js';
 import { ingredientsCpu } from './ingredients.js';
 import { openKit } from './multiblock.js';
+import { openRecipeViewer } from './recipe-viewer.js';
+import { recipeItemKey } from './recipe-state.js';
 import { activeTab, switchTab } from './tabs.js';
 import {
   chartColors, copyText, delegateActions, escapeHtml, formatDuration, formatQty, formatRate, iconClass, iconUrl, onBackdropClick,
@@ -96,7 +98,7 @@ function itemHistoryQueryParams(it) {
   return params;
 }
 
-function findNetworkItem(mod, internal, damage, kind, variant) {
+export function findNetworkItem(mod, internal, damage, kind, variant) {
   const items = (lastNetworkData && lastNetworkData.items) || [];
   return items.find(it =>
     (it.mod || null) === (mod || null) &&
@@ -129,7 +131,7 @@ function findNetworkItem(mod, internal, damage, kind, variant) {
 // substance kind=item when clicked from a crafting ingredient,
 // splitting one substance's history across two disagreeing
 // identities that never actually shared data.
-function openItemHistoryFromCraft(mod, internal, damage, name, icon) {
+export function openItemHistoryFromCraft(mod, internal, damage, name, icon) {
   if (!internal) return;
   const kind = mod ? 'item' : 'fluid';
   const networkMatch = findNetworkItem(mod, internal, damage, kind);
@@ -235,6 +237,8 @@ export function openItemHistory(it, pushUrl) {
 
   document.getElementById('itemHistoryCraftBtn').style.display = (it.isCraftable && isOperator()) ? '' : 'none';
   document.getElementById('itemHistoryKitBtn').hidden = true;
+  document.getElementById('itemHistoryRecipesBtn').hidden = !recipeItemKey(it);
+  document.getElementById('itemHistoryUsesBtn').hidden = !recipeItemKey(it);
   showStockPanel(it);
   document.getElementById('itemHistoryModal').style.display = 'flex';
 
@@ -620,6 +624,7 @@ export function setupHistoryActions() {
     redrawItemHistoryChart();
   });
   delegateActions(document, {
+    'history-recipes': el => { if (itemHistoryTarget) openRecipeViewer(recipeItemKey(itemHistoryTarget), el.dataset.dir); },
     'history-range': (el) => setItemHistoryRange(el.dataset.range),
     'history-pin': () => toggleNetworkItemPin(itemHistoryTarget),
     'close-history': () => closeItemHistory(),

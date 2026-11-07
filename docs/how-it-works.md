@@ -8,6 +8,7 @@ verified against the GTNH OpenComputers source and live testing.
 - [Craft request results](#craft-request-results)
 - [Scanning the network](#scanning-the-network)
 - [Reading patterns](#reading-patterns)
+- [Game recipe data](#game-recipe-data)
 - [The crafting plan](#the-crafting-plan)
 - [The craft tree](#the-craft-tree)
 - [Held-up steps](#held-up-steps)
@@ -32,6 +33,43 @@ page's routes do, with the signed-in user's role.
 The game always initiates the connection: scripts POST their readings and
 poll the server for pending craft requests and cancellations. The server
 never connects into the game.
+
+## Game recipe data
+
+Game data bundles include recipes exported from the selected GTNH client pack.
+Format 2 adds supported crafting-table and furnace recipes to the GregTech maps;
+format 1 has GregTech only. The server converts either into a read-only SQLite
+index (format 3), normally built beside shared game data to avoid rebuilding it
+on each hosted instance. The builder reads two passes of the compressed file,
+keeping intern tables and one recipe in memory instead of the full JSON. The
+[exporter guide](../tools/icon-export/README.md#bundle-format) describes the schema.
+
+Crafting recipes retain grid holes and every ingredient alternative. The input
+index lists a recipe under each alternative; concrete item queries also find
+wildcard-damage ingredients. Queries deduplicate recipe IDs before counting and
+paging, with a stable order: crafting, furnace, then GregTech by absolute EU/t
+and duration, and recipe ID for ties. Each index exposes its source fingerprint
+so consumers can keep pages within the same bundle generation.
+
+The [recipe viewer](using.md#recipes-and-uses) and assistant read a bounded sample of each slot's alternatives plus the full
+count. NBT variants and custom matching/returned-container behavior are not
+fully represented, and dynamic handlers can be absent. Coverage and approximation
+flags accompany results. A mandatory slot with no alternatives excludes the
+recipe rather than becoming an empty grid cell. The processing-pattern check
+filters out crafting/furnace maps in matching, fallback recipes and uses/removal
+classification, so adding these maps does not change what the check promises.
+
+The viewer's read-only `/api/recipes/item` and `/api/recipes` routes follow the
+base's public/private viewer policy. They return the selected version, recipe
+fingerprint and icon-data version. Page requests pin those values; a change
+returns a conflict and the viewer reloads rather than appending mixed pages.
+Missing selection, missing recipes and index-build failures have distinct errors.
+Browser history stores each selection's key, direction, category and originating
+tab/dialogs; loaded pages and scroll stay in a bounded in-page cache. Back,
+Forward and breadcrumb jumps restore that selection, while Close returns to
+its origin. Request generations and abort signals discard late responses after
+navigation. Alternative icons cycle only while visible and motion is allowed;
+focus or hover freezes the slot's icon, label and clicked identity together.
 
 ## Crafting CPUs
 

@@ -15,6 +15,7 @@ import { clearJobLink, readJobLinkFromUrl } from './job-link.js';
 import { fetchNetwork, fetchNetworkPins, tickNetworkSourceLine } from './network.js';
 import { setPageView } from './page-title.js';
 import { fetchPower, powerMachineFromUrl, powerPath, tickPowerSourceLine } from './power.js';
+import { hideRecipeViewer, restoreRecipeViewer } from './recipe-viewer.js';
 import { fetchStockRules } from './stock.js';
 import { delegateActions } from './util.js';
 
@@ -30,7 +31,7 @@ const TAB_NAMES = { crafts: 'Crafts', power: 'Power', network: 'Network' };
 
 export function pathToTab(path) {
   if (path === '/power') return 'power';
-  if (path === '/network' || path.startsWith(NETWORK_ITEM_PATH_PREFIX)) return 'network';
+  if (path === '/recipes' || path === '/network' || path.startsWith(NETWORK_ITEM_PATH_PREFIX)) return 'network';
   return 'crafts';  // '/', '/crafts', or anything unrecognized
 }
 
@@ -46,7 +47,9 @@ export function switchTab(tab, pushUrl) {
   if (tab !== activeTab) {
     hideItemHistory();
     hideIngredientsModal();
+    hideRecipeViewer();
   }
+  if (pushUrl) hideRecipeViewer();
   activeTab = tab;
   setPageView('tab', TAB_NAMES[tab]);
   document.getElementById('tabBtnCrafts').classList.toggle('active', tab === 'crafts');
@@ -108,7 +111,7 @@ export function refreshActiveTab() {
 // for the ingredients dialog; item for the item dialog, which may be
 // over any tab); one it didn't - the page's first, or a link typed in -
 // goes by the URL alone.
-function applyHistoryState(state) {
+export function applyHistoryState(state) {
   state = state || {};
   const tab = state.tab || pathToTab(location.pathname);
   if (tab === 'power') powerMachineFromUrl();
@@ -121,6 +124,13 @@ function applyHistoryState(state) {
     hideIngredientsModal();
   }
 
+  if (state.view === 'recipes') {
+    if (state.item) openItemHistory(state.item, false);
+    else hideItemHistory();
+    restoreRecipeViewer(state);
+    return;
+  }
+  hideRecipeViewer();
   if (state.view === 'item' && state.item) {
     openItemHistory(state.item, false);
     return;

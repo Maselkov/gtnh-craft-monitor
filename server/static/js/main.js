@@ -32,9 +32,10 @@ import {
   updateNetworkSearchHighlight,
 } from './network.js';
 import { fetchPowerBadge, powerMachineFromUrl, setupPowerActions } from './power.js';
+import { recipeViewerFromUrl, setupRecipeViewer } from './recipe-viewer.js';
 import { setupRecipeCheckActions } from './recipe-check.js';
 import { fetchStockRules, setupStockActions } from './stock.js';
-import { focusNetworkSearch, pathToTab, refreshActiveTab, setupTabActions, switchTab } from './tabs.js';
+import { applyHistoryState, focusNetworkSearch, pathToTab, refreshActiveTab, setupTabActions, switchTab } from './tabs.js';
 import { setupTheme } from './theme.js';
 import { removeLegacyStorageKeys, setupImageErrorRemoval } from './util.js';
 import { setupWebhooksActions } from './webhooks.js';
@@ -53,6 +54,7 @@ setupTheme();
 setupAdminActions();
 setupGameDataActions();
 setupRecipeCheckActions();
+setupRecipeViewer();
 setupCraftsActions();
 setupJobLink(() => { if (lastData) render(lastData); });
 setupCraftHistory();
@@ -75,6 +77,10 @@ setupCraftRequestActions();
 // /power, /network, or /network?item=...) rather than always
 // starting on the Crafts tab regardless of how it was linked to.
 function initFromUrl() {
+  if (location.pathname === '/recipes' && history.state?.view === 'recipes' && history.state.recipe?.stack?.length) {
+    applyHistoryState(history.state);
+    return;
+  }
   const initialTab = pathToTab(location.pathname);
   if (initialTab === 'power') powerMachineFromUrl();
   if (initialTab === 'network') {
@@ -85,6 +91,7 @@ function initFromUrl() {
                                   // over the URL we just loaded
   if (location.pathname === '/network') focusNetworkSearch();  // not under an item's popup
   readJobLinkFromUrl();
+  recipeViewerFromUrl();
 }
 
 setupNotifications();

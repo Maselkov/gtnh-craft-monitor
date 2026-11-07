@@ -289,3 +289,9 @@ __marimo__/
 
 # Web Push signing key (server/data/vapid_private.pem)
 *.pem
+
+# Local experiments, generated exports, screenshots and test logs
+/work/
+
+# Local Claude worktree checkouts
+/.claude/worktrees/

@@ -59,6 +59,8 @@ MINIMUMS = {
     # GregTech (Recipes.java) or NEI's catalysts broke.
     "recipes": 100000,
     "recipeMapsWithMachines": 100,
+    "craftingRecipes": 40000,
+    "furnaceRecipes": 5000,
     # GTNH 2.9 has 334 GregTech multiblocks, and every one builds: far
     # fewer means the build in StructureBuilder.java broke.
     "multiblocks": 250,
@@ -105,9 +107,108 @@ def is_flat(png):
     return sum(stddev) / 3 < FLAT_STDDEV
 
 
+def validate_recipes(data):
+    """Validate the format-2 contract before publishing. Empty mandatory
+    alternatives and missing intern references must never become free inputs.
+    Unsupported/dynamic handlers are expected; adapter failures are not."""
+    def require(ok, why):
+        if not ok:
+            raise ValueError(why)
+
+    require(isinstance(data, dict) and type(data.get("format")) is int and data["format"] == 2,
+            "expected recipe format 2")
+    for key in ("items", "fluids"):
+        require(isinstance(data.get(key), list) and all(isinstance(k, str) and k for k in data[key]),
+                f"invalid {key} intern table")
+        names = data.get("item_names" if key == "items" else "fluid_names")
+        require(isinstance(names, list) and len(names) == len(data[key]), f"missing {key} display names")
+
+    def stacks(raw, table, positive=False):
+        require(isinstance(raw, list), "stacks must be a list")
+        for s in raw:
+            require(isinstance(s, list) and len(s) in (2, 3), "invalid stack")
+            require(type(s[0]) is int and 0 <= s[0] < len(data[table]), "invalid intern reference")
+            require(type(s[1]) is int and s[1] >= (1 if positive else 0), "invalid stack amount")
+            if len(s) == 3:
+                require(type(s[2]) is int and 0 < s[2] <= 10000, "invalid output chance")
+
+    maps = data.get("maps")
+    require(isinstance(maps, dict), "missing recipe maps")
+    for name, entry in maps.items():
+        require(isinstance(entry, dict) and isinstance(entry.get("recipes"), list), "invalid recipe map")
+        for r in entry["recipes"]:
+            require(isinstance(r, dict), "invalid recipe")
+            kind = r.get("type")
+            allowed = {"shaped", "shapeless"} if name == "crafting" else {"furnace"} if name == "furnace" else {"gt"}
+            require(kind in allowed, f"invalid recipe type in {name}")
+            for side, table in (("i", "items"), ("o", "items"), ("f", "fluids"), ("g", "fluids")):
+                stacks(r.get(side, []), table)
+            require(r.get("o") or r.get("g"), "recipe has no output")
+            if "approximate" in r:
+                require(isinstance(r["approximate"], list) and all(isinstance(f, str) and f for f in r["approximate"]),
+                        "invalid approximation flags")
+            if kind == "gt":
+                require(all(type(r.get(k)) is int for k in ("e", "d")), "GT recipe needs EU/t and duration")
+            elif kind == "furnace":
+                require(len(r.get("i", [])) == len(r.get("o", [])) == 1 and not r.get("f") and not r.get("g"),
+                        "furnace recipe needs one item input and output")
+                stacks(r["i"] + r["o"], "items", positive=True)
+                if "d" in r:
+                    require(type(r["d"]) is int and r["d"] > 0, "invalid furnace duration")
+            else:
+                slots = r.get("slots")
+                require(isinstance(slots, list) and 1 <= len(slots) <= 9, "invalid crafting slots")
+                require(not r.get("i") and not r.get("f") and not r.get("g") and len(r.get("o", [])) == 1,
+                        "invalid crafting inputs/output")
+                stacks(r["o"], "items", positive=True)
+                if kind == "shaped":
+                    w, h = r.get("w"), r.get("h")
+                    require(type(w) is int and type(h) is int and 1 <= w <= 3 and 1 <= h <= 3
+                            and len(slots) == w * h, "invalid crafting dimensions")
+                    require(type(r.get("mirrored", False)) is bool, "invalid mirrored flag")
+                require(any(s is not None for s in slots), "empty crafting grid")
+                for slot in slots:
+                    if slot is None and kind == "shaped":
+                        continue
+                    require(isinstance(slot, dict) and isinstance(slot.get("alts"), list) and slot["alts"],
+                            "unresolved crafting ingredient")
+                    stacks(slot["alts"], "items", positive=True)
+                    if "od" in slot:
+                        require(isinstance(slot["od"], str) and slot["od"], "invalid ore name")
+
+    coverage = data.get("coverage")
+    require(isinstance(coverage, dict) and coverage.get("identity") == "item_id_damage", "missing identity coverage")
+    require(coverage.get("handlers") == ["gregtech", "crafting", "furnace"], "missing handler coverage")
+
+    def counts(report):
+        require(isinstance(report, dict), "missing export counts")
+        registered, exported, skipped = report.get("registered"), report.get("exported"), report.get("skipped")
+        require(type(registered) is int and registered >= 0 and type(exported) is int and exported >= 0
+                and isinstance(skipped, dict), "invalid export counts")
+        require(all(type(v) is int and v >= 0 for v in skipped.values()), "invalid skip counts")
+        require(registered == exported + sum(skipped.values()), "export counts do not balance")
+        require(not skipped.get("adapter_error"), "recipe adapter failed")
+        return registered, exported
+
+    for handler in ("crafting", "furnace"):
+        require(handler in maps and maps[handler]["recipes"], f"empty {handler} map")
+        _, exported = counts(coverage.get(handler))
+        require(exported == len(maps[handler]["recipes"]), f"wrong {handler} exported count")
+    classes = coverage["crafting"].get("classes")
+    require(isinstance(classes, dict) and classes, "missing crafting class coverage")
+    totals = [counts(report) for report in classes.values()]
+    require(sum(t[0] for t in totals) == coverage["crafting"]["registered"]
+            and sum(t[1] for t in totals) == coverage["crafting"]["exported"], "crafting class counts do not balance")
+
+
 def check(out_dir):
     problems = []
     report = json.loads((out_dir / "export-report.json").read_text())
+    try:
+        with gzip.open(out_dir / "recipes.json.gz", "rt") as f:
+            validate_recipes(json.load(f))
+    except (OSError, ValueError, TypeError, KeyError) as e:
+        problems.append(f"recipes.json.gz: {e}")
     for key, minimum in MINIMUMS.items():
         if report.get(key, 0) < minimum:
             problems.append(f"{key} is {report.get(key)}, expected >= {minimum}")

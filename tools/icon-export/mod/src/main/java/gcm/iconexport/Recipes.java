@@ -24,7 +24,7 @@ import cpw.mods.fml.common.registry.GameRegistry;
  * recipes.json.gz: GregTech's recipe maps, for the server's check of the network's patterns
  * against another GTNH version's recipes (server/gcm/recipes.py).
  *
- * <p>{@code {"format": 1, "items": [key, ...], "item_names": [...], "fluids": [name, ...],
+ * <p>{@code {"format": 2, "items": [key, ...], "item_names": [...], "fluids": [name, ...],
  * "fluid_names": [...], "maps": {name: {"machines": [{"name", "key"}, ...], "recipes": [...]}}}}.
  * Items are keyed as ExportJob keys them ({@code mod:internal:damage}, damage {@code *} for any),
  * fluids by registry name, and recipes refer to both by index; the names lists hold each one's
@@ -49,6 +49,9 @@ final class Recipes {
     private final List<String> fluidNames = new ArrayList<>();
     int recipeCount;
     int mapsWithMachines;
+    Map<String, Object> coverage;
+    int craftingCount;
+    int furnaceCount;
 
     /** The whole file's contents, or null without GregTech. */
     Map<String, Object> collect() {
@@ -103,8 +106,13 @@ final class Recipes {
         }
         IconExportMod.LOG.info("Exported {} GregTech recipes from {} maps, {} with machines.", recipeCount,
                 maps.size(), mapsWithMachines);
+        CraftingRecipes crafting = new CraftingRecipes(this::itemIndex);
+        coverage = crafting.collect(maps);
+        craftingCount = crafting.craftingCount;
+        furnaceCount = crafting.furnaceCount;
         Map<String, Object> file = new LinkedHashMap<>();
-        file.put("format", 1);
+        file.put("format", 2);
+        file.put("coverage", coverage);
         file.put("items", new ArrayList<>(items.keySet()));
         file.put("item_names", itemNames);
         file.put("fluids", new ArrayList<>(fluids.keySet()));
@@ -127,6 +135,7 @@ final class Recipes {
             chances = field(recipe, "mChances");
         }
         Map<String, Object> out = new LinkedHashMap<>();
+        out.put("type", "gt");
         putIfAny(out, "i", stacks(inputs, null));
         putIfAny(out, "f", fluidStacks(fluidInputs));
         putIfAny(out, "o", stacks(outputs, chances instanceof int[] ? (int[]) chances : null));

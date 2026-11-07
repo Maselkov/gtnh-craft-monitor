@@ -503,6 +503,7 @@ export async function fetchNetwork() {
     data.items = (data.items || []).filter(it => !isKitOutput(it));
     data.item_count = data.items.length;
     lastNetworkData = data;
+    window.dispatchEvent(new Event('gcm-networkchange'));
     updateGameDataNote();
     updateTerminalNote();
     // Its ETag makes this an empty 304 unless the items or game data changed.

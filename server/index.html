@@ -381,9 +381,40 @@
         <div id="stockError" class="modal-error" hidden></div>
       </div>
       <div class="history-buttons">
+        <button class="modal-btn secondary" id="itemHistoryRecipesBtn" data-action="history-recipes" data-dir="making">Recipes</button>
+        <button class="modal-btn secondary" id="itemHistoryUsesBtn" data-action="history-recipes" data-dir="using">Uses</button>
         <button class="modal-btn primary" id="itemHistoryKitBtn" hidden data-action="kit-from-history" title="Every block this multiblock is built from">Multiblock kit</button>
         <button class="modal-btn primary history-craft-btn" id="itemHistoryCraftBtn" style="display:none;" data-action="craft-from-history">Request Craft</button>
       </div>
+    </div>
+  </div>
+
+  <div id="recipeViewerModal" class="modal-overlay" style="display:none;">
+    <div class="modal-box recipe-viewer-box">
+      <div class="modal-header">
+        <button class="modal-btn secondary recipe-back" id="recipeViewerBack" data-action="recipe-back" disabled>← Back</button>
+        <img id="recipeViewerIcon" class="modal-icon" src="" alt="" hidden>
+        <div class="history-name-wrap">
+          <div id="recipeViewerTitle" class="modal-item-name">Recipes</div>
+          <div id="recipeViewerIdentity" class="recipe-identity"></div>
+        </div>
+        <button class="history-close-btn" data-action="recipe-close" title="Close recipe viewer" aria-label="Close recipe viewer">&times;</button>
+      </div>
+      <nav id="recipeViewerTrail" class="recipe-trail" aria-label="Recipe trail"></nav>
+      <div class="recipe-directions" role="group" aria-label="Recipe direction">
+        <button class="modal-btn secondary" id="recipeViewerMaking" data-action="recipe-direction" data-dir="making" aria-pressed="true">Recipes</button>
+        <button class="modal-btn secondary" id="recipeViewerUsing" data-action="recipe-direction" data-dir="using" aria-pressed="false">Uses</button>
+      </div>
+      <div id="recipeViewerMaps" class="recipe-map-tabs" role="group" aria-label="Recipe category"></div>
+      <div id="recipeViewerList" class="recipe-viewer-list" tabindex="0" aria-label="Recipes"></div>
+      <div class="recipe-viewer-footer">
+        <span id="recipeViewerStatus" role="status" aria-live="polite"></span>
+        <button class="modal-btn secondary" id="recipeViewerMore" data-action="recipe-more" hidden>Load more</button>
+        <button class="modal-btn secondary" id="recipeViewerRetry" data-action="recipe-retry" hidden>Retry</button>
+      </div>
+      <details id="recipeViewerDetails" hidden><summary>Item details</summary><div id="recipeViewerInfo" class="game-text recipe-item-info"></div></details>
+      <div id="recipeViewerCoverage" class="recipe-coverage"></div>
+      <div class="recipe-help">Select a stack for recipes. Right-click, Shift-click or choose Uses to see where it is used. Focus a stack and press R or U.</div>
     </div>
   </div>
 

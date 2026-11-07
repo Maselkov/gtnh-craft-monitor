@@ -11,6 +11,7 @@ from gcm import gamedata, item_info, recipe_index, recipes
 from test_mcp import call, make_token, ok
 from test_network_api import run_scan
 from test_patterns_api import PLANKS_PATTERN, item as pattern_item, run_pattern_scan
+from test_recipe_index import typed_index  # noqa: F401
 from test_recipes import DUST, EBF, FREEZER, HOT, INGOT, ebf, freezer, write_recipes
 
 INGOT_KEY = "gregtech|gt.metaitem.01|11028|item"
@@ -57,6 +58,35 @@ def tooltips(tmp_path, monkeypatch):
 
 
 class TestFindRecipes:
+    def test_typed_recipes_preserve_slots_and_bound_presentation(self, client, token, typed_index, monkeypatch):
+        monkeypatch.setattr(gamedata, "selected_version", lambda: "2.9.0")
+        monkeypatch.setattr(recipes, "index", lambda version: typed_index)
+        found = ok(client, token, "find_recipes", item="minecraft|planks|0|item", limit=4)
+        assert found["recipes_total"] == 5 and len(found["recipes"]) == 4
+        shaped, shapeless, furnace, gt = found["recipes"]
+        assert (shaped["type"], shaped["width"], shaped["height"]) == ("shaped", 2, 2)
+        assert shaped["slots"][1] is None
+        assert shaped["slots"][0]["ore"] == "logWood"
+        assert shaped["slots"][0]["alternatives"][1]["item"] == "minecraft|log||item"
+        assert shaped["slots"][2]["alternatives_total"] == 20
+        assert len(shaped["slots"][2]["alternatives"]) == 16
+        assert shaped["slots"][2]["alternatives"][15]["name"] == "Part 15"
+        assert shaped["approximate"] == ["nbt"] and "inputs" not in shaped
+        assert "eu_per_tick" not in shaped and "seconds" not in shaped
+        assert shapeless["type"] == "shapeless" and "width" not in shapeless
+        assert furnace["seconds"] == 10 and "eu_per_tick" not in furnace
+        assert gt["eu_per_tick"] == 30
+        assert found["coverage"]["handlers"] == ["gregtech", "crafting", "furnace"]
+        assert "classes" not in found["coverage"]["crafting"]
+        assert "approximate" in found["note"]
+
+    def test_typed_recipes_report_absent_results_and_wildcard_uses(self, client, token, typed_index, monkeypatch):
+        monkeypatch.setattr(gamedata, "selected_version", lambda: "2.9.0")
+        monkeypatch.setattr(recipes, "index", lambda version: typed_index)
+        found = ok(client, token, "find_recipes", item="minecraft|log|7|item")
+        assert found["recipes_total"] == 0 and "No supported recipe" in found["note"]
+        assert found["used_in_machines"] == ["Crafting Table", "Electric Blast Furnace", "Furnace"]
+
     def test_cheapest_first_with_names_tiers_and_heat(self, client, token, game_recipes):
         found = ok(client, token, "find_recipes", item=HOT_KEY)
         assert found["gtnh_version"] == "2.9.0" and found["name"] == f"Name of {HOT}"

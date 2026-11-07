@@ -182,7 +182,7 @@ def faithful_export(tmp_path, textured):
     (tmp_path / "export-report.json").write_text(json.dumps(
         {"by_keyEntries": 50000, "fluids_by_keyEntries": 2000, "aspects_by_keyEntries": 60, "oreNames": 5000,
          "catalogIds": 9000, "tooltipsByKey": 20000, "shiftTooltipsByKey": 500, "fluidInfo": 2000, "modNames": 300,
-         "formulasByKey": 26000, "fluidFormulas": 800, "recipes": 175000, "recipeMapsWithMachines": 138,
+         "formulasByKey": 26000, "fluidFormulas": 800, "recipes": 175000, "recipeMapsWithMachines": 138, "craftingRecipes": 60000, "furnaceRecipes": 10000,
          "multiblocks": 334, "layoutBlocks": 600, "layoutTextures": 600, "layoutMeshes": 600, "ctmUsed": 121,
          "itemsRendered": 100, "itemsFailed": 0}))
     (tmp_path / "item_info.json").write_text(json.dumps(
@@ -196,6 +196,8 @@ def faithful_export(tmp_path, textured):
         json.dump({"multiblocks": {"gregtech:gt.blockmachines:1000": {
             "base": {"gregtech:gt.blockcasings5:0": [1] * 16}}}}, f)
     (tmp_path / "layouts.png").write_bytes(b"png")
+    with gzip.open(tmp_path / "recipes.json.gz", "wt") as f:
+        json.dump(recipe_fixture(), f)
     return tmp_path
 
 
@@ -487,3 +489,50 @@ def test_compare_exports_leaves_out_what_the_base_runs_disagree_on(tmp_path):
                                   "--base2", str(tmp_path / "base2")], out=out)
     assert list(found) == ["item/a/changed~0.webp"]
     assert "1 icons differ between the two base runs" in out.getvalue()
+
+
+def recipe_fixture():
+    return {
+        "format": 2, "items": ["minecraft:log:*", "minecraft:planks:0"],
+        "item_names": ["Log", "Planks"], "fluids": [], "fluid_names": [],
+        "coverage": {"handlers": ["gregtech", "crafting", "furnace"], "identity": "item_id_damage",
+                     "crafting": {"registered": 3, "exported": 2, "skipped": {"unsupported_class": 1},
+                                  "classes": {"Example": {"registered": 3, "exported": 2,
+                                                         "skipped": {"unsupported_class": 1}}}},
+                     "furnace": {"registered": 1, "exported": 1, "skipped": {}}},
+        "maps": {
+            "crafting": {"recipes": [
+                {"type": "shaped", "w": 2, "h": 1, "slots": [{"alts": [[0, 1]], "od": "logWood"}, None],
+                 "o": [[1, 4]], "approximate": ["nbt"]},
+                {"type": "shapeless", "slots": [{"alts": [[0, 1]]}], "o": [[1, 4]]},
+            ]},
+            "furnace": {"recipes": [{"type": "furnace", "i": [[0, 1]], "o": [[1, 1]], "d": 200}]},
+            "gt.recipe.example": {"recipes": [{"type": "gt", "i": [[0, 0]], "o": [[1, 1, 5000]], "e": 30, "d": 20}]},
+        },
+    }
+
+
+def test_recipe_contract_accepts_full_alternatives():
+    data = recipe_fixture()
+    data["items"] += [f"example:item:{n}" for n in range(30)]
+    data["item_names"] += [f"Alternative {n}" for n in range(30)]
+    data["maps"]["crafting"]["recipes"][0]["slots"][0]["alts"] = [[n, 1] for n in range(32)]
+    validate.validate_recipes(data)
+
+
+@pytest.mark.parametrize("change", [
+    lambda d: d.update(format=1),
+    lambda d: d["maps"]["crafting"]["recipes"][0].update(w=3),
+    lambda d: d["maps"]["crafting"]["recipes"][0]["slots"][0].update(alts=[]),
+    lambda d: d["maps"]["crafting"]["recipes"][0]["slots"][0].update(alts=[[999, 1]]),
+    lambda d: d["maps"]["crafting"]["recipes"][1].update(slots=[None]),
+    lambda d: d["maps"]["furnace"].update(recipes=[]),
+    lambda d: d["coverage"]["crafting"].update(exported=1),
+    lambda d: d["coverage"]["crafting"]["classes"]["Example"].update(registered=4),
+    lambda d: d["coverage"]["crafting"].update(skipped={"adapter_error": 1}),
+])
+def test_recipe_contract_rejects_incomplete_exports(change):
+    data = recipe_fixture()
+    change(data)
+    with pytest.raises(ValueError):
+        validate.validate_recipes(data)

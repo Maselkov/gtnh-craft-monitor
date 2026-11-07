@@ -10,6 +10,7 @@ import { closeGameDataModal } from './gamedata.js';
 import { closeItemHistory } from './history.js';
 import { closeIngredientsModal } from './ingredients.js';
 import { closeKit, kitOpen } from './multiblock.js';
+import { closeRecipeViewer, recipeViewerOpen } from './recipe-viewer.js';
 import { closeRecipeCheck } from './recipe-check.js';
 import { closeWebhooksModal } from './webhooks.js';
 import { closeAssistantModal } from './assistant.js';
@@ -358,6 +359,8 @@ export function setupCraftDialogActions() {
         closeCraftRequestModal();
       } else if (document.getElementById('cancelConfirmModal').style.display !== 'none') {
         closeCancelConfirmModal();
+      } else if (recipeViewerOpen()) {
+        closeRecipeViewer();
       } else if (kitOpen()) {
         // Before the item dialog it's opened over.
         closeKit();

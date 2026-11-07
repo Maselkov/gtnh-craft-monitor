@@ -152,6 +152,9 @@ final class ExportOutput {
             writeGzipJson("recipes.json.gz", recipeFile);
         }
         report.put("recipes", recipes.recipeCount);
+        report.put("craftingRecipes", recipes.craftingCount);
+        report.put("furnaceRecipes", recipes.furnaceCount);
+        report.put("recipeCoverage", recipes.coverage);
         report.put("recipeMaps", recipeFile == null ? 0 : ((Map<?, ?>) recipeFile.get("maps")).size());
         report.put("recipeMapsWithMachines", recipes.mapsWithMachines);
 

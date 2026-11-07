@@ -1,7 +1,7 @@
 # Icon export
 
 Builds a game data bundle (item icons, the icon lookup, the item catalog,
-the ore dictionary, item info, GregTech's recipes and the blocks of its
+the ore dictionary, item info, supported game recipes and the blocks of its
 multiblocks) from a GTNH client pack. CI runs it for every GTNH release and publishes the result (see
 [Game data](../../docs/server.md#game-data)), so you only need it for a
 pack CI doesn't cover (a nightly, a modified pack), or to build the data
@@ -108,18 +108,55 @@ icon:
 Bundles made before it existed have none of it. Before it, `ore_dict.json`
 also left out names only one item has.
 
-`recipes.json.gz` holds GregTech's recipe maps, for the
-[pattern check](../../docs/using.md#pattern-check): about 175,000 recipes
-in 138 maps for GTNH 2.9, about 2 MB gzipped. `items` and `fluids` are
-tables of keys (`modid:internalname:damage`, damage `*` for any; fluid
-registry names) with their display names in `item_names` and
-`fluid_names`. Each map has its `machines` (what NEI lists as its
-catalysts, by name, which is how a pattern's provider is matched to it) and
-its `recipes`: `{"i": [[item, n]], "f": [[fluid, mB]], "o": [[item, n,
-chance?]], "g": [[fluid, mB]], "e": EU/t, "d": ticks, "s": special value}`,
-indices into the tables, n 0 for an input that isn't used up, chance in
-1/10000 only below 100%. Fake (NEI-only) and disabled recipes are left out.
-Bundles made before it existed can't be compared.
+`recipes.json.gz` format 2 holds GregTech's recipe maps plus `crafting` and
+`furnace` maps. The [pattern check](../../docs/using.md#pattern-check) still
+compares only GT maps; the assistant's `find_recipes` also reads the new maps.
+Format-1 bundles contain GT recipes only and remain readable by new servers.
+
+`items` and `fluids` intern keys (`modid:internalname:damage`, damage `*` for
+any; fluid registry names), with parallel `item_names` and `fluid_names` lists
+(null where unavailable). Each map has `machines` (NEI catalyst objects with
+`name` and `key`) and `recipes`. Bodies have an explicit `type`:
+
+- `gt`: `{"type":"gt", "i":[[item,n]], "f":[[fluid,mB]], "o":[[item,n,chance?]],
+  "g":[[fluid,mB]], "e":EU/t, "d":ticks, "s":special}`. Empty lists and zero
+  special values may be omitted. Indices refer to the intern tables; n=0
+  marks a non-consumed input and chance is in 1/10000, only below 100%.
+  Fake/disabled recipes are excluded.
+- `shaped`: `w`/`h` (1–3), `mirrored`, `slots` (exactly `w*h`, row-major,
+  null for holes), and one output in `o`. Each occupied slot is
+  `{"alts":[[item,1],...], "od":optional_ore_name}`. **All** alternatives are
+  exported, without a presentation cap. Ore names are emitted only when
+  retained reliably; alternatives need not be one ore-dictionary entry.
+- `shapeless`: occupied `slots` (1–9) and `o`, without dimensions or holes.
+- `furnace`: one item stack in `i`, one in `o`, and `d:200` for a standard
+  furnace. This describes smelting, without fuel or experience requirements.
+
+Crafting bodies do not have GT voltage/time fields. `approximate` flags such
+as `nbt` and `custom_matching` warn about constraints this representation does
+not preserve. Item identity remains ID + damage: NBT variants are not distinct.
+The exporter supports vanilla/Forge recipe families (using virtual input getters
+for DreamCraft universal recipes), AE2 crafting ingredient expansion, and IC2
+advanced recipes. Other dynamic classes, null outputs, disabled recipes and
+mandatory slots with no alternatives are skipped, with reasons counted rather
+than turning an unresolved ingredient into a free slot. Custom NBT-dependent
+Shulker conversions and non-crafting handlers are outside this format's coverage.
+
+`coverage` records handler coverage, identity limitations and registered/exported/
+skipped totals, by crafting class as well. It is repeated as `recipeCoverage` in
+`export-report.json`; `recipes` still counts GT recipes, while `craftingRecipes`
+and `furnaceRecipes` count their respective exported recipes. CI validates types,
+grids, references and balanced counts; unexpected adapter errors fail validation.
+
+The server builds SQLite index format 3, accepting source formats 1 and 2. Every
+slot alternative is indexed for Uses; concrete item queries also match wildcard
+damage, deduplicated before counting/paging. Deploy compatible readers before
+publishing format-2 bundles. Rebuild shared/shipped `recipes.sqlite` indexes with
+the new server's `app.py index-gamedata` before hosted instances need them;
+an outdated index triggers a local build. The builder streams recipes in two
+passes with the standard library; the 2.9.0 extended index measured about 46 MiB
+peak RSS, four seconds to build and 135 MiB on disk (242,717 recipes).
+Bundles made before recipe export existed cannot be compared.
 
 `structures.json.gz` holds the blocks each GregTech multiblock is built
 from, for [multiblock kits](../../docs/using.md#multiblock-kits): 334
