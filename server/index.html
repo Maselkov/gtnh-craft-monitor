@@ -387,46 +387,54 @@
   <!-- After itemHistoryModal: opened from it. -->
   <div id="kitModal" class="modal-overlay" style="display:none;">
     <div class="modal-box kit-box">
-      <div class="modal-header">
+      <div class="modal-header kit-header">
         <img id="kitIcon" class="modal-icon" src="" alt="" hidden>
         <div class="history-name-wrap">
           <div id="kitTitle" class="modal-item-name">Multiblock kit</div>
-          <div class="history-current">Every block it's built from, for the parts you pick</div>
-        </div>
-        <button class="history-close-btn" data-action="close-kit" title="Close">&times;</button>
-      </div>
-      <div class="kit-top">
-        <div class="kit-control">
-          <label class="kit-control-label" for="kitPicker">Multiblock</label>
-          <div id="kitPickerControl"></div>
+          <div id="kitSubtitle" class="history-current">Every block it's built from, for the parts you pick</div>
         </div>
         <label class="kit-control kit-count">
           <span class="kit-control-label">How many</span>
           <input id="kitCount" class="modal-amount-input" type="number" min="1" max="64" value="1">
         </label>
+        <button class="history-close-btn" data-action="close-kit" title="Close">&times;</button>
       </div>
-      <div id="kitControls" class="kit-controls"></div>
-      <div class="kit-view-bar">
-        <button class="range-btn" id="kitViewBtn" data-action="kit-view" aria-pressed="false" hidden title="The multiblock as configured, block by block">3D view</button>
-      </div>
-      <div id="kitView" class="kit-view" hidden>
-        <canvas id="kitCanvas" class="kit-canvas" aria-label="The multiblock in 3D: drag to turn it, scroll or pinch to zoom"></canvas>
-        <div id="kitViewMessage" class="kit-view-message" hidden></div>
-        <div class="kit-layer">
-          <input type="range" id="kitLayer" min="0" max="0" value="0" aria-label="Highest layer shown">
-          <span id="kitLayerText" class="kit-control-label"></span>
+      <div id="kitConfiguration">
+        <div id="kitPickerSection" class="kit-control" hidden>
+          <label class="kit-control-label" for="kitPicker">Multiblock</label>
+          <div id="kitPickerControl"></div>
         </div>
+        <div id="kitControls" class="kit-controls"></div>
+        <div class="kit-view-bar">
+          <button class="range-btn" id="kitViewBtn" data-action="kit-view" aria-pressed="false" hidden title="The multiblock as configured, block by block">3D view</button>
+        </div>
+        <div id="kitView" class="kit-view" hidden>
+          <canvas id="kitCanvas" class="kit-canvas" aria-label="The multiblock in 3D: drag to turn it, scroll or pinch to zoom"></canvas>
+          <div id="kitViewMessage" class="kit-view-message" hidden></div>
+          <div class="kit-layer">
+            <input type="range" id="kitLayer" min="0" max="0" value="0" aria-label="Highest layer shown">
+            <span id="kitLayerText" class="kit-control-label"></span>
+          </div>
+        </div>
+        <div id="kitRows" class="kit-rows"></div>
+        <div class="modal-note kit-note">No hatches, buses, mufflers or maintenance hatches: pick your own. Every spot that takes a hatch or a casing counts as a casing, so lower the casings for your hatches and for walls you share with another multiblock.</div>
+        <div id="kitMode" class="agent-settings kit-mode" hidden>
+          <label class="agent-setting"><input type="checkbox" id="kitSeparate">
+            <span>Request each block on its own
+              <span class="agent-line" id="kitModeLine"></span></span></label>
+        </div>
+        <div id="kitPlanUnavailable" class="modal-note" hidden></div>
       </div>
-      <div id="kitRows" class="kit-rows"></div>
-      <div class="modal-note kit-note">No hatches, buses, mufflers or maintenance hatches: pick your own. Every spot that takes a hatch or a casing counts as a casing, so lower the casings for your hatches and for walls you share with another multiblock.</div>
-      <div id="kitMode" class="agent-settings kit-mode" hidden>
-        <label class="agent-setting"><input type="checkbox" id="kitSeparate">
-          <span>Request each block on its own
-            <span class="agent-line" id="kitModeLine"></span></span></label>
+      <div id="kitReview" hidden>
+        <h2 id="kitReviewTitle" class="kit-review-title" tabindex="-1">Review crafting plan</h2>
+        <p id="kitReviewSummary" class="modal-note"></p>
+        <div id="kitReviewEnd"></div>
       </div>
       <div id="kitError" class="modal-error" hidden></div>
       <div class="modal-buttons">
-        <button class="modal-btn secondary" id="kitPlanBtn" data-action="kit-plan" aria-pressed="false" hidden title="What requesting these would take, all together, before you request them">Check the plan</button>
+        <button class="modal-btn secondary" id="kitBackBtn" data-action="kit-back" hidden>Back to kit</button>
+        <button class="modal-btn secondary" id="kitRetryBtn" data-action="kit-retry-plan" hidden>Retry plan</button>
+        <button class="modal-btn primary" id="kitReviewBtn" data-action="kit-review" hidden>Review &amp; request</button>
         <button class="modal-btn primary" id="kitRequestBtn" data-action="kit-request" hidden>Request</button>
       </div>
     </div>

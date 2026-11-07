@@ -2363,19 +2363,9 @@ async function main() {
     await waitFor('kit button', `visible($('#itemHistoryKitBtn'))`);
     await click(`$('#itemHistoryKitBtn')`);
     await waitFor('controller kit loaded', `$('#kitTitle').textContent === 'Neutronium Ingot' && $('#kitChannel-coil')`);
-    await click(`$('#kitPicker')`);
-    await waitFor('picker only lists network controllers with icons', `$$('#kitPickerList [role="option"]').length === 1
-      && $('#kitPickerList .kit-choice-name').textContent === 'Neutronium Ingot'
-      && $('#kitPickerList img') && $('#kitPicker').getAttribute('aria-expanded') === 'true'`);
-    await evaluate(`typeInto('#kitPicker', 'no such multiblock'), true`);
-    await waitFor('picker empty search', `$('#kitPickerList [role="status"]').textContent.includes('No matching')`);
-    await evaluate(`pressKey('Escape', '#kitPicker'), true`);
-    await waitFor('Escape closes only the menu and restores selection', `visible($('#kitModal'))
-      && $('#kitPicker').getAttribute('aria-expanded') === 'false' && $('#kitPicker').value === 'Neutronium Ingot'`);
-    await click(`$('#kitPicker')`);
-    await evaluate(`typeInto('#kitPicker', 'neutronium'), pressKey('ArrowDown', '#kitPicker'), pressKey('Enter', '#kitPicker'), true`);
-    await waitFor('keyboard chooses controller', `$('#kitPicker').getAttribute('aria-expanded') === 'false'
-      && $('#kitPicker').value === 'Neutronium Ingot' && $('#kitPickerControl .kit-choice-current-icon img')`);
+    await waitFor('item kits hide the picker and keep quantity in the header', `!visible($('#kitPicker'))
+      && $('#kitPickerSection').hidden && visible($('#kitCount'))
+      && $('#kitCount').closest('.kit-header') && document.activeElement === $('#kitCount')`);
     // The controller comes first (the builds leave it out), then the
     // coil's row, which the steps below look at.
     await evaluate(`window.coilRow = () => $('#kitChannel-coil')?.closest('.kit-row'), true`);
@@ -2383,14 +2373,14 @@ async function main() {
       && $$('#kitRows .kit-row:not(.kit-head)').length === 2
       && $('#kitRows .kit-row:not(.kit-head)').dataset.key === 'gregtech:gt.metaitem.01:11028'
       && $('#kitChannel-coil').value === 'Iron Ingot'
-      && coilRow()?.querySelector('.kit-request')?.value === '0' && $('#kitRequestBtn').textContent === 'Nothing to request'`);
+      && coilRow()?.querySelector('.kit-request')?.value === '0' && $('#kitReviewBtn').textContent === 'Nothing to request' && !visible($('#kitRequestBtn'))`);
     await waitFor('coil selector lives beside its counts with one shared-column icon', `!$('#kitControls [data-channel="coil"]')
       && $('#kitRows .kit-row-configurable > img.kit-icon') && !$('#kitRows .kit-choice-field img')
       && $('#kitRows .kit-choice-caption').textContent === 'Coil'
       && $('#kitChannel-coil').closest('.kit-row').querySelector('.kit-num').textContent === '1,000'`);
     await evaluate(`window.kitCoilInput = $('#kitChannel-coil'), true`);
     await evaluate(`(() => { const c = $('#kitCount'); c.value = '2'; c.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
-    await waitFor('kit for two', `coilRow().querySelector('.kit-request')?.value === '766' && $('#kitRequestBtn').textContent === 'Request 1 craft'
+    await waitFor('kit for two', `coilRow().querySelector('.kit-request')?.value === '766' && $('#kitReviewBtn').textContent === 'Review & request'
       && coilRow().classList.contains('kit-short') && coilRow().querySelector('.kit-slider').value === '766'
       && coilRow().querySelector('.kit-slider').max === '2000'`);
     // The slider under the block and its box follow each other.
@@ -2407,23 +2397,49 @@ async function main() {
       && $('#kitChannel-coilList .kit-choice-check').textContent === '✓'`);
     await click(`$('#kitChannel-coilList [data-value="1"]')`);
     await waitFor('one job', `!$('#kitSeparate').checked && !$('#kitSeparate').disabled
-      && $('#kitRequestBtn').textContent === 'Request as one job (1 block)' && coilRow().querySelector('.kit-request').value === '500'
+      && $('#kitReviewBtn').textContent === 'Review & request' && coilRow().querySelector('.kit-request').value === '500'
       && $('#kitModeLine').textContent.startsWith('As one job')`);
     await click(`$('#kitSeparate')`);
-    await waitFor('each on its own', `$('#kitRequestBtn').textContent === 'Request 1 craft' && $('#kitSeparate').checked`);
+    await waitFor('each on its own', `$('#kitModeLine').textContent.startsWith('One craft per block') && $('#kitSeparate').checked`);
     await click(`$('#kitSeparate')`);
-    await waitFor('one job again', `$('#kitRequestBtn').textContent === 'Request as one job (1 block)'`);
-    await postCrafts(base, true);
-    // The plan for what Request would ask for, all together: the craft
-    // dialog's plan panel, moved into the kit.
-    await waitFor('plan button', `visible($('#kitPlanBtn'))`);
-    await click(`$('#kitPlanBtn')`);
-    await waitFor('kit plan', `visible($('#kitModal #craftPlan')) && $('#craftPlanSummary').textContent.includes('steps')
-      && $('#kitPlanBtn').textContent === 'Hide the plan'`);
+    await waitFor('one job again', `!$('#kitSeparate').checked && $('#kitModeLine').textContent.startsWith('As one job')`);
+    // Reviewing sends no craft request. Errors can be retried, and
+    // going back preserves quantities, tiers and the per-block amounts.
+    await evaluate(`(() => {
+      window.kitRealFetch = window.fetch;
+      window.kitSends = [];
+      window.failKitPlan = true;
+      window.fetch = async (...args) => {
+        const url = String(args[0]);
+        if (url.startsWith('/api/network/plan?') && window.failKitPlan) {
+          window.failKitPlan = false;
+          return new Response(JSON.stringify({ error: 'Plan temporarily unavailable' }), { status: 503 });
+        }
+        if (['/api/craft/request-kit', '/api/craft/request-batch'].includes(url) && args[1]?.method === 'POST') {
+          window.kitSends.push({ url, body: JSON.parse(args[1].body) });
+          return new Response(JSON.stringify({ ok: true, ids: [] }), { status: 200 });
+        }
+        return window.kitRealFetch(...args);
+      };
+      return true;
+    })()`);
+    await click(`$('#kitReviewBtn')`);
+    await waitFor('review errors leave Request disabled with a retry', `visible($('#kitReview')) && !visible($('#kitConfiguration'))
+      && $('#kitCount').disabled && $('#kitRequestBtn').disabled && visible($('#kitRetryBtn'))
+      && $('#craftPlanNote').textContent === 'Plan temporarily unavailable' && window.kitSends.length === 0
+      && document.activeElement === $('#kitReviewTitle')`);
+    await click(`$('#kitRetryBtn')`);
+    await waitFor('kit review ready', `visible($('#kitReview #craftPlan')) && $('#craftPlanSummary').textContent.includes('steps')
+      && !$('#kitRequestBtn').disabled && !visible($('#kitRetryBtn')) && window.kitSends.length === 0`);
+    await click(`$('#kitBackBtn')`);
+    await waitFor('back keeps configuration', `visible($('#kitConfiguration')) && !visible($('#kitReview'))
+      && $('#kitCount').value === '2' && !$('#kitCount').disabled && $('#kitChannel-coil').value === 'Iron Ingot'
+      && coilRow().querySelector('.kit-request').value === '500' && !$('#kitSeparate').checked
+      && document.activeElement === $('#kitReviewBtn')`);
     await evaluate(`$('#kitChannel-coil').focus(), pressKey('ArrowDown', '#kitChannel-coil'),
       pressKey('End', '#kitChannel-coil'), pressKey('Enter', '#kitChannel-coil'), true`);
     await waitFor('gold coils', `$('#kitChannel-coil').value === 'Gold Ingot' && $('#kitRows .kit-no-pattern')
-      && $('#kitRequestBtn').disabled && $('#craftPlanNote').textContent === 'Nothing to request, so nothing to plan.'`);
+      && $('#kitReviewBtn').disabled && $('#kitReviewBtn').textContent === 'Nothing to request'`);
     await waitFor('tier swap keeps the focused selector beside updated counts', `$('#kitChannel-coil') === window.kitCoilInput
       && document.activeElement === $('#kitChannel-coil')
       && $('#kitChannel-coil').closest('.kit-row').querySelector('.kit-num').textContent === '2,000'`);
@@ -2434,8 +2450,23 @@ async function main() {
       && $('#kitLayerText').textContent === 'All layers'`);
     await evaluate(`(() => { const l = $('#kitLayer'); l.value = l.min; l.dispatchEvent(new Event('input')); return true; })()`);
     await waitFor('bottom layer only', `$('#kitLayerText').textContent === 'Layer 1 of 3'`);
-    await evaluate(`pressKey('Escape'), true`);
-    await waitFor('kit closed', `!visible($('#kitModal')) && visible($('#itemHistoryModal'))`);
+    await click(`$('#kitChannel-coil')`);
+    await click(`$('#kitChannel-coilList [data-value="1"]')`);
+    await waitFor('craftable coils again', `$('#kitChannel-coil').value === 'Iron Ingot' && !$('#kitReviewBtn').disabled`);
+    await evaluate(`(() => { const b = coilRow().querySelector('.kit-request'); b.value = 400; b.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+    await click(`$('#kitReviewBtn')`);
+    await waitFor('review after editing', `visible($('#kitReview #craftPlan')) && !$('#kitRequestBtn').disabled && window.kitSends.length === 0`);
+    await evaluate(`pressKey('Escape', '#kitReviewTitle'), true`);
+    await waitFor('Escape returns to the configured kit', `visible($('#kitConfiguration')) && coilRow().querySelector('.kit-request').value === '400'`);
+    await click(`$('#kitReviewBtn')`);
+    await waitFor('final review ready', `visible($('#kitReview #craftPlan')) && !$('#kitRequestBtn').disabled`);
+    await click(`$('#kitRequestBtn')`);
+    await waitFor('only final Request sends the configured kit', `!visible($('#kitModal')) && visible($('#itemHistoryModal'))
+      && window.kitSends.length === 1 && window.kitSends[0].url === '/api/craft/request-kit'
+      && window.kitSends[0].body.count === 2 && window.kitSends[0].body.tiers.coil === 1
+      && window.kitSends[0].body.amounts['minecraft:iron_ingot:0'] === 400`);
+    await evaluate(`window.fetch = window.kitRealFetch, true`);
+    await postCrafts(base, true);
     await click(`byText('.history-ore-name', 'ingotNeutronium')`);
     await waitFor('searched by ore name', `!visible($('#itemHistoryModal')) && $('#networkSearch').value === '$ingotNeutronium'
       && $$('#networkList .network-cell').length === 1 && $('#networkSearchHighlight .search-hl-ore')`);
@@ -2446,6 +2477,44 @@ async function main() {
     await waitFor('closed again', `!$('#itemHistoryDetails').open`);
     await evaluate(`pressKey('Escape'), true`);
     await waitFor('dialog closed again', `!visible($('#itemHistoryModal'))`);
+    // The Network entry point keeps the picker available, including
+    // after a controller is selected; quantity lives in the same header.
+    await click(`$('#networkKitButton [data-action="open-kit"]')`);
+    await waitFor('network kits keep the searchable picker', `visible($('#kitPicker'))
+      && !$('#kitPickerSection').hidden && $('#kitCount').value === '1'
+      && $('#kitCount').closest('.kit-header')`);
+    await click(`$('#kitPicker')`);
+    await waitFor('network kit choices loaded', `$('#kitPickerList [role="option"]')`);
+    await click(`$('#kitPickerList [role="option"]')`);
+    await waitFor('network kit selected', `$('#kitTitle').textContent === 'Neutronium Ingot' && $('#kitChannel-coil')`);
+    await click(`$('#kitPicker')`);
+    await waitFor('picker only lists network controllers with icons', `$$('#kitPickerList [role="option"]').length === 1
+      && $('#kitPickerList .kit-choice-name').textContent === 'Neutronium Ingot'
+      && $('#kitPickerList img') && $('#kitPicker').getAttribute('aria-expanded') === 'true'`);
+    await evaluate(`typeInto('#kitPicker', 'no such multiblock'), true`);
+    await waitFor('picker empty search', `$('#kitPickerList [role="status"]').textContent.includes('No matching')`);
+    await evaluate(`pressKey('Escape', '#kitPicker'), true`);
+    await waitFor('Escape closes only the menu and restores selection', `visible($('#kitModal'))
+      && $('#kitPicker').getAttribute('aria-expanded') === 'false' && $('#kitPicker').value === 'Neutronium Ingot'`);
+    await click(`$('#kitPicker')`);
+    await evaluate(`typeInto('#kitPicker', 'neutronium'), pressKey('ArrowDown', '#kitPicker'), pressKey('Enter', '#kitPicker'), true`);
+    await waitFor('keyboard chooses controller', `$('#kitPicker').getAttribute('aria-expanded') === 'false'
+      && $('#kitPicker').value === 'Neutronium Ingot' && $('#kitPickerControl .kit-choice-current-icon img')`);
+    await waitFor('network selection loaded', `$('#kitTitle').textContent === 'Neutronium Ingot' && $('#kitChannel-coil')`);
+    await evaluate(`(() => { const c = $('#kitCount'); c.value = '3'; c.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+    await waitFor('network quantity updates the kit and preserves the picker', `visible($('#kitPicker'))
+      && coilRow()?.querySelector('.kit-num').textContent === '3,000'`);
+    await evaluate(`pressKey('Escape'), true`);
+    await waitFor('network kit closed', `!visible($('#kitModal'))`);
+    await click(`$('#networkList .network-cell')`);
+    await waitFor('item kit button again', `visible($('#itemHistoryKitBtn'))`);
+    await click(`$('#itemHistoryKitBtn')`);
+    await waitFor('item entry hides picker again and resets quantity', `visible($('#kitModal'))
+      && !visible($('#kitPicker')) && $('#kitCount').value === '1'`);
+    await evaluate(`pressKey('Escape'), true`);
+    await waitFor('item kit closed again', `!visible($('#kitModal'))`);
+    await evaluate(`pressKey('Escape'), true`);
+    await waitFor('item closed again', `!visible($('#itemHistoryModal'))`);
     // Plain words match descriptions too, as the game's terminal does.
     await evaluate(`typeInto('#networkSearch', 'plasma forge'), true`);
     await waitFor('found by plain words in its description', `$$('#networkList .network-cell').length === 1
@@ -2813,6 +2882,29 @@ async function main() {
       && $('#craftPlanNote').textContent.includes('needs an ME Interface Terminal')
       && $('#craftPlanNote a').href.endsWith('in-game.md#me-interface-terminal')`);
     await click(`byText('#craftRequestModal button', 'Cancel')`);
+    await evaluate(`pressKey('Escape'), true`);
+    // A fresh server has no game data until an admin installs it; the
+    // kit structure comes from that bundle, independently of patterns.
+    await click(`$('#settingsBtn')`);
+    await click(`$('#gamedataBtn')`);
+    await waitFor('kit data version listed', `$$('#gamedataVersion option').some(o => o.value === '${E2E_DATA_VERSION}')`);
+    await evaluate(`$('#gamedataVersion').value = '${E2E_DATA_VERSION}', true`);
+    await click(`$('#gamedataInstallBtn')`);
+    await waitFor('kit data installed', `$('#gamedataCurrent').textContent === 'In use: GTNH ${E2E_DATA_VERSION}, Default textures'`);
+    await evaluate(`pressKey('Escape'), true`);
+    await evaluate(`openItem('Neutronium Ingot'), true`);
+    await waitFor('kit without a terminal', `visible($('#itemHistoryKitBtn'))`);
+    await click(`$('#itemHistoryKitBtn')`);
+    await evaluate(`(() => { const c = $('#kitCount'); c.value = 2; c.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+    await waitFor('no terminal keeps a direct Request with an explanation', `visible($('#kitRequestBtn'))
+      && !$('#kitRequestBtn').disabled && !visible($('#kitReviewBtn')) && !visible($('#kitReview'))
+      && $('#kitPlanUnavailable').textContent.includes('needs an ME Interface Terminal')
+      && $('#kitPlanUnavailable a').href.endsWith('in-game.md#me-interface-terminal')`);
+    await click(`$('#kitRequestBtn')`);
+    await waitFor('direct request sent', `!visible($('#kitModal'))`);
+    const { data: kitPending } = await api(fresh.base, 'GET', '/api/craft/requests/pending', undefined, { 'X-API-Key': API_KEY });
+    if (!kitPending.requests.some(r => r.label === 'Iron Ingot' && r.amount === 766)) throw new Error('no-terminal kit was not queued');
+    await evaluate(`pressKey('Escape'), true`);
     // Game data's pattern check says it before the button's pressed.
     await click(`$('#settingsBtn')`);
     await click(`$('#gamedataBtn')`);

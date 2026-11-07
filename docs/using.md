@@ -490,7 +490,11 @@ many the network has. Open one with
 **Multiblock kit** in a controller's item dialog, or **Multiblocks** in the
 Network tab to pick a multiblock by name. The dropdown lists controllers
 stored in the network or available to craft, and refreshes each time you
-open the kit dialog. It needs game data built since
+open the kit dialog from **Multiblocks**. When opened from an item's
+dialog, the kit is fixed to that multiblock and the picker is hidden;
+its name and icon appear in the header. **How many** stays editable in
+the header for either entry point, wrapping below the name on narrow
+screens. It needs game data built since
 kits were added; the button isn't there without it.
 
 Multiblocks with tiered parts have a picker for each, named after the
@@ -515,6 +519,16 @@ or Escape to close a menu without changing your choice.
   you'll put in casing spots, and for walls you share with another
   multiblock. A block without a pattern says so and can't be requested.
 
+Choose **Review & request** to move to the crafting plan before starting
+the craft. **Back to kit** returns to your parts and quantities without
+losing your choices. The review keeps **How many** fixed; go back to change
+it. The final **Request** button starts crafting.
+
+If no pattern scan is available, the button stays **Request** and sends
+the craft directly. A note explains why no preview is available, including
+how to connect an ME Interface Terminal when one is missing. The terminal
+is needed for the preview, not for submitting a craft request.
+
 **Request** asks for the kit as **one job** where the base has a
 [kit interface](in-game.md#kit-interface): AE2 plans every block together,
 so what they share (the plates two casings both need) is made once, runs
@@ -529,11 +543,11 @@ craft instead, as if you'd requested them one by one: each lands in the
 network as soon as it's done. Without a kit interface, that's how a kit is
 always requested, and the box says so. The page remembers the choice.
 
-**Check the plan** (signed in) shows the [crafting plan](#requesting-and-cancelling-crafts)
+The review (signed in; **Review plan** for viewers) shows the [crafting plan](#requesting-and-cancelling-crafts)
 for everything Request would ask for, all together, before you request it:
 the same List and Tree views as a single craft, with one root for the kit
-and each block under it, and one Missing list for the lot. It follows the
-Request amounts as you change them. Unlike AE2, which plans each craft on
+and each block under it, and one Missing list for the lot. Going back to
+change a Request amount and reviewing again updates the plan. Unlike AE2, which plans each craft on
 its own as it starts, the plan counts the blocks against the same stock,
 one after another: two blocks that need the same plates aren't both
 counted as having them, which is what happens when all the crafts start at

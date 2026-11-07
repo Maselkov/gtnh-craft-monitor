@@ -18,7 +18,7 @@ import { hideLayout, setupLayoutView, showLayout } from './multiblock-view.js';
 import { fetchCraftRequests, showToast } from './craft-actions.js';
 import { nameText } from './description.js';
 import { kitPickerHtml, setupKitPickers } from './kit-picker.js';
-import { delegateActions, escapeHtml, formatQty, iconClass, iconUrl, onBackdropClick, updateHtml } from './util.js';
+import { delegateActions, escapeHtml, formatQty, iconClass, iconUrl, onBackdropClick, TERMINAL_DOCS_URL, updateHtml } from './util.js';
 
 let controllers = null;   // [{key, name, label}] once fetched, for the picker
 let pickers = null;
@@ -30,8 +30,11 @@ let tiers = {};           // channel -> tier picked
 let count = 1;
 let edits = new Map();    // row key -> request amount typed in
 let fetchSeq = 0;
-// Whether the crafting plan for the blocks to request is showing.
-let planWanted = false;
+let reviewing = false;
+let planStatus = 'idle';
+let kitReady = false;
+let submitting = false;
+let configurationScroll = 0;
 // Whether the 3D view is open: it is unless this viewer closed it.
 const VIEW_KEY = 'gtnhCraftMonitor.kitViewClosed';
 // Whether this viewer requests each block on its own even where a kit
@@ -130,13 +133,20 @@ export async function showKitButton() {
 // key: the controller's game data key (mod:internal:damage), or null to
 // pick one first.
 export function openKit(key) {
+  ++controllerSeq;
+  controllers = null;
   openKey = null;
   kit = null;
   tiers = {};
   count = 1;
   edits = new Map();
+  reviewing = false;
+  submitting = false;
+  kitReady = false;
+  planStatus = 'idle';
   pickers.close();
   controllerPicker.setValue(null);
+  document.getElementById('kitPickerSection').hidden = !!key;
   document.getElementById('kitCount').value = '1';
   document.getElementById('kitControls').innerHTML = '';
   document.getElementById('kitRows').innerHTML = '';
@@ -149,13 +159,13 @@ export function openKit(key) {
   document.getElementById('kitView').hidden = true;
   hideLayout();
   viewDrawn = null;
-  planWanted = false;
-  updatePlan();
+  updateRequestButton();
   document.getElementById('kitModal').style.display = 'flex';
-  loadControllers();
   if (key) {
     selectController(key);
+    document.getElementById('kitCount').focus();
   } else {
+    loadControllers();
     document.getElementById('kitPicker').focus();
   }
 }
@@ -167,7 +177,7 @@ export function closeKit() {
   document.getElementById('kitModal').style.display = 'none';
   hideLayout();
   viewDrawn = null;
-  planWanted = false;
+  reviewing = false;
   if (kitPlanOpen()) closeCraftPlan();
   openKey = null;
   kit = null;
@@ -181,12 +191,16 @@ function selectController(key) {
   if (key === openKey) return;
   openKey = key;
   tiers = {};
+  count = 1;
+  document.getElementById('kitCount').value = '1';
   edits = new Map();
   fetchKit();
 }
 
 async function fetchKit() {
   if (!openKey) return;
+  kitReady = false;
+  updateRequestButton();
   const seq = ++fetchSeq;
   const params = new URLSearchParams({ key: openKey, count: String(count) });
   for (const [name, tier] of Object.entries(tiers)) params.set('tier.' + name, String(tier));
@@ -203,6 +217,10 @@ async function fetchKit() {
     const result = await res.json();
     if (seq !== fetchSeq) return;
     kit = result;
+    count = kit.count;
+    tiers = Object.fromEntries(kit.channels.map(ch => [ch.name, ch.tier]));
+    document.getElementById('kitCount').value = String(count);
+    kitReady = true;
     errorEl.hidden = true;
     renderKit();
     renderView();
@@ -324,20 +342,60 @@ function requests() {
     .map(r => ({ label: r.name, mod: r.mod, internal: r.internal, damage: r.damage, amount: requestOf(r) }));
 }
 
-// The plan for what Request would ask for, all together (craft-plan.js),
-// under the rows, or put away.
+// The review occupies the dialog in place of the configuration. Keeping
+// those DOM nodes preserves the parts, request amounts and 3D camera.
 function updatePlan() {
-  const btn = document.getElementById('kitPlanBtn');
-  btn.hidden = !AUTH_USER || !kit;
-  btn.setAttribute('aria-pressed', String(planWanted));
-  btn.classList.toggle('active', planWanted);
-  btn.textContent = planWanted ? 'Hide the plan' : 'Check the plan';
-  if (!planWanted || !kit) {
+  document.getElementById('kitConfiguration').hidden = reviewing;
+  document.getElementById('kitReview').hidden = !reviewing;
+  document.getElementById('kitCount').disabled = reviewing || submitting;
+  document.getElementById('kitSubtitle').textContent = reviewing
+    ? 'Review the ingredients before starting the craft'
+    : "Every block it's built from, for the parts you pick";
+  const note = document.getElementById('kitPlanUnavailable');
+  note.hidden = !AUTH_USER || !kit || kit.plan_available;
+  if (!note.hidden) {
+    note.textContent = kit.plan_unavailable_reason || 'A pattern scan is needed to preview the crafting plan.';
+    if (kit.needs_terminal) {
+      const link = document.createElement('a');
+      link.href = TERMINAL_DOCS_URL;
+      link.target = '_blank';
+      link.rel = 'noopener';
+      link.textContent = 'How to connect one';
+      note.append(' ', link);
+    }
+  }
+  if (!reviewing || !kit) {
     if (kitPlanOpen()) closeCraftPlan();
     return;
   }
   const targets = kit.rows.filter(r => r.craftable && requestOf(r) > 0).map(r => [r.item, requestOf(r)]);
-  openKitPlan({ kit: kit.controller.key, count: kit.count, targets }, document.getElementById('kitError'));
+  document.getElementById('kitReviewSummary').textContent =
+    `${kit.count} kit${kit.count === 1 ? '' : 's'} · ${targets.length} material${targets.length === 1 ? '' : 's'} to craft · `
+    + (oneJob() ? 'As one job' : 'One craft per material');
+  openKitPlan({ kit: kit.controller.key, count: kit.count, targets }, document.getElementById('kitReviewEnd'), status => {
+    if (status === planStatus) return;
+    planStatus = status;
+    updateRequestButton();
+  });
+}
+
+function reviewKit() {
+  if (!kitReady || !kit?.plan_available || !AUTH_USER || !requests().length) return;
+  pickers.close();
+  configurationScroll = document.getElementById('kitModal').scrollTop;
+  reviewing = true;
+  planStatus = 'idle';
+  updateRequestButton();
+  document.getElementById('kitReviewTitle').focus({ preventScroll: true });
+  document.getElementById('kitModal').scrollTop = 0;
+}
+
+function backToKit() {
+  if (!reviewing || submitting) return;
+  reviewing = false;
+  updateRequestButton();
+  document.getElementById('kitReviewBtn').focus({ preventScroll: true });
+  document.getElementById('kitModal').scrollTop = configurationScroll;
 }
 
 // The "on its own" box: ticked and fixed where the game has no kit
@@ -360,11 +418,20 @@ function updateMode() {
 function updateRequestButton() {
   const btn = document.getElementById('kitRequestBtn');
   const n = requests().length;
-  btn.hidden = !isOperator() || !kit;
-  btn.disabled = n === 0;
-  btn.textContent = n === 0 ? 'Nothing to request'
+  btn.hidden = !isOperator() || !kit || (!reviewing && kit.plan_available);
+  btn.disabled = n === 0 || !kitReady || submitting || (reviewing && !['ready', 'unavailable'].includes(planStatus));
+  btn.textContent = submitting ? 'Submitting…' : n === 0 ? 'Nothing to request'
+    : reviewing && planStatus === 'loading' ? 'Loading plan…'
     : oneJob() ? `Request as one job (${n} block${n === 1 ? '' : 's'})`
       : `Request ${n} craft${n === 1 ? '' : 's'}`;
+  const review = document.getElementById('kitReviewBtn');
+  review.hidden = !AUTH_USER || !kit?.plan_available || reviewing;
+  review.disabled = n === 0 || !kitReady || submitting;
+  review.textContent = n === 0 ? 'Nothing to request' : isOperator() ? 'Review & request' : 'Review plan';
+  const back = document.getElementById('kitBackBtn');
+  back.hidden = !reviewing;
+  back.disabled = submitting;
+  document.getElementById('kitRetryBtn').hidden = !reviewing || planStatus !== 'error';
   updateMode();
   updatePlan();
 }
@@ -389,13 +456,14 @@ function submission(list) {
 
 async function submitKit() {
   const list = requests();
-  if (!list.length) return;
-  const btn = document.getElementById('kitRequestBtn');
+  if (!list.length || !isOperator() || !kitReady || submitting || (kit.plan_available && !reviewing)
+      || (reviewing && !['ready', 'unavailable'].includes(planStatus))) return;
+  const submittedKit = kit;
   const errorEl = document.getElementById('kitError');
   const together = oneJob();
   const { url, body } = submission(list);
-  btn.disabled = true;
-  btn.textContent = 'Submitting…';
+  submitting = true;
+  updateRequestButton();
   try {
     const res = await fetch(url, {
       method: 'POST',
@@ -404,19 +472,25 @@ async function submitKit() {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
+      if (kit !== submittedKit) return;
       errorEl.textContent = err.error || 'Request failed.';
       errorEl.hidden = false;
-      updateRequestButton();
       return;
     }
-    showToast(together ? `Requested ${nameText(kit.controller.name)} kit as one job`
-      : `Requested ${list.length} craft${list.length === 1 ? '' : 's'} for ${nameText(kit.controller.name)}`);
-    closeKit();
+    const message = together ? `Requested ${nameText(submittedKit.controller.name)} kit as one job`
+      : `Requested ${list.length} craft${list.length === 1 ? '' : 's'} for ${nameText(submittedKit.controller.name)}`;
+    showToast(message);
+    if (kit === submittedKit) closeKit();
     fetchCraftRequests();
   } catch (e) {
+    if (kit !== submittedKit) return;
     errorEl.textContent = 'Could not reach server.';
     errorEl.hidden = false;
-    updateRequestButton();
+  } finally {
+    if (kit === submittedKit) {
+      submitting = false;
+      updateRequestButton();
+    }
   }
 }
 
@@ -428,16 +502,25 @@ export function setupKitActions() {
   delegateActions(document.getElementById('kitModal'), {
     'close-kit': () => closeKit(),
     'kit-request': () => submitKit(),
-    'kit-plan': () => {
-      planWanted = !planWanted;
+    'kit-review': () => reviewKit(),
+    'kit-back': () => backToKit(),
+    'kit-retry-plan': () => {
+      closeCraftPlan();
+      planStatus = 'idle';
       updatePlan();
-      if (planWanted) document.getElementById('craftPlan').scrollIntoView({ block: 'nearest' });
     },
     'kit-view': () => {
       setViewWanted(!viewWanted());
       viewDrawn = null;
       updateView();
     },
+  });
+  document.getElementById('kitModal').addEventListener('keydown', e => {
+    if (e.key === 'Escape' && reviewing && !submitting) {
+      e.preventDefault();
+      e.stopPropagation();
+      backToKit();
+    }
   });
   setupLayoutView();
   onBackdropClick('kitModal', closeKit);

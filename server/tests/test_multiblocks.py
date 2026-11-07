@@ -128,6 +128,26 @@ def test_item_history_says_which_items_have_a_kit(client, structures):
     assert res.get_json()["multiblock"] is False
 
 
+def test_kit_reports_whether_a_plan_preview_is_available(client, structures):
+    def fetched():
+        return client.get(f"/api/multiblocks/kit?key={EBF}").get_json()
+
+    with state.patterns_lock:
+        state.patterns["terminal"] = False
+        state.patterns["updated_at"] = None
+    kit = fetched()
+    assert not kit["plan_available"] and kit["needs_terminal"]
+    assert "needs an ME Interface Terminal" in kit["plan_unavailable_reason"]
+    with state.patterns_lock:
+        state.patterns["terminal"] = True
+    assert "Reading your patterns" in fetched()["plan_unavailable_reason"]
+    with state.patterns_lock:
+        state.patterns["updated_at"] = 123
+    kit = fetched()
+    assert kit["plan_available"] and kit["plan_unavailable_reason"] is None
+    assert not kit["needs_terminal"]
+
+
 def test_picker_lists_only_stored_or_craftable_controllers(client, structures):
     def listed():
         return client.get("/api/multiblocks?network=1").get_json()["multiblocks"]

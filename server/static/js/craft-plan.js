@@ -29,6 +29,7 @@ let lastPlan = null;    // the last /api/network/plan answer's plan
 let itemsByKey = new Map();
 let fetchTimer = null;
 let inFlight = null;    // AbortController of the request under way
+let kitPlanStatus = null;  // kit dialog's review-step status callback
 let branchesLoading = new Set();  // child-position paths being fetched
 let filterTerms = [];   // parsed filter box, [] for none
 let filterOpen = new Map();  // tree path -> open, toggled while filtering
@@ -561,8 +562,12 @@ async function fetchPlan() {
     }
     startSearch();
     render();
+    if (kitPlanStatus) kitPlanStatus(res.ok ? (data.plan ? 'ready' : 'unavailable') : 'error');
   } catch (e) {
-    if (e.name !== 'AbortError' && controller === inFlight) showNote('Couldn\'t reach the server for a plan.');
+    if (e.name !== 'AbortError' && controller === inFlight) {
+      showNote('Couldn\'t reach the server for a plan.');
+      if (kitPlanStatus) kitPlanStatus('error');
+    }
   } finally {
     if (controller === inFlight) inFlight = null;
   }
@@ -571,12 +576,14 @@ async function fetchPlan() {
 function scheduleFetch(delay) {
   if (fetchTimer) clearTimeout(fetchTimer);
   fetchTimer = setTimeout(fetchPlan, delay);
+  if (kitPlanStatus) kitPlanStatus('loading');
 }
 
 // The dialog opened for an item; amountValue is what the quantity
 // box holds (it may still be an expression being typed - see
 // updateCraftPlanAmount).
 export function openCraftPlan(it, amountValue) {
+  kitPlanStatus = null;
   placePanel(document.getElementById('craftRequestError'));
   target = it;
   choices = {};
@@ -607,7 +614,8 @@ export function updateCraftPlanAmount(amountValue, delay = FETCH_DELAY_MS) {
 // amount]]}, the panel going before `before`. Called again as the
 // amounts change, it plans again, keeping what's open in the tree and
 // the patterns picked.
-export function openKitPlan(kit, before) {
+export function openKitPlan(kit, before, onStatus = null) {
+  kitPlanStatus = onStatus;
   const same = target && target.targets && target.kit === kit.kit;
   placePanel(before);
   if (same && JSON.stringify(target.targets) === JSON.stringify(kit.targets) && target.count === kit.count) return;
@@ -635,6 +643,7 @@ export function kitPlanOpen() {
 }
 
 export function closeCraftPlan() {
+  kitPlanStatus = null;
   target = null;
   amount = null;
   lastPlan = null;

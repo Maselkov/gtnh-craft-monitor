@@ -327,6 +327,9 @@ def multiblock_kit_get():
         return jsonify({"error": "no kit for that item"}), 404
     # Whether it can be requested as one job (/api/craft/request-kit).
     result["kit_slots"] = state.kit_slots()
+    result["plan_available"] = patterns.missing() is None
+    result["plan_unavailable_reason"] = None if result["plan_available"] else patterns.missing_reason("crafting plan")
+    result["needs_terminal"] = patterns.terminal_missing()
     return jsonify(result)
 
 
