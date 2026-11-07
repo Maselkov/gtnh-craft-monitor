@@ -492,7 +492,10 @@ A kit lists every block a GregTech multiblock is built from: its
 controller first, then its casings, coils, glass, pipes and so on, with how
 many the network has. Open one with
 **Multiblock kit** in a controller's item dialog, or **Multiblocks** in the
-Network tab to pick a multiblock by name. The dropdown lists controllers
+Network tab to pick a multiblock by name. When the controller is craftable,
+its item dialog shows equally sized **Multiblock kit** and **Request Craft**
+buttons: choose the kit for the structure's blocks, or Request Craft for
+the controller itself. The dropdown lists controllers
 stored in the network or available to craft, and refreshes each time you
 open the kit dialog from **Multiblocks**. When opened from an item's
 dialog, the kit is fixed to that multiblock and the picker is hidden;

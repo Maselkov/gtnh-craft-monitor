@@ -2826,8 +2826,9 @@ body.oauth-page {
   display: flex;
   gap: 8px;
 }
-.history-buttons .history-craft-btn {
-  flex: 1;
+.history-buttons > .modal-btn {
+  flex: 1 1 0;
+  min-width: 0;
 }
 .kit-box {
   width: min(640px, calc(100vw - 32px));
