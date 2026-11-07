@@ -553,6 +553,11 @@ craft instead, as if you'd requested them one by one: each lands in the
 network as soon as it's done. Without a kit interface, that's how a kit is
 always requested, and the box says so. The page remembers the choice.
 
+If no kit slots are detected, **Set up a kit interface** links directly to
+the illustrated [setup guide](in-game.md#kit-interface), including the
+placeholder processing pattern and return-network wiring. You can still
+request the materials separately while setting it up.
+
 The review (signed in; **Review plan** for viewers) shows the [crafting plan](#requesting-and-cancelling-crafts)
 for everything Request would ask for, all together, before you request it:
 the same List and Tree views as a single craft, with one root for the kit

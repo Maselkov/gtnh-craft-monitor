@@ -2415,7 +2415,10 @@ async function main() {
     await waitFor('slider sets the box', `coilRow().querySelector('.kit-request').value === '500'`);
     // Without a kit interface in the game, each block is its own request.
     await waitFor('no kit slots', `visible($('#kitMode')) && $('#kitSeparate').checked && $('#kitSeparate').disabled
-      && $('#kitModeLine').textContent.includes('set up a kit interface')`);
+      && $('#kitModeLine').textContent.includes('No kit slots detected')
+      && $('#kitModeLine a')?.textContent === 'Set up a kit interface'
+      && $('#kitModeLine a').href.endsWith('in-game.md#kit-interface')
+      && $('#kitModeLine a').target === '_blank' && $('#kitModeLine a').rel.includes('noopener')`);
     // With one, the kit is one job unless asked otherwise. Picking the
     // coil tier again fetches the kit again, keeping the amounts.
     await postCrafts(base, true, false, { kit_slots: 1 });
@@ -2425,7 +2428,7 @@ async function main() {
     await click(`$('#kitChannel-coilList [data-value="1"]')`);
     await waitFor('one job', `!$('#kitSeparate').checked && !$('#kitSeparate').disabled
       && $('#kitReviewBtn').textContent === 'Review & request' && coilRow().querySelector('.kit-request').value === '500'
-      && $('#kitModeLine').textContent.startsWith('As one job')`);
+      && $('#kitModeLine').textContent.startsWith('As one job') && !$('#kitModeLine a')`);
     await click(`$('#kitSeparate')`);
     await waitFor('each on its own', `$('#kitModeLine').textContent.startsWith('One craft per block') && $('#kitSeparate').checked`);
     await click(`$('#kitSeparate')`);

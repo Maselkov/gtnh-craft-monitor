@@ -158,24 +158,53 @@ interface so its inputs are the kit's blocks, and requests it. Without
 one, a kit is requested a block at a time.
 
 1. Place an **ME Interface** on the main network, with a **Fake Crafting
-   Card** in it and blocking mode off. Naming it in an anvil (say "Kit")
-   makes it easy to find in the Interface Terminal.
+   Card** in it and blocking mode off. You can hide this interface from
+   the **ME Interface Terminal** to avoid clutter: the script accesses it
+   through its Adapter.
 2. Put an encoded **processing** pattern in it whose output is a
    **Command Block** (pull one from NEI into the pattern terminal's
    output); the input can be anything. That marks the slot as a kit slot.
    Each kit slot takes one kit at a time, so add more for kits in
    parallel. Nothing else on the network may make Command Blocks.
+
+   ![A processing pattern with cobblestone as its input and one Command Block as its output](images/kit-placeholder-pattern.png)
+
+   Any input works; the cobblestone and its amount above are just an
+   example. The script replaces the inputs when a kit is requested.
+
+   ![An ME Interface with Command Block processing patterns, a Fake Crafting Card, and the control for hiding it from the Interface Terminal](images/kit-interface-settings.png)
+
+   The example has several kit slots for parallel requests; **one is
+   enough to start**. The arrow marks the visibility control, so the kit
+   patterns needn't clutter your Interface Terminal.
+
 3. Point the interface at an **ME Interface on a separate small network**
    whose **Storage Bus** faces an interface on the main network, so the
    blocks go back into storage. (An interface never pushes into another
    interface on its own network.) Nothing else that holds items may touch
    the kit interface: it pushes into every neighbour that takes them.
+
+   ![An annotated return-path setup showing the main network connection, Storage Bus and ME Interface](images/kit-interface-return-path.png)
+
+   Keep the small return network separate from the main network. The
+   Storage Bus faces the main-network interface to put the kit's blocks
+   back into storage.
+
 4. Put an **Adapter** against the kit interface, cabled to the computer
    running `craft_monitor.lua`.
 
+**Kit slots are reused automatically.** After a job finishes, a later
+request can rewrite that pattern into a different kit. A pattern named
+"Fusion Reactor kit" can therefore become another multiblock's kit: it
+keeps its last kit name until reused. You don't need to reset it to a
+Command Block pattern. Slots are protected while their kit is being
+planned or crafted.
+
 `craft_monitor.lua` looks for kit slots when it starts and every
-[`KIT_SCAN_SECONDS`](#craft_monitorlua), and only ever rewrites a pattern
-that makes a Command Block, or one it already rewrote (named "... kit").
+[`KIT_SCAN_SECONDS`](#craft_monitorlua) (10 minutes by default). It only
+rewrites a processing pattern that makes a Command Block, or one it
+already rewrote (named "... kit"). Ordinary patterns are left alone.
+
 The job's final output never arrives, and the Fake Crafting Card ends the
 job once the blocks are pushed. A job stuck on its last step instead
 means the card is missing, or the interface it faces is on the main

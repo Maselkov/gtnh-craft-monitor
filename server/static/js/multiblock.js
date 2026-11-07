@@ -18,7 +18,7 @@ import { hideLayout, setupLayoutView, showLayout } from './multiblock-view.js';
 import { fetchCraftRequests, showToast } from './craft-actions.js';
 import { nameText } from './description.js';
 import { kitPickerHtml, setupKitPickers } from './kit-picker.js';
-import { delegateActions, escapeHtml, formatQty, iconClass, iconUrl, onBackdropClick, TERMINAL_DOCS_URL, updateHtml } from './util.js';
+import { delegateActions, docsUrl, escapeHtml, formatQty, iconClass, iconUrl, onBackdropClick, TERMINAL_DOCS_URL, updateHtml } from './util.js';
 
 let controllers = null;   // [{key, name, label}] once fetched, for the picker
 let pickers = null;
@@ -38,6 +38,7 @@ let configurationScroll = 0;
 let separate = false;
 // Whether the 3D view is open: it is unless this viewer closed it.
 const VIEW_KEY = 'gtnhCraftMonitor.kitViewClosed';
+const KIT_INTERFACE_DOCS_URL = docsUrl('in-game.md#kit-interface');
 // Whether Request makes one job of the kit.
 function oneJob() {
   return !!(kit && kit.kit_slots > 0) && !separate;
@@ -401,11 +402,15 @@ function updateMode() {
   const input = document.getElementById('kitSeparate');
   input.checked = !oneJob();
   input.disabled = !can;
-  document.getElementById('kitModeLine').textContent = !can
-    ? 'To request a kit as one job, set up a kit interface in the game (see the in-game guide).'
-    : oneJob()
+  const line = document.getElementById('kitModeLine');
+  if (!can) {
+    updateHtml(line, 'No kit slots detected. Materials will be requested separately. '
+      + `<a href="${escapeHtml(KIT_INTERFACE_DOCS_URL)}" target="_blank" rel="noopener">Set up a kit interface</a>`);
+  } else {
+    line.textContent = oneJob()
       ? 'As one job: AE2 plans the blocks together, making what they share once, and puts them in the network when they\'re all done.'
       : 'One craft per block, each in the network as soon as it\'s done.';
+  }
 }
 
 function updateRequestButton() {

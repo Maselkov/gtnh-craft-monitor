@@ -160,7 +160,7 @@ h1 {
 #networkTerminalNote {
   margin-top: 12px;
 }
-.gamedata-note a, #craftPlanNote a, #recipeCheckForHow, #recipeCheckErrorHow {
+.gamedata-note a, #craftPlanNote a, #recipeCheckForHow, #recipeCheckErrorHow, #kitModeLine a {
   color: var(--accent);
 }
 /* auth.js sets body.is-admin. */
