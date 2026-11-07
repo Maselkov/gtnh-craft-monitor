@@ -2832,6 +2832,10 @@ body.oauth-page {
   flex: 1 1 0;
   min-width: 0;
 }
+#itemHistoryKitBtn:not([hidden]) + #itemHistoryCraftBtn {
+  background: var(--border);
+  color: var(--text);
+}
 .kit-box {
   width: min(640px, calc(100vw - 32px));
 }
