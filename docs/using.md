@@ -507,14 +507,14 @@ lists controllers
 stored in the network or available to craft, and refreshes each time you
 open the kit dialog from **Multiblocks**. When opened from an item's
 dialog, the kit is fixed to that multiblock and the picker is hidden;
-its name and icon appear in the header. **How many** stays editable in
-the header for either entry point, wrapping below the name on narrow
-screens. It needs game data built since
+its name and icon appear in the header. **Kits** sets the quantity beside
+the name, aligned with the close button; on narrow screens it wraps below
+the name. It needs game data built since
 kits were added; the button isn't there without it.
 
 After a request is accepted, the page remembers your chosen coils, glass,
 structural sizes and separate-craft setting **for your account and that
-multiblock**, including when you sign in from another browser. **How many**
+multiblock**, including when you sign in from another browser. **Kits**
 always starts at **1**. Each material's Request amount is calculated again
 from the current stock, so a previous shortage isn't requested twice.
 
@@ -524,9 +524,8 @@ they take directly in the material row, beside its counts. The block icon
 stays in the same column as the other materials, with the channel's name
 below the selector. **Length**, **Height** and the like stay above the
 preview. A block setting without a corresponding material row appears
-there too. **How many**,
-beside the multiblock's name, multiplies the kit. The themed menus show
-each block's icon and mark the current selection with a check. Type in
+there too. **Kits**, beside the multiblock's name, multiplies the kit. The
+themed menus show each block's icon and mark the current selection with a check. Type in
 the multiblock picker to search; use the arrow keys and Enter to select,
 or Escape to close a menu without changing your choice.
 
@@ -591,6 +590,9 @@ geometry and textures the game draws them with, the controller's front
 face included, and glass, coils and casings join up with their neighbours
 as they do in the game. Animated textures are still. It's open
 unless you close it with the **3D view** button; the page remembers that.
+The button sits in the **Structure preview** toolbar, which stays visible
+when the preview is collapsed so you can reopen it. Multiblocks without
+a layout have no preview toolbar.
 
 The counts come from building each multiblock in the game when the game data
 is made, the way NEI's multiblock preview does (see

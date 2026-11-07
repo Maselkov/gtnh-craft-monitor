@@ -2468,6 +2468,12 @@ async function main() {
     await waitFor('item kits hide the picker and keep quantity in the header', `!visible($('#kitPicker'))
       && $('#kitPickerSection').hidden && visible($('#kitCount'))
       && $('#kitCount').closest('.kit-header') && document.activeElement === $('#kitCount')`);
+    await waitFor('compact kit header aligns quantity with close', `(() => {
+      const quantity = $('#kitCount').getBoundingClientRect();
+      const close = $('#kitModal .history-close-btn').getBoundingClientRect();
+      return !$('#kitSubtitle') && $('#kitCountControl .kit-control-label').textContent === 'Kits'
+        && quantity.height === close.height && Math.abs(quantity.top - close.top) < 2;
+    })()`);
     // The controller comes first (the builds leave it out), then the
     // coil's row, which the steps below look at.
     await evaluate(`window.coilRow = () => $('#kitChannel-coil')?.closest('.kit-row'), true`);
@@ -2494,6 +2500,11 @@ async function main() {
         && note.top >= mode.bottom;
     })()`);
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
+    await waitFor('mobile quantity wraps below the kit name', `(() => {
+      const title = $('#kitTitle').getBoundingClientRect();
+      const quantity = $('#kitCountControl').getBoundingClientRect();
+      return quantity.top >= title.bottom && $('#kitModal .kit-box').scrollWidth <= $('#kitModal .kit-box').clientWidth;
+    })()`);
     await waitFor('mobile mode and explanation stack above review', `(() => {
       const mode = $('#kitMode').getBoundingClientRect();
       const button = $('#kitReviewBtn').getBoundingClientRect();
@@ -2574,9 +2585,18 @@ async function main() {
       && $('#kitLayerText').textContent === 'All layers'`);
     await evaluate(`(() => { const l = $('#kitLayer'); l.value = l.min; l.dispatchEvent(new Event('input')); return true; })()`);
     await waitFor('bottom layer only', `$('#kitLayerText').textContent === 'Layer 1 of 3'`);
+    await click(`$('#kitViewBtn')`);
+    await waitFor('collapsed preview keeps its attached toolbar', `visible($('#kitPreview')) && !visible($('#kitView'))
+      && visible($('#kitViewBtn')) && $('#kitViewBtn').closest('#kitPreview')
+      && $('#kitPreview .kit-preview-label').textContent === 'Structure preview'
+      && $('#kitViewBtn').getAttribute('aria-pressed') === 'false'`);
     await click(`$('#kitChannel-coil')`);
     await click(`$('#kitChannel-coilList [data-value="1"]')`);
     await waitFor('craftable coils again', `$('#kitChannel-coil').value === 'Iron Ingot' && !$('#kitReviewBtn').disabled`);
+    await waitFor('changing a tier keeps the preview collapsed', `visible($('#kitViewBtn')) && !visible($('#kitView'))`);
+    await click(`$('#kitViewBtn')`);
+    await waitFor('toolbar reopens the configured preview', `visible($('#kitView'))
+      && $('#kitCanvas').dataset.blocks === '3' && $('#kitViewBtn').getAttribute('aria-pressed') === 'true'`);
     await evaluate(`(() => { const b = coilRow().querySelector('.kit-request'); b.value = 400; b.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
     await click(`$('#kitReviewBtn')`);
     await waitFor('review after editing', `visible($('#kitReview #craftPlan')) && !$('#kitRequestBtn').disabled && window.kitSends.length === 0`);

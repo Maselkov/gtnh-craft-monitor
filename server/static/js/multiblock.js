@@ -62,6 +62,7 @@ function updateView() {
   btn.hidden = !has;
   btn.setAttribute('aria-pressed', String(open));
   btn.classList.toggle('active', open);
+  document.getElementById('kitPreview').hidden = !has;
   document.getElementById('kitView').hidden = !open;
   if (open) showLayout(kit.controller.key, kit.channels.reduce((t, c) => ({ ...t, [c.name]: c.tier }), {}));
   else hideLayout();
@@ -145,6 +146,7 @@ export function openKit(key) {
   document.getElementById('kitTitle').textContent = 'Multiblock kit';
   document.getElementById('kitIcon').hidden = true;
   document.getElementById('kitViewBtn').hidden = true;
+  document.getElementById('kitPreview').hidden = true;
   document.getElementById('kitView').hidden = true;
   hideLayout();
   viewDrawn = null;
@@ -346,9 +348,6 @@ function updatePlan() {
   const reviewCount = document.getElementById('kitReviewCount');
   reviewCount.hidden = !reviewing;
   reviewCount.textContent = `${count} kit${count === 1 ? '' : 's'}`;
-  document.getElementById('kitSubtitle').textContent = reviewing
-    ? 'Review the ingredients before starting the craft'
-    : "Every block it's built from, for the parts you pick";
   const note = document.getElementById('kitPlanUnavailable');
   note.hidden = !AUTH_USER || !kit || kit.plan_available;
   if (!note.hidden) {
