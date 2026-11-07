@@ -94,13 +94,18 @@ def available(mod, internal, damage):
     return bool(data and game_key(mod, internal, damage) in data["multiblocks"])
 
 
-def controllers():
-    """[(key, name)] of every multiblock with a kit, by name."""
+def controllers(network_only=False):
+    """[(key, name)] of multiblocks with a kit, optionally in the network."""
     data = _data()
     if not data:
         return []
     names = data.get("names") or {}
-    return sorted(((k, names.get(k) or k) for k in data["multiblocks"]), key=lambda kn: kn[1].lower())
+    keys = data["multiblocks"].keys()
+    if network_only:
+        present = {game_key(*identity) for identity, it in _snapshot().items()
+                   if it.get("size", 0) > 0 or it.get("isCraftable")}
+        keys = keys & present
+    return sorted(((k, names.get(k) or k) for k in keys), key=lambda kn: kn[1].lower())
 
 
 def _channel_options(channel, changes, names):

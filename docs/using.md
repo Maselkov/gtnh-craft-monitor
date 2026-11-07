@@ -487,13 +487,22 @@ To cancel a running job, click **×** on its card in the Crafts tab.
 A kit lists every block a GregTech multiblock is built from: its casings,
 coils, glass, pipes and so on, with how many the network has. Open one with
 **Multiblock kit** in a controller's item dialog, or **Multiblocks** in the
-Network tab to pick any multiblock by name. It needs game data built since
+Network tab to pick a multiblock by name. The dropdown lists controllers
+stored in the network or available to craft, and refreshes each time you
+open the kit dialog. It needs game data built since
 kits were added; the button isn't there without it.
 
 Multiblocks with tiered parts have a picker for each, named after the
 hologram projector's channel for it: **Coil** and **Glass** list the blocks
-they take, and **Length**, **Height** and the like are sizes. **How many**,
-beside the multiblock's name, multiplies the kit.
+they take directly in the material row, beside its counts. The block icon
+stays in the same column as the other materials, with the channel's name
+below the selector. **Length**, **Height** and the like stay above the
+preview. A block setting without a corresponding material row appears
+there too. **How many**,
+beside the multiblock's name, multiplies the kit. The themed menus show
+each block's icon and mark the current selection with a check. Type in
+the multiblock picker to search; use the arrow keys and Enter to select,
+or Escape to close a menu without changing your choice.
 
 - **Need** is the most the multiblock takes. Hatches, buses, mufflers and
   maintenance hatches aren't in the kit, as you pick your own; every spot

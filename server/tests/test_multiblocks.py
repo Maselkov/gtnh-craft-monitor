@@ -126,6 +126,27 @@ def test_item_history_says_which_items_have_a_kit(client, structures):
     assert res.get_json()["multiblock"] is False
 
 
+def test_picker_lists_only_stored_or_craftable_controllers(client, structures):
+    def listed():
+        return client.get("/api/multiblocks?network=1").get_json()["multiblocks"]
+
+    assert listed() == []
+    ebf = {"mod": "gregtech", "internal": "gt.blockmachines", "damage": 1000, "size": 1}
+    assembly = dict(ebf, damage=1170, size=0, isCraftable=True)
+    with state.network_lock:
+        state.network["items"] += [ebf, assembly]
+    assert [m["key"] for m in listed()] == [ASSLINE, EBF]
+
+    # Empty entries, fluids and NBT variants don't provide a plain controller.
+    with state.network_lock:
+        state.network["items"] = [dict(ebf, size=0), dict(assembly, isCraftable=False),
+                                  dict(ebf, kind="fluid"), dict(ebf, variant="named")]
+    assert listed() == []
+    # The full catalog and direct kit links still work without a controller in stock.
+    assert len(client.get("/api/multiblocks").get_json()["multiblocks"]) == 2
+    assert client.get(f"/api/multiblocks/kit?key={EBF}").status_code == 200
+
+
 BATCH = {"requests": [
     {"label": "Kanthal Coil Block", "mod": "gregtech", "internal": "gt.blockcasings5", "damage": 1, "amount": 11},
     {"label": "Heat Proof Machine Casing", "mod": "gregtech", "internal": "gt.blockcasings", "damage": 11, "amount": 16},

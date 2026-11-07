@@ -306,8 +306,9 @@ def network_history_get():
 @bp.route("/api/multiblocks", methods=["GET"])
 @auth.viewer_required
 def multiblocks_get():
-    """Every multiblock with a kit, by name: {multiblocks: [{key, name}]}."""
-    return jsonify({"multiblocks": [{"key": k, "name": n} for k, n in multiblocks.controllers()]})
+    """Kits by name; ?network=1 limits them to stored or craftable controllers."""
+    found = multiblocks.controllers(network_only=request.args.get("network") == "1")
+    return jsonify({"multiblocks": [{"key": k, "name": n, "icon": icons.icon_for_key(k)} for k, n in found]})
 
 
 @bp.route("/api/multiblocks/kit", methods=["GET"])

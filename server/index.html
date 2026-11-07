@@ -396,16 +396,15 @@
         <button class="history-close-btn" data-action="close-kit" title="Close">&times;</button>
       </div>
       <div class="kit-top">
-        <label class="kit-control">
-          <span class="kit-control-label">Multiblock</span>
-          <input id="kitPicker" class="modal-amount-input kit-picker" list="kitPickerList" placeholder="Find a multiblock&hellip;" spellcheck="false" autocomplete="off">
-        </label>
+        <div class="kit-control">
+          <label class="kit-control-label" for="kitPicker">Multiblock</label>
+          <div id="kitPickerControl"></div>
+        </div>
         <label class="kit-control kit-count">
           <span class="kit-control-label">How many</span>
           <input id="kitCount" class="modal-amount-input" type="number" min="1" max="64" value="1">
         </label>
       </div>
-      <datalist id="kitPickerList"></datalist>
       <div id="kitControls" class="kit-controls"></div>
       <div class="kit-view-bar">
         <button class="range-btn" id="kitViewBtn" data-action="kit-view" aria-pressed="false" hidden title="The multiblock as configured, block by block">3D view</button>

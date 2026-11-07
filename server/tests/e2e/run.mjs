@@ -160,7 +160,8 @@ open(out + "/item_info.json", "w").write(json.dumps({
 iron, gold = "minecraft:iron_ingot:0", "minecraft:gold_ingot:0"
 with gzip.open(out + "/structures.json.gz", "wt") as f:
     json.dump({"format": 1, "names": {nt: "Neutronium Ingot", iron: "Iron Ingot", gold: "Gold Ingot"},
-               "multiblocks": {nt: {"channels": [{"name": "coil", "min": 1, "max": 2}], "base": {iron: 1000},
+               "multiblocks": {"minecraft:diamond:0": {"base": {iron: 1}},
+                              nt: {"channels": [{"name": "coil", "min": 1, "max": 2}], "base": {iron: 1000},
                                     "tiers": {"coil": {"1": {}, "2": {iron: -1000, gold: 1000}}}}}}, f)
 # Where its blocks go, for the 3D view: the controller and two iron blocks
 # above it, gold at the second coil tier.
@@ -2361,9 +2362,28 @@ async function main() {
     // pattern. Escape closes the kit before the item dialog under it.
     await waitFor('kit button', `visible($('#itemHistoryKitBtn'))`);
     await click(`$('#itemHistoryKitBtn')`);
+    await waitFor('controller kit loaded', `$('#kitTitle').textContent === 'Neutronium Ingot' && $('#kitChannel-coil')`);
+    await click(`$('#kitPicker')`);
+    await waitFor('picker only lists network controllers with icons', `$$('#kitPickerList [role="option"]').length === 1
+      && $('#kitPickerList .kit-choice-name').textContent === 'Neutronium Ingot'
+      && $('#kitPickerList img') && $('#kitPicker').getAttribute('aria-expanded') === 'true'`);
+    await evaluate(`typeInto('#kitPicker', 'no such multiblock'), true`);
+    await waitFor('picker empty search', `$('#kitPickerList [role="status"]').textContent.includes('No matching')`);
+    await evaluate(`pressKey('Escape', '#kitPicker'), true`);
+    await waitFor('Escape closes only the menu and restores selection', `visible($('#kitModal'))
+      && $('#kitPicker').getAttribute('aria-expanded') === 'false' && $('#kitPicker').value === 'Neutronium Ingot'`);
+    await click(`$('#kitPicker')`);
+    await evaluate(`typeInto('#kitPicker', 'neutronium'), pressKey('ArrowDown', '#kitPicker'), pressKey('Enter', '#kitPicker'), true`);
+    await waitFor('keyboard chooses controller', `$('#kitPicker').getAttribute('aria-expanded') === 'false'
+      && $('#kitPicker').value === 'Neutronium Ingot' && $('#kitPickerControl .kit-choice-current-icon img')`);
     await waitFor('kit', `visible($('#kitModal')) && $('#kitTitle').textContent === 'Neutronium Ingot'
-      && $$('#kitRows .kit-row:not(.kit-head)').length === 1 && $('#kitRows .kit-name').textContent === 'Iron Ingot'
+      && $$('#kitRows .kit-row:not(.kit-head)').length === 1 && $('#kitChannel-coil').value === 'Iron Ingot'
       && $('#kitRows .kit-request')?.value === '0' && $('#kitRequestBtn').textContent === 'Nothing to request'`);
+    await waitFor('coil selector lives beside its counts with one shared-column icon', `!$('#kitControls [data-channel="coil"]')
+      && $('#kitRows .kit-row-configurable > img.kit-icon') && !$('#kitRows .kit-choice-field img')
+      && $('#kitRows .kit-choice-caption').textContent === 'Coil'
+      && $('#kitChannel-coil').closest('.kit-row').querySelector('.kit-num').textContent === '1,000'`);
+    await evaluate(`window.kitCoilInput = $('#kitChannel-coil'), true`);
     await evaluate(`(() => { const c = $('#kitCount'); c.value = '2'; c.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
     await waitFor('kit for two', `$('#kitRows .kit-request')?.value === '766' && $('#kitRequestBtn').textContent === 'Request 1 craft'
       && $('#kitRows .kit-row.kit-short') && $('#kitRows .kit-slider').value === '766' && $('#kitRows .kit-slider').max === '2000'`);
@@ -2376,7 +2396,10 @@ async function main() {
     // With one, the kit is one job unless asked otherwise. Picking the
     // coil tier again fetches the kit again, keeping the amounts.
     await postCrafts(base, true, false, { kit_slots: 1 });
-    await evaluate(`(() => { const s = $('#kitControls select'); s.value = '1'; s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+    await click(`$('#kitChannel-coil')`);
+    await waitFor('themed coils with selected block icon', `$('#kitChannel-coilList [aria-selected="true"] img')
+      && $('#kitChannel-coilList .kit-choice-check').textContent === '✓'`);
+    await click(`$('#kitChannel-coilList [data-value="1"]')`);
     await waitFor('one job', `!$('#kitSeparate').checked && !$('#kitSeparate').disabled
       && $('#kitRequestBtn').textContent === 'Request as one job (1 block)' && $('#kitRows .kit-request').value === '500'
       && $('#kitModeLine').textContent.startsWith('As one job')`);
@@ -2391,9 +2414,13 @@ async function main() {
     await click(`$('#kitPlanBtn')`);
     await waitFor('kit plan', `visible($('#kitModal #craftPlan')) && $('#craftPlanSummary').textContent.includes('steps')
       && $('#kitPlanBtn').textContent === 'Hide the plan'`);
-    await evaluate(`(() => { const s = $('#kitControls select'); s.value = '2'; s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
-    await waitFor('gold coils', `$('#kitRows .kit-name').textContent === 'Gold Ingot' && $('#kitRows .kit-no-pattern')
+    await evaluate(`$('#kitChannel-coil').focus(), pressKey('ArrowDown', '#kitChannel-coil'),
+      pressKey('End', '#kitChannel-coil'), pressKey('Enter', '#kitChannel-coil'), true`);
+    await waitFor('gold coils', `$('#kitChannel-coil').value === 'Gold Ingot' && $('#kitRows .kit-no-pattern')
       && $('#kitRequestBtn').disabled && $('#craftPlanNote').textContent === 'Nothing to request, so nothing to plan.'`);
+    await waitFor('tier swap keeps the focused selector beside updated counts', `$('#kitChannel-coil') === window.kitCoilInput
+      && document.activeElement === $('#kitChannel-coil')
+      && $('#kitChannel-coil').closest('.kit-row').querySelector('.kit-num').textContent === '2,000'`);
     // The 3D view, open from the start (three.js, loaded as it opens):
     // the controller and the two blocks above it.
     await waitFor('3D view drawn', `visible($('#kitView')) && visible($('#kitViewBtn'))

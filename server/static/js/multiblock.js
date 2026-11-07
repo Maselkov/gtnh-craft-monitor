@@ -17,9 +17,13 @@ import { closeCraftPlan, kitPlanOpen, openKitPlan } from './craft-plan.js';
 import { hideLayout, setupLayoutView, showLayout } from './multiblock-view.js';
 import { fetchCraftRequests, showToast } from './craft-actions.js';
 import { nameText } from './description.js';
+import { kitPickerHtml, setupKitPickers } from './kit-picker.js';
 import { delegateActions, escapeHtml, formatQty, iconClass, iconUrl, onBackdropClick, updateHtml } from './util.js';
 
 let controllers = null;   // [{key, name, label}] once fetched, for the picker
+let pickers = null;
+let controllerPicker = null;
+let controllerSeq = 0;
 let openKey = null;       // the controller shown, null when closed
 let kit = null;           // its last fetched kit
 let tiers = {};           // channel -> tier picked
@@ -80,23 +84,31 @@ function channelLabel(name) {
 // The picker's entries. A few multiblocks share a name (GregTech's and
 // GT++'s Pyrolyse Oven): those are told apart by their id.
 async function loadControllers() {
-  if (controllers) return controllers;
+  const seq = ++controllerSeq;
+  // A controller can enter or leave the network between opens.
+  controllers = [];
+  controllerPicker.setOptions([], 'Loading multiblocks…');
   let list;
   try {
-    const res = await fetch('/api/multiblocks');
-    if (!res.ok) return [];  // signed out of a private server: try again later
+    const res = await fetch('/api/multiblocks?network=1');
+    if (!res.ok) throw new Error(String(res.status));
     list = (await res.json()).multiblocks || [];
   } catch (e) {
+    if (seq === controllerSeq) controllerPicker.setOptions([], 'Could not load multiblocks. Reopen the dialog to retry.');
     return [];
   }
+  if (seq !== controllerSeq) return [];
   const seen = new Map();
   for (const c of list) seen.set(nameText(c.name), (seen.get(nameText(c.name)) || 0) + 1);
   controllers = list.map(c => {
     const name = nameText(c.name);
     return { ...c, label: seen.get(name) > 1 ? `${name} (${c.key.split(':').pop()})` : name };
   });
-  document.getElementById('kitPickerList').innerHTML = controllers
-    .map(c => `<option value="${escapeHtml(c.label)}"></option>`).join('');
+  controllerPicker.setOptions(controllers.map(c => ({ value: c.key, label: c.label, icon: c.icon })),
+    'No matching multiblocks in the network.');
+  if (kit) controllerPicker.setValue(kit.controller.key, {
+    value: kit.controller.key, label: nameText(kit.controller.name), icon: kit.controller.icon,
+  });
   return controllers;
 }
 
@@ -107,8 +119,12 @@ function labelOf(key) {
 
 // The Network tab's button, only where the game data has kits.
 export async function showKitButton() {
-  const list = await loadControllers();
-  document.getElementById('networkKitButton').hidden = list.length === 0;
+  try {
+    const res = await fetch('/api/multiblocks');
+    if (!res.ok) return;
+    const list = (await res.json()).multiblocks || [];
+    document.getElementById('networkKitButton').hidden = list.length === 0;
+  } catch (e) { /* try again after signing in */ }
 }
 
 // key: the controller's game data key (mod:internal:damage), or null to
@@ -119,7 +135,8 @@ export function openKit(key) {
   tiers = {};
   count = 1;
   edits = new Map();
-  document.getElementById('kitPicker').value = '';
+  pickers.close();
+  controllerPicker.setValue(null);
   document.getElementById('kitCount').value = '1';
   document.getElementById('kitControls').innerHTML = '';
   document.getElementById('kitRows').innerHTML = '';
@@ -144,6 +161,9 @@ export function openKit(key) {
 }
 
 export function closeKit() {
+  pickers.close();
+  ++controllerSeq;
+  ++fetchSeq;
   document.getElementById('kitModal').style.display = 'none';
   hideLayout();
   viewDrawn = null;
@@ -180,7 +200,9 @@ async function fetchKit() {
       errorEl.hidden = false;
       return;
     }
-    kit = await res.json();
+    const result = await res.json();
+    if (seq !== fetchSeq) return;
+    kit = result;
     errorEl.hidden = true;
     renderKit();
     renderView();
@@ -198,6 +220,25 @@ function requestOf(row) {
   return row.craftable ? Math.max(0, row.need - row.have) : 0;
 }
 
+// Some channels have no material at the selected tier. Keep those above
+// the preview, along with size channels, so every setting stays reachable.
+export function inlineChannelRows(channels, rows) {
+  const keys = new Set(rows.map(r => r.key));
+  return new Map(channels.flatMap(ch => {
+    const key = ch.kind === 'block' && ch.options.find(o => o.tier === ch.tier)?.key;
+    return key && keys.has(key) ? [[ch.name, key]] : [];
+  }));
+}
+
+function channelHtml(ch, inline) {
+  const label = channelLabel(ch.name), id = 'kitChannel-' + ch.name;
+  const picker = `<div class="kit-choice${inline ? ' kit-choice-inline' : ''}"
+    data-key="channel-${escapeHtml(ch.name)}" data-channel="${escapeHtml(ch.name)}">
+    ${kitPickerHtml({ id, label, inline })}</div>`;
+  return inline ? picker : `<div class="kit-control" data-key="control-${escapeHtml(ch.name)}">
+    <label class="kit-control-label" for="${escapeHtml(id)}">${escapeHtml(label)}</label>${picker}</div>`;
+}
+
 function renderKit() {
   const c = kit.controller;
   document.getElementById('kitTitle').textContent = nameText(c.name);
@@ -209,19 +250,12 @@ function renderKit() {
   } else {
     iconEl.hidden = true;
   }
-  const picker = document.getElementById('kitPicker');
-  if (document.activeElement !== picker) picker.value = labelOf(c.key) || nameText(c.name);
+  controllerPicker.setValue(c.key, { value: c.key, label: labelOf(c.key) || nameText(c.name), icon: c.icon });
 
-  const controls = kit.channels.map(ch => {
-    const options = ch.options.map(o =>
-      `<option value="${o.tier}"${o.tier === ch.tier ? ' selected' : ''}>${escapeHtml(nameText(o.label))}</option>`,
-    ).join('');
-    return `<label class="kit-control" data-key="channel-${escapeHtml(ch.name)}">
-      <span class="kit-control-label">${escapeHtml(channelLabel(ch.name))}</span>
-      <select class="modal-amount-input kit-select" data-channel="${escapeHtml(ch.name)}">${options}</select>
-    </label>`;
-  }).join('');
-  updateHtml(document.getElementById('kitControls'), controls);
+  const inlineRows = inlineChannelRows(kit.channels, kit.rows);
+  const controlsRoot = document.getElementById('kitControls');
+  pickers.close(controlsRoot);
+  updateHtml(controlsRoot, kit.channels.filter(ch => !inlineRows.has(ch.name)).map(ch => channelHtml(ch, false)).join(''));
 
   const operator = isOperator();
   const head = `<div class="kit-row kit-head" data-key="head">
@@ -229,6 +263,7 @@ function renderKit() {
       ${operator ? '<span class="kit-num">Request</span>' : ''}
     </div>`;
   const rows = kit.rows.map(r => {
+    const channels = kit.channels.filter(ch => inlineRows.get(ch.name) === r.key);
     const icon = r.icon
       ? `<img class="${iconClass('kit-icon', r.icon)}" src="${escapeHtml(iconUrl(r.icon))}" alt="">`
       : '<span class="kit-icon"></span>';
@@ -243,16 +278,31 @@ function renderKit() {
     const slider = operator && r.craftable
       ? `<input class="kit-slider" type="range" min="0" max="${r.need}" step="1" data-row="${escapeHtml(r.key)}" value="${Math.min(requestOf(r), r.need)}" aria-label="Request ${escapeHtml(nameText(r.name))}">`
       : '';
-    return `<div class="kit-row${short ? ' kit-short' : ''}" data-key="${escapeHtml(r.key)}">
-      ${icon}<span class="kit-name">${escapeHtml(nameText(r.name))}</span>
+    const name = channels.length
+      ? `<div class="kit-name-cell">${channels.map(ch => channelHtml(ch, true)).join('')}</div>`
+      : `<span class="kit-name">${escapeHtml(nameText(r.name))}</span>`;
+    // Keep a configurable row's identity when a new tier swaps its block.
+    const rowKey = channels.length ? 'channels:' + JSON.stringify(channels.map(ch => ch.name)) : r.key;
+    return `<div class="kit-row${short ? ' kit-short' : ''}${channels.length ? ' kit-row-configurable' : ''}" data-key="${escapeHtml(rowKey)}">
+      ${icon}${name}
       <span class="kit-num">${r.need.toLocaleString()}</span>
       <span class="kit-num kit-have">${formatQty(r.have)}</span>
       ${request}${slider}
     </div>`;
   }).join('');
   const rowsEl = document.getElementById('kitRows');
+  pickers.close(rowsEl);
   rowsEl.classList.toggle('kit-rows-operator', operator);
   updateHtml(rowsEl, head + rows);
+  document.querySelectorAll('#kitControls [data-channel], #kitRows [data-channel]').forEach(root => {
+    const ch = kit.channels.find(c => c.name === root.dataset.channel);
+    const picker = pickers.mount(root, {
+      id: 'kitChannel-' + ch.name, label: channelLabel(ch.name), inline: inlineRows.has(ch.name),
+      onSelect: value => { tiers[ch.name] = Number(value); fetchKit(); },
+    });
+    picker.setOptions(ch.options.map(o => ({ value: String(o.tier), label: nameText(o.label), icon: o.icon })));
+    picker.setValue(String(ch.tier));
+  });
   updateRequestButton();
 }
 
@@ -371,6 +421,10 @@ async function submitKit() {
 }
 
 export function setupKitActions() {
+  pickers = setupKitPickers(document.getElementById('kitModal'));
+  controllerPicker = pickers.mount(document.getElementById('kitPickerControl'), {
+    id: 'kitPicker', label: 'Multiblock', searchable: true, onSelect: selectController,
+  });
   delegateActions(document.getElementById('kitModal'), {
     'close-kit': () => closeKit(),
     'kit-request': () => submitKit(),
@@ -394,17 +448,6 @@ export function setupKitActions() {
   document.getElementById('kitSeparate').addEventListener('change', (e) => {
     setSeparateWanted(e.target.checked);
     updateRequestButton();
-  });
-  document.getElementById('kitPicker').addEventListener('change', (e) => {
-    const label = e.target.value.trim().toLowerCase();
-    const found = (controllers || []).find(c => c.label.toLowerCase() === label);
-    if (found) selectController(found.key);
-  });
-  document.getElementById('kitControls').addEventListener('change', (e) => {
-    if (e.target.dataset.channel) {
-      tiers[e.target.dataset.channel] = Number(e.target.value);
-      fetchKit();
-    }
   });
   document.getElementById('kitCount').addEventListener('change', (e) => {
     const n = Math.max(1, Math.min(64, Math.round(Number(e.target.value)) || 1));

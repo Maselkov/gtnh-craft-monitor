@@ -2851,6 +2851,115 @@ body.oauth-page {
   color: var(--muted);
   margin-bottom: 4px;
 }
+.kit-choice {
+  position: relative;
+  margin-bottom: 12px;
+  min-width: 0;
+}
+.kit-choice:has(.kit-choice-menu:not([hidden])) {
+  z-index: 5;
+}
+.kit-choice-field {
+  display: flex;
+  align-items: center;
+  background: var(--bg);
+  border: 1px solid var(--border-mid);
+  border-radius: 8px;
+  min-height: 38px;
+}
+.kit-choice-field:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.kit-choice-input {
+  width: 100%;
+  min-width: 0;
+  padding: 9px 34px 9px 12px;
+  border: 0;
+  background: transparent;
+  outline: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  text-overflow: ellipsis;
+}
+.kit-choice-input[readonly] { cursor: pointer; }
+.kit-choice-input::placeholder { color: var(--muted); }
+.kit-choice-current-icon {
+  display: none;
+  align-items: center;
+  margin-left: 10px;
+  pointer-events: none;
+}
+.kit-choice.has-icon .kit-choice-current-icon { display: flex; }
+.kit-choice.has-icon .kit-choice-input { padding-left: 9px; }
+.kit-choice-chevron {
+  position: absolute;
+  right: 14px;
+  top: 14px;
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid var(--muted);
+  border-bottom: 1.5px solid var(--muted);
+  transform: rotate(45deg);
+  pointer-events: none;
+}
+.kit-choice-menu {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 0;
+  right: 0;
+  padding: 4px;
+  background: var(--card);
+  border: 1px solid var(--border-stronger);
+  border-radius: 9px;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--text) 15%, transparent);
+}
+.kit-choice-menu.above { top: auto; bottom: calc(100% + 5px); }
+.kit-choice-options {
+  max-height: 260px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-stronger) transparent;
+}
+.kit-choice-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding: 7px 9px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+}
+.kit-choice-option[aria-selected="true"] {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.kit-choice-option.active,
+.kit-choice-option:hover {
+  background: color-mix(in srgb, var(--accent) 23%, transparent);
+}
+.kit-choice-icon {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  flex-shrink: 0;
+  image-rendering: pixelated;
+}
+.kit-choice-placeholder {
+  border: 1px dashed var(--border-strong);
+  border-radius: 4px;
+}
+.kit-choice-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.kit-choice-check { width: 16px; color: var(--accent); font-weight: 700; }
+.kit-choice-empty,
+.kit-choice-footer {
+  padding: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.kit-choice-footer { border-top: 1px solid var(--border); margin-top: 4px; }
 .kit-rows {
   display: flex;
   flex-direction: column;
@@ -2885,6 +2994,35 @@ body.oauth-page {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.kit-name-cell { min-width: 0; }
+.kit-choice-inline { margin: 0; }
+.kit-choice-inline + .kit-choice-inline { margin-top: 4px; }
+.kit-choice-inline .kit-choice-field {
+  display: grid;
+  min-height: 0;
+  margin-left: -7px;
+  background: transparent;
+  border-color: var(--border-faint);
+}
+.kit-choice-inline .kit-choice-field:hover { border-color: var(--border-stronger); }
+.kit-choice-inline .kit-choice-field:focus-within { border-color: var(--accent); }
+.kit-choice-inline .kit-choice-input {
+  padding: 6px 28px 1px 6px;
+  font-size: 13px;
+  line-height: 18px;
+}
+.kit-choice-caption {
+  padding: 0 6px 4px;
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.kit-choice-inline .kit-choice-chevron { top: 12px; right: 12px; }
+.kit-choice-inline .kit-choice-menu { left: -7px; }
+.kit-row-configurable > .kit-icon { align-self: start; margin-top: 4px; }
+.kit-row-configurable > .kit-num { align-self: start; padding-top: 8px; }
+.kit-row-configurable > .kit-request { align-self: start; margin-top: 1px; }
 .kit-num {
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -2908,11 +3046,11 @@ body.oauth-page {
   margin: 0 0 12px;
 }
 @media (max-width: 520px) {
-  .kit-row,
-  .kit-rows-operator .kit-row {
-    grid-template-columns: 24px minmax(0, 1fr) 52px 72px;
+  .kit-row {
+    grid-template-columns: 24px minmax(0, 1fr) 52px;
     gap: 8px;
   }
+  .kit-rows-operator .kit-row { grid-template-columns: 24px minmax(0, 1fr) 52px 72px; }
   .kit-head span:nth-child(4),
   .kit-have {
     display: none;
