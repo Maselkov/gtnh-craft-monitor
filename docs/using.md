@@ -511,7 +511,8 @@ buttons: the blue kit button requests the structure's blocks, while the
 gray Request Craft button requests the controller itself. The dropdown
 lists controllers
 stored in the network or available to craft, and refreshes each time you
-open the kit dialog from **Multiblocks**. When opened from an item's
+open the kit dialog from **Multiblocks**. The searchable picker sits
+directly above the preview and materials. When opened from an item's
 dialog, the kit is fixed to that multiblock and the picker is hidden;
 its name and icon appear in the header. The quantity input beside
 **Review & request** multiplies the kit: **2 ×** means two multiblocks.

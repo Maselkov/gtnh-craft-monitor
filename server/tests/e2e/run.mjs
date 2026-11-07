@@ -2680,7 +2680,14 @@ async function main() {
     await waitFor('network kit choices loaded', `$('#kitPickerList [role="option"]')`);
     await click(`$('#kitPickerList [role="option"]')`);
     await waitFor('network kit selected', `$('#kitTitle').textContent === 'Neutronium Ingot' && $('#kitChannel-coil')`);
+    await waitFor('searchable picker stays compact above the kit', `(() => {
+      const picker = $('#kitPickerControl .kit-choice-field').getBoundingClientRect();
+      const body = $('#kitConfiguration .kit-body').getBoundingClientRect();
+      return body.top >= picker.bottom && body.top - picker.bottom <= 16;
+    })()`);
+    await evaluate(`window.kitViewportChanged = new Promise(resolve => window.addEventListener('resize', () => resolve(true), { once: true })), true`);
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 600, deviceScaleFactor: 1, mobile: false });
+    await evaluate(`window.kitViewportChanged`);
     await waitFor('short desktop keeps the picker, materials and actions inside the dialog', `(() => {
       const content = $('#kitConfiguration').getBoundingClientRect();
       const materials = $('#kitMaterials').getBoundingClientRect();
@@ -2689,7 +2696,10 @@ async function main() {
       return materials.bottom <= content.bottom + 1 && preview.bottom <= content.bottom + 1
         && quantity.bottom <= innerHeight && visible($('#kitPicker'));
     })()`);
+    // Resize events close anchored menus; wait for each resize before opening one.
+    await evaluate(`window.kitViewportChanged = new Promise(resolve => window.addEventListener('resize', () => resolve(true), { once: true })), true`);
     await cdp.send('Emulation.clearDeviceMetricsOverride');
+    await evaluate(`window.kitViewportChanged`);
     await click(`$('#kitPicker')`);
     await waitFor('picker only lists network controllers with icons', `$$('#kitPickerList [role="option"]').length === 1
       && $('#kitPickerList .kit-choice-name').textContent === 'Neutronium Ingot'

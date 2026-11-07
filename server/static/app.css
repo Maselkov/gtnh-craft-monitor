@@ -2864,7 +2864,8 @@ body.oauth-page {
 }
 .kit-header, .kit-actions, #kitError { flex-shrink: 0; }
 #kitConfiguration { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
-#kitPickerSection, .kit-controls { flex-shrink: 0; }
+#kitPickerSection { flex: 0 0 auto; }
+.kit-controls { flex-shrink: 0; }
 .kit-body {
   flex: 1 1 auto;
   display: grid;
