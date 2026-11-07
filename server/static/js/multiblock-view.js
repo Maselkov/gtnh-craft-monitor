@@ -70,10 +70,10 @@ function makeView() {
 
 function resize(v) {
   const box = v.canvas.parentElement.getBoundingClientRect();
-  if (!box.width) return;
-  const height = Math.round(Math.min(420, Math.max(240, box.width * 0.6)));
-  v.renderer.setSize(box.width, height, true);
-  v.camera.aspect = box.width / height;
+  const width = Math.round(box.width), height = Math.round(box.height);
+  if (!width || !height) return;
+  v.renderer.setSize(width, height, false);
+  v.camera.aspect = width / height;
   v.camera.updateProjectionMatrix();
   draw();
 }
@@ -83,10 +83,13 @@ function draw() {
   const { camera } = view;
   const [tx, ty, tz] = orbit.target;
   const cos = Math.cos(orbit.pitch);
+  // A tall preview has a narrower horizontal field of view. Preserve
+  // the user's zoom while fitting the same model across its width.
+  const distance = orbit.distance / Math.min(1, camera.aspect);
   camera.position.set(
-    tx + orbit.distance * cos * Math.sin(orbit.yaw),
-    ty + orbit.distance * Math.sin(orbit.pitch),
-    tz + orbit.distance * cos * Math.cos(orbit.yaw),
+    tx + distance * cos * Math.sin(orbit.yaw),
+    ty + distance * Math.sin(orbit.pitch),
+    tz + distance * cos * Math.cos(orbit.yaw),
   );
   camera.lookAt(tx, ty, tz);
   view.renderer.render(view.scene, camera);
@@ -334,7 +337,9 @@ export async function showLayout(key, tiers) {
   slider.min = String(min[1]);
   slider.max = String(max[1]);
   if (!same) {
-    orbit = { yaw: Math.PI / 4, pitch: 0.55, distance: radius * 2.6, target: center };
+    // Fit the enclosing sphere, with a small margin for its outer blocks.
+    const distance = radius / Math.sin(view.camera.fov * Math.PI / 360) * 1.05;
+    orbit = { yaw: Math.PI / 4, pitch: 0.55, distance, target: center };
     layer = Infinity;
   } else {
     orbit.target = center;

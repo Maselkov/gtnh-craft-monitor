@@ -2465,14 +2465,17 @@ async function main() {
     await waitFor('kit button', `visible($('#itemHistoryKitBtn'))`);
     await click(`$('#itemHistoryKitBtn')`);
     await waitFor('controller kit loaded', `$('#kitTitle').textContent === 'Neutronium Ingot' && $('#kitChannel-coil')`);
-    await waitFor('item kits hide the picker and keep quantity in the header', `!visible($('#kitPicker'))
+    await waitFor('item kits hide the picker and keep quantity beside the action', `!visible($('#kitPicker'))
       && $('#kitPickerSection').hidden && visible($('#kitCount'))
-      && $('#kitCount').closest('.kit-header') && document.activeElement === $('#kitCount')`);
-    await waitFor('compact kit header aligns quantity with close', `(() => {
+      && $('#kitCount').closest('.kit-actions') && document.activeElement === $('#kitCount')`);
+    await waitFor('kit quantity aligns with review beside the desktop preview', `(() => {
       const quantity = $('#kitCount').getBoundingClientRect();
-      const close = $('#kitModal .history-close-btn').getBoundingClientRect();
-      return !$('#kitSubtitle') && $('#kitCountControl .kit-control-label').textContent === 'Kits'
-        && quantity.height === close.height && Math.abs(quantity.top - close.top) < 2;
+      const button = $('#kitReviewBtn').getBoundingClientRect();
+      const preview = $('#kitPreview').getBoundingClientRect();
+      const materials = $('#kitMaterials').getBoundingClientRect();
+      return !$('#kitSubtitle') && !$('#kitModal .kit-note') && !visible($('#kitViewBtn'))
+        && preview.right <= materials.left && quantity.height === button.height
+        && Math.abs(quantity.top - button.top) < 1 && quantity.right < button.left;
     })()`);
     // The controller comes first (the builds leave it out), then the
     // coil's row, which the steps below look at.
@@ -2487,10 +2490,48 @@ async function main() {
       && $('#kitRows .kit-choice-caption').textContent === 'Coil'
       && $('#kitChannel-coil').closest('.kit-row').querySelector('.kit-num').textContent === '1,000'`);
     await evaluate(`window.kitCoilInput = $('#kitChannel-coil'), true`);
+    await evaluate(`window.kitHeightBeforeQuantity = $('.kit-viewport').getBoundingClientRect().height, true`);
     await evaluate(`(() => { const c = $('#kitCount'); c.value = '2'; c.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
     await waitFor('kit for two', `coilRow().querySelector('.kit-request')?.value === '766' && $('#kitReviewBtn').textContent === 'Review & request'
       && coilRow().classList.contains('kit-short') && coilRow().querySelector('.kit-slider').value === '766'
-      && coilRow().querySelector('.kit-slider').max === '2000'`);
+      && coilRow().querySelector('.kit-slider').max === '2000'
+      && $('.kit-viewport').getBoundingClientRect().height === window.kitHeightBeforeQuantity`);
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false });
+    await evaluate(`(() => {
+      window.shortKitPreviewHeight = $('.kit-viewport').getBoundingClientRect().height;
+      const sample = $('#kitRows .kit-row:not(.kit-head)');
+      for (let i = 0; i < 12; i++) {
+        const row = sample.cloneNode(true);
+        row.removeAttribute('data-key');
+        row.dataset.extraMaterial = 'true';
+        $('#kitRows').append(row);
+      }
+      return true;
+    })()`);
+    await waitFor('long material lists grow the preview within a limit and keep actions visible', `(() => {
+      const height = $('.kit-viewport').getBoundingClientRect().height;
+      const materials = $('#kitMaterials');
+      const action = $('#kitReviewBtn').getBoundingClientRect();
+      const box = $('#kitModal .kit-box').getBoundingClientRect();
+      const preview = $('#kitPreview').getBoundingClientRect();
+      return height > window.shortKitPreviewHeight && height <= 361
+        && materials.scrollHeight > materials.clientHeight && action.bottom <= innerHeight
+        && preview.right <= materials.getBoundingClientRect().left
+        && box.top >= 0 && box.bottom <= innerHeight;
+    })()`);
+    await click(`$('#kitChannel-coil')`);
+    await waitFor('material dropdown is above the scrolling pane', `(() => {
+      const list = $('#kitChannel-coilList');
+      const option = list.querySelector('[role="option"]:last-child');
+      const r = option?.getBoundingClientRect();
+      return list.closest('[popover]').matches(':popover-open') && r
+        && document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.closest('[role="option"]') === option;
+    })()`);
+    await evaluate(`$('#kitMaterials').scrollTop = 30, true`);
+    await waitFor('scrolling materials closes the anchored menu', `$('#kitChannel-coil').getAttribute('aria-expanded') === 'false'`);
+    await evaluate(`$$('[data-extra-material]').forEach(row => row.remove()), $('#kitMaterials').scrollTop = 0, true`);
+    await cdp.send('Emulation.clearDeviceMetricsOverride');
+    await waitFor('preview returns to its normal height', `Math.abs($('.kit-viewport').getBoundingClientRect().height - window.shortKitPreviewHeight) < 1`);
     await waitFor('material mode sits beside review with its explanation underneath', `(() => {
       const mode = $('#kitMode label').getBoundingClientRect();
       const button = $('#kitReviewBtn').getBoundingClientRect();
@@ -2500,15 +2541,16 @@ async function main() {
         && note.top >= mode.bottom;
     })()`);
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
-    await waitFor('mobile quantity wraps below the kit name', `(() => {
-      const title = $('#kitTitle').getBoundingClientRect();
-      const quantity = $('#kitCountControl').getBoundingClientRect();
-      return quantity.top >= title.bottom && $('#kitModal .kit-box').scrollWidth <= $('#kitModal .kit-box').clientWidth;
-    })()`);
-    await waitFor('mobile mode and explanation stack above review', `(() => {
-      const mode = $('#kitMode').getBoundingClientRect();
+    await waitFor('mobile quantity and review remain aligned below scrolling content', `(() => {
+      const quantity = $('#kitCount').getBoundingClientRect();
       const button = $('#kitReviewBtn').getBoundingClientRect();
-      return mode.bottom <= button.top && button.width > 250
+      const body = $('#kitConfiguration').getBoundingClientRect();
+      const preview = $('#kitPreview').getBoundingClientRect();
+      const materials = $('#kitMaterials').getBoundingClientRect();
+      return visible($('#kitViewBtn')) && preview.bottom <= materials.top
+        && quantity.height === button.height && Math.abs(quantity.top - button.top) < 1
+        && body.bottom <= quantity.top && button.bottom <= innerHeight
+        && quantity.right < button.left && button.width > 180
         && $('#kitModal .kit-box').scrollWidth <= $('#kitModal .kit-box').clientWidth;
     })()`);
     await cdp.send('Emulation.clearDeviceMetricsOverride');
@@ -2580,11 +2622,12 @@ async function main() {
       && $('#kitChannel-coil').closest('.kit-row').querySelector('.kit-num').textContent === '2,000'`);
     // The 3D view, open from the start (three.js, loaded as it opens):
     // the controller and the two blocks above it.
-    await waitFor('3D view drawn', `visible($('#kitView')) && visible($('#kitViewBtn'))
+    await waitFor('3D view drawn', `visible($('#kitView')) && !visible($('#kitViewBtn'))
       && $('#kitViewBtn').getAttribute('aria-pressed') === 'true' && $('#kitCanvas').dataset.blocks === '3'
       && $('#kitLayerText').textContent === 'All layers'`);
     await evaluate(`(() => { const l = $('#kitLayer'); l.value = l.min; l.dispatchEvent(new Event('input')); return true; })()`);
     await waitFor('bottom layer only', `$('#kitLayerText').textContent === 'Layer 1 of 3'`);
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
     await click(`$('#kitViewBtn')`);
     await waitFor('collapsed preview keeps its attached toolbar', `visible($('#kitPreview')) && !visible($('#kitView'))
       && visible($('#kitViewBtn')) && $('#kitViewBtn').closest('#kitPreview')
@@ -2594,9 +2637,15 @@ async function main() {
     await click(`$('#kitChannel-coilList [data-value="1"]')`);
     await waitFor('craftable coils again', `$('#kitChannel-coil').value === 'Iron Ingot' && !$('#kitReviewBtn').disabled`);
     await waitFor('changing a tier keeps the preview collapsed', `visible($('#kitViewBtn')) && !visible($('#kitView'))`);
+    await cdp.send('Emulation.clearDeviceMetricsOverride');
+    await waitFor('desktop forces the preview open without changing the mobile preference', `visible($('#kitView'))
+      && !visible($('#kitViewBtn')) && localStorage.getItem('gtnhCraftMonitor.kitViewClosed') === '1'`);
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
+    await waitFor('stacked layout restores its collapsed preference', `visible($('#kitViewBtn')) && !visible($('#kitView'))`);
     await click(`$('#kitViewBtn')`);
     await waitFor('toolbar reopens the configured preview', `visible($('#kitView'))
       && $('#kitCanvas').dataset.blocks === '3' && $('#kitViewBtn').getAttribute('aria-pressed') === 'true'`);
+    await cdp.send('Emulation.clearDeviceMetricsOverride');
     await evaluate(`(() => { const b = coilRow().querySelector('.kit-request'); b.value = 400; b.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
     await click(`$('#kitReviewBtn')`);
     await waitFor('review after editing', `visible($('#kitReview #craftPlan')) && !$('#kitRequestBtn').disabled && window.kitSends.length === 0`);
@@ -2622,15 +2671,25 @@ async function main() {
     await evaluate(`pressKey('Escape'), true`);
     await waitFor('dialog closed again', `!visible($('#itemHistoryModal'))`);
     // The Network entry point keeps the picker available, including
-    // after a controller is selected; quantity lives in the same header.
+    // after a controller is selected; quantity stays beside the request action.
     await click(`$('#networkKitButton [data-action="open-kit"]')`);
     await waitFor('network kits keep the searchable picker', `visible($('#kitPicker'))
       && !$('#kitPickerSection').hidden && $('#kitCount').value === '1'
-      && $('#kitCount').closest('.kit-header')`);
+      && $('#kitCount').closest('.kit-actions')`);
     await click(`$('#kitPicker')`);
     await waitFor('network kit choices loaded', `$('#kitPickerList [role="option"]')`);
     await click(`$('#kitPickerList [role="option"]')`);
     await waitFor('network kit selected', `$('#kitTitle').textContent === 'Neutronium Ingot' && $('#kitChannel-coil')`);
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 600, deviceScaleFactor: 1, mobile: false });
+    await waitFor('short desktop keeps the picker, materials and actions inside the dialog', `(() => {
+      const content = $('#kitConfiguration').getBoundingClientRect();
+      const materials = $('#kitMaterials').getBoundingClientRect();
+      const preview = $('#kitPreview').getBoundingClientRect();
+      const quantity = $('#kitCount').getBoundingClientRect();
+      return materials.bottom <= content.bottom + 1 && preview.bottom <= content.bottom + 1
+        && quantity.bottom <= innerHeight && visible($('#kitPicker'));
+    })()`);
+    await cdp.send('Emulation.clearDeviceMetricsOverride');
     await click(`$('#kitPicker')`);
     await waitFor('picker only lists network controllers with icons', `$$('#kitPickerList [role="option"]').length === 1
       && $('#kitPickerList .kit-choice-name').textContent === 'Neutronium Ingot'

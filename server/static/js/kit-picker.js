@@ -20,7 +20,7 @@ export function kitPickerHtml({ id, label, searchable = false, inline = false })
     <span class="kit-choice-chevron" aria-hidden="true"></span>
     ${inline ? `<label class="kit-choice-caption" for="${safeId}">${escapeHtml(label)}</label>` : ''}
   </div>
-  <div class="kit-choice-menu" hidden>
+  <div class="kit-choice-menu" popover="manual" hidden>
     <div id="${safeId}List" class="kit-choice-options" role="listbox" aria-label="${escapeHtml(label)}"></div>
     ${searchable ? '<div class="kit-choice-footer">Controllers in your network</div>' : ''}
   </div>`;
@@ -54,6 +54,12 @@ export function setupKitPickers(container) {
     const picker = pickers.get(e.target.closest('.kit-choice'));
     if (picker) picker.keydown(e);
   });
+  // The menus sit above the scrolling materials pane. Close them if
+  // their anchor moves, while allowing the options themselves to scroll.
+  container.addEventListener('scroll', (e) => {
+    if (opened && !opened.menu.contains(e.target)) close();
+  }, true);
+  window.addEventListener('resize', () => close());
 
   function mount(root, { id, label, searchable = false, inline = false, onSelect }) {
     if (pickers.has(root)) return pickers.get(root);
@@ -97,6 +103,7 @@ export function setupKitPickers(container) {
 
     const picker = {
       root,
+      menu,
       setOptions(items, message = 'No matching multiblocks.') {
         options = items;
         empty = message;
@@ -108,6 +115,7 @@ export function setupKitPickers(container) {
         else render();
       },
       close() {
+        menu.hidePopover?.();
         menu.hidden = true;
         input.setAttribute('aria-expanded', 'false');
         input.removeAttribute('aria-activedescendant');
@@ -119,14 +127,19 @@ export function setupKitPickers(container) {
         opened = picker;
         query = '';
         menu.hidden = false;
+        menu.showPopover?.();
         input.setAttribute('aria-expanded', 'true');
-        render();
         // Keep the popup inside the viewport when the dialog is scrolled.
-        const box = input.getBoundingClientRect();
+        const box = root.querySelector('.kit-choice-field').getBoundingClientRect();
         const above = box.top, below = window.innerHeight - box.bottom;
         const upward = below < 220 && above > below;
-        menu.classList.toggle('above', upward);
+        const width = Math.min(Math.max(240, box.width), window.innerWidth - 32);
+        menu.style.width = width + 'px';
+        menu.style.left = Math.max(16, Math.min(box.left, window.innerWidth - width - 16)) + 'px';
+        menu.style.top = upward ? 'auto' : (box.bottom + 5) + 'px';
+        menu.style.bottom = upward ? (window.innerHeight - box.top + 5) + 'px' : 'auto';
         list.style.maxHeight = Math.max(80, Math.min(260, (upward ? above : below) - 48)) + 'px';
+        render();
       },
       toggle() {
         if (!searchable && opened === picker) close();

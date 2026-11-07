@@ -35,6 +35,8 @@ let planStatus = 'idle';
 let kitReady = false;
 let submitting = false;
 let configurationScroll = 0;
+let materialsScroll = 0;
+let stackedLayout = null;
 let separate = false;
 // Whether the 3D view is open: it is unless this viewer closed it.
 const VIEW_KEY = 'gtnhCraftMonitor.kitViewClosed';
@@ -58,8 +60,8 @@ function setViewWanted(on) {
 function updateView() {
   const btn = document.getElementById('kitViewBtn');
   const has = !!(kit && kit.layout);
-  const open = has && viewWanted();
-  btn.hidden = !has;
+  const open = has && (!stackedLayout.matches || viewWanted());
+  btn.hidden = !has || !stackedLayout.matches;
   btn.setAttribute('aria-pressed', String(open));
   btn.classList.toggle('active', open);
   document.getElementById('kitPreview').hidden = !has;
@@ -379,12 +381,13 @@ function updatePlan() {
 function reviewKit() {
   if (!kitReady || !kit?.plan_available || !AUTH_USER || !requests().length) return;
   pickers.close();
-  configurationScroll = document.getElementById('kitModal').scrollTop;
+  configurationScroll = document.getElementById('kitConfiguration').scrollTop;
+  materialsScroll = document.getElementById('kitMaterials').scrollTop;
   reviewing = true;
   planStatus = 'idle';
   updateRequestButton();
   document.getElementById('kitReviewTitle').focus({ preventScroll: true });
-  document.getElementById('kitModal').scrollTop = 0;
+  document.getElementById('kitReview').scrollTop = 0;
 }
 
 function backToKit() {
@@ -392,7 +395,8 @@ function backToKit() {
   reviewing = false;
   updateRequestButton();
   document.getElementById('kitReviewBtn').focus({ preventScroll: true });
-  document.getElementById('kitModal').scrollTop = configurationScroll;
+  document.getElementById('kitConfiguration').scrollTop = configurationScroll;
+  document.getElementById('kitMaterials').scrollTop = materialsScroll;
 }
 
 // The separate-material box: ticked and fixed where the game has no kit
@@ -510,6 +514,13 @@ async function submitKit() {
 }
 
 export function setupKitActions() {
+  stackedLayout = window.matchMedia('(max-width: 800px)');
+  stackedLayout.addEventListener('change', () => {
+    if (kit) {
+      viewDrawn = null;
+      updateView();
+    }
+  });
   pickers = setupKitPickers(document.getElementById('kitModal'));
   controllerPicker = pickers.mount(document.getElementById('kitPickerControl'), {
     id: 'kitPicker', label: 'Multiblock', searchable: true, onSelect: selectController,
