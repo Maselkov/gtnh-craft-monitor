@@ -529,8 +529,9 @@ requested twice.
 Multiblocks with tiered parts have a picker for each, named after the
 hologram projector's channel for it: **Coil** and **Glass** list the blocks
 they take directly in the material row, beside its counts. The block icon
-stays in the same column as the other materials, with the channel's name
-below the selector. **Length**, **Height** and the like stay above the
+is centered in its row, including the amount slider, and stays in the same
+column as the other materials, with the channel's name below the selector.
+**Length**, **Height** and the like stay above the
 preview. A block setting without a corresponding material row appears
 there too. The themed menus show each block's icon and mark the current
 selection with a check. Type in
@@ -600,9 +601,10 @@ as they do in the game. Animated textures are still.
 
 On desktop, the preview stays open beside the materials. It grows modestly
 for longer lists, with a height limit; the materials scroll independently.
-The quantity and request controls stay visible below. On narrower screens,
-the shorter preview stacks above the materials, and the content scrolls
-above the fixed actions. Only this stacked layout has a **3D view** toggle;
+The quantity and request controls stay visible below. Before the materials
+column becomes too narrow for readable names, the shorter preview stacks
+above the materials, and the content scrolls above the fixed actions.
+Only this stacked layout has a **3D view** toggle;
 the page remembers whether you collapsed it there. Its **Structure preview**
 toolbar stays visible so you can reopen it. Multiblocks without a layout
 have no preview toolbar.

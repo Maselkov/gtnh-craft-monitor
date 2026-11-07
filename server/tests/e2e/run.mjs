@@ -2489,6 +2489,14 @@ async function main() {
       && $('#kitRows .kit-row-configurable > img.kit-icon') && !$('#kitRows .kit-choice-field img')
       && $('#kitRows .kit-choice-caption').textContent === 'Coil'
       && $('#kitChannel-coil').closest('.kit-row').querySelector('.kit-num').textContent === '1,000'`);
+    await waitFor('material icons are larger and centered across each full row', `$$('#kitRows .kit-row:not(.kit-head)').every(row => {
+      const element = row.querySelector('.kit-icon');
+      const icon = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      const bounds = row.getBoundingClientRect();
+      return style.width === '28px' && style.height === '28px'
+        && Math.abs(icon.top + icon.height / 2 - bounds.top - bounds.height / 2) < 1;
+    })`);
     await evaluate(`window.kitCoilInput = $('#kitChannel-coil'), true`);
     await evaluate(`window.kitHeightBeforeQuantity = $('.kit-viewport').getBoundingClientRect().height, true`);
     await evaluate(`(() => { const c = $('#kitCount'); c.value = '2'; c.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
@@ -2539,6 +2547,21 @@ async function main() {
       return $('#kitMode label').textContent.trim() === 'Craft each material separately'
         && mode.right <= button.left && Math.abs(mode.top - button.top) < 2
         && note.top >= mode.bottom;
+    })()`);
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1081, height: 900, deviceScaleFactor: 1, mobile: false });
+    await waitFor('side-by-side layout leaves room for material names at its narrowest width', `(() => {
+      const preview = $('#kitPreview').getBoundingClientRect();
+      const materials = $('#kitMaterials').getBoundingClientRect();
+      const name = coilRow().querySelector('.kit-name-cell').getBoundingClientRect();
+      return preview.right <= materials.left && name.width >= 300 && !visible($('#kitViewBtn'));
+    })()`);
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1024, height: 900, deviceScaleFactor: 1, mobile: false });
+    await waitFor('medium screens stack before the material names are squeezed', `(() => {
+      const preview = $('#kitPreview').getBoundingClientRect();
+      const materials = $('#kitMaterials').getBoundingClientRect();
+      const name = coilRow().querySelector('.kit-name-cell').getBoundingClientRect();
+      return preview.bottom <= materials.top && name.width >= 260 && visible($('#kitViewBtn'))
+        && $('#kitModal .kit-box').scrollWidth <= $('#kitModal .kit-box').clientWidth;
     })()`);
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
     await waitFor('mobile quantity and review remain aligned below scrolling content', `(() => {

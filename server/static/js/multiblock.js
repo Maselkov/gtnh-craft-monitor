@@ -514,7 +514,7 @@ async function submitKit() {
 }
 
 export function setupKitActions() {
-  stackedLayout = window.matchMedia('(max-width: 800px)');
+  stackedLayout = window.matchMedia('(max-width: 1080px)');
   stackedLayout.addEventListener('change', () => {
     if (kit) {
       viewDrawn = null;

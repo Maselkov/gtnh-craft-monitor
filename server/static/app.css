@@ -3056,7 +3056,7 @@ body.oauth-page {
 }
 .kit-row {
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) 64px 80px;
+  grid-template-columns: 28px minmax(0, 1fr) 64px 80px;
   gap: 10px;
   align-items: center;
   padding: 6px 0;
@@ -3064,7 +3064,7 @@ body.oauth-page {
   font-size: 13px;
 }
 .kit-rows-operator .kit-row {
-  grid-template-columns: 24px minmax(0, 1fr) 64px 80px 88px;
+  grid-template-columns: 28px minmax(0, 1fr) 64px 80px 88px;
 }
 .kit-head {
   font-size: 11px;
@@ -3073,10 +3073,11 @@ body.oauth-page {
   letter-spacing: 0.03em;
 }
 .kit-icon {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   image-rendering: pixelated;
 }
+.kit-row:has(> .kit-slider) > .kit-icon { grid-row: 1 / span 2; }
 .kit-name {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3107,9 +3108,6 @@ body.oauth-page {
   cursor: pointer;
 }
 .kit-choice-inline .kit-choice-chevron { top: 12px; right: 12px; }
-.kit-row-configurable > .kit-icon { align-self: start; margin-top: 4px; }
-.kit-row-configurable > .kit-num { align-self: start; padding-top: 8px; }
-.kit-row-configurable > .kit-request { align-self: start; margin-top: 1px; }
 .kit-num {
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -3146,10 +3144,10 @@ body.oauth-page {
   .kit-actions > .modal-buttons { grid-column: 1; }
   .kit-actions > .modal-buttons > .modal-btn { flex: 1; }
   .kit-row {
-    grid-template-columns: 24px minmax(0, 1fr) 52px;
+    grid-template-columns: 28px minmax(0, 1fr) 52px;
     gap: 8px;
   }
-  .kit-rows-operator .kit-row { grid-template-columns: 24px minmax(0, 1fr) 52px 72px; }
+  .kit-rows-operator .kit-row { grid-template-columns: 28px minmax(0, 1fr) 52px 72px; }
   .kit-head span:nth-child(4),
   .kit-have {
     display: none;
@@ -3248,10 +3246,10 @@ body.oauth-page {
 .kit-box .craft-plan-body {
   max-height: min(60vh, 480px);
 }
-@media (min-width: 801px) {
+@media (min-width: 1081px) {
   #kitViewBtn { display: none; }
 }
-@media (max-width: 800px) {
+@media (max-width: 1080px) {
   .kit-box, .kit-box:has(#kitReview:not([hidden])) {
     width: min(640px, calc(100vw - 32px));
     max-height: calc(100dvh - 32px);
