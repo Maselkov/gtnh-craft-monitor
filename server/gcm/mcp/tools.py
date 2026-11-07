@@ -1445,7 +1445,7 @@ TOOLS = [
         "title": "Blocks to build a multiblock",
         "description": (
             "Every block a GregTech multiblock is built from, with the amount the network has and whether "
-            "it's craftable: its casings, coils, glass and so on, for the tiers chosen (a coil or glass "
+            "it's craftable: its controller, casings, coils, glass and so on, for the tiers chosen (a coil or glass "
             "channel's tiers are the blocks it takes; a length or height channel's are sizes). Without "
             "tiers, each channel is at its lowest; the result lists each channel's options."
         ),

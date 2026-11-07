@@ -484,8 +484,9 @@ To cancel a running job, click **×** on its card in the Crafts tab.
 
 ## Multiblock kits
 
-A kit lists every block a GregTech multiblock is built from: its casings,
-coils, glass, pipes and so on, with how many the network has. Open one with
+A kit lists every block a GregTech multiblock is built from: its
+controller first, then its casings, coils, glass, pipes and so on, with how
+many the network has. Open one with
 **Multiblock kit** in a controller's item dialog, or **Multiblocks** in the
 Network tab to pick a multiblock by name. The dropdown lists controllers
 stored in the network or available to craft, and refreshes each time you
