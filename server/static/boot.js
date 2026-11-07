@@ -34,3 +34,7 @@ try {
   const theme = localStorage.getItem('gtnhCraftMonitor.theme');
   if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
 } catch (e) { /* follow the system */ }
+
+// iOS home-screen apps also expose this flag. Other standalone windows
+// are detected by the display-mode media query in app.css.
+if (navigator.standalone === true) document.documentElement.dataset.standalone = 'true';

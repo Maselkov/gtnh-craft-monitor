@@ -2735,6 +2735,13 @@ details.stock-rules {
 }
 
 /* ---------- Phone width ---------- */
+/* Browser tabs already offer their URL to share. Installed apps need
+   the explicit copy-link action, including iOS's standalone fallback. */
+@media (max-width: 520px) and (display-mode: browser) {
+  :root:not([data-standalone="true"]) .history-link-btn {
+    display: none;
+  }
+}
 @media (max-width: 520px) {
   /* No room for the title beside the tabs and the settings button;
      the open tab already says where you are. */

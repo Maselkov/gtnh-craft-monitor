@@ -95,8 +95,10 @@ with what it's crafting and that item's icon, and an **Open** button.
 
 A craft's details (its **Ingredients** dialog) have their own link,
 `/crafts?cpu=…&job=…`: it's in the address bar while they're open, and the
-link button beside the close button copies it, for the installed app, which
-has no address bar. If the CPU moves on to another craft while they're
+link button beside the close button copies it. On phones, this button is
+shown in the installed app, which has no address bar; in a browser tab,
+share the address from the browser instead. Desktop windows keep the
+button too. If the CPU moves on to another craft while they're
 open, the link follows. Opened while the craft runs, the link opens its
 details over its card, which is outlined. The link keeps working after the
 craft ends: the
@@ -360,7 +362,9 @@ The scan data is still available to the planner and item history.
 
 - Click an item to open its stock history chart. The full item name wraps
   onto additional lines when needed, including on phones; pin, copy-link
-  and close stay at the top right. Each item has its own URL
+  and close stay at the top right. The copy-link button is hidden in phone
+  browser tabs, where the browser can share the address; it stays visible
+  in the installed app and on desktop. Each item has its own URL
   (`/network/item/<mod:internal:damage>`, `/network/item/@<aspect>` for
   essentia) that can be shared, and the link button in its dialog copies
   it; link previews

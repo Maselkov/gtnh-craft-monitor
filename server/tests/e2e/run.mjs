@@ -2977,6 +2977,33 @@ async function main() {
       await evaluate(PAGE_LIB);
     };
     const stubClipboard = () => evaluate(`navigator.clipboard.writeText = async (text) => { window.copied = text; }, true`);
+    const checkPhoneLink = async (selector) => {
+      const url = await evaluate('location.href');
+      await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+      let script;
+      try {
+        await waitFor('phone browser uses its address bar to share', `!visible($('${selector}'))`);
+        // Exercise boot.js's iOS home-screen fallback on a fresh load.
+        ({ identifier: script } = await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
+          source: `Object.defineProperty(navigator, 'standalone', { value: true });`,
+        }));
+        await load(url);
+        await waitFor('home-screen app keeps its copy-link button', `document.documentElement.dataset.standalone === 'true'
+          && visible($('${selector}'))`);
+        await cdp.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: script });
+        script = null;
+        await load(url);
+        await waitFor('browser tab hides the button again', `!document.documentElement.dataset.standalone
+          && !visible($('${selector}'))`);
+      } finally {
+        if (script) await cdp.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: script });
+        await cdp.send('Emulation.clearDeviceMetricsOverride');
+      }
+      await waitFor('desktop keeps its copy-link button', `visible($('${selector}'))`);
+    };
+    // The previous variant-link test replaced the network with seeds;
+    // restore the ingot so its link can also be reopened on a fresh load.
+    await scanNetwork(base);
     await postCrafts(base, true);
     await load(base + '/crafts');
     await waitFor('W01 busy, with no link button on its card', `card('W01')?.querySelector('.ingredients-btn')
@@ -2985,6 +3012,7 @@ async function main() {
     await waitFor('its details at its link', `visible($('#ingredientsModal')) && visible($('#ingredientsLinkBtn'))
       && location.pathname === '/crafts' && new URLSearchParams(location.search).get('cpu') === 'W01'
       && Number(new URLSearchParams(location.search).get('job')) > 0`);
+    await checkPhoneLink('#ingredientsLinkBtn');
     await stubClipboard();
     await click(`$('#ingredientsLinkBtn')`);
     const link = await waitFor('copied', `window.copied`);
@@ -3016,10 +3044,12 @@ async function main() {
     // The item dialog copies its URL the same way.
     await click(`card('W01').querySelector('.item-history-link')`);
     await waitFor('item open', `visible($('#itemHistoryModal')) && location.pathname.startsWith('/network/item/')`);
+    await checkPhoneLink('#itemHistoryModal [data-action="copy-item-link"]');
     // A long machine name stays readable beside all three header actions.
     await evaluate(`window.savedItemName = $('#itemHistoryName').textContent;
       window.savedItemTheme = document.documentElement.dataset.theme;
       window.savedItemPinDisplay = $('#itemHistoryPinBtn').style.display;
+      document.documentElement.dataset.standalone = 'true';
       $('#itemHistoryPinBtn').style.display = '';
       $('#itemHistoryName').textContent = 'Compact Fusion Computer MK-III'`);
     try {
@@ -3044,6 +3074,7 @@ async function main() {
     } finally {
       await cdp.send('Emulation.clearDeviceMetricsOverride');
       await evaluate(`$('#itemHistoryName').textContent = window.savedItemName;
+        delete document.documentElement.dataset.standalone;
         $('#itemHistoryPinBtn').style.display = window.savedItemPinDisplay;
         if (window.savedItemTheme) document.documentElement.dataset.theme = window.savedItemTheme;
         else delete document.documentElement.dataset.theme`);
