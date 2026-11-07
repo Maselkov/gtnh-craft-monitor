@@ -3016,6 +3016,38 @@ async function main() {
     // The item dialog copies its URL the same way.
     await click(`card('W01').querySelector('.item-history-link')`);
     await waitFor('item open', `visible($('#itemHistoryModal')) && location.pathname.startsWith('/network/item/')`);
+    // A long machine name stays readable beside all three header actions.
+    await evaluate(`window.savedItemName = $('#itemHistoryName').textContent;
+      window.savedItemTheme = document.documentElement.dataset.theme;
+      window.savedItemPinDisplay = $('#itemHistoryPinBtn').style.display;
+      $('#itemHistoryPinBtn').style.display = '';
+      $('#itemHistoryName').textContent = 'Compact Fusion Computer MK-III'`);
+    try {
+      for (const width of [320, 390]) {
+        await cdp.send('Emulation.setDeviceMetricsOverride', { width, height: 844, deviceScaleFactor: 1, mobile: true });
+        for (const theme of ['dark', 'light']) {
+          await evaluate(`document.documentElement.dataset.theme = '${theme}'`);
+          await waitFor(`full item title and header actions fit at ${width}px in ${theme}`, `(() => {
+            const name = $('#itemHistoryName');
+            const title = name.getBoundingClientRect();
+            const header = name.closest('.modal-header').getBoundingClientRect();
+            const buttons = $$('#itemHistoryModal .modal-header button').map(b => b.getBoundingClientRect());
+            return getComputedStyle(name).whiteSpace === 'normal'
+              && title.height > parseFloat(getComputedStyle(name).lineHeight)
+              && name.scrollWidth <= name.clientWidth + 1
+              && title.right <= buttons[0].left
+              && buttons.every((b, i) => b.top >= header.top && b.bottom <= header.bottom
+                && b.right <= innerWidth && (!i || b.left >= buttons[i - 1].right));
+          })()`);
+        }
+      }
+    } finally {
+      await cdp.send('Emulation.clearDeviceMetricsOverride');
+      await evaluate(`$('#itemHistoryName').textContent = window.savedItemName;
+        $('#itemHistoryPinBtn').style.display = window.savedItemPinDisplay;
+        if (window.savedItemTheme) document.documentElement.dataset.theme = window.savedItemTheme;
+        else delete document.documentElement.dataset.theme`);
+    }
     await stubClipboard();  // the page has been reloaded since
     await click(`$('#itemHistoryModal [data-action="copy-item-link"]')`);
     await waitFor('item link copied', `window.copied === location.href
