@@ -2376,20 +2376,26 @@ async function main() {
     await evaluate(`typeInto('#kitPicker', 'neutronium'), pressKey('ArrowDown', '#kitPicker'), pressKey('Enter', '#kitPicker'), true`);
     await waitFor('keyboard chooses controller', `$('#kitPicker').getAttribute('aria-expanded') === 'false'
       && $('#kitPicker').value === 'Neutronium Ingot' && $('#kitPickerControl .kit-choice-current-icon img')`);
+    // The controller comes first (the builds leave it out), then the
+    // coil's row, which the steps below look at.
+    await evaluate(`window.coilRow = () => $('#kitChannel-coil')?.closest('.kit-row'), true`);
     await waitFor('kit', `visible($('#kitModal')) && $('#kitTitle').textContent === 'Neutronium Ingot'
-      && $$('#kitRows .kit-row:not(.kit-head)').length === 1 && $('#kitChannel-coil').value === 'Iron Ingot'
-      && $('#kitRows .kit-request')?.value === '0' && $('#kitRequestBtn').textContent === 'Nothing to request'`);
+      && $$('#kitRows .kit-row:not(.kit-head)').length === 2
+      && $('#kitRows .kit-row:not(.kit-head)').dataset.key === 'gregtech:gt.metaitem.01:11028'
+      && $('#kitChannel-coil').value === 'Iron Ingot'
+      && coilRow()?.querySelector('.kit-request')?.value === '0' && $('#kitRequestBtn').textContent === 'Nothing to request'`);
     await waitFor('coil selector lives beside its counts with one shared-column icon', `!$('#kitControls [data-channel="coil"]')
       && $('#kitRows .kit-row-configurable > img.kit-icon') && !$('#kitRows .kit-choice-field img')
       && $('#kitRows .kit-choice-caption').textContent === 'Coil'
       && $('#kitChannel-coil').closest('.kit-row').querySelector('.kit-num').textContent === '1,000'`);
     await evaluate(`window.kitCoilInput = $('#kitChannel-coil'), true`);
     await evaluate(`(() => { const c = $('#kitCount'); c.value = '2'; c.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
-    await waitFor('kit for two', `$('#kitRows .kit-request')?.value === '766' && $('#kitRequestBtn').textContent === 'Request 1 craft'
-      && $('#kitRows .kit-row.kit-short') && $('#kitRows .kit-slider').value === '766' && $('#kitRows .kit-slider').max === '2000'`);
+    await waitFor('kit for two', `coilRow().querySelector('.kit-request')?.value === '766' && $('#kitRequestBtn').textContent === 'Request 1 craft'
+      && coilRow().classList.contains('kit-short') && coilRow().querySelector('.kit-slider').value === '766'
+      && coilRow().querySelector('.kit-slider').max === '2000'`);
     // The slider under the block and its box follow each other.
-    await evaluate(`(() => { const s = $('#kitRows .kit-slider'); s.value = '500'; s.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
-    await waitFor('slider sets the box', `$('#kitRows .kit-request').value === '500'`);
+    await evaluate(`(() => { const s = coilRow().querySelector('.kit-slider'); s.value = '500'; s.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+    await waitFor('slider sets the box', `coilRow().querySelector('.kit-request').value === '500'`);
     // Without a kit interface in the game, each block is its own request.
     await waitFor('no kit slots', `visible($('#kitMode')) && $('#kitSeparate').checked && $('#kitSeparate').disabled
       && $('#kitModeLine').textContent.includes('set up a kit interface')`);
@@ -2401,7 +2407,7 @@ async function main() {
       && $('#kitChannel-coilList .kit-choice-check').textContent === '✓'`);
     await click(`$('#kitChannel-coilList [data-value="1"]')`);
     await waitFor('one job', `!$('#kitSeparate').checked && !$('#kitSeparate').disabled
-      && $('#kitRequestBtn').textContent === 'Request as one job (1 block)' && $('#kitRows .kit-request').value === '500'
+      && $('#kitRequestBtn').textContent === 'Request as one job (1 block)' && coilRow().querySelector('.kit-request').value === '500'
       && $('#kitModeLine').textContent.startsWith('As one job')`);
     await click(`$('#kitSeparate')`);
     await waitFor('each on its own', `$('#kitRequestBtn').textContent === 'Request 1 craft' && $('#kitSeparate').checked`);

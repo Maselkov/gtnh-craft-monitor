@@ -204,7 +204,11 @@ def kit(key, tiers=None, count=1):
 
     network = _snapshot()
     rows = []
-    for k, n in _counts(entry, chosen).items():
+    counts = _counts(entry, chosen)
+    # The builds leave the controller out (it's where the structure is
+    # built from): one per multiblock.
+    counts[key] = counts.get(key, 0) + 1
+    for k, n in counts.items():
         mod, internal, damage = _split(k)
         it = network.get((mod, internal, str(damage)))
         name = (it and it.get("name")) or names.get(k) or k
@@ -220,7 +224,8 @@ def kit(key, tiers=None, count=1):
             "have": (it and it.get("size")) or 0,
             "craftable": bool(it and it.get("isCraftable")),
         })
-    rows.sort(key=lambda r: (-r["need"], r["name"].lower()))
+    # The controller first, then the most-needed blocks.
+    rows.sort(key=lambda r: (r["key"] != key, -r["need"], r["name"].lower()))
     mod, internal, damage = _split(key)
     name = names.get(key) or key
     return {

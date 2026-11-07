@@ -73,7 +73,9 @@ def rows(kit):
 
 def test_lowest_tiers_without_a_choice(structures):
     kit = multiblocks.kit(EBF)
-    assert rows(kit) == {CUPRONICKEL: 16, HEATPROOF: 16}
+    # The controller too, though the builds leave it out, and first.
+    assert rows(kit) == {EBF: 1, CUPRONICKEL: 16, HEATPROOF: 16}
+    assert kit["rows"][0]["key"] == EBF and kit["rows"][0]["name"] == "Electric Blast Furnace"
     assert kit["controller"]["name"] == "Electric Blast Furnace"
     [coil] = kit["channels"]
     assert coil["kind"] == "block" and coil["tier"] == 1
@@ -82,21 +84,21 @@ def test_lowest_tiers_without_a_choice(structures):
 
 def test_a_tier_swaps_the_block_and_count_multiplies(structures):
     kit = multiblocks.kit(EBF, {"coil": "2"}, 3)
-    assert rows(kit) == {KANTHAL: 48, HEATPROOF: 48}
+    assert rows(kit) == {EBF: 3, KANTHAL: 48, HEATPROOF: 48}
     kanthal = next(r for r in kit["rows"] if r["key"] == KANTHAL)
     assert (kanthal["have"], kanthal["craftable"], kanthal["damage"]) == (5, True, 1)
     assert kanthal["item"] == "gregtech|gt.blockcasings5|1|item"
 
 
 def test_tiers_out_of_range_are_clamped(structures):
-    assert rows(multiblocks.kit(EBF, {"coil": 99})) == {KANTHAL: 16, HEATPROOF: 16}
-    assert rows(multiblocks.kit(EBF, {"coil": "x"})) == {CUPRONICKEL: 16, HEATPROOF: 16}
+    assert rows(multiblocks.kit(EBF, {"coil": 99})) == {EBF: 1, KANTHAL: 16, HEATPROOF: 16}
+    assert rows(multiblocks.kit(EBF, {"coil": "x"})) == {EBF: 1, CUPRONICKEL: 16, HEATPROOF: 16}
 
 
 def test_interacting_channels_come_from_combos(structures):
     kit = multiblocks.kit(ASSLINE, {"glass": 2, "length": 6})
     # Base plus the changes would leave Borosilicate glass in.
-    assert rows(kit) == {TITANIUM_GLASS: 11, CASING: 18}
+    assert rows(kit) == {ASSLINE: 1, TITANIUM_GLASS: 11, CASING: 18}
     glass, length = kit["channels"]
     assert glass["kind"] == "block" and length["kind"] == "size"
     assert [o["label"] for o in length["options"]] == ["5", "6"]
@@ -112,7 +114,7 @@ def test_no_kit_without_the_game_data(structures, monkeypatch):
 def test_kit_route(client, structures):
     res = client.get(f"/api/multiblocks/kit?key={EBF}&tier.coil=2&count=2")
     assert res.status_code == 200
-    assert rows(res.get_json()) == {KANTHAL: 32, HEATPROOF: 32}
+    assert rows(res.get_json()) == {EBF: 2, KANTHAL: 32, HEATPROOF: 32}
     assert client.get("/api/multiblocks/kit?key=nope").status_code == 404
     assert client.get(f"/api/multiblocks/kit?key={EBF}&count=x").status_code == 400
     listed = client.get("/api/multiblocks").get_json()["multiblocks"]
@@ -267,7 +269,8 @@ def test_mcp_kit_by_name_with_a_block_tier(client, structures):
     kit = ok(client, token, "multiblock_kit", multiblock="electric blast furnace",
              tiers={"coil": "Kanthal Coil Block"}, count=2)
     assert kit["multiblock"] == "Electric Blast Furnace"
-    assert {b["name"]: b["need"] for b in kit["blocks"]} == {"Kanthal Coil Block": 32, "Heat Proof Machine Casing": 32}
+    assert {b["name"]: b["need"] for b in kit["blocks"]} == {
+        "Electric Blast Furnace": 2, "Kanthal Coil Block": 32, "Heat Proof Machine Casing": 32}
     [coil] = kit["channels"]
     assert coil["chosen"] == "Kanthal Coil Block"
     assert coil["options"] == ["1: Cupronickel Coil Block", "2: Kanthal Coil Block"]
@@ -280,7 +283,7 @@ def test_mcp_kit_by_item_key_and_size(client, structures):
     token = make_token("mia", role="viewer")
     kit = ok(client, token, "multiblock_kit", multiblock="gregtech|gt.blockmachines|1170|item", tiers={"length": 6})
     assert {b["name"]: b["need"] for b in kit["blocks"]} == {
-        "Borosilicate Glass Block": 11, "Solid Steel Machine Casing": 18}
+        "Assembly Line": 1, "Borosilicate Glass Block": 11, "Solid Steel Machine Casing": 18}
     assert kit["channels"][1] == {"name": "length", "kind": "size", "tier": 6, "chosen": "6", "range": [5, 6]}
 
 
