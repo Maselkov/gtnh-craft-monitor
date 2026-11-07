@@ -396,10 +396,11 @@
           <div id="kitTitle" class="modal-item-name">Multiblock kit</div>
           <div id="kitSubtitle" class="history-current">Every block it's built from, for the parts you pick</div>
         </div>
-        <label class="kit-control kit-count">
+        <label id="kitCountControl" class="kit-control kit-count">
           <span class="kit-control-label">How many</span>
           <input id="kitCount" class="modal-amount-input" type="number" min="1" max="64" value="1">
         </label>
+        <span id="kitReviewCount" class="kit-review-count" hidden></span>
         <button class="history-close-btn" data-action="close-kit" title="Close">&times;</button>
       </div>
       <div id="kitConfiguration">
@@ -421,11 +422,6 @@
         </div>
         <div id="kitRows" class="kit-rows"></div>
         <div class="modal-note kit-note">No hatches, buses, mufflers or maintenance hatches: pick your own. Every spot that takes a hatch or a casing counts as a casing, so lower the casings for your hatches and for walls you share with another multiblock.</div>
-        <div id="kitMode" class="agent-settings kit-mode" hidden>
-          <label class="agent-setting"><input type="checkbox" id="kitSeparate">
-            <span>Request each block on its own
-              <span class="agent-line" id="kitModeLine"></span></span></label>
-        </div>
         <div id="kitPlanUnavailable" class="modal-note" hidden></div>
       </div>
       <div id="kitReview" hidden>
@@ -434,11 +430,18 @@
         <div id="kitReviewEnd"></div>
       </div>
       <div id="kitError" class="modal-error" hidden></div>
-      <div class="modal-buttons">
-        <button class="modal-btn secondary" id="kitBackBtn" data-action="kit-back" hidden>Back to kit</button>
-        <button class="modal-btn secondary" id="kitRetryBtn" data-action="kit-retry-plan" hidden>Retry plan</button>
-        <button class="modal-btn primary" id="kitReviewBtn" data-action="kit-review" hidden>Review &amp; request</button>
-        <button class="modal-btn primary" id="kitRequestBtn" data-action="kit-request" hidden>Request</button>
+      <div class="kit-actions">
+        <div id="kitMode" class="agent-settings kit-mode" hidden>
+          <label class="agent-setting"><input type="checkbox" id="kitSeparate" aria-describedby="kitModeLine">
+            <span>Craft each material separately</span></label>
+          <div class="modal-note" id="kitModeLine"></div>
+        </div>
+        <div class="modal-buttons">
+          <button class="modal-btn secondary" id="kitBackBtn" data-action="kit-back" hidden>Back to kit</button>
+          <button class="modal-btn secondary" id="kitRetryBtn" data-action="kit-retry-plan" hidden>Retry plan</button>
+          <button class="modal-btn primary" id="kitReviewBtn" data-action="kit-review" hidden>Review &amp; request</button>
+          <button class="modal-btn primary" id="kitRequestBtn" data-action="kit-request" hidden>Request</button>
+        </div>
       </div>
     </div>
   </div>

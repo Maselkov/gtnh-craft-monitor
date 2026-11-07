@@ -342,6 +342,10 @@ function updatePlan() {
   document.getElementById('kitConfiguration').hidden = reviewing;
   document.getElementById('kitReview').hidden = !reviewing;
   document.getElementById('kitCount').disabled = reviewing || submitting;
+  document.getElementById('kitCountControl').hidden = reviewing;
+  const reviewCount = document.getElementById('kitReviewCount');
+  reviewCount.hidden = !reviewing;
+  reviewCount.textContent = `${count} kit${count === 1 ? '' : 's'}`;
   document.getElementById('kitSubtitle').textContent = reviewing
     ? 'Review the ingredients before starting the craft'
     : "Every block it's built from, for the parts you pick";
@@ -392,11 +396,11 @@ function backToKit() {
   document.getElementById('kitModal').scrollTop = configurationScroll;
 }
 
-// The "on its own" box: ticked and fixed where the game has no kit
+// The separate-material box: ticked and fixed where the game has no kit
 // interface to make one job with.
 function updateMode() {
   const box = document.getElementById('kitMode');
-  box.hidden = !isOperator() || !kit;
+  box.hidden = reviewing || !isOperator() || !kit;
   if (box.hidden) return;
   const can = kit.kit_slots > 0;
   const input = document.getElementById('kitSeparate');

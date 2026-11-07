@@ -2485,6 +2485,22 @@ async function main() {
     await waitFor('kit for two', `coilRow().querySelector('.kit-request')?.value === '766' && $('#kitReviewBtn').textContent === 'Review & request'
       && coilRow().classList.contains('kit-short') && coilRow().querySelector('.kit-slider').value === '766'
       && coilRow().querySelector('.kit-slider').max === '2000'`);
+    await waitFor('material mode sits beside review with its explanation underneath', `(() => {
+      const mode = $('#kitMode label').getBoundingClientRect();
+      const button = $('#kitReviewBtn').getBoundingClientRect();
+      const note = $('#kitModeLine').getBoundingClientRect();
+      return $('#kitMode label').textContent.trim() === 'Craft each material separately'
+        && mode.right <= button.left && Math.abs(mode.top - button.top) < 2
+        && note.top >= mode.bottom;
+    })()`);
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
+    await waitFor('mobile mode and explanation stack above review', `(() => {
+      const mode = $('#kitMode').getBoundingClientRect();
+      const button = $('#kitReviewBtn').getBoundingClientRect();
+      return mode.bottom <= button.top && button.width > 250
+        && $('#kitModal .kit-box').scrollWidth <= $('#kitModal .kit-box').clientWidth;
+    })()`);
+    await cdp.send('Emulation.clearDeviceMetricsOverride');
     // The slider under the block and its box follow each other.
     await evaluate(`(() => { const s = coilRow().querySelector('.kit-slider'); s.value = '500'; s.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
     await waitFor('slider sets the box', `coilRow().querySelector('.kit-request').value === '500'`);
@@ -2530,7 +2546,9 @@ async function main() {
     })()`);
     await click(`$('#kitReviewBtn')`);
     await waitFor('review errors leave Request disabled with a retry', `visible($('#kitReview')) && !visible($('#kitConfiguration'))
-      && $('#kitCount').disabled && $('#kitRequestBtn').disabled && visible($('#kitRetryBtn'))
+      && !visible($('#kitCount')) && visible($('#kitReviewCount')) && $('#kitReviewCount').textContent === '2 kits'
+      && !visible($('#kitMode')) && $('#kitReviewSummary').textContent.includes('As one job')
+      && $('#kitRequestBtn').disabled && visible($('#kitRetryBtn'))
       && $('#craftPlanNote').textContent === 'Plan temporarily unavailable' && window.kitSends.length === 0
       && document.activeElement === $('#kitReviewTitle')`);
     await click(`$('#kitRetryBtn')`);
@@ -2538,6 +2556,7 @@ async function main() {
       && !$('#kitRequestBtn').disabled && !visible($('#kitRetryBtn')) && window.kitSends.length === 0`);
     await click(`$('#kitBackBtn')`);
     await waitFor('back keeps configuration', `visible($('#kitConfiguration')) && !visible($('#kitReview'))
+      && visible($('#kitCount')) && !visible($('#kitReviewCount')) && visible($('#kitMode'))
       && $('#kitCount').value === '2' && !$('#kitCount').disabled && $('#kitChannel-coil').value === 'Iron Ingot'
       && coilRow().querySelector('.kit-request').value === '500' && !$('#kitSeparate').checked
       && document.activeElement === $('#kitReviewBtn')`);
@@ -2673,7 +2692,9 @@ async function main() {
       return true;
     })()`);
     await click(`$('#kitReviewBtn')`);
-    await waitFor('separate crafts reviewed', `visible($('#kitReview #craftPlan')) && !$('#kitRequestBtn').disabled`);
+    await waitFor('separate crafts reviewed', `visible($('#kitReview #craftPlan')) && !$('#kitRequestBtn').disabled
+      && !visible($('#kitMode')) && $('#kitReviewSummary').textContent.includes('One craft per material')
+      && $('#kitReviewCount').textContent === '3 kits' && !visible($('#kitCount'))`);
     await click(`$('#kitRequestBtn')`);
     await waitFor('kit requested and choices saved', `!visible($('#kitModal'))`);
     await evaluate(`window.fetch = window.savedKitFetch, true`);

@@ -541,8 +541,9 @@ or Escape to close a menu without changing your choice.
 
 Choose **Review & request** to move to the crafting plan before starting
 the craft. **Back to kit** returns to your parts and quantities without
-losing your choices. The review keeps **How many** fixed; go back to change
-it. The final **Request** button starts crafting.
+losing your choices. The review shows the quantity as plain text (for
+example, **2 kits**); go back to change it. The final **Request** button
+starts crafting.
 
 If no pattern scan is available, the button stays **Request** and sends
 the craft directly. A note explains why no preview is available, including
@@ -558,10 +559,13 @@ what's in storage first, so the kit asks for what's in stock of each block
 (up to what it needs) plus the Request amount, and crafts the Request
 amount.
 
-Tick **Request each block on its own** to queue each block as its own
+Tick **Craft each material separately** to queue each block as its own
 craft instead, as if you'd requested them one by one: each lands in the
 network as soon as it's done. Without a kit interface, that's how a kit is
-always requested, and the box says so. The page remembers the choice.
+always requested, and the box says so. The choice sits to the left of
+**Review & request**, with its explanation underneath; on mobile it stacks
+above the button. The review shows the chosen mode, and **Back to kit**
+lets you change it. The page remembers the choice.
 
 If no kit slots are detected, **Set up a kit interface** links directly to
 the illustrated [setup guide](in-game.md#kit-interface), including the
