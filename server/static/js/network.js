@@ -489,6 +489,10 @@ export async function fetchNetwork() {
   try {
     const res = await fetch('/api/network');
     const data = await res.json();
+    // Kit patterns are reusable transport slots, not useful inventory
+    // entries. Keep the server's snapshot intact for planning/history.
+    data.items = (data.items || []).filter(it => !isKitOutput(it));
+    data.item_count = data.items.length;
     lastNetworkData = data;
     updateGameDataNote();
     updateTerminalNote();
@@ -501,6 +505,14 @@ export async function fetchNetwork() {
   } catch (e) {
     document.getElementById('networkSourceLine').textContent = 'Could not reach server.';
   }
+}
+
+// Same markers as craft_monitor.lua's is_kit_output(): fresh Command
+// Block outputs, or tagged outputs whose displayed name ends in " kit".
+export function isKitOutput(it) {
+  if ((it.kind || 'item') !== 'item') return false;
+  if (it.mod === 'minecraft' && it.internal === 'command_block') return true;
+  return !!it.variant && nameText(it.name || '').endsWith(' kit');
 }
 
 async function fetchNetworkChanges() {

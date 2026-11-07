@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { changeFraction, compareByChange, formatChangePercent } from '../../static/js/network.js';
+import { changeFraction, compareByChange, formatChangePercent, isKitOutput } from '../../static/js/network.js';
+
+test('kit transport outputs are hidden without hiding controllers or ordinary items', () => {
+  assert.equal(isKitOutput({ mod: 'minecraft', internal: 'command_block' }), true);
+  assert.equal(isKitOutput({ name: '§bFusion Reactor kit', variant: 'nbt-hash' }), true);
+  assert.equal(isKitOutput({ name: 'Fusion Reactor', variant: 'nbt-hash' }), false);
+  assert.equal(isKitOutput({ name: 'Tool kit' }), false);
+  assert.equal(isKitOutput({ kind: 'fluid', mod: 'minecraft', internal: 'command_block' }), false);
+});
 
 test('changeFraction is the move as a share of the larger quantity', () => {
   assert.equal(changeFraction(0, { from: 500 }), -1);

@@ -347,6 +347,10 @@ Every item and fluid in the ME network, with icon, name, and amount (fluids in
 mB), and its essentia with Thaumic Energistics installed. It refreshes every
 minute, but its data changes only when a scan finishes.
 
+Kit-slot outputs are hidden from this list: both the initial Command
+Block and the tagged "… kit" outputs generated as those slots are reused.
+The scan data is still available to the planner and item history.
+
 - Click an item to open its stock history chart. Each item has its own URL
   (`/network/item/<mod:internal:damage>`, `/network/item/@<aspect>` for
   essentia) that can be shared, and the link button in its dialog copies

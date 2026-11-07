@@ -1479,6 +1479,33 @@ async function main() {
     await waitFor('back to 3', `$$('#networkList .network-cell').length === 3`);
   });
 
+  step('network hides kit outputs while keeping ordinary controllers visible', async () => {
+    const { data: scan } = await game(base, '/api/network/scan/start', {});
+    await game(base, '/api/network/scan/batch', { scan_token: scan.scan_token, items: [
+      ...SEEDED_ITEMS.map(it => ({ ...it })),
+      { mod: 'minecraft', internal: 'command_block', name: 'Command Block', size: 0, isCraftable: true },
+      { mod: 'gregtech', internal: 'gt.blockmachines', damage: 1000, name: 'Electric Blast Furnace kit', hasTag: true, size: 0, isCraftable: true },
+      { mod: 'gregtech', internal: 'gt.blockmachines', damage: 1000, name: 'Electric Blast Furnace', size: 1 },
+    ] });
+    await game(base, '/api/network/scan/finish', { scan_token: scan.scan_token, chunks_sent: 1, total_errors: 0 });
+    await click(`$('#tabBtnPower')`);
+    await click(`$('#tabBtnNetwork')`);
+    await waitFor('only visible inventory counted', `$$('#networkList .network-cell').length === 4 && $('#networkSourceLine').textContent.startsWith('4 items')`);
+    await evaluate(`typeInto('#networkSearch', 'kit'), true`);
+    await waitFor('kit outputs excluded from search', `$$('#networkList .network-cell').length === 0`);
+    await evaluate(`typeInto('#networkSearch', 'Command Block'), true`);
+    await waitFor('placeholder excluded from search', `$$('#networkList .network-cell').length === 0`);
+    await evaluate(`typeInto('#networkSearch', 'Electric Blast Furnace'), true`);
+    await waitFor('normal controller stays visible', `$$('#networkList .network-cell').length === 1`);
+    const raw = await (await fetch(base + '/api/network')).json();
+    if (raw.items.length !== 6) throw new Error('the raw network snapshot lost kit outputs');
+    await evaluate(`typeInto('#networkSearch', ''), true`);
+    await scanNetwork(base);
+    await click(`$('#tabBtnPower')`);
+    await click(`$('#tabBtnNetwork')`);
+    await waitFor('network scan restored', `$$('#networkList .network-cell').length === 3`);
+  });
+
   step('network Change sort: most used up first, by how much', async () => {
     const rescan = async (sizes) => {
       const { data: scan } = await game(base, '/api/network/scan/start', {});
