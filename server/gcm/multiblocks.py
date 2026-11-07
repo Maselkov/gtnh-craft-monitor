@@ -149,6 +149,30 @@ def _counts(entry, tiers):
     return {k: n for k, n in counts.items() if n > 0}
 
 
+def preferred_tiers(key, preferences):
+    """Restore materials by block identity, even if an update moves tiers.
+
+    A removed material falls back to the lowest tier, rather than silently
+    choosing another material with its old tier number. Sizes are clamped
+    by kit() against the current structure's bounds.
+    """
+    data = _data()
+    entry = data and data["multiblocks"].get(key)
+    if not entry or not preferences:
+        return {}
+    chosen = {}
+    for channel in entry.get("channels") or []:
+        name = channel["name"]
+        block = preferences.get("blocks", {}).get(name)
+        if block:
+            changes = (entry.get("tiers") or {}).get(name) or {}
+            options = _channel_options(channel, changes, data.get("names") or {})
+            chosen[name] = next((o["tier"] for o in options if o.get("key") == block), channel["min"])
+        elif name in preferences.get("tiers", {}):
+            chosen[name] = preferences["tiers"][name]
+    return chosen
+
+
 def _snapshot():
     """{(mod, internal, damage as str): network item} for plain items."""
     with state.network_lock:

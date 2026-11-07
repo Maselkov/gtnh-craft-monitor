@@ -744,6 +744,17 @@ def _app_craft_event_first_seen(conn):
     conn.execute("CREATE INDEX idx_craft_events_cpu_seen ON craft_events (cpu_name, first_seen_at)")
 
 
+def _app_kit_preferences(conn):
+    conn.execute("""
+        CREATE TABLE kit_preferences (
+            user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            controller TEXT NOT NULL,
+            value TEXT NOT NULL,
+            PRIMARY KEY (user_id, controller)
+        )
+    """)
+
+
 APP_MIGRATIONS = [
     _app_baseline,
     _app_drop_orphaned_user_rows,
@@ -760,6 +771,7 @@ APP_MIGRATIONS = [
     _app_mcp_calls,
     _app_cancel_source,
     _app_craft_event_first_seen,
+    _app_kit_preferences,
 ]
 POWER_MIGRATIONS = [
     _power_baseline, _power_machines, _power_drop_impossible_times, _power_wireless_lsc, _power_machine_names,

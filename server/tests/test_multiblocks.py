@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from gcm import commands, gamedata, multiblocks, nbt, state
+from gcm import commands, gamedata, multiblocks, nbt, state, store
 from conftest import login_as
 
 EBF = "gregtech:gt.blockmachines:1000"
@@ -173,6 +173,52 @@ BATCH = {"requests": [
     {"label": "Kanthal Coil Block", "mod": "gregtech", "internal": "gt.blockcasings5", "damage": 1, "amount": 11},
     {"label": "Heat Proof Machine Casing", "mod": "gregtech", "internal": "gt.blockcasings", "damage": 11, "amount": 16},
 ]}
+
+
+def test_saved_kit_choices_are_per_account_and_multiblock(client, flask_app, structures):
+    login_as(client, "alice", role="operator")
+    payload = {"key": EBF, "tiers": {"coil": 2}, "separate": True}
+    assert client.put("/api/multiblocks/preferences", json=payload).status_code == 200
+    # A different browser session for the same account gets the same defaults.
+    other = flask_app.test_client()
+    login_as(other, "alice", role="operator")
+    kit = other.get(f"/api/multiblocks/kit?key={EBF}").get_json()
+    assert kit["count"] == 1 and kit["channels"][0]["tier"] == 2 and kit["preferred_separate"]
+    assert "count" not in store.kit_preferences.get("alice", EBF)
+    assert other.get(f"/api/multiblocks/kit?key={ASSLINE}").get_json()["count"] == 1
+    # Explicit configuration changes override the saved defaults.
+    kit = other.get(f"/api/multiblocks/kit?key={EBF}&tier.coil=1&count=2").get_json()
+    assert kit["count"] == 2 and kit["channels"][0]["tier"] == 1
+    login_as(other, "bob", role="operator")
+    kit = other.get(f"/api/multiblocks/kit?key={EBF}").get_json()
+    assert kit["count"] == 1 and kit["channels"][0]["tier"] == 1 and not kit["preferred_separate"]
+    anonymous = flask_app.test_client().get(f"/api/multiblocks/kit?key={EBF}").get_json()
+    assert anonymous["count"] == 1 and anonymous["channels"][0]["tier"] == 1
+    assert store.users.delete("alice")
+    assert store.kit_preferences.get("alice", EBF) is None
+
+
+def test_saved_materials_follow_block_identity_and_removed_materials_fall_back(structures):
+    saved = {"tiers": {"coil": 1}, "blocks": {"coil": KANTHAL}}
+    assert multiblocks.kit(EBF, multiblocks.preferred_tiers(EBF, saved))["channels"][0]["tier"] == 2
+    saved["blocks"]["coil"] = "removed:coil:0"
+    assert multiblocks.kit(EBF, multiblocks.preferred_tiers(EBF, saved))["channels"][0]["tier"] == 1
+    assert multiblocks.preferred_tiers("missing:controller:0", saved) == {}
+    sizes = {"tiers": {"length": 9000}}
+    line = multiblocks.kit(ASSLINE, multiblocks.preferred_tiers(ASSLINE, sizes))
+    assert line["channels"][1]["tier"] == 6
+
+
+def test_saving_kit_choices_requires_an_operator_and_valid_configuration(client, structures):
+    payload = {"key": EBF, "tiers": {"coil": 1}, "separate": False}
+    assert client.put("/api/multiblocks/preferences", json=payload).status_code == 401
+    login_as(client, "viewer", role="viewer")
+    assert client.put("/api/multiblocks/preferences", json=payload).status_code == 403
+    login_as(client, "operator", role="operator")
+    for change in ({"tiers": []}, {"tiers": {"coil": "2"}}, {"separate": "yes"}, {"key": []}):
+        assert client.put("/api/multiblocks/preferences", json={**payload, **change}).status_code == 400
+    assert client.put("/api/multiblocks/preferences", json={**payload, "key": "missing:block:0"}).status_code == 404
+    assert store.kit_preferences.get("operator", EBF) is None
 
 
 def test_batch_request_queues_each(client):

@@ -2541,6 +2541,60 @@ async function main() {
     await waitFor('faithful icon', `$$('#networkList img.network-cell-icon').some((i) => i.src.includes('~faithful32') && i.complete && i.naturalWidth === 32)`);
   });
 
+  step('kit choices survive a reload while quantities and stock shortages reset', async () => {
+    const { data: scan } = await game(base, '/api/network/scan/start', {});
+    await game(base, '/api/network/scan/batch', { scan_token: scan.scan_token, items: [
+      ...SEEDED_ITEMS.map(it => ({ ...it })),
+      { mod: 'minecraft', internal: 'gold_ingot', damage: 0, name: 'Gold Ingot', size: 0, isCraftable: true },
+    ] });
+    await game(base, '/api/network/scan/finish', { scan_token: scan.scan_token, chunks_sent: 1, total_errors: 0 });
+    await postCrafts(base, true, false, { kit_slots: 1 });
+    await click(`$('#networkKitButton [data-action="open-kit"]')`);
+    await click(`$('#kitPicker')`);
+    await waitFor('remembered kit available', `$('#kitPickerList [role="option"]')`);
+    await click(`$('#kitPickerList [role="option"]')`);
+    await waitFor('kit ready for another request', `$('#kitChannel-coil') && !$('#kitSeparate').disabled`);
+    await click(`$('#kitChannel-coil')`);
+    await click(`$('#kitChannel-coilList [data-value="2"]')`);
+    await waitFor('second coil selected', `$('#kitChannel-coil').value === 'Gold Ingot' && $('#kitChannel-coil').closest('.kit-row').querySelector('.kit-request')`);
+    await evaluate(`(() => { const c = $('#kitCount'); c.value = 3; c.dispatchEvent(new Event('change', {bubbles: true})); return true; })()`);
+    await waitFor('three kits configured', `$('#kitChannel-coil').closest('.kit-row').querySelector('.kit-num').textContent === '3,000' && !$('#kitReviewBtn').disabled`);
+    await evaluate(`(() => { const r = $('#kitChannel-coil').closest('.kit-row').querySelector('.kit-request'); r.value = 7; r.dispatchEvent(new Event('input', {bubbles: true})); return true; })()`);
+    if (!await evaluate(`$('#kitSeparate').checked`)) await click(`$('#kitSeparate')`);
+    await evaluate(`(() => {
+      window.savedKitFetch = window.fetch;
+      window.fetch = (...args) => String(args[0]) === '/api/craft/request-batch'
+        ? Promise.resolve(new Response(JSON.stringify({ok: true, ids: []}), {status: 200})) : window.savedKitFetch(...args);
+      return true;
+    })()`);
+    await click(`$('#kitReviewBtn')`);
+    await waitFor('separate crafts reviewed', `visible($('#kitReview #craftPlan')) && !$('#kitRequestBtn').disabled`);
+    await click(`$('#kitRequestBtn')`);
+    await waitFor('kit requested and choices saved', `!visible($('#kitModal'))`);
+    await evaluate(`window.fetch = window.savedKitFetch, true`);
+    await cdp.send('Page.reload', {});
+    await waitFor('reloaded with clean frontend state', `document.readyState === 'complete' && !window.byText`);
+    await evaluate(PAGE_LIB);
+    await waitFor('kit button after reload', `visible($('#networkKitButton'))`);
+    await click(`$('#networkKitButton [data-action="open-kit"]')`);
+    await click(`$('#kitPicker')`);
+    await waitFor('kit choices after reload', `$('#kitPickerList [role="option"]')`);
+    await click(`$('#kitPickerList [role="option"]')`);
+    await waitFor('parts and mode remembered, amounts recalculated', `$('#kitChannel-coil')?.value === 'Gold Ingot'
+      && $('#kitCount').value === '1' && $('#kitSeparate').checked
+      && $('#kitChannel-coil').closest('.kit-row').querySelector('.kit-request').value === '1000'`);
+    await click(`$('#kitChannel-coil')`);
+    await click(`$('#kitChannel-coilList [data-value="1"]')`);
+    await waitFor('unsent choice changed', `$('#kitChannel-coil').value === 'Iron Ingot'`);
+    await evaluate(`pressKey('Escape'), true`);
+    await waitFor('unsent kit closed', `!visible($('#kitModal'))`);
+    await scanNetwork(base);
+    await postCrafts(base, true);
+    await click(`$('#tabBtnPower')`);
+    await click(`$('#tabBtnNetwork')`);
+    await waitFor('original stock restored', `$$('#networkList .network-cell').length === 3`);
+  });
+
   step('admin: check the patterns against another version\'s recipes', async () => {
     await click(`$('#settingsBtn')`);
     await click(`$('#gamedataBtn')`);

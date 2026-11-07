@@ -497,6 +497,12 @@ the header for either entry point, wrapping below the name on narrow
 screens. It needs game data built since
 kits were added; the button isn't there without it.
 
+After a request is accepted, the page remembers your chosen coils, glass,
+structural sizes and separate-craft setting **for your account and that
+multiblock**, including when you sign in from another browser. **How many**
+always starts at **1**. Each material's Request amount is calculated again
+from the current stock, so a previous shortage isn't requested twice.
+
 Multiblocks with tiered parts have a picker for each, named after the
 hologram projector's channel for it: **Coil** and **Glass** list the blocks
 they take directly in the material row, beside its counts. The block icon

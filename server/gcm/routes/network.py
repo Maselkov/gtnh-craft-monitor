@@ -317,7 +317,9 @@ def multiblock_kit_get():
     """A multiblock's kit: ?key=mod:internal:damage&count=n, and a
     channel's tier as ?tier.<channel>=n (gcm/multiblocks.kit())."""
     key = request.args.get("key") or ""
-    tiers = {name[len("tier."):]: value for name, value in request.args.items() if name.startswith("tier.")}
+    preferences = store.kit_preferences.get(g.user["id"], key) if g.user else None
+    tiers = multiblocks.preferred_tiers(key, preferences)
+    tiers.update({name[len("tier."):]: value for name, value in request.args.items() if name.startswith("tier.")})
     try:
         count = int(request.args.get("count") or 1)
     except ValueError:
@@ -330,7 +332,33 @@ def multiblock_kit_get():
     result["plan_available"] = patterns.missing() is None
     result["plan_unavailable_reason"] = None if result["plan_available"] else patterns.missing_reason("crafting plan")
     result["needs_terminal"] = patterns.terminal_missing()
+    result["preferred_separate"] = bool(preferences and preferences.get("separate"))
     return jsonify(result)
+
+
+@bp.route("/api/multiblocks/preferences", methods=["PUT"])
+@auth.login_required
+@auth.operator_required
+def multiblock_preferences_put():
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"error": "a kit configuration is required"}), 400
+    key, tiers, separate = (payload.get(k) for k in ("key", "tiers", "separate"))
+    if (not isinstance(key, str) or key.count(":") < 2 or len(key) > 512
+            or not isinstance(tiers, dict) or not isinstance(separate, bool)
+            or any(not isinstance(k, str) or type(v) is not int for k, v in tiers.items())):
+        return jsonify({"error": "invalid kit configuration"}), 400
+    result = multiblocks.kit(key, tiers)
+    if result is None:
+        return jsonify({"error": "no kit for that item"}), 404
+    value = {
+        "separate": separate,
+        "tiers": {ch["name"]: ch["tier"] for ch in result["channels"]},
+        "blocks": {ch["name"]: o["key"] for ch in result["channels"]
+                   for o in ch["options"] if o["tier"] == ch["tier"] and o.get("key")},
+    }
+    store.kit_preferences.save(g.user["id"], key, value)
+    return jsonify({"ok": True})
 
 
 @bp.route("/api/multiblocks/layout", methods=["GET"])

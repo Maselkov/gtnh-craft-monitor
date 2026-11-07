@@ -35,25 +35,12 @@ let planStatus = 'idle';
 let kitReady = false;
 let submitting = false;
 let configurationScroll = 0;
+let separate = false;
 // Whether the 3D view is open: it is unless this viewer closed it.
 const VIEW_KEY = 'gtnhCraftMonitor.kitViewClosed';
-// Whether this viewer requests each block on its own even where a kit
-// could be one job.
-const SEPARATE_KEY = 'gtnhCraftMonitor.kitSeparate';
-
-function separateWanted() {
-  try { return localStorage.getItem(SEPARATE_KEY) === '1'; } catch (e) { return false; }
-}
-
-function setSeparateWanted(on) {
-  try {
-    if (on) localStorage.setItem(SEPARATE_KEY, '1'); else localStorage.removeItem(SEPARATE_KEY);
-  } catch (e) { /* per-viewer nicety only */ }
-}
-
 // Whether Request makes one job of the kit.
 function oneJob() {
-  return !!(kit && kit.kit_slots > 0) && !separateWanted();
+  return !!(kit && kit.kit_slots > 0) && !separate;
 }
 
 function viewWanted() {
@@ -139,6 +126,7 @@ export function openKit(key) {
   kit = null;
   tiers = {};
   count = 1;
+  separate = false;
   edits = new Map();
   reviewing = false;
   submitting = false;
@@ -192,18 +180,22 @@ function selectController(key) {
   openKey = key;
   tiers = {};
   count = 1;
+  separate = false;
   document.getElementById('kitCount').value = '1';
   edits = new Map();
-  fetchKit();
+  fetchKit(true);
 }
 
-async function fetchKit() {
+async function fetchKit(restorePreferences = false) {
   if (!openKey) return;
   kitReady = false;
   updateRequestButton();
   const seq = ++fetchSeq;
-  const params = new URLSearchParams({ key: openKey, count: String(count) });
-  for (const [name, tier] of Object.entries(tiers)) params.set('tier.' + name, String(tier));
+  const params = new URLSearchParams({ key: openKey });
+  if (!restorePreferences) {
+    params.set('count', String(count));
+    for (const [name, tier] of Object.entries(tiers)) params.set('tier.' + name, String(tier));
+  }
   const errorEl = document.getElementById('kitError');
   try {
     const res = await fetch('/api/multiblocks/kit?' + params.toString());
@@ -220,6 +212,7 @@ async function fetchKit() {
     count = kit.count;
     tiers = Object.fromEntries(kit.channels.map(ch => [ch.name, ch.tier]));
     document.getElementById('kitCount').value = String(count);
+    if (restorePreferences) separate = kit.preferred_separate;
     kitReady = true;
     errorEl.hidden = true;
     renderKit();
@@ -459,6 +452,11 @@ async function submitKit() {
   if (!list.length || !isOperator() || !kitReady || submitting || (kit.plan_available && !reviewing)
       || (reviewing && !['ready', 'unavailable'].includes(planStatus))) return;
   const submittedKit = kit;
+  const submittedUser = AUTH_USER?.id;
+  const preferences = {
+    key: kit.controller.key, separate,
+    tiers: Object.fromEntries(kit.channels.map(ch => [ch.name, ch.tier])),
+  };
   const errorEl = document.getElementById('kitError');
   const together = oneJob();
   const { url, body } = submission(list);
@@ -477,9 +475,18 @@ async function submitKit() {
       errorEl.hidden = false;
       return;
     }
+    let saved = true;
+    if (AUTH_USER?.id === submittedUser) {
+      try {
+        const response = await fetch('/api/multiblocks/preferences', {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(preferences),
+        });
+        saved = response.ok;
+      } catch (e) { saved = false; }
+    }
     const message = together ? `Requested ${nameText(submittedKit.controller.name)} kit as one job`
       : `Requested ${list.length} craft${list.length === 1 ? '' : 's'} for ${nameText(submittedKit.controller.name)}`;
-    showToast(message);
+    showToast(message + (saved ? '' : '. Your kit choices could not be saved.'));
     if (kit === submittedKit) closeKit();
     fetchCraftRequests();
   } catch (e) {
@@ -529,7 +536,7 @@ export function setupKitActions() {
   });
 
   document.getElementById('kitSeparate').addEventListener('change', (e) => {
-    setSeparateWanted(e.target.checked);
+    separate = e.target.checked;
     updateRequestButton();
   });
   document.getElementById('kitCount').addEventListener('change', (e) => {
