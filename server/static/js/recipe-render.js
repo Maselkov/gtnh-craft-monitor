@@ -34,6 +34,24 @@ function paintRecipeCard(card) {
   const style = getComputedStyle(card);
   ctx.fillStyle = style.getPropertyValue('--recipe-canvas').trim();
   ctx.fillRect(0, 0, card.clientWidth, card.clientHeight);
+  for (const slot of card.querySelectorAll('.recipe-crafting-slot')) {
+    const r = slot.getBoundingClientRect(), x = Math.round(r.x-rect.x), y = Math.round(r.y-rect.y);
+    const w = Math.round(r.width), h = Math.round(r.height), edge = Math.max(1,Math.round(w/Number(slot.dataset.w)));
+    ctx.fillStyle = style.getPropertyValue('--recipe-slot').trim(); ctx.fillRect(x,y,w,h);
+    ctx.fillStyle = style.getPropertyValue('--recipe-slot-shadow').trim();
+    ctx.fillRect(x,y,w,edge); ctx.fillRect(x,y,edge,h);
+    ctx.fillStyle = style.getPropertyValue('--recipe-frame-light').trim();
+    ctx.fillRect(x,y+h-edge,w,edge); ctx.fillRect(x+w-edge,y,edge,h);
+  }
+  const arrow = card.querySelector('.recipe-crafting-arrow');
+  if (arrow) {
+    const r = arrow.getBoundingClientRect(), x = r.x-rect.x, y = r.y-rect.y;
+    ctx.fillStyle = style.getPropertyValue('--recipe-frame-mid').trim();
+    ctx.beginPath(); ctx.moveTo(x,y+r.height*.32); ctx.lineTo(x+r.width*.6,y+r.height*.32);
+    ctx.lineTo(x+r.width*.6,y); ctx.lineTo(x+r.width,y+r.height/2);
+    ctx.lineTo(x+r.width*.6,y+r.height); ctx.lineTo(x+r.width*.6,y+r.height*.68);
+    ctx.lineTo(x,y+r.height*.68); ctx.closePath(); ctx.fill();
+  }
   if (!stats) return;
   const size = parseFloat(getComputedStyle(stats).fontSize), scale = size / 8;
   const ink = style.getPropertyValue('--recipe-canvas-ink').trim();
@@ -212,6 +230,28 @@ export function displayChoices(alternatives) {
   return alternatives.flatMap(e => e.display_variants?.length ? e.display_variants : [e]).slice(0, 16);
 }
 
+export function craftingTitle(step) {
+  return step.grid?.shapeless ? 'Shapeless Crafting' : 'Shaped Crafting';
+}
+
+export function craftingHtml(step, options = {}) {
+  const grid = step.grid, cols = Math.max(3,grid.w), rows = Math.max(3,grid.h);
+  const slots = [];
+  for (let y=0; y<rows; y++) for (let x=0; x<cols; x++) {
+    const index = y*grid.w+x;
+    const input = x<grid.w && y<grid.h ? grid.slots[index] : null;
+    const count = input?.alternatives_total || 0;
+    const note = [input?.ore, count>1 ? `${count} alternatives${count>input.alternatives.length ? ` (showing ${input.alternatives.length})` : ''}` : ''].filter(Boolean).join(' · ');
+    slots.push({x:25+x*18,y:12+y*18,w:18,h:18,alternatives:input?.alternatives || [],
+      crafting:true,choice:input ? String(index) : `empty-${y}-${x}`,note});
+  }
+  for (const [index,output] of step.outputs.entries()) slots.push({x:65+cols*18+index*28,y:12+rows*9-13,w:26,h:26,
+    alternatives:[output],crafting:true,output:true,choice:`output-${index}`});
+  const preview = {family:'crafting',width:Math.max(166,112+cols*18+(step.outputs.length-1)*28),height:Math.max(92,24+rows*18),
+    slots,layers:[],aspects:[]};
+  return `<div class="recipe-crafting recipe-grid recipe-grid-w${grid.w}" role="group" aria-label="${craftingTitle(step)}">${previewHtml({...step,preview}, options)}</div>`;
+}
+
 export function previewHtml(step, options = {}) {
   const p = step.preview;
   const layers = p.layers.map(layer => {
@@ -220,11 +260,11 @@ export function previewHtml(step, options = {}) {
   }).join('');
   const slots = p.slots.map((slot, i) => {
     const e = displayChoices(slot.alternatives)[0];
-    return `<span class="recipe-preview-slot${slot.framed && !slot.frame ? ' recipe-preview-fallback-frame' : ''}" data-id="preview-${i}" data-choice="${step.id}:preview-${i}" data-x="${slot.x}" data-y="${slot.y}" data-w="${slot.w}" data-h="${slot.h}">${slot.frame ? `<img class="recipe-preview-frame" src="${iconUrl(slot.frame)}" alt="">` : ''}<span class="recipe-preview-choice">${e ? stackHtml(e, {...options, compact:true, preview:true}) : ''}</span></span>`;
+    return `<span class="recipe-preview-slot${slot.crafting ? ' recipe-crafting-slot' : ''}${slot.output ? ' recipe-outputs' : ''}${slot.framed && !slot.frame ? ' recipe-preview-fallback-frame' : ''}" data-id="preview-${i}" data-choice="${step.id}:${slot.choice ?? `preview-${i}`}" data-x="${slot.x}" data-y="${slot.y}" data-w="${slot.w}" data-h="${slot.h}">${slot.frame ? `<img class="recipe-preview-frame" src="${iconUrl(slot.frame)}" alt="">` : ''}<span class="recipe-preview-choice">${e ? stackHtml(e, {...options, compact:true, preview:true,note:slot.note ?? options.note}) : ''}</span></span>`;
   }).join('');
   const research = p.research;
   const aspects = p.aspects.map(a => `<span class="recipe-preview-aspect" title="${escapeHtml(a.name)}">${a.icon ? `<img src="${iconUrl(a.icon)}" alt="${escapeHtml(a.name)}">` : escapeHtml(a.name)}<span>${a.amount}</span></span>`).join('');
-  return `${p.family === 'infusion' ? '<div class="recipe-preview-paper">' : ''}<div class="recipe-preview${p.family === 'infusion' ? ' recipe-preview-infusion' : ''}" data-width="${p.width}" data-height="${p.height}"><svg class="recipe-preview-layers" viewBox="0 0 ${p.width} ${p.height}" aria-hidden="true">${layers}</svg>${p.family === 'research_station' ? researchWires(step) : ''}${slots}</div>
+  return `${p.family === 'infusion' ? '<div class="recipe-preview-paper">' : ''}<div class="recipe-preview${p.family === 'infusion' ? ' recipe-preview-infusion' : ''}" data-width="${p.width}" data-height="${p.height}"><svg class="recipe-preview-layers" viewBox="0 0 ${p.width} ${p.height}" aria-hidden="true">${layers}</svg>${p.family === 'research_station' ? researchWires(step) : ''}${slots}${p.family === 'crafting' ? `<span class="recipe-preview-slot recipe-crafting-arrow" data-x="${33+Math.max(3,step.grid.w)*18}" data-y="${6+Math.max(3,step.grid.h)*9}" data-w="26" data-h="12" aria-hidden="true"></span>` : ''}</div>
     ${p.family === 'infusion' ? `<div class="recipe-preview-instability">Instability: ${escapeHtml(String(step.requirements?.instability ?? '?'))}</div>` : ''}
     ${aspects ? `<div class="recipe-preview-aspects">${aspects}</div>` : ''}
     ${p.family === 'infusion' ? '</div>' : ''}
@@ -301,7 +341,8 @@ export function stepHtml(step, options = {}) {
     : escapeHtml(machineText(step));
   const groups = (step.groups || []).map((slot, index) => `<span class="recipe-choice" data-id="group-${index}" data-choice="${step.id}:group-${index}" ${options.tooltipKey ? '' : `title="${slot.alternatives_total} alternatives"`}>${stackHtml(slot.alternatives[0], { ...options, compact: true, note: `${slot.alternatives_total} alternatives` })}</span>`).join('');
   const inputs = step.grid ? gridHtml(step, options) : `<div class="recipe-side">${groups}${step.inputs.map(e => stackHtml(e, options)).join('')}</div>`;
-  const graphic = options.interactive && step.preview ? previewHtml(step, options) : `<div class="recipe-step-sides">${inputs}<div class="recipe-arrow" aria-hidden="true">&rarr;</div>
+  const graphic = options.interactive && step.grid ? craftingHtml(step, options)
+    : options.interactive && step.preview ? previewHtml(step, options) : `<div class="recipe-step-sides">${inputs}<div class="recipe-arrow" aria-hidden="true">&rarr;</div>
       <div class="recipe-side recipe-outputs">${step.outputs.map(e => stackHtml(e, { ...options, compact: !!step.grid })).join('')}</div></div>`;
   const stats = options.interactive ? energyHtml(step) : '';
   const paper = options.interactive;

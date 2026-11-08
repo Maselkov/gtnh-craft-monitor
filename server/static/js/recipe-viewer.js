@@ -6,12 +6,12 @@ import { bindCellTooltip, hideTooltip, showTooltip, tooltipVisible } from './too
 import { findNetworkItem, openItemHistory } from './history.js';
 import { activeTab } from './tabs.js';
 import { setPageView } from './page-title.js';
-import { amountText, displayChoices, layoutRecipePreviews, machineSidebarHtml, stackHtml, stepHtml } from './recipe-render.js';
+import { craftingTitle, displayChoices, layoutRecipePreviews, machineSidebarHtml, stackHtml, stepHtml } from './recipe-render.js';
 import { setupRecipeTabs } from './recipe-tabs.js';
 import { setupRecipeShell } from './recipe-shell.js';
 import { setupRecipeWheel } from './recipe-wheel.js';
-import { recipeFromUrl, recipeUrl, sameRecipeDataset } from './recipe-state.js';
-import { delegateActions, escapeHtml, formatQty, onBackdropClick, updateHtml } from './util.js';
+import { moveRecipePage, recipeFromUrl, recipeUrl, sameRecipeDataset } from './recipe-state.js';
+import { delegateActions, escapeHtml, onBackdropClick, updateHtml } from './util.js';
 
 let state = null;
 let closing = false;
@@ -49,12 +49,9 @@ function recipeTooltipHtml(cell) {
   tooltipCell = cell;
   const notes = [entry.wildcard ? 'Any damage' : '', cell.dataset.tooltipNote,
     entry.chance ? `${entry.chance}% chance` : ''].filter(Boolean).join(' · ');
-  const stock = entry.machine && entry.key ? stockItem(entry) : null;
-  const stat = entry.machine
-    ? entry.key ? `Amount in system: ${formatQty(stock?.size ?? 0)}` : ''
-    : entry.size === 0 ? 'Not consumed' : `Amount: ${amountText(entry)}`;
-  return itemTooltipHtml(entry.machine ? {...entry, isCraftable:stock?.isCraftable} : entry, entry.info, { shiftHeld,
-    stat,
+  const stock = stockItem(entry);
+  return itemTooltipHtml({...entry, isCraftable:stock?.isCraftable}, entry.info, { shiftHeld,
+    aggregateStockVariants:true,
     details: notes ? `<div class="network-tooltip-stat">${escapeHtml(notes)}</div>` : '' });
 }
 
@@ -218,28 +215,28 @@ async function loadFrame(force = false) {
   }
 }
 
-async function page(model, frame, token, signal) {
-  const query = new URLSearchParams({ key: frame.key, dir: frame.dir, offset: String(model.recipes.length), limit: '20',
+async function page(model, frame, token, signal, offset = 0) {
+  const query = new URLSearchParams({ key: frame.key, dir: frame.dir, offset: String(offset), limit: '20',
     version: model.metadata.version, fingerprint: model.metadata.fingerprint, assets: model.metadata.assets || '' });
   if (frame.map) query.set('map', frame.map);
   const data = await get('/api/recipes?' + query, signal);
   if (token !== generation) return;
   if (!sameRecipeDataset(model.metadata, data)) throw Object.assign(new Error('Game data changed. Reload recipes to continue.'), { code: 'stale_recipes' });
-  model.recipes.push(...data.recipes);
+  data.recipes.forEach((recipe,index) => { model.recipes[offset+index] = recipe; });
   model.machines = {...model.machines, ...data.machines};
   model.total = data.total;
   model.loaded = true;
 }
 
-async function turnPage(direction) {
+async function turnPage(direction, wrap = false) {
   const frame = current();
   const model = cached(frame);
   if (!displayingCurrent() || !model?.loaded || !model.total) return;
-  const next = Math.max(0, Math.min(model.total - 1, (model.requestedPage ?? model.page ?? 0) + direction));
+  const next = moveRecipePage(model.requestedPage ?? model.page ?? 0, direction, model.total, wrap);
   if (next === (model.requestedPage ?? model.page ?? 0)) return;
   // Already fetched pages remain usable during background revalidation.
   // Fetching another batch waits until its dataset has been checked.
-  if (book().getAttribute('aria-busy') === 'true' && next >= model.recipes.length) return;
+  if (book().getAttribute('aria-busy') === 'true' && !model.recipes[next]) return;
   model.requestedPage = next;
   // Keep wheel travel received while another batch is loading. The latest
   // target wins, without starting parallel requests or showing empty pages.
@@ -249,9 +246,11 @@ async function turnPage(direction) {
   document.getElementById('recipePageNext').disabled = true;
   document.getElementById('recipePagePrevious').disabled = true;
   try {
-    while (token === generation && model.requestedPage >= model.recipes.length && model.recipes.length < model.total) {
+    while (token === generation && !model.recipes[model.requestedPage] && model.requestedPage < model.total) {
       status('Loading recipes…');
-      await page(model, frame, token, requestController.signal);
+      // Wrapping to the last page must not download every intervening page.
+      const offset = Math.floor(model.requestedPage / 20) * 20;
+      await page(model, frame, token, requestController.signal, offset);
     }
     if (token === generation) {
       model.page = Math.max(0, Math.min(model.requestedPage, model.total - 1)); model.scroll = 0;
@@ -273,7 +272,7 @@ function updatePageButtons(model) {
   const pending = book().getAttribute('aria-busy') === 'true';
   document.getElementById('recipePagePrevious').disabled = !model?.loaded || index <= 0 || !!model.paging;
   document.getElementById('recipePageNext').disabled = !model?.loaded || index + 1 >= model.total || !!model.paging
-    || (pending && index + 1 >= model.recipes.length);
+    || (pending && !model.recipes[index+1]);
   document.getElementById('recipeViewerPage').textContent = model
     ? `Page ${model.total ? index + 1 : 0}/${model.total}` : 'Page …';
 }
@@ -308,6 +307,7 @@ function render(model) {
   if (!frame) return;
   rendered = {frame:{...frame}, model};
   const meta = model?.metadata;
+  const row = model?.recipes[model.page || 0];
   const name = nameText(meta?.item.name || frame.name || frame.key);
   book().dataset.itemName = name;
   book().dataset.direction = frame.dir;
@@ -316,7 +316,8 @@ function render(model) {
   document.getElementById('recipeViewerBack').disabled = state.recipe.stack.length < 2;
   updateStockButton();
   const counts = meta?.[frame.dir] || {};
-  const maps = (meta?.maps || []).filter(m => counts[m.id]);
+  const maps = (meta?.maps || []).filter(m => counts[m.id]).map(map =>
+    row?.grid && row.map === map.id ? {...map,name:craftingTitle(row)} : map);
   categoryTabs.render(meta ? maps : null, counts, frame.map, frame.id);
   for (const id of ['recipeCategoryPrevious', 'recipeCategoryNext']) document.getElementById(id).disabled = maps.length < 2;
   const full = meta?.coverage.handlers?.includes('crafting');
@@ -325,7 +326,8 @@ function render(model) {
     : 'This older bundle contains GregTech recipes only. Crafting-table, furnace and other handlers are not included.';
   const info = document.getElementById('recipeViewerInfo');
   const ore = meta?.info.ore || [];
-  updateHtml(info, (meta?.info.description ? descriptionHtml(meta.info.description) : '') + (ore.length ? `<div class="recipe-grid-note">Ore dictionary: ${escapeHtml(ore.join(', '))}</div>` : ''));
+  updateHtml(info, (meta?.info.description ? descriptionHtml(meta.info.description) : '') + (ore.length ? `<div class="recipe-grid-note">Ore dictionary: ${escapeHtml(ore.join(', '))}</div>` : '')
+    + (row?.approximate?.some(flag => flag !== 'nei_display') ? '<div class="recipe-approximation">Approximate: NBT or custom matching rules may differ.</div>' : ''));
   clearTooltip();
   choices.clear(); tooltipEntries.clear(); tooltipIds.clear();
   const rows = model?.recipes.slice(model.page || 0, (model.page || 0) + 1) || [];
@@ -340,10 +342,10 @@ function render(model) {
     });
     row.grid?.slots.forEach((slot, index) => {
       if (!slot) return;
-      choices.set(`${row.id}:${index}`, slot.alternatives);
+      choices.set(`${row.id}:${index}`, displayChoices(slot.alternatives));
     });
   }
-  updateHtml(list(), rows.map(row => `<article class="recipe-viewer-row" data-id="recipe-${row.id}">${stepHtml(row, {interactive:true, tooltipKey, machineSidebar:true})}${row.approximate?.filter(flag => flag !== 'nei_display').length ? '<div class="recipe-approximation">Approximate: NBT or custom matching rules may differ.</div>' : ''}</article>`).join(''));
+  updateHtml(list(), rows.map(row => `<article class="recipe-viewer-row" data-id="recipe-${row.id}">${stepHtml(row, {interactive:true, tooltipKey, machineSidebar:true})}</article>`).join(''));
   layoutRecipePreviews(list());
   if (model) list().scrollTop = model.scroll;
   updatePageButtons(model);
@@ -371,7 +373,7 @@ function startCycling() {
 export function setupRecipeViewer() {
   categoryTabs = setupRecipeTabs();
   setupRecipeShell(book());
-  setupRecipeWheel(book(), {isOpen:recipeViewerOpen, page:turnPage, category:turnCategory});
+  setupRecipeWheel(book(), {isOpen:recipeViewerOpen, page:steps => turnPage(steps,true), category:turnCategory});
   let previewWidth = 0;
   const resize = new ResizeObserver(([entry]) => {
     if (entry.contentRect.width === previewWidth) return;

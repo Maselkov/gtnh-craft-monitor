@@ -13,7 +13,8 @@
 
 import { nameHtml, nameText } from './description.js';
 import { itemMatchesSearch, parseSearchQuery } from './search.js';
-import { bindCellTooltip } from './tooltip.js';
+import { bindCellTooltip, showTooltip, tooltipVisible } from './tooltip.js';
+import { systemStockHtml } from './item-tooltip.js';
 import { ensureLoaded, flashRow, graft, matchingEntries, matchTree, nodeAt, openAbove, searchNoteText } from './tree-nav.js';
 import { bindFilterInput, delegateActions, escapeHtml, essentiaBadgeHtml, formatQty, formatRelativeTime, iconClass, iconUrl, kindTooltipHtml, TERMINAL_DOCS_URL } from './util.js';
 
@@ -22,6 +23,7 @@ const HIDE_KEY = 'gtnhCraftMonitor.planHideAvailable';
 const FETCH_DELAY_MS = 300;
 
 let target = null;      // the item the dialog is for, or a kit: {kit, count, targets}
+let tooltipKey = null;
 let amount = null;      // the last valid amount asked for
 let choices = {};       // item key -> pattern id picked in the tree
 let openState = new Map();  // tree path -> open, where the user toggled it
@@ -202,11 +204,12 @@ function cellTooltipHtml(it) {
     <div class="network-tooltip-name">${nameHtml(it.name || '?')}${escapeHtml(variantText(it))}</div>
     ${stat('Needed', it.need)}
     ${it.from_leftovers > 0 ? stat('Left over from other steps', it.from_leftovers) : ''}
-    ${it.from_stock > 0 ? stat('From stock', it.from_stock) + stat('In stock', it.available) : ''}
+    ${it.from_stock > 0 ? stat('From stock', it.from_stock) + stat('Available to plan', it.available) : ''}
     ${it.craft > 0 ? stat('Crafted', it.craft) : ''}
     ${it.missing > 0 ? stat('Missing', it.missing) : ''}
     ${(it.warnings || []).map(w => `<div class="network-tooltip-stat plan-warning-line">${qty(it.left, it.kind)} left: ${escapeHtml(warningText(w, it.kind))}</div>`).join('')}
     ${kindTooltipHtml(it.kind)}
+    ${systemStockHtml(it)}
   `;
 }
 
@@ -657,6 +660,10 @@ export function closeCraftPlan() {
 }
 
 export function setupCraftPlanActions() {
+  window.addEventListener('gcm-networkchange', () => {
+    const body = document.getElementById('craftPlanBody'), item = itemsByKey.get(tooltipKey);
+    if (item && tooltipVisible(body)) showTooltip(cellTooltipHtml(item), undefined, undefined, body);
+  });
   view = readSetting(VIEW_KEY, 'list') === 'tree' ? 'tree' : 'list';
   hideAvailable = readSetting(HIDE_KEY, '0') === '1';
   const panel = document.getElementById('craftPlan');
@@ -706,6 +713,7 @@ export function setupCraftPlanActions() {
     scheduleFetch(0);
   });
   bindCellTooltip(document.getElementById('craftPlanBody'), '.plan-cell', (cell) => {
+    tooltipKey = cell.dataset.key;
     const it = itemsByKey.get(cell.dataset.key);
     return it ? cellTooltipHtml(it) : null;
   }, cell => itemsByKey.get(cell.dataset.key));

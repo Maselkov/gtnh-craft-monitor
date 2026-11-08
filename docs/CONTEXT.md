@@ -2192,7 +2192,11 @@ on the temporary file. On the real index, a 20-row Uses page of the circuit's
 took ~1.2 ms. All 242,717 normalized bodies matched independent full-JSON reading.
 The old ~200 MiB GT-only build figures above describe the pre-streaming builder.
 
-**The recipe viewer is independent of network membership.** `recipe_viewer.py`
+**The recipe viewer is independent of network membership.**
+The item stock modal puts Recipes/Uses in a compact reference row below its
+header, while its footer contains only crafting and multiblock-kit actions.
+
+`recipe_viewer.py`
 parses registry keys (wildcard damage stays wildcard; fluids use a `fluid:` prefix),
 batches names/icons, and presents at most 16 alternatives per occupied grid slot.
 `recipes.selected_index()` and `coverage_summary()` serve MCP and the two viewer
@@ -2213,6 +2217,15 @@ under reduced motion. Network snapshot events update the current item's Stock
 button at the bottom of the frame without resetting loaded pages. Recipe slots have no
 secondary action buttons over their tooltips. `dev.py` supplies typed crafting/furnace/GT demo chains and
 34 circuit uses for paging. Its recipes are illustrative, not pack knowledge.
+
+`network-stock.js` shares the latest network report with item tooltips without
+importing the Network UI. Network cells, recipes, ingredients and crafting plans
+render a gold Amount in system line, separate from task-specific counts. Recipe
+amounts stay on icons. Canonical recipe identities aggregate NBT variants;
+explicit variants stay exact and wildcard damage aggregates damage values.
+Missing reports/legacy name-only entries omit stock instead of inventing zero.
+Hover can lazily fetch a missing/stale report, deduplicated and bounded to once
+per minute. Network updates refresh a visible tooltip, including recipe slots.
 
 Assembly Line research has separate `research.scanner` and
 `research.research_station` category tabs in the viewer. Native metadata supplies
@@ -2238,6 +2251,14 @@ canvas, retaining the text in the DOM for accessibility and copying. This avoids
 browser automatic darkening recolouring HTML text separately from exported
 artwork. The canvas also requests `color-scheme: only light`. Font loading and
 viewport changes repaint it, with real regular/bold faces for the tier labels.
+Crafting-table recipes use the same positioned preview path as machine recipes.
+Their grid data supplies slots in a full 3-by-3 diagram (or larger when needed),
+preserving shaped holes and original alternative-slot identities. Recessed slot
+frames and the crafting arrow are painted on the card canvas, with full-size
+interactive icons above it and an enlarged output slot. The selected category's
+heading reflects the current recipe: Shaped Crafting or Shapeless Crafting.
+Matching-approximation notes live in the information panel rather than below
+the diagram. Existing bundles already contain the required grid data.
 Captured requirements use the same painted statistics block. Empty values and
 false top-level flags are omitted, while valid zero tiers and consumption chances
 remain. Cleanroom and low-gravity flags become direct requirement lines; long
@@ -2250,10 +2271,13 @@ simple catalyst identities on each row. The viewer chooses the first available
 category and shows one recipe per page in a single NEI-style paper window.
 Icon tabs protrude above the frame; the selected category's machine rail attaches
 to its left edge and scrolls independently, including on phones. The category
-arrows wrap between categories; page arrows stop at either end. API batches of
+arrows wrap between categories; page arrows stop at either end, while wheel
+paging wraps in both directions. API batches of
 20 recipes are fetched as needed, while the current page and scroll stay in the
-frame cache for Back/Forward. Production recipe ordering is unchanged. Each item
-and category identify a cached selection, bounded to 100 selections.
+frame cache for Back/Forward. Production recipe ordering is unchanged. The sparse
+page cache lets distant wrapped jumps fetch only their destination batch rather
+than every intervening recipe. Each item and category identify a cached selection,
+bounded to 100 selections.
 Loading preserves the last complete view until metadata and recipes can commit
 together; unknown totals use a loading label rather than a synthetic zero.
 Visited categories render from cache immediately and revalidate the dataset.
@@ -2264,7 +2288,7 @@ unused space) and category heading switch categories, while the remainder of the
 window changes recipe pages. Sidebar/information scrolling, horizontal gestures
 and browser modifier gestures stay native. Fine pixel deltas accumulate by
 distance; fast wheel events are not throttled. Coalesced large deltas can advance
-multiple steps, with category wrapping and page clamping. Wheel travel received
+multiple steps, with category and wheel-page wrapping. Wheel travel received
 while a recipe batch loads updates the requested page; sequential fetches satisfy
 the latest target without dropping notches or committing an empty page.
 The item header, direction bar, breadcrumbs and All-categories tab are removed; item

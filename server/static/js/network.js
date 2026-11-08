@@ -6,6 +6,7 @@ import { descriptionPlainText, formulaSearchText, nameText } from './description
 import { openItemHistory, tryOpenItemFromUrl, updateItemHistoryPinButton } from './history.js';
 import { buildSearchHighlightHtml, itemMatchesSearch, parseSearchQuery, searchNeedsItemInfo } from './search.js';
 import { itemTooltipHtml } from './item-tooltip.js';
+import { setNetworkStock, setupNetworkStock } from './network-stock.js';
 import { stockBadgeFor } from './stock.js';
 import { activeTab } from './tabs.js';
 import { bindCellTooltip, hideTooltip, showTooltip, tooltipVisible } from './tooltip.js';
@@ -190,12 +191,10 @@ function networkTooltipHtml(cell) {
   // Fluids are stored in mB (milli-buckets), same convention AE2's
   // own UI uses - appended only for fluids since an item count has
   // no such unit.
-  const statLine = 'Stored: ' + (it.size || 0).toLocaleString() + (it.kind === 'fluid' ? ' mB' : '');
-
   const change = changeOf(it);
   const changeLine = change ? changeTooltipHtml(change, it.kind) : '';
   const info = infoOf(it);
-  return itemTooltipHtml(it, info, { shiftHeld, stat: statLine,
+  return itemTooltipHtml(it, info, { shiftHeld, stockAmount:it.size || 0,
     details: changeLine, modName: modNameOf(it) || it.mod });
 }
 
@@ -490,6 +489,7 @@ export async function fetchNetwork() {
     data.items = (data.items || []).filter(it => !isKitOutput(it));
     data.item_count = data.items.length;
     lastNetworkData = data;
+    setNetworkStock(data);
     window.dispatchEvent(new Event('gcm-networkchange'));
     updateGameDataNote();
     updateTerminalNote();
@@ -817,6 +817,7 @@ function onNetworkScroll() {
 let networkResizeTicking = false;
 
 export function setupNetworkActions() {
+  setupNetworkStock(fetchNetwork);
   try { networkView = localStorage.getItem(NETWORK_VIEW_KEY) === 'list' ? 'list' : 'grid'; } catch (e) { /* grid */ }
   document.getElementById('networkTerminalHow').href = TERMINAL_DOCS_URL;
   showNetworkView();

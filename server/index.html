@@ -341,6 +341,10 @@
         <button class="history-link-btn" data-action="copy-item-link" title="Copy a link to this item"><svg class="ui-icon" viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6.8 9.2a3 3 0 0 0 4.2 0l2.2-2.2a3 3 0 0 0-4.2-4.2l-1 1"/><path d="M9.2 6.8a3 3 0 0 0-4.2 0L2.8 9a3 3 0 0 0 4.2 4.2l1-1"/></g></svg></button>
         <button class="history-close-btn" data-action="close-history" title="Close">&times;</button>
       </div>
+      <nav class="stock-reference-actions" aria-label="Item reference">
+        <button class="modal-btn secondary" id="itemHistoryRecipesBtn" data-action="history-recipes" data-dir="making">Recipes</button>
+        <button class="modal-btn secondary" id="itemHistoryUsesBtn" data-action="history-recipes" data-dir="using">Uses</button>
+      </nav>
       <div id="itemHistoryInfo" class="history-info" hidden>
         <div id="itemHistoryShort" class="history-short" hidden></div>
         <details id="itemHistoryDetails" class="history-details" hidden>
@@ -381,8 +385,6 @@
         <div id="stockError" class="modal-error" hidden></div>
       </div>
       <div class="history-buttons">
-        <button class="modal-btn secondary" id="itemHistoryRecipesBtn" data-action="history-recipes" data-dir="making">Recipes</button>
-        <button class="modal-btn secondary" id="itemHistoryUsesBtn" data-action="history-recipes" data-dir="using">Uses</button>
         <button class="modal-btn primary" id="itemHistoryKitBtn" hidden data-action="kit-from-history" title="Every block this multiblock is built from">Multiblock kit</button>
         <button class="modal-btn primary history-craft-btn" id="itemHistoryCraftBtn" style="display:none;" data-action="craft-from-history">Request Craft</button>
       </div>

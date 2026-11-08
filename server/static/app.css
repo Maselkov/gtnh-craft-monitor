@@ -18,6 +18,7 @@
   --recipe-frame-inner: #dbdbdb;
   --recipe-frame-outline: #171717;
   --recipe-slot: #8b8b8b;
+  --recipe-slot-shadow: #373737;
   --recipe-heading: #999;
   --recipe-control: #181818;
   --recipe-control-highlight: #606060;
@@ -2861,6 +2862,14 @@ body.oauth-page {
 #kitModal {
   z-index: 2001;
 }
+.stock-reference-actions { display:flex; gap:8px; margin:-4px 0 16px; }
+.stock-reference-actions:not(:has(button:not([hidden]))) { display:none; }
+.stock-reference-actions .modal-btn {
+  flex:none; padding:6px 12px; font-size:12px;
+  background:transparent; border:1px solid var(--border-strong);
+}
+.stock-reference-actions .modal-btn:hover { border-color:var(--accent); color:var(--accent); }
+.stock-reference-actions .modal-btn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .history-buttons {
   display: flex;
   gap: 8px;
@@ -3449,6 +3458,12 @@ body.oauth-page {
 .recipe-card-painted > .recipe-card-canvas { display:block; }
 .recipe-card > :not(.recipe-card-canvas) { position:relative; }
 .recipe-card-painted .recipe-card-line { opacity:0; }
+.recipe-crafting { display:block; }
+.recipe-crafting .recipe-preview { margin:0; }
+.recipe-crafting-slot { background:var(--recipe-slot); box-shadow:inset 2px 2px var(--recipe-slot-shadow),inset -2px -2px var(--recipe-frame-light); }
+.recipe-card-painted .recipe-crafting-slot { background:transparent; box-shadow:none; }
+.recipe-crafting-arrow { background:var(--recipe-frame-mid); clip-path:polygon(0 32%,60% 32%,60% 0,100% 50%,60% 100%,60% 68%,0 68%); }
+.recipe-card-painted .recipe-crafting-arrow { background:transparent; }
 .recipe-card .recipe-preview { max-width:none; margin:0 0 10px; }
 .recipe-card .recipe-energy {
   font-family:"GCM Recipe", monospace; color:var(--recipe-canvas-ink);

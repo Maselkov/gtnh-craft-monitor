@@ -9,6 +9,7 @@
 import { hideJobTree, refreshJobTree, setJobTreeFilter, setupJobTreeActions, showJobTree } from './job-tree.js';
 import { bindCellTooltip, hideTooltip, showTooltip, tooltipVisible } from './tooltip.js';
 import { nameHtml, nameText } from './description.js';
+import { systemStockHtml } from './item-tooltip.js';
 import { itemMatchesSearch, parseSearchQuery } from './search.js';
 import { showToast } from './craft-actions.js';
 import { craftView, setPageView } from './page-title.js';
@@ -120,6 +121,7 @@ function tooltipHtml(m) {
   return `
     <div class="network-tooltip-name">${nameHtml(m.name || '?')}</div>
     ${stats}
+    ${systemStockHtml(m, {aggregateVariants:true})}
     ${m.mod ? `<div class="network-tooltip-mod">${escapeHtml(m.mod)}</div>` : `<div class="network-tooltip-fluid">Fluid</div>`}
   `;
 }
@@ -168,6 +170,11 @@ function renderGrid(job) {
   // The cell under a still cursor may have new numbers, or be gone (no
   // mouseout fires for a removed element) - refresh the tooltip from the
   // same item, or drop it if that item is gone.
+  refreshIngredientTooltip();
+}
+
+function refreshIngredientTooltip() {
+  const grid = document.getElementById('ingredientsGrid');
   if (tooltipVisible(grid) && hoveredKey) {
     const m = shownItems.get(hoveredKey);
     if (m) showTooltip(tooltipHtml(m), undefined, undefined, grid); else hideTooltip();
@@ -286,6 +293,7 @@ export function refreshIngredientsModal(data) {
 }
 
 export function setupIngredientsActions() {
+  window.addEventListener('gcm-networkchange', refreshIngredientTooltip);
   const modal = document.getElementById('ingredientsModal');
   view = readView();
   delegateActions(modal, {

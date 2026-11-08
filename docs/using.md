@@ -448,8 +448,9 @@ identity, so old name-only craft reports and essentia do not open a recipe book.
 
 ## Recipes and Uses
 
-Open an item's stock page and choose **Recipes** or **Uses**. The separate
-recipe dialog works for items and fluids, including ingredients that are not
+Open an item's stock page and choose **Recipes** or **Uses** in the compact row
+below the item header. The footer keeps the crafting and multiblock-kit actions.
+The separate recipe dialog works for items and fluids, including ingredients that are not
 in the ME network. It reads the GTNH version selected in
 [Game data](server.md#game-data).
 
@@ -471,17 +472,18 @@ title, it changes machine categories instead. The machine sidebar and open
 information panel keep their normal scrolling. Horizontal gestures and
 modified wheel gestures keep the browser's usual behavior.
 Rapid wheel turns advance through multiple pages or categories; they are not
-limited to one step per turn. Page navigation stops at the first or last page.
+limited to one step per turn. Wheel paging wraps from the last page to the first, and from the first to the last.
 While a new selection loads, the current recipe and page count stay visible
 until its replacement is ready. Recently visited categories return immediately
 to their previous page while the viewer checks that the game data still matches.
 Crafting comes first, then furnace recipes, then GregTech and Assembly Line recipes by absolute
 EU/t and duration, with approximate NEI displays last. Machine recipes show voltage, time, heat and output chances
-where available. Crafting recipes show their grid, or **Shapeless** when order
-does not matter. A zero-size input is labelled **not used up**, or **NC** in a
+where available. Crafting recipes use recessed game-style slots and a large crafting arrow. The
+heading reads **Shaped Crafting** or **Shapeless Crafting**, depending on the
+recipe shown; shaped recipes keep empty positions in their grid. A zero-size input is labelled **not used up**, or **NC** in a
 positioned preview.
 Fluid previews fill their slots, with compact litre quantities such as **3kL**
-and **2.5ML** in larger lettering. Their tooltips show the exact amount in mB.
+and **2.5ML** in larger lettering. Fluid stock amounts in tooltips use mB.
 
 The machine sidebar attached to the left of the window shows the exported variants
 and tiers as icons. Hover or focus one for its standard item tooltip, including
@@ -518,8 +520,14 @@ Assembly Line recipe; it does not manufacture the target.
 
 Hover an ingredient or output for the same instant item tooltip used in the
 Network browser: rarity colour, exported description and mod name. Hold **Shift**
-for extended details where available. Recipe tooltips show the recipe amount;
-non-consumed stacks say **Not consumed**. The tooltip follows the displayed
+for extended details where available. Item tooltips show **Amount in system**
+with a gold quantity from the latest network report, also in ingredient grids
+and crafting plans. Recipe tooltips show stock rather than repeating the recipe
+quantity, which is already on the icon. Non-consumed slots keep their **NC**
+overlay. Before any network report is available, the stock line is omitted.
+Recipe identities without a specific NBT variant count all matching variants;
+wildcard-damage ingredients count all matching damage values.
+The tooltip follows the displayed
 alternative and also appears when a stack receives keyboard focus.
 
 **Left-click** any ingredient or output to open its recipes. **Right-click**

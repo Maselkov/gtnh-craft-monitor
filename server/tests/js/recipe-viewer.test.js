@@ -1,9 +1,34 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { amountText, energyHtml, gridHtml, machineSidebarHtml, stackHtml, stepHtml, voltageHtml } from '../../static/js/recipe-render.js';
-import { recipeFromUrl, recipeItemKey, recipeUrl, sameRecipeDataset, trailDistance } from '../../static/js/recipe-state.js';
+import { amountText, craftingHtml, craftingTitle, energyHtml, gridHtml, machineSidebarHtml, stackHtml, stepHtml, voltageHtml } from '../../static/js/recipe-render.js';
+import { moveRecipePage, recipeFromUrl, recipeItemKey, recipeUrl, sameRecipeDataset, trailDistance } from '../../static/js/recipe-state.js';
 
 const item = { key: 'mod:item:*', name: 'Any Item', mod: 'mod', internal: 'item', damage: null, kind: 'item', size: 1, wildcard: true };
+
+test('wheel pages wrap in both directions and across full laps while arrows remain bounded', () => {
+  assert.equal(moveRecipePage(29,1,30,true), 0);
+  assert.equal(moveRecipePage(0,-1,30,true), 29);
+  assert.equal(moveRecipePage(27,-100,30,true), 17);
+  assert.equal(moveRecipePage(27,30,30,true), 27);
+  assert.equal(moveRecipePage(0,-1,30), 0);
+  assert.equal(moveRecipePage(29,1,30), 29);
+  assert.equal(moveRecipePage(0,100,1,true), 0);
+  assert.equal(moveRecipePage(0,-1,0,true), 0);
+});
+
+test('crafting previews use a full recessed grid, preserve holes and reuse navigation identities', () => {
+  const row = {id:7,outputs:[item],grid:{w:2,h:2,slots:[{alternatives:[item],alternatives_total:1},null,null,
+    {alternatives:[item],alternatives_total:2,ore:'ingotAny'}]}};
+  const html = craftingHtml(row,{interactive:true,tooltipKey:()=> 'part'});
+  assert.equal(craftingTitle(row), 'Shaped Crafting');
+  assert.equal(craftingTitle({...row,grid:{...row.grid,shapeless:true}}), 'Shapeless Crafting');
+  assert.equal((html.match(/class="recipe-preview-slot recipe-crafting-slot/g)||[]).length, 10);
+  assert.match(html, /data-choice="7:3" data-x="43" data-y="30"/);
+  assert.match(html, /data-tooltip-note="ingotAny · 2 alternatives \(showing 1\)"/);
+  assert.match(html, /recipe-crafting-arrow/);
+  assert.match(html, /data-choice="7:output-0"/);
+  assert.doesNotMatch(html, /recipe-grid-hole|recipe-grid-note|style=|onclick=/);
+});
 
 test('machine sidebars keep concrete identities, shared tooltips and safe missing-icon fallbacks', () => {
   const entries = [];

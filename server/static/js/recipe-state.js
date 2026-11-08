@@ -1,4 +1,10 @@
 // Recipe URLs and trail operations, independent of dialogs and fetches.
+export function moveRecipePage(index, delta, total, wrap = false) {
+  if (!total) return 0;
+  const target = index + delta;
+  return wrap ? ((target % total) + total) % total : Math.max(0, Math.min(total - 1, target));
+}
+
 export function recipeItemKey(item) {
   if (!item || item.kind === 'essentia') return null;
   // Crafting-plan entries retain the ME storage key instead of repeating
