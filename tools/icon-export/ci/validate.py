@@ -36,6 +36,8 @@ from pathlib import Path
 
 from PIL import Image, ImageStat
 
+from audit_previews import audit
+
 MINIMUMS = {
     "by_keyEntries": 40000,
     "fluids_by_keyEntries": 1000,
@@ -223,6 +225,11 @@ def validate_recipes(data):
                 stacks(group.get("alts"), "fluids" if group.get("kind") == "fluid" else "items")
             if "aux" in r:
                 stacks(r["aux"], "items")
+            if "preview_stacks" in r:
+                require(isinstance(r["preview_stacks"], dict) and not r["preview_stacks"].keys() - {"i", "o", "f", "g"},
+                        "invalid preview stacks")
+                for side, values in r["preview_stacks"].items():
+                    stacks(values, "fluids" if side in ("f", "g") else "items")
             if "research" in r:
                 research = r["research"]
                 require(kind == "assembly_line" and isinstance(research, dict)
@@ -283,6 +290,9 @@ def check(out_dir):
         with gzip.open(out_dir / "recipes.json.gz", "rt") as f:
             recipe_data = json.load(f)
             validate_recipes(recipe_data)
+            preview_audit = audit(recipe_data)
+            (out_dir / "recipe-preview-audit.json").write_text(json.dumps(preview_audit, indent=2) + "\n")
+            print(f"Recipe preview audit (advisory): {json.dumps(preview_audit['totals'], sort_keys=True)}")
     except (OSError, ValueError, TypeError, KeyError) as e:
         problems.append(f"recipes.json.gz: {e}")
     for key, minimum in MINIMUMS.items():

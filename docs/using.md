@@ -481,7 +481,7 @@ EU/t and duration, with approximate NEI displays last. Machine recipes show volt
 where available. Crafting recipes use recessed game-style slots and a large crafting arrow. The
 heading reads **Shaped Crafting** or **Shapeless Crafting**, depending on the
 recipe shown; shaped recipes keep empty positions in their grid. A zero-size input is labelled **not used up**, or **NC** in a
-positioned preview.
+positioned preview, where **NC** appears in yellow at the top-left of the icon.
 Fluid previews fill their slots, with compact litre quantities such as **3kL**
 and **2.5ML** in larger lettering. Fluid stock amounts in tooltips use mB.
 
@@ -504,10 +504,18 @@ lettering. The canvas keeps its grey background and black text in either theme,
 including when the browser automatically darkens pages. Production usage includes
 the voltage tier in GregTech's colours. Item quantities use larger
 white pixel digits with a dark shadow, without a solid box over the icon.
+Large totals use scientific notation from one trillion EU; hovering the total
+shows the exact value. Large item counts use compact quantities to stay legible.
+Updated bundles use NEI's category titles and display-stack getters, including
+Condensate Assembling's metadata-backed fluids, assembly-line pipes and maximum
+nanite tier. Display substitutions do not change the underlying production recipe.
 Captured conditions appear directly below the costs in the same pixel lettering,
 for example **Needs Cleanroom**. False or empty requirements are omitted; there
 is no separate requirements expander. Long conditions wrap to fit the card.
 Custom NEI graphics and dynamic costs can still require checking in game.
+Arcane crafting previews show vis costs as named aspect glyphs with counts,
+alongside the ingredients and output. Research is a short label; exported
+player-state and internal NEI stack fields are omitted.
 
 Assembly Line targets have their own **Scanner** or **Research Station** category
 tab at the top. It shows the research item, the target it unlocks and the Data
@@ -533,8 +541,9 @@ alternative and also appears when a stack receives keyboard focus.
 **Left-click** any ingredient or output to open its recipes. **Right-click**
 opens its uses. **R** opens recipes
 and **U** opens uses for the stack under the pointer, or the focused stack
-when no stack is hovered. Holding Shift for tooltip details does not change
-what left-click does. Slots with alternative
+when no stack is hovered. **Shift-left-click** a concrete item or fluid to open
+its stock page; Back returns to the recipe. Wildcard ingredients keep normal
+recipe navigation because they do not identify a single stock item. Slots with alternative
 ingredients cycle through a sample of their icons; holding the pointer or
 keyboard focus on a slot pauses it. Reduced-motion settings keep a still
 choice. In crafting grids, the tooltip names the ore entry when known and says when the

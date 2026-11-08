@@ -85,6 +85,7 @@ final class Recipes {
                     if (out == null && flag(recipe, "mFakeRecipe", false) && flag(recipe, "mEnabled", true)) {
                         out = recipe(recipe, true);
                         if (out != null) {
+                            presentation(map, recipe, out);
                             out.put("type", "nei"); out.put("groups", java.util.Collections.emptyList());
                             out.put("approximate", java.util.Collections.singletonList("nei_display"));
                             displays.add(out); counts.merge("display_exported", 1, Integer::sum);
@@ -94,6 +95,7 @@ final class Recipes {
                         continue;
                     }
                     if (out != null) {
+                        presentation(map, recipe, out);
                         recipes.add(out);
                         counts.merge("exported", 1, Integer::sum);
                     } else {
@@ -159,6 +161,52 @@ final class Recipes {
         file.put("fluid_names", fluidNames);
         file.put("maps", maps);
         return file;
+    }
+
+    /** NEI can substitute metadata-backed stacks without changing the production recipe. */
+    @SuppressWarnings("unchecked")
+    private void presentation(Object map, Object recipe, Map<String,Object> out) throws ReflectiveOperationException {
+        Object frontend=map.getClass().getMethod("getFrontend").invoke(map);
+        Object nei=frontend.getClass().getMethod("getNEIProperties").invoke(frontend);
+        Map<String,Object> overrides=new LinkedHashMap<>();
+        String[] sides={"i","o","f","g"};
+        String[] getters={"itemInputsGetter","itemOutputsGetter","fluidInputsGetter","fluidOutputsGetter"};
+        for(int k=0;k<sides.length;k++) {
+            Object getter=field(nei,getters[k]);
+            if(!(getter instanceof java.util.function.Function)) continue;
+            Object values=((java.util.function.Function<Object,Object>)getter).apply(recipe);
+            // Keep the native chance values when the getter merely returns the native array.
+            String nativeField=new String[]{"mInputs","mOutputs","mFluidInputs","mFluidOutputs"}[k];
+            if(values==field(recipe,nativeField)) continue;
+            Object chances=field(recipe,k==1?"mOutputChances":"mFluidOutputChances");
+            if(k==1 && chances==null)chances=field(recipe,"mChances");
+            List<Object> display=k<2 ? stacks((ItemStack[])values,k==1 && chances instanceof int[]?(int[])chances:null)
+                : fluidStacks((FluidStack[])values,k==3?chances:null);
+            overrides.put(sides[k],display);
+            List<Integer> indices=new ArrayList<>();
+            if(values!=null) for(int n=0;n<java.lang.reflect.Array.getLength(values);n++)
+                if(java.lang.reflect.Array.get(values,n)!=null) indices.add(n);
+            ((Map<String,Object>)out.get("preview_indices")).put(sides[k],indices);
+        }
+        if(!overrides.isEmpty()) out.put("preview_stacks",overrides);
+        Map<String,Object> overflow=presentation.overflow(map,recipe);
+        if(overflow!=null)out.put("preview",overflow);
+        // BECAssemblyFrontend prints the maximum tier; the per-slot array is tooltip data.
+        Map<String,Object> requirements=(Map<String,Object>)out.get("requirements");
+        if(requirements!=null && frontend.getClass().getName().equals("tectech.recipe.BECAssemblyFrontend")) {
+            Object storage=recipe.getClass().getMethod("getMetadataStorage").invoke(recipe);
+            if(storage==null)return;
+            for(Object entry:(java.util.Set<?>)storage.getClass().getMethod("getEntries").invoke(storage)) {
+                Map.Entry<?,?> e=(Map.Entry<?,?>)entry;
+                if(!metadataName(e.getKey()).equals("nanite_tiers") || e.getValue()==null) continue;
+                Object max=null;
+                for(int n=0;n<java.lang.reflect.Array.getLength(e.getValue());n++) {
+                    Object tier=java.lang.reflect.Array.get(e.getValue(),n);
+                    if(tier!=null && (max==null || intField(tier,"tier")>intField(max,"tier"))) max=tier;
+                }
+                if(max!=null) requirements.put("max_nanite_tier",max.getClass().getMethod("describe").invoke(max));
+            }
+        }
     }
 
     private Map<String, Object> recipe(Object recipe) { return recipe(recipe, false); }

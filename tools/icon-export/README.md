@@ -205,6 +205,16 @@ Format 4 adds presentation without changing recipe-search identity:
   `f`, `g`, `groups`, `aux`, `extras`), index, x/y/w/h and optional frame asset.
   `preview_indices` retains original GT slot positions after null stacks are
   removed. Layer crops are normalized `[left,top,right,bottom]` UV coordinates.
+  GT previews also include the translated category `title`, `frontend` class
+  and `custom_callbacks` inventory. Assembly-line subclasses use their inherited
+  pipe layout. Recipes exceeding declared IO limits retain extra slots using
+  the frontend position getters, as NEI's CachedDefaultRecipe does.
+- `preview_stacks` optionally overrides `i`, `o`, `f` or `g` for display only,
+  using the same interned stack format. These come from NEI's configured stack
+  getters: some maps store displayed fluids/items in metadata instead of native
+  IO fields. Their `preview_indices` describe the substituted arrays. Production
+  IO and pattern checks stay separate. Condensate Assembling also exports the
+  localized maximum nanite description rather than printing its whole tier array.
 - `ui_assets` maps resource locations to resolved image paths and dimensions.
   Frames, GT backgrounds/pipes/logo and the infusion rune crop are copied through
   Minecraft's resource manager. The `ui_assets` and `by_variant` icon lookup
@@ -228,7 +238,15 @@ The latter are marked `slots_only`, and GT layouts `standard_widgets`: arbitrary
 handler graphics, callbacks and dynamic text are not a promise of pixel-perfect
 NEI reproduction.
 
-The server builds SQLite index format 5, accepting source formats 1–4. Every
+Bundle validation writes `recipe-preview-audit.json`, separating unplaced stacks,
+metadata stacks absent from previews, and custom callbacks needing visual review.
+Run it independently with
+`python tools/icon-export/ci/audit_previews.py OUT/recipes.json.gz > audit.json`.
+The callback list is advisory: arbitrary Java drawing, dynamic text and pack-version
+differences cannot be proven correct by structural checks alone. Older exports
+without callback information are identified separately.
+
+The server builds SQLite index format 6, accepting source formats 1–4. Every
 ingredient alternative is indexed for Uses; concrete queries also match wildcard
 damage, deduplicated before counting/paging. Display variants are streamed into
 SQLite separately and fetched only for the current page. Deploy compatible

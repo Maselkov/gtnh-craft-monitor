@@ -80,6 +80,53 @@ def test_gt_category_titles_use_machine_type_without_losing_variant_names(data, 
     assert [m['name'] for m in info['machines']] == ['Basic Canning Machine', 'Advanced Canning Machine']
 
 
+def test_exported_category_title_takes_precedence_over_shared_machine_type(data, monkeypatch):
+    monkeypatch.setattr(data, 'layout', lambda name: {'title': 'Condensate Assembling'})
+    assert recipe_viewer.map_info(data, 'gt.recipe.assemble-condensate')['name'] == 'Condensate Assembling'
+
+
+def test_nei_metadata_fluid_display_is_distinct_from_production_inputs(data, monkeypatch):
+    monkeypatch.setattr(data, 'layout', lambda name: {'width': 170, 'height': 90, 'slots': [
+        {'role': 'f', 'index': 2, 'x': 106, 'y': 44}]})
+    body = {'type': 'gt', 'i': [], 'o': [['minecraft:planks:0', 1]], 'f': [], 'g': [], 'e': 503316480, 'd': 1000000, 's': 0,
+            'preview_stacks': {'f': [['mod:fluid', 10000]]}, 'preview_indices': {'f': [2]},
+            'requirements': {'metadata': {'condensate_input': [{'fluid': 'mod:fluid', 'amount': 10000}],
+                                          'nanite_tiers': ['MagMatter', 'Carbon'], 'cleanroom': True},
+                             'max_nanite_tier': 'Magmatter (Tier 10)'}}
+    row = recipe_viewer.present_recipes([(1, 'gt.recipe.assemble-condensate', body)], data)[0]
+    assert row['inputs'] == []
+    fluid = row['preview']['slots'][0]['alternatives'][0]
+    assert (fluid['key'], fluid['size']) == ('fluid:mod:fluid', 10000)
+    assert row['ticks'] == 1000000
+    assert row['requirement_notes'] == ['Needs Cleanroom', 'Max Nanite Tier:', 'Magmatter (Tier 10)']
+
+
+@pytest.mark.parametrize('shape,layers', [('shaped', 3), ('shapeless', 1)])
+def test_arcane_preview_uses_aspect_glyphs_and_short_research_without_raw_nei_fields(data, shape, layers):
+    data.presentation['aspects']['ordo'] = {'name': 'Order', 'icon': 'aspect/ordo.webp'}
+    layout = {'family': 'positioned', 'width': 166, 'height': 142, 'slots': [
+        {'role': 'groups', 'index': 0, 'x': 46, 'y': 37},
+        {'role': 'o', 'index': 0, 'x': 74, 'y': 4},
+        {'role': 'extras', 'index': 0, 'x': 55, 'y': 121}]}
+    body = {'type': 'nei', 'i': [], 'o': [['minecraft:planks:0', 1]], 'f': [], 'g': [],
+            'groups': [{'kind': 'item', 'alts': [['minecraft:log:0', 1]]}], 'preview': layout,
+            'requirements': {'aspects': {'ordo': 10},
+                'prereqs': [{'research': 'Digi-sentia Storage', 'category': 'Energistics', 'isResearched': False, 'prevX': 0}],
+                'vis': [{'relx': 56, 'rely': 122, 'chance': 10000,
+                         'item': {'item': 'aspectrecipeindex:aspect:1', 'amount': 10, 'nbt': '{Aspect:"ordo"}'}}]}}
+    row = recipe_viewer.present_recipes([(1, f'nei.example::thaumcraft.arcane.{shape}', body)], data)[0]
+    preview = row['preview']
+    assert preview['family'] == 'arcane'
+    assert [(s['role'], len(s['alternatives'])) for s in preview['slots']] == [('groups', 1), ('o', 1)]
+    assert all(s['framed'] is False for s in preview['slots'])
+    assert preview['aspects'] == [{'tag': 'ordo', 'name': 'Order', 'amount': 10, 'icon': 'aspect/ordo.webp',
+                                  'x': 56, 'y': 122, 'w': 16, 'h': 16}]
+    assert preview['research'] == {'name': 'Digi-sentia Storage', 'state': 'unknown'}
+    assert row['requirement_notes'] == []
+    assert len(recipe_viewer.arcane_layout(layout, shaped=shape == 'shaped')['layers']) == layers
+    assert layout['family'] == 'positioned' and len(layout['slots']) == 3
+
+
 @pytest.mark.parametrize('query', [
     {'key': 'bad'}, {'key': 'minecraft:log:-1'}, {'key': 'minecraft:log:999999999999'}, {'key': 'fluid:'},
     {'key': 'minecraft:log:0', 'dir': 'bad'}, {'key': 'minecraft:log:0', 'limit': 21},

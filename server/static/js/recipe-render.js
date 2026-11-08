@@ -12,6 +12,14 @@ const TIER_STYLE = {
 
 function integerText(n) { return BigInt(n).toLocaleString('en-US'); }
 
+// GTNHlib's default NumberFormatUtil: scientific notation from one trillion.
+function energyText(n) {
+  const value = BigInt(n);
+  return value >= 1000000000000n || value <= -1000000000000n
+    ? Number(value).toExponential(2).replace('e+', 'e').replace(/\.?(0+)(?=e)/, '')
+    : integerText(value);
+}
+
 function gameColour(code) {
   const value = parseInt(code, 16), bright = value & 8 ? 85 : 0;
   return `rgb(${(value & 4 ? 170 : 0) + bright + (value === 6 ? 85 : 0)}, ${
@@ -97,18 +105,20 @@ export function energyHtml(step) {
   const r = step.scan;
   if (r) {
     if (r.max_eu != null) {
-      const value = BigInt(r.max_eu) >= 1000000000000n
-        ? Number(r.max_eu).toExponential(2).replace('e+', 'e') : integerText(r.max_eu);
+      const value = energyText(r.max_eu);
       lines.push(`<span title="${integerText(r.max_eu)} EU">Max EU: ${value} EU</span>`);
     }
-    if (r.total_eu != null) lines.push(`Total: ${integerText(r.total_eu)} EU`);
+    if (r.total_eu != null) lines.push(`Total: ${energyText(r.total_eu)} EU`);
     if (r.usage != null) lines.push(`Usage: ${voltageHtml(r.usage, r.method === 'scanner' ? r.tier : null)}`);
     if (r.method === 'research_station' && r.amperage > 1) lines.push(`Voltage: ${voltageHtml(r.eut, r.tier)} at ${integerText(r.amperage)} A`);
     if (r.method === 'scanner' && r.ticks != null) lines.push(`Time: ${Number(r.ticks / 20).toLocaleString('en-US')} seconds`);
     if (r.computation != null) lines.push(`Computation: ${integerText(r.computation)}`);
     if (r.computation_per_second != null) lines.push(`Min Computation: ${integerText(r.computation_per_second)} /s`);
   } else {
-    if (step.eut > 0 && step.ticks > 0) lines.push(`Total: ${integerText(BigInt(step.eut) * BigInt(step.ticks))} EU`);
+    if (step.eut > 0 && step.ticks > 0) {
+      const total = BigInt(step.eut) * BigInt(step.ticks);
+      lines.push(`<span title="${integerText(total)} EU">Total: ${energyText(total)} EU</span>`);
+    }
     if (step.eut != null) lines.push(`Usage: ${voltageHtml(step.eut, step.tier)}`);
     if (step.ticks != null) lines.push(`Time: ${Number(step.ticks / 20).toLocaleString('en-US')} seconds`);
   }
@@ -161,8 +171,9 @@ function previewAmountText(e) {
       n => String(Number(Number(n).toPrecision(3))));
     return `${compact}L`;
   }
-  const n = Number(e.size).toLocaleString('en-US');
-  return e.size === 1 ? '' : n;
+  const n = Number(e.size);
+  return n === 1 ? '' : n >= 10000 ? formatQty(n).replace(/\d+\.\d+(?=[a-z])/i,
+    value => String(Number(Number(value).toPrecision(3)))) : n.toLocaleString('en-US');
 }
 
 export function stackHtml(e, options = {}) {
@@ -171,7 +182,8 @@ export function stackHtml(e, options = {}) {
   const icon = e.icon
     ? `<img class="${iconClass('recipe-stack-icon', e.icon)}" src="${iconUrl(e.icon)}" alt="" loading="lazy" data-remove-on-error>`
     : options.interactive ? `<span class="recipe-stack-placeholder" aria-hidden="true">${escapeHtml(name.charAt(0))}</span>` : '';
-  const content = `${icon}<span class="recipe-stack-amount">${escapeHtml(options.preview || options.compact ? previewAmountText(e) : amountText(e))}</span>`
+  const nc = e.size === 0 && (options.preview || options.compact);
+  const content = `${icon}<span class="recipe-stack-amount${nc ? ' recipe-stack-nc' : ''}">${escapeHtml(options.preview || options.compact ? previewAmountText(e) : amountText(e))}</span>`
     + `<span class="recipe-stack-name">${escapeHtml(name)}</span>${chance}`;
   if (!options.interactive || !e.key) return `<span class="recipe-stack" title="${escapeHtml(name)}">${content}</span>`;
   const key = escapeHtml(e.key);
@@ -256,7 +268,7 @@ export function previewHtml(step, options = {}) {
   const p = step.preview;
   const layers = p.layers.map(layer => {
     const [u, v, right, bottom] = layer.uv;
-    return `<svg x="${layer.x}" y="${layer.y}" width="${layer.w}" height="${layer.h}" viewBox="${u} ${v} ${right-u} ${bottom-v}" preserveAspectRatio="none"><image href="${iconUrl(layer.image)}" width="1" height="1" preserveAspectRatio="none"/></svg>`;
+    return `<svg x="${layer.x}" y="${layer.y}" width="${layer.w}" height="${layer.h}" opacity="${layer.opacity ?? 1}" viewBox="${u} ${v} ${right-u} ${bottom-v}" preserveAspectRatio="none"><image href="${iconUrl(layer.image)}" width="1" height="1" preserveAspectRatio="none"/></svg>`;
   }).join('');
   const slots = p.slots.map((slot, i) => {
     const e = displayChoices(slot.alternatives)[0];
@@ -264,11 +276,13 @@ export function previewHtml(step, options = {}) {
   }).join('');
   const research = p.research;
   const aspects = p.aspects.map(a => `<span class="recipe-preview-aspect" title="${escapeHtml(a.name)}">${a.icon ? `<img src="${iconUrl(a.icon)}" alt="${escapeHtml(a.name)}">` : escapeHtml(a.name)}<span>${a.amount}</span></span>`).join('');
-  return `${p.family === 'infusion' ? '<div class="recipe-preview-paper">' : ''}<div class="recipe-preview${p.family === 'infusion' ? ' recipe-preview-infusion' : ''}" data-width="${p.width}" data-height="${p.height}"><svg class="recipe-preview-layers" viewBox="0 0 ${p.width} ${p.height}" aria-hidden="true">${layers}</svg>${p.family === 'research_station' ? researchWires(step) : ''}${slots}${p.family === 'crafting' ? `<span class="recipe-preview-slot recipe-crafting-arrow" data-x="${33+Math.max(3,step.grid.w)*18}" data-y="${6+Math.max(3,step.grid.h)*9}" data-w="26" data-h="12" aria-hidden="true"></span>` : ''}</div>
+  const arcane = p.family === 'arcane';
+  const positionedAspects = arcane ? p.aspects.map(a => `<span class="recipe-preview-slot recipe-preview-aspect recipe-stack-compact" data-id="aspect-${escapeHtml(a.tag)}" data-x="${a.x}" data-y="${a.y}" data-w="${a.w}" data-h="${a.h}" title="${escapeHtml(a.name)}: ${a.amount} vis">${a.icon ? `<img src="${iconUrl(a.icon)}" alt="${escapeHtml(a.name)}">` : escapeHtml(a.name)}<span class="recipe-stack-amount">${a.amount}</span></span>`).join('') : '';
+  return `${p.family === 'infusion' ? '<div class="recipe-preview-paper">' : ''}<div class="recipe-preview${p.family === 'infusion' ? ' recipe-preview-infusion' : ''}" data-width="${p.width}" data-height="${p.height}"><svg class="recipe-preview-layers" viewBox="0 0 ${p.width} ${p.height}" aria-hidden="true">${layers}</svg>${p.family === 'research_station' ? researchWires(step) : ''}${slots}${positionedAspects}${p.family === 'crafting' ? `<span class="recipe-preview-slot recipe-crafting-arrow" data-x="${33+Math.max(3,step.grid.w)*18}" data-y="${6+Math.max(3,step.grid.h)*9}" data-w="26" data-h="12" aria-hidden="true"></span>` : ''}</div>
     ${p.family === 'infusion' ? `<div class="recipe-preview-instability">Instability: ${escapeHtml(String(step.requirements?.instability ?? '?'))}</div>` : ''}
-    ${aspects ? `<div class="recipe-preview-aspects">${aspects}</div>` : ''}
+    ${aspects && !arcane ? `<div class="recipe-preview-aspects">${aspects}</div>` : ''}
     ${p.family === 'infusion' ? '</div>' : ''}
-    ${research ? `<div class="recipe-preview-research">${research.icon ? `<img src="${iconUrl(research.icon)}" alt="">` : ''}<span>Research: ${escapeHtml(research.name)}${research.category ? ` · ${escapeHtml(research.category)}` : ''}</span></div>` : ''}`;
+    ${research ? `<div class="recipe-preview-research">${research.icon ? `<img src="${iconUrl(research.icon)}" alt="">` : ''}<span>Research: ${escapeHtml(research.name)}${research.category && !arcane ? ` · ${escapeHtml(research.category)}` : ''}</span></div>` : ''}`;
 }
 
 export function layoutRecipePreviews(root) {

@@ -184,6 +184,14 @@ def recipes(path, ingots):
     data["item_names"].append("Many Pages")
     data["maps"]["gt.recipe.long_pages"] = {"machines": [{"name": "Long Recipes", "key": None}], "recipes": [
         {"type": "gt", "i": [], "o": [[len(data["items"])-1, 1]], "e": 30, "d": 20+i} for i in range(125)]}
+    data["items"].append("example:arcane_result:0")
+    data["item_names"].append("Arcane Result")
+    data["maps"]["nei.example::thaumcraft.arcane.shaped"] = {"machines": [{"name": "Shaped Arcane Crafting", "key": None}], "recipes": [{
+        "type": "nei", "groups": [{"alts": [[n%2, 1]]} for n in range(9)], "o": [[len(data["items"])-1, 1]],
+        "requirements": {"aspects": {"ordo": 10}, "prereqs": [{"research": "Digi-sentia Storage", "isResearched": False, "prevX": 0}],
+                         "vis": [{"chance": 10000, "relx": 75, "rely": 122, "item": {"nbt": '{Aspect:"ordo"}'}}]},
+        "preview": {"family": "positioned", "width": 166, "height": 142, "layers": [],
+                    "slots": [slot("groups", n, 46+28*(n%3), 37+27*(n//3)) for n in range(9)] + [slot("o", 0, 74, 4)]}}]}
     with gzip.open(path, "wt") as f:
         json.dump(data, f)
 recipes(out + "/recipes.json.gz", 1)
@@ -3205,8 +3213,13 @@ async function main() {
     await waitFor('left-click opens recipes', `$('.recipe-viewer-box').dataset.itemName === 'Neutronium Ingot' && $('.recipe-viewer-box').dataset.direction === 'making'`);
     await back();
     await evaluate(`${input}.dispatchEvent(new MouseEvent('click', {bubbles:true,button:0,shiftKey:true})), true`);
-    await waitFor('Shift for tooltips keeps left-click as recipes', `$('.recipe-viewer-box').dataset.itemName === 'Neutronium Ingot' && $('.recipe-viewer-box').dataset.direction === 'making'`);
-    await back();
+    await waitFor('Shift-left-click opens ingredient stock', `!visible($('#recipeViewerModal')) && visible($('#itemHistoryModal')) && $('#itemHistoryName').textContent === 'Neutronium Ingot'`);
+    await evaluate(`history.back(), true`);
+    await waitFor('stock Back restores source recipe', `visible($('#recipeViewerModal')) && $('.recipe-viewer-box').dataset.itemName === 'Iron Dust' && ${input}`);
+    await evaluate(`$('#recipeViewerList .recipe-stack-control[data-key="gregtech:gt.metaitem.01:2032"]').dispatchEvent(new MouseEvent('click', {bubbles:true,button:0,shiftKey:true})), true`);
+    await waitFor('Shift-left-click opens stock for an absent output', `!visible($('#recipeViewerModal')) && visible($('#itemHistoryModal')) && $('#itemHistoryName').textContent === 'Iron Dust'`);
+    await evaluate(`history.back(), true`);
+    await waitFor('absent stock Back restores source recipe', `visible($('#recipeViewerModal')) && $('.recipe-viewer-box').dataset.itemName === 'Iron Dust' && ${input}`);
     const point = await evaluate(`(() => {const r=${input}.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`);
     await cdp.send('Input.dispatchMouseEvent', {type:'mouseMoved',...point});
     await cdp.send('Input.dispatchMouseEvent', {type:'mousePressed',...point,button:'right',clickCount:1});
@@ -3289,6 +3302,12 @@ async function main() {
     await waitFor('fluid tooltip shows network stock instead of recipe amount', `$('.network-tooltip .network-tooltip-stock .mc-6')?.textContent.endsWith(' mB') && !$('.network-tooltip').textContent.includes('Amount:')`);
     await evaluate(`$('#recipeViewerList .recipe-stack-fluid').dispatchEvent(new MouseEvent('mouseout', {bubbles:true}));true`);
     assert(await evaluate(`$('#recipeViewerList .recipe-preview').textContent.includes('NC')`));
+    assert(await evaluate(`(() => {
+      const nc = $('#recipeViewerList .recipe-stack-nc');
+      const marker = nc.getBoundingClientRect(), icon = nc.closest('button').getBoundingClientRect();
+      return getComputedStyle(nc).color === 'rgb(255, 255, 85)'
+        && Math.abs(marker.left-icon.left-1) < 1 && Math.abs(marker.top-icon.top-1) < 1;
+    })()`));
     await evaluate(`document.fonts.ready`);
     await waitFor('painted recipe lettering', `$('#recipeViewerList .recipe-card-painted')`);
     await waitFor('painted NEI frame', `$('.recipe-shell-painted')`);
@@ -3370,6 +3389,22 @@ async function main() {
       && !$('#recipeViewerList .recipe-requirements') && !$('#recipeViewerList').textContent.includes('NEI display recipe')`));
     await evaluate(`pressKey('Escape')`);
     await waitFor('display closed', `!visible($('#recipeViewerModal'))`);
+  });
+
+  step('recipes: arcane vis glyphs and concise research replace NEI internals', async () => {
+    await cdp.send('Page.navigate', {url: base + '/recipes?key=example:arcane_result:0'});
+    await waitFor('arcane page loaded', `document.readyState === 'complete' && !window.byText`);
+    await evaluate(PAGE_LIB);
+    await waitFor('arcane glyph loaded', `$('#recipeViewerList .recipe-preview-aspect img')?.naturalWidth > 0`);
+    assert(await evaluate(`$('#recipeCategoryName').textContent === 'Shaped Arcane Crafting'
+      && $$('#recipeViewerList .recipe-preview-choice button').length === 10
+      && $('#recipeViewerList .recipe-preview-aspect').title === 'Order: 10 vis'
+      && $('#recipeViewerList .recipe-preview-aspect .recipe-stack-amount').textContent === '10'
+      && $('#recipeViewerList .recipe-preview-research').textContent === 'Research: Digi-sentia Storage'
+      && !$('#recipeViewerList .recipe-energy')
+      && !/isResearched|prevX|chance:|permutated:/.test($('#recipeViewerList').textContent)`));
+    await evaluate(`pressKey('Escape')`);
+    await waitFor('arcane closed', `!visible($('#recipeViewerModal'))`);
   });
 
   step('recipes: shared R/U in Network, craft cards, ingredients and crafting plans', async () => {

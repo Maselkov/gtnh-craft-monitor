@@ -6,6 +6,25 @@ from gcm.recipe_index import FLUID, ITEM
 
 ALTERNATIVES = 16
 RESEARCH_MAPS = {"research.scanner": "scanner", "research.research_station": "research_station"}
+ARCANE_MAPS = ("::thaumcraft.arcane.shaped", "::thaumcraft.arcane.shapeless")
+
+
+def arcane_layout(layout, *, shaped=True):
+    """TemplateThaumHandler's research-book crops; slots retain NEI's positions."""
+    atlas = "thaumcraft:textures/gui/gui_researchbook_overlay.png"
+    layers = [
+        {"asset": atlas, "x": 68.775, "y": -1.05, "w": 28, "h": 29.75,
+         "uv": [20/256, 3/256, 36/256, 20/256]},
+    ]
+    if shaped:
+        layers.extend([
+            {"asset": atlas, "x": 35, "y": 28, "w": 91, "h": 91,
+             "uv": [112/256, 15/256, 164/256, 67/256]},
+            {"asset": atlas, "x": 0, "y": 113.75, "w": 26.25, "h": 26.25, "opacity": .4,
+             "uv": [68/256, 76/256, 80/256, 88/256]},
+        ])
+    return {**layout, "family": "arcane", "item_frames": False, "layers": layers,
+            "slots": [s for s in layout.get("slots", []) if s.get("role") != "extras"]}
 
 
 def research_map_info(idx, method):
@@ -114,7 +133,8 @@ def map_info(idx, name):
         match = re.search(r"^Machine Type:[ \t]*([^\r\n]+)", description, re.MULTILINE)
         if match:
             title = match[1].strip()
-    return {"id": name, "name": title, "machines": machines,
+    title = (idx.layout(name) or {}).get("title") or title
+    return {"id": name, "name": mctext.plain(title), "machines": machines,
             "mod_name": (item_info.mod_name(mod) or mod) if mod else None}
 
 
@@ -151,8 +171,10 @@ def present_recipes(rows, idx):
     for _, _, body in rows:
         for side in ("i", "o"):
             wanted[ITEM].update(s[0] for s in body[side])
+            wanted[ITEM].update(s[0] for s in body.get("preview_stacks", {}).get(side, []))
         for side in ("f", "g"):
             wanted[FLUID].update(s[0] for s in body[side])
+            wanted[FLUID].update(s[0] for s in body.get("preview_stacks", {}).get(side, []))
         for slot in body.get("slots", []):
             if slot:
                 wanted[ITEM].update(s[0] for s in slot["alts"][:ALTERNATIVES])
@@ -246,15 +268,25 @@ def present_recipes(rows, idx):
                     scan["total_eu"] = str(research["ticks"] * scan["usage"])
         if body.get("requirements"):
             row["requirements"] = body["requirements"]
-            row["requirement_notes"] = requirement_notes(body["requirements"])
+            handled = {"condensate_input"} if "f" in body.get("preview_stacks", {}) and map_name == "gt.recipe.assemble-condensate" else set()
+            if body["requirements"].get("max_nanite_tier"):
+                handled.add("nanite_tiers")
+            costs = body["requirements"]
+            if map_name.endswith(ARCANE_MAPS):
+                costs = {k: v for k, v in costs.items() if k not in ("aspects", "vis", "prereqs")}
+            row["requirement_notes"] = requirement_notes(costs, handled_metadata=handled)
         row["extras"] = [{"alternatives": [stack_entry(FLUID if g["kind"] == "fluid" else ITEM, s)
                                              for s in g["alts"][:ALTERNATIVES]]}
                          for g in body.get("extras", [])]
         row["auxiliary"] = [stack_entry(ITEM, s) for s in body.get("aux", [])]
         layout = body.get("preview") or idx.layout(map_name)
         if layout:
+            if map_name.endswith(ARCANE_MAPS):
+                layout = arcane_layout(layout, shaped=map_name.endswith(".shaped"))
             sources = {side: [[stack_entry(kind, s)] for s in body[side]]
                        for side, kind in (("i", ITEM), ("o", ITEM), ("f", FLUID), ("g", FLUID))}
+            for side, stacks in body.get("preview_stacks", {}).items():
+                sources[side] = [[stack_entry(FLUID if side in ("f", "g") else ITEM, s)] for s in stacks]
             sources["extras"] = [g["alternatives"] for g in row["extras"]]
             sources["aux"] = [[e] for e in row["auxiliary"]]
             sources["groups"] = [group["alternatives"] for group in row.get("groups", [])]
@@ -286,14 +318,14 @@ def item_summary(idx, kind, key):
             "coverage": recipes.coverage_summary(idx)}
 
 
-def requirement_notes(value):
+def requirement_notes(value, *, handled_metadata=()):
     """Readable, bounded labels for native/NEI costs; raw data stays available to MCP."""
     labels = {"mSpecialItems": "Special items", "mAltFluidInputs": "Fluid alternatives",
               "mInputChances": "Input consumption chances (out of 10,000)",
               "mFluidInputChances": "Fluid consumption chances (out of 10,000)",
               "mFluidOutputChances": "Fluid output chances (out of 10,000)",
               "nbt_sensitive": "NBT-sensitive inputs", "lp": "Life points", "lp_amount": "Life points", "manaUsage": "Mana",
-              "prereqs": "Research", "eut": "EU/t"}
+              "prereqs": "Research", "eut": "EU/t", "max_nanite_tier": "Max Nanite Tier"}
     def readable(v):
         if v is None:
             return ""
@@ -310,7 +342,7 @@ def requirement_notes(value):
         if key in ("nbt_inputs", "nbt_outputs") or val is False or val is None:
             continue
         if key == "metadata" and isinstance(val, dict):
-            out.extend(requirement_notes(val))
+            out.extend(requirement_notes({k: v for k, v in val.items() if k not in handled_metadata}))
             continue
         if val is True and key in ("cleanroom", "low_gravity"):
             out.append("Needs Cleanroom" if key == "cleanroom" else "Needs Low Gravity")
@@ -318,11 +350,16 @@ def requirement_notes(value):
         label = labels.get(key) or re.sub(r"(?<=[a-z])(?=[A-Z])", " ", key.replace("_", " ")).capitalize()
         text = readable(val)
         if text:
-            out.append(f"{label}: {text}"[:512])
+            if key == "max_nanite_tier":
+                out.extend([f"{label}:", text[:512]])
+            else:
+                out.append(f"{label}: {text}"[:512])
     return out[:32]
 
 
 def recipe_stacks(body):
+    for stacks in body.get("preview_stacks", {}).values():
+        yield from stacks
     for side in ("i", "o", "f", "g", "aux"):
         yield from body.get(side, [])
     for group in [*body.get("groups", []), *body.get("extras", [])]:
@@ -363,15 +400,33 @@ def present_layout(layout, sources, body, idx):
             continue
         if asset(layer.get("asset")):
             out["layers"].append({**{k: number(layer.get(k)) for k in ("x", "y", "w", "h")},
-                                  "image": asset(layer["asset"]), "uv": uv})
+                                  "image": asset(layer["asset"]), "uv": uv,
+                                  "opacity": min(1, max(0, number(layer.get("opacity"), 1)))})
     requirements = body.get("requirements", {})
     out["aspects"] = []
-    for tag, amount in sorted(requirements.get("essentia", {}).items(), key=lambda e: -(e[1] if type(e[1]) is int else 0)):
+    arcane = out["family"] == "arcane"
+    aspect_costs = requirements.get("aspects" if arcane else "essentia", {})
+    for tag, amount in sorted(aspect_costs.items(), key=lambda e: -(e[1] if type(e[1]) is int else 0)):
         if type(amount) is not int:
             continue
         info = idx.presentation["aspects"].get(tag, {})
         out["aspects"].append({"tag": tag, "name": info.get("name", tag), "amount": amount,
                                "icon": icons.recipe_image(info.get("icon", f"aspect/{tag}.webp"))})
+    if arcane:
+        positions = {}
+        for vis in requirements.get("vis", [])[:64]:
+            if not isinstance(vis, dict):
+                continue
+            stack = vis.get("item", {})
+            match = re.search(r'Aspect:\s*"([^"\\]+)"', stack.get("nbt", "")) if isinstance(stack, dict) else None
+            if match:
+                positions[match[1]] = {"x": number(vis.get("relx")), "y": number(vis.get("rely")), "w": 16, "h": 16}
+        for i, aspect in enumerate(out["aspects"]):
+            aspect.update(positions.get(aspect["tag"], {"x": 83 - len(out["aspects"])*9.5 + i*19, "y": 122, "w": 16, "h": 16}))
+        prereqs = [p for p in requirements.get("prereqs", [])[:16] if isinstance(p, dict) and isinstance(p.get("research"), str)]
+        if prereqs:
+            # Cached isResearched belongs to the headless export, not the viewer's player.
+            out["research"] = {"name": "; ".join(dict.fromkeys(p["research"] for p in prereqs)), "state": "unknown"}
     research = requirements.get("research")
     if isinstance(research, str) and research:
         info = idx.presentation["research_info"].get(research, {})

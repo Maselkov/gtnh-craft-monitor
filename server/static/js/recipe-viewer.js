@@ -294,6 +294,15 @@ function currentStockItem() {
   return stockItem(rendered?.model?.metadata.item);
 }
 
+function openStackStock(el) {
+  const entry = tooltipEntries.get(el.dataset.recipeTooltip);
+  if (!entry || entry.wildcard) return false;
+  const item = stockItem(entry) || {...entry, size:null, isCraftable:false};
+  hideRecipeViewer();
+  openItemHistory(item);
+  return true;
+}
+
 function updateStockButton() {
   const item = currentStockItem();
   const button = document.getElementById('recipeViewerStock');
@@ -404,7 +413,10 @@ export function setupRecipeViewer() {
     refreshTooltip();
   });
   delegateActions(document, {
-    'recipe-open': el => openRecipeViewer(el.dataset.key, el.dataset.dir || 'making'),
+    'recipe-open': (el, e) => {
+      if (e.shiftKey && el.closest('#recipeViewerModal') && openStackStock(el)) return;
+      openRecipeViewer(el.dataset.key, el.dataset.dir || 'making');
+    },
     'recipe-stock': () => { const it = currentStockItem(); if (it) { hideRecipeViewer(); openItemHistory(it); } },
     'recipe-filter': el => select(current().dir, el.dataset.map || ''),
     'recipe-tabs-previous': () => categoryTabs.scroll(-1),

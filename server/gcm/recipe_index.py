@@ -33,7 +33,7 @@ from urllib.parse import quote
 
 # Bumped when the schema or what goes in it changes: an index of another
 # format is built again.
-FORMAT = 5
+FORMAT = 6
 # An index built beside a bundle's recipes.json.gz is called this.
 FILE = "recipes.sqlite"
 ITEM, FLUID = 0, 1
@@ -202,6 +202,12 @@ def _body(recipe, map_name, items, fluids, source_format):
         # NEI's loss-aware raw snapshot stays in the source bundle, not the
         # query index. It can be reinterpreted without launching the pack again.
     if source_format >= 4:
+        if "preview_stacks" in recipe:
+            overrides = recipe["preview_stacks"]
+            if not isinstance(overrides, dict) or overrides.keys() - {"i", "o", "f", "g"}:
+                raise ValueError("invalid preview stacks")
+            body["preview_stacks"] = {side: _checked_stacks(stacks, fluids if side in ("f", "g") else items, variants=True)
+                                      for side, stacks in overrides.items()}
         body["aux"] = _checked_stacks(recipe.get("aux", []), items, variants=True)
         body["extras"] = []
         for group in recipe.get("extras", []):
@@ -406,6 +412,7 @@ def _build(source_file, out_path, raw, map_ids, signature):
                 continue
             if raw["format"] >= 4:
                 stacks = [s for side in ("i", "o", "f", "g", "aux") for s in body.get(side, [])]
+                stacks.extend(s for values in body.get("preview_stacks", {}).values() for s in values)
                 stacks.extend(s for field in ("groups", "extras") for group in body.get(field, []) for s in group["alts"])
                 stacks.extend(s for slot in body.get("slots", []) if slot for s in slot["alts"])
                 if body.get("research"):

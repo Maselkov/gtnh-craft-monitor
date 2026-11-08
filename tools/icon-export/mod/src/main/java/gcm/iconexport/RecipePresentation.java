@@ -166,6 +166,23 @@ final class RecipePresentation {
             Object nei=frontend.getClass().getMethod("getNEIProperties").invoke(frontend);
             Object size=Recipes.field(nei,"recipeBackgroundSize");
             Map<String,Object> out=scene("gt",number(size,"width"),number(size,"height"));
+            Object name=Recipes.field(map,"unlocalizedName");
+            if(name instanceof String) out.put("title",net.minecraft.util.StatCollector.translateToLocal((String)name));
+            out.put("frontend",frontend.getClass().getName());
+            Object formatter=Recipes.field(nei,"neiSpecialInfoFormatter");
+            if(formatter!=null)out.put("special_info_formatter",formatter.getClass().getName());
+            List<String> callbacks=new ArrayList<>();
+            boolean assembly=false;
+            for(Class<?> c=frontend.getClass();c!=null;c=c.getSuperclass()) {
+                if(c.getName().equals("gregtech.api.recipe.maps.AssemblyLineFrontend")) assembly=true;
+                if(c.getName().equals("gregtech.api.recipe.RecipeMapFrontend")) break;
+                for(java.lang.reflect.Method method:c.getDeclaredMethods()) {
+                    String m=method.getName();
+                    if((m.startsWith("draw") || m.equals("addProgressBar") || m.equals("createNEITemplate")) && !method.isSynthetic())
+                        callbacks.add(c.getName()+"#"+m);
+                }
+            }
+            out.put("custom_callbacks",callbacks);
             layer(out,"gregtech:textures/gui/background/nei_single_recipe.png",0,0,number(size,"width"),number(size,"height"));
             String[] roles={"i","o","f","g"};
             String[] fields={"itemInputPositionsGetter","itemOutputPositionsGetter","fluidInputPositionsGetter","fluidOutputPositionsGetter"};
@@ -181,7 +198,11 @@ final class RecipePresentation {
             }
             Object logo=Recipes.field(ui,"logo"), pos=Recipes.field(ui,"logoPos"), logoSize=Recipes.field(ui,"logoSize");
             textureLayer(out,logo,pos,logoSize,false);
-            if(Boolean.TRUE.equals(Recipes.field(ui,"useProgressBar"))) {
+            if(assembly) {
+                layer(out,"gregtech:textures/gui/progressbar/assemblyline_1.png",88,8,17,72,0,0,1,.5);
+                layer(out,"gregtech:textures/gui/progressbar/assemblyline_2.png",124,8,18,72,0,0,1,.5);
+                layer(out,"gregtech:textures/gui/progressbar/assemblyline_3.png",146,26,10,18,0,0,1,.5);
+            } else if(Boolean.TRUE.equals(Recipes.field(ui,"useProgressBar"))) {
                 Object progress=Recipes.field(ui,"progressBarTexture");
                 if(progress!=null)progress=progress.getClass().getMethod("get").invoke(progress);
                 textureLayer(out,progress,Recipes.field(ui,"progressBarPos"),Recipes.field(ui,"progressBarSize"),true);
@@ -191,6 +212,39 @@ final class RecipePresentation {
         } catch(ReflectiveOperationException|RuntimeException unsupported) {
             IconExportMod.LOG.warn("No declarative recipe layout for {}: {}",map,unsupported.toString());return null;
         }
+    }
+
+    /** CachedDefaultRecipe appends slots beyond the template's declared IO limits. */
+    @SuppressWarnings("unchecked")
+    Map<String,Object> overflow(Object map, Object recipe) throws ReflectiveOperationException {
+        Object frontend=map.getClass().getMethod("getFrontend").invoke(map);
+        Object ui=frontend.getClass().getMethod("getUIProperties").invoke(frontend);
+        String[] roles={"i","o","f","g"};
+        String[] fields={"mInputs","mOutputs","mFluidInputs","mFluidOutputs"};
+        String[] getters={"itemInputPositionsGetter","itemOutputPositionsGetter","fluidInputPositionsGetter","fluidOutputPositionsGetter"};
+        String[] maxima={"maxItemInputs","maxItemOutputs","maxFluidInputs","maxFluidOutputs"};
+        Map<String,Object> out=null;
+        for(int k=0;k<roles.length;k++) {
+            Object values=Recipes.field(recipe,fields[k]);
+            int count=values==null?0:java.lang.reflect.Array.getLength(values), max=number(ui,maxima[k]);
+            if(count<=max)continue;
+            if(out==null)out=gt(map);
+            if(out==null)return null;
+            List<?> positions=((IntFunction<List<?>>)Recipes.field(ui,getters[k])).apply(count);
+            for(int n=max;n<Math.min(positions.size(),count);n++) {
+                if(java.lang.reflect.Array.get(values,n)==null)continue;
+                int x=number(positions.get(n),"x"),y=number(positions.get(n),"y");
+                slot(out,roles[k],n,x,y);
+                out.put("width",Math.max(((Number)out.get("width")).intValue(),x+20));
+                out.put("height",Math.max(((Number)out.get("height")).intValue(),y+20));
+            }
+        }
+        if(out!=null) for(Map<String,Object> layer:(List<Map<String,Object>>)out.get("layers")) {
+            if(String.valueOf(layer.get("asset")).endsWith("/nei_single_recipe.png")) {
+                layer.put("w",out.get("width"));layer.put("h",out.get("height"));
+            }
+        }
+        return out;
     }
 
     private void textureLayer(Map<String,Object> scene,Object texture,Object pos,Object size,boolean half) {

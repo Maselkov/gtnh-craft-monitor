@@ -340,3 +340,19 @@ def test_missing_display_reference_fails_instead_of_losing_variant(tmp_path):
     del raw['display_stacks']['charged']
     with pytest.raises(ValueError, match='unknown display stack reference'):
         build_index(tmp_path, raw)
+
+
+def test_nei_stack_overrides_keep_production_inputs_and_validate_display_refs(tmp_path):
+    raw = format4()
+    raw['maps'][EBF]['recipes'][0]['preview_stacks'] = {'i': [[0, 64, None, ['charged']]], 'f': [[0, 10000]]}
+    idx = build_index(tmp_path, raw)
+    try:
+        body = next(b for _, m, b in idx.making(recipe_index.ITEM, PLANKS) if m == EBF and b.get('aux'))
+        assert body['i'][0][0] == ANY_LOG
+        assert body['preview_stacks']['i'] == [['minecraft:log:0', 64, None, ['charged']]]
+        assert body['preview_stacks']['f'][0][1] == 10000
+    finally:
+        idx.close()
+    raw['maps'][EBF]['recipes'][0]['preview_stacks']['i'][0][3] = ['missing']
+    with pytest.raises(ValueError, match='unknown display stack reference'):
+        build_index(tmp_path, raw)

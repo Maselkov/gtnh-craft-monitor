@@ -87,6 +87,7 @@ def test_icon_bundle_covers_every_item_but_essentia(tmp_path):
     # Essentia has none, to show the page's stand-in.
     assert len(paths) == sum(1 for it in dev.CATALOG if it["kind"] != "essentia")
     assert set(paths) <= names
+    assert "aspect/ordo.webp" in names  # Recipe glyph; deliberately absent from network lookup.
     assert json.loads((tmp_path / "gamedata" / "selected.json").read_text())["version"] == dev.GTNH_VERSION
 
 

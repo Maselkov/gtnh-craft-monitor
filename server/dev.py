@@ -532,6 +532,8 @@ def install_icons(data_dir, prerelease=False):
     os.makedirs(bundle, exist_ok=True)
     by_key, fluids_by_key = {}, {}
     with zipfile.ZipFile(os.path.join(bundle, "images.zip"), "w") as zf:
+        # Recipe glyph only; network essentia still exercises its missing-icon fallback.
+        zf.writestr("aspect/ordo.webp", _webp("ring", (180, 180, 210)))
         for it in CATALOG:
             if it["kind"] == "essentia":
                 continue
@@ -679,6 +681,17 @@ def recipe_maps(changed):
                              62 + round(40 * math.sin(math.radians(-90 + 90*n)))) for n in range(4)]},
         "approximate": ["nei_display"],
     }]}
+    maps["nei.dev::thaumcraft.arcane.shaped"] = {"machines": ["Shaped Arcane Crafting"], "recipes": [{
+        "type": "nei", "groups": [{"alts": [[foil if n % 2 else wafer, 1]]} for n in range(9)],
+        "o": [[_recipe_key("Ultimate Circuit"), 1]],
+        "requirements": {"aspects": {"ordo": 10},
+                         "prereqs": [{"research": "Dev Arcane Crafting", "isResearched": False, "prevX": 0}],
+                         "vis": [{"relx": 75, "rely": 122, "item": {"nbt": '{Aspect:"ordo"}'}}]},
+        "preview": {"family": "positioned", "width": 166, "height": 142, "layers": [],
+                    "slots": [slot("groups", n, 46+28*(n % 3), 37+27*(n // 3)) for n in range(9)]
+                             + [slot("o", 0, 74, 4)]},
+        "approximate": ["nei_display"],
+    }]}
     return maps
 
 
@@ -714,7 +727,7 @@ def write_recipes(path, maps):
         "format": 4,
         "display_stacks": {}, "ui_assets": {},
         "research_info": {"DEV_INFUSION": {"name": "Infusion", "category_name": "Dev research"}},
-        "aspects": {"ordo": {"name": "Ordo", "icon": "aspect/ordo.png"}},
+        "aspects": {"ordo": {"name": "Ordo", "icon": "aspect/ordo.webp"}},
         "coverage": {"handlers": ["gregtech", "crafting", "furnace", "assembly_line", "nei"], "identity": "item_id_damage",
                      "limitations": ["Illustrative dev recipes; NBT and custom matching may differ"]},
         "items": list(tables["items"]), "item_names": [names[k] for k in tables["items"]],

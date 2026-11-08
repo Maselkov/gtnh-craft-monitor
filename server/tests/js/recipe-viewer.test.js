@@ -54,6 +54,12 @@ test('fluid slot labels abbreviate litres while tooltip amounts remain exact', (
   }
 });
 
+test('large item slot counts remain readable while detailed amounts stay exact', () => {
+  const stack = {...item, size:8388608};
+  assert.match(stackHtml(stack, {interactive:true,compact:true,preview:true}), />8\.39M</);
+  assert.equal(amountText(stack), '8,388,608x');
+});
+
 test('recipe URLs preserve wildcards, fluid namespaces, direction and map', () => {
   assert.equal(recipeItemKey(item), 'mod:item:*');
   assert.equal(recipeItemKey({ mod: null, internal: 'mod:water', kind: 'fluid' }), 'fluid:mod:water');
@@ -137,11 +143,23 @@ test('positioned previews preserve frames, crops, canonical navigation and NC', 
   const html = previewHtml({id:8, preview:p, requirements:{instability:0}}, {interactive:true});
   assert.match(html, /data-x="74"/);
   assert.match(html, /viewBox="0.4 0.15/);
-  assert.match(html, />NC</);
+  assert.match(html, /class="recipe-stack-amount recipe-stack-nc">NC</);
   assert.match(html, /mod:item:\*/);
   assert.match(html, /Instability: 0/);
   assert.match(html, /&lt;Research&gt;/);
   assert.doesNotMatch(html, /style=|onclick=|100%/);
+});
+
+test('arcane vis glyphs occupy their NEI positions with counts and a concise research label', () => {
+  const html = stepHtml({id:1, map:'arcane', inputs:[], outputs:[], machines:[], requirement_notes:[], preview:{
+    family:'arcane',width:166,height:142,slots:[],layers:[],
+    aspects:[{tag:'ordo',name:'Ordo',amount:10,icon:'aspect/ordo.webp',x:56,y:122,w:16,h:16}],
+    research:{name:'Digi-sentia Storage',state:'unknown'}}}, {interactive:true});
+  assert.match(html, /data-id="aspect-ordo" data-x="56" data-y="122"/);
+  assert.match(html, /Ordo: 10 vis/);
+  assert.match(html, /recipe-stack-amount">10</);
+  assert.match(html, /Research: Digi-sentia Storage/);
+  assert.doesNotMatch(html, /recipe-preview-aspects|recipe-energy|isResearched|prevX/);
 });
 
 test('total energy keeps non-heat special requirements and heat distinct', () => {
@@ -187,4 +205,13 @@ test('research cards show NEI power, computation, time and compact maximum energ
   assert.match(scanner, /Time: 5 seconds/);
   assert.match(scanner, /Total: 12,000 EU/);
   assert.doesNotMatch(scanner, /Computation:|Min computation:|Max EU:/);
+});
+
+test('production totals use game scientific formatting without losing exact hover values', () => {
+  const html = energyHtml({eut:503316480, ticks:1000000, tier:'UXV'});
+  assert.match(html, /Total: 5\.03e14 EU/);
+  assert.match(html, /title="503,316,480,000,000 EU"/);
+  assert.match(html, /Time: 50,000 seconds/);
+  assert.match(energyHtml({eut:1000000, ticks:1000000}), /Total: 1e12 EU/);
+  assert.match(energyHtml({eut:1000000, ticks:999999}), /Total: 999,999,000,000 EU/);
 });

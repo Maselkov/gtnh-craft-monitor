@@ -19,6 +19,26 @@ import compare_exports  # noqa: E402
 import detect  # noqa: E402
 import export  # noqa: E402
 import validate  # noqa: E402
+import audit_previews  # noqa: E402
+
+
+def test_preview_audit_finds_hidden_metadata_and_overflow_but_accepts_getter_overrides():
+    row = {'i': [[0, 1], [0, 64]], 'f': [], 'o': [[0, 1]],
+           'requirements': {'metadata': {'condensate_input': [{'fluid': 'water', 'amount': 10000}]}}}
+    data = {'items': ['test:part:0'], 'fluids': ['water'], 'maps': {'test': {'preview': {
+        'family': 'gt', 'frontend': 'Example', 'custom_callbacks': ['Example#drawSpecialInfo'],
+        'slots': [{'role': 'i', 'index': 2}, {'role': 'o', 'index': 0}, {'role': 'f', 'index': 0}]}, 'recipes': [row]}}}
+    before = audit_previews.audit(data)
+    assert before['totals'] == {'custom_callbacks_to_review': 1, 'unplaced_stacks': 2, 'metadata_stacks_to_review': 1}
+    row.update(preview_stacks={'i': [[0, 64]], 'f': [[0, 10000]]}, preview_indices={'i': [2]})
+    after = audit_previews.audit(data)
+    assert after['totals'] == {'custom_callbacks_to_review': 1}
+
+
+def test_preview_audit_recognizes_supported_inherited_assembly_callback():
+    data = {'items': [], 'fluids': [], 'maps': {'test': {'preview': {
+        'family': 'gt', 'frontend': 'BEC', 'custom_callbacks': sorted(audit_previews.SUPPORTED_CALLBACKS)}, 'recipes': []}}}
+    assert audit_previews.audit(data)['maps'] == []
 
 
 def release(tag, published="2026-01-01T00:00:00Z", draft=False):

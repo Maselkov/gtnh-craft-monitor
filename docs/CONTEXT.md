@@ -2338,7 +2338,7 @@ in the bundle. The viewer and MCP show research separately and label displays an
 captured additional requirements; processing checks remain native-GT-only.
 
 
-Recipe preview presentation (source format 4, SQLite format 5): canonical recipe
+Recipe preview presentation (source format 4, SQLite format 6): canonical recipe
 keys remain ID/damage, with exact NBT display stacks referenced independently.
 The source also carries resolved GUI images, declarative layouts, static
 research metadata and aspect names. The index streams the display pool and
@@ -2346,3 +2346,26 @@ batches page lookups. The viewer renders texture crops and positioned slots
 without inline markup styles. NEI other-stack roles stay display-only; static
 research metadata carries no player completion state. Arbitrary Java drawing
 callbacks and player-dependent recipe generation remain outside this contract.
+
+GT's native IO is not necessarily its NEI display IO. The exporter calls all four
+NEI stack getters and stores substitutions in `preview_stacks`, retaining native
+production fields for pattern matching. Condensate Assembling moves fluids into
+`CONDENSATE_INPUT` in its backend; the NEI getter restores them for display. Its
+frontend supplies the maximum localized nanite-tier description. Layouts carry
+the translated map title instead of inferring it from a machine shared across
+categories. AssemblyLineFrontend subclasses retain their three pipe textures;
+recipe-specific overflow slots use the same position getters as CachedDefaultRecipe.
+The preview audit in `tools/icon-export/ci/audit_previews.py` checks unplaced stacks,
+metadata-backed stack omissions and inventories unhandled custom draw callbacks.
+Validation writes its advisory report beside the bundle. This is a structural
+audit, not a guarantee of pixel fidelity or equality between different pack versions.
+
+Arcane workbench previews reuse the captured research-book atlas and aspect
+glyphs already in format-4 bundles. `TemplateThaumHandler` positions remain
+authoritative for ingredients/output; its `vis` stack snapshots provide aspect
+positions, while `aspects` provides costs. Synthetic aspect items are replaced
+by named glyphs, not item recipes. The cached `prereqs` contributes only research
+names; `isResearched` and other export-player/layout fields are not user costs.
+Shaped recipes use the workbench grid/wand crops; shapeless recipes retain only
+the shared output decoration. Both omit raw `vis`/`prereqs`/`aspects` text. This
+presentation correction works with existing bundles without relaunching the pack.
