@@ -693,8 +693,12 @@ craft instead, as if you'd requested them one by one: each lands in the
 network as soon as it's done. Without a kit interface, that's how a kit is
 always requested, and the box says so. The choice sits to the left of
 **Review & request**, with its explanation underneath; on mobile it stacks
-above the button. The review shows the chosen mode, and **Back to kit**
+above the button. Switching modes keeps the dialog and its buttons in place.
+The review shows the chosen mode, and **Back to kit**
 lets you change it. The page remembers the choice.
+
+Switching a component to a tier with no crafting pattern keeps its row height
+steady; the unavailable quantity slider is hidden and the row says **no pattern**.
 
 If no kit slots are detected, **Set up a kit interface** links directly to
 the illustrated [setup guide](in-game.md#kit-interface), including the

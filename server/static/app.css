@@ -3157,6 +3157,9 @@ body.oauth-page {
 .kit-mode .agent-setting { min-height: 36px; align-items: center; }
 .kit-mode .agent-setting input { margin: 0; }
 .kit-mode .modal-note { margin: 0; }
+.kit-mode-explanations { display: grid; }
+.kit-mode-explanations > span { grid-area: 1 / 1; }
+.kit-mode-explanations > [aria-hidden="true"] { visibility: hidden; }
 @media (max-width: 520px) {
   .kit-actions { grid-template-columns: minmax(0, 1fr); }
   .kit-actions > .modal-buttons { grid-column: 1; }
@@ -3256,6 +3259,7 @@ body.oauth-page {
   margin: 0;
   accent-color: var(--accent);
 }
+.kit-slider:disabled { visibility: hidden; }
 /* The kit's crafting plan (craft-plan.js's panel, moved into the kit
    dialog): its own scroll, under the blocks. */
 .kit-box .craft-plan {

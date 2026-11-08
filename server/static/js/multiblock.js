@@ -289,10 +289,12 @@ function renderKit() {
         ? `<input class="modal-amount-input kit-request" type="number" min="0" data-row="${escapeHtml(r.key)}" value="${requestOf(r)}" aria-label="Request ${escapeHtml(nameText(r.name))}">`
         : '<span class="kit-num kit-no-pattern" title="The network has no pattern for it">no pattern</span>')
       : '';
-    // Below a block that can be requested: a slider from none to all the
-    // multiblock needs, starting at what's missing.
-    const slider = operator && r.craftable
-      ? `<input class="kit-slider" type="range" min="0" max="${r.need}" step="1" data-row="${escapeHtml(r.key)}" value="${Math.min(requestOf(r), r.need)}" aria-label="Request ${escapeHtml(nameText(r.name))}">`
+    // Reserve the slider's row for configurable blocks even when their
+    // selected tier has no pattern, so swapping tiers keeps the layout still.
+    const slider = operator && (r.craftable || channels.length)
+      ? (r.craftable
+        ? `<input class="kit-slider" type="range" min="0" max="${r.need}" step="1" data-row="${escapeHtml(r.key)}" value="${Math.min(requestOf(r), r.need)}" aria-label="Request ${escapeHtml(nameText(r.name))}">`
+        : '<input class="kit-slider" type="range" disabled aria-hidden="true" tabindex="-1">')
       : '';
     const name = channels.length
       ? `<div class="kit-name-cell">${channels.map(ch => channelHtml(ch, true)).join('')}</div>`
@@ -410,13 +412,19 @@ function updateMode() {
   input.checked = !oneJob();
   input.disabled = !can;
   const line = document.getElementById('kitModeLine');
+  line.classList.toggle('kit-mode-explanations', can);
   if (!can) {
     updateHtml(line, 'No kit slots detected. Materials will be requested separately. '
       + `<a href="${escapeHtml(KIT_INTERFACE_DOCS_URL)}" target="_blank" rel="noopener">Set up a kit interface</a>`);
   } else {
-    line.textContent = oneJob()
-      ? 'As one job: AE2 plans the blocks together, making what they share once, and puts them in the network when they\'re all done.'
-      : 'One craft per block, each in the network as soon as it\'s done.';
+    // Both explanations occupy the same grid cell, reserving the taller
+    // one's wrapped height without exposing the inactive text to readers.
+    const explanations = [
+      'As one job: AE2 plans the blocks together, making what they share once, and puts them in the network when they\'re all done.',
+      'One craft per block, each in the network as soon as it\'s done.',
+    ];
+    updateHtml(line, explanations.map((text, i) =>
+      `<span data-id="mode-${i}" aria-hidden="${i !== Number(!oneJob())}">${escapeHtml(text)}</span>`).join(''));
   }
 }
 

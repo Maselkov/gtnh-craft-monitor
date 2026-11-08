@@ -2652,11 +2652,38 @@ async function main() {
     await click(`$('#kitChannel-coilList [data-value="1"]')`);
     await waitFor('one job', `!$('#kitSeparate').checked && !$('#kitSeparate').disabled
       && $('#kitReviewBtn').textContent === 'Review & request' && coilRow().querySelector('.kit-request').value === '500'
-      && $('#kitModeLine').textContent.startsWith('As one job') && !$('#kitModeLine a')`);
+      && $('#kitModeLine [aria-hidden="false"]').textContent.startsWith('As one job') && !$('#kitModeLine a')`);
     await click(`$('#kitSeparate')`);
-    await waitFor('each on its own', `$('#kitModeLine').textContent.startsWith('One craft per block') && $('#kitSeparate').checked`);
+    await waitFor('each on its own', `$('#kitModeLine [aria-hidden="false"]').textContent.startsWith('One craft per block') && $('#kitSeparate').checked`);
     await click(`$('#kitSeparate')`);
-    await waitFor('one job again', `!$('#kitSeparate').checked && $('#kitModeLine').textContent.startsWith('As one job')`);
+    await waitFor('one job again', `!$('#kitSeparate').checked && $('#kitModeLine [aria-hidden="false"]').textContent.startsWith('As one job')`);
+    // Mode descriptions wrap differently: neither direction may resize or
+    // recenter the dialog, move its actions, or shrink the preview.
+    const modeTheme = await evaluate(`document.documentElement.dataset.theme || ''`);
+    for (const theme of ['dark', 'light']) {
+      await evaluate(`document.documentElement.dataset.theme = '${theme}'`);
+      for (const width of [1280, 900, 520, 390]) {
+        await cdp.send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
+        await evaluate(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
+        await evaluate(`window.kitModeGeometry = () => ['#kitModal .kit-box', '#kitReviewBtn', '#kitCount', '#kitPreview']
+          .map(selector => { const r = $(selector).getBoundingClientRect(); return [r.x, r.y, r.width, r.height]; }), true`);
+        const before = await evaluate(`kitModeGeometry()`);
+        for (let toggle = 0; toggle < 2; toggle++) {
+          await click(`$('#kitSeparate')`);
+          await waitFor('mode description follows checkbox', `$('#kitModeLine [aria-hidden="false"]').textContent.startsWith(
+            $('#kitSeparate').checked ? 'One craft per block' : 'As one job')`);
+          const after = await evaluate(`kitModeGeometry()`);
+          assert.deepEqual(after, before, `kit mode geometry at ${width}px in ${theme}`);
+        }
+      }
+    }
+    await evaluate(`(() => {
+      const theme = ${JSON.stringify(modeTheme)};
+      if (theme) document.documentElement.dataset.theme = theme;
+      else delete document.documentElement.dataset.theme;
+      return true;
+    })()`);
+    await cdp.send('Emulation.clearDeviceMetricsOverride');
     // Reviewing sends no craft request. Errors can be retried, and
     // going back preserves quantities, tiers and the per-block amounts.
     await evaluate(`(() => {
@@ -2693,6 +2720,37 @@ async function main() {
       && $('#kitCount').value === '2' && !$('#kitCount').disabled && $('#kitChannel-coil').value === 'Iron Ingot'
       && coilRow().querySelector('.kit-request').value === '500' && !$('#kitSeparate').checked
       && document.activeElement === $('#kitReviewBtn')`);
+    // A component without a pattern keeps the slider's space, so switching
+    // tiers cannot shrink the row, shift the selector or recenter the dialog.
+    const componentTheme = await evaluate(`document.documentElement.dataset.theme || ''`);
+    await evaluate(`window.kitComponentGeometry = () => ['#kitModal .kit-box', '#kitRows',
+      '#kitChannel-coil', '#kitPreview'].map(selector => {
+        const r = $(selector).getBoundingClientRect(); return [r.x, r.y, r.width, r.height];
+      }), true`);
+    for (const theme of ['dark', 'light']) {
+      await evaluate(`document.documentElement.dataset.theme = '${theme}'`);
+      for (const width of [1280, 900, 390]) {
+        await cdp.send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
+        await evaluate(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
+        const before = await evaluate(`kitComponentGeometry()`);
+        for (const tier of [2, 1]) {
+          await click(`$('#kitChannel-coil')`);
+          await click(`$('#kitChannel-coilList [data-value="${tier}"]')`);
+          await waitFor('component pattern state updated', `$('#kitChannel-coil').value === '${tier === 2 ? 'Gold' : 'Iron'} Ingot'
+            && ${tier === 2 ? "coilRow().querySelector('.kit-no-pattern') && !visible(coilRow().querySelector('.kit-slider')) && coilRow().querySelector('.kit-slider').disabled" : "coilRow().querySelector('.kit-request') && visible(coilRow().querySelector('.kit-slider'))"}`);
+          await evaluate(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
+          assert.deepEqual(await evaluate(`kitComponentGeometry()`), before,
+            `component without a pattern at ${width}px in ${theme}, tier ${tier}`);
+        }
+      }
+    }
+    await evaluate(`(() => {
+      const theme = ${JSON.stringify(componentTheme)};
+      if (theme) document.documentElement.dataset.theme = theme;
+      else delete document.documentElement.dataset.theme;
+      return true;
+    })()`);
+    await cdp.send('Emulation.clearDeviceMetricsOverride');
     await evaluate(`$('#kitChannel-coil').focus(), pressKey('ArrowDown', '#kitChannel-coil'),
       pressKey('End', '#kitChannel-coil'), pressKey('Enter', '#kitChannel-coil'), true`);
     await waitFor('gold coils', `$('#kitChannel-coil').value === 'Gold Ingot' && $('#kitRows .kit-no-pattern')
