@@ -9,9 +9,9 @@ test('category tabs choose an available machine icon and preserve accessible sel
   assert.match(html, /src="\/icons\?path=item%2Faltar.webp"/);
   assert.match(html, /role="tab"/);
   assert.match(html, /data-map="second" aria-controls="recipeViewerList" aria-selected="true" tabindex="0"/);
-  assert.match(html, /aria-label="All categories, 1,236 recipes"/);
+  assert.doesNotMatch(html, /All categories/);
   assert.match(html, /aria-label="Arcane &lt;Infusion&gt;, 1,234 recipes"/);
-  assert.match(html, /1.2k/);
+  assert.doesNotMatch(html, /recipe-map-count/);
   assert.match(html, />RS<\/span>/);
   assert.doesNotMatch(html, /style=|onclick=|<Infusion>|\btitle=/);
 });

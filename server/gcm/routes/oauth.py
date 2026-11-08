@@ -167,7 +167,7 @@ def _page(title, body, status=200, form_action_origin=None):
     response.headers["Content-Type"] = "text/html; charset=utf-8"
     form_action = "'self'" + (f" {form_action_origin}" if form_action_origin else "")
     response.headers["Content-Security-Policy"] = (
-        "default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; "
+        "default-src 'none'; style-src 'self'; img-src 'self'; font-src 'self'; base-uri 'none'; "
         f"form-action {form_action}; frame-ancestors 'none'"
     )
     return response

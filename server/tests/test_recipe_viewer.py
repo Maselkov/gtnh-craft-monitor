@@ -55,6 +55,31 @@ def test_using_matches_all_alternatives_and_category_filter(client, data):
     assert body['total'] == 2  # exact plus wildcard is one recipe, not two
 
 
+def test_machine_summaries_share_network_info_and_omit_generic_category_labels(client, data, monkeypatch):
+    from gcm import item_info
+    monkeypatch.setattr(item_info, 'describe', lambda item: {'description': 'Machine details', 'rarity': 'd'})
+    body = request(client, '/api/recipes', key='minecraft:planks:0').get_json()
+    machine = body['machines']['crafting'][0]
+    assert machine['key'] == 'minecraft:crafting_table:0'
+    assert (machine['kind'], machine['mod'], machine['internal'], machine['damage']) == ('item', 'minecraft', 'crafting_table', 0)
+    assert machine['info']['description'] == 'Machine details' and machine['info']['rarity'] == 'd'
+    rows = [{'map': 'test', 'machines': [{'name': 'Category', 'key': None},
+                                       {'name': 'Machine', 'key': machine['key']}]}] * 20
+    assert len(recipe_viewer.machine_summaries(rows)['test']) == 1
+    assert recipe_viewer.machine_summaries([{'map': 'unknown', 'machines': [{'name': 'Unknown'}]}]) == {
+        'unknown': [{'name': 'Unknown', 'key': None, 'kind': 'item', 'info': {}}]}
+
+
+def test_gt_category_titles_use_machine_type_without_losing_variant_names(data, monkeypatch):
+    from gcm import item_info
+    monkeypatch.setattr(data, 'machines', lambda name: [{'name': 'Basic Canning Machine', 'key': 'gregtech:gt.blockmachines:321'},
+                                                      {'name': 'Advanced Canning Machine', 'key': 'gregtech:gt.blockmachines:322'}])
+    monkeypatch.setattr(item_info, 'describe', lambda item: {'description': '\u00a77Machine Type: \u00a7eCanner\nCapacity: 100 EU'})
+    info = recipe_viewer.map_info(data, 'gt.recipe.canner')
+    assert info['name'] == 'Canner'
+    assert [m['name'] for m in info['machines']] == ['Basic Canning Machine', 'Advanced Canning Machine']
+
+
 @pytest.mark.parametrize('query', [
     {'key': 'bad'}, {'key': 'minecraft:log:-1'}, {'key': 'minecraft:log:999999999999'}, {'key': 'fluid:'},
     {'key': 'minecraft:log:0', 'dir': 'bad'}, {'key': 'minecraft:log:0', 'limit': 21},
@@ -99,6 +124,15 @@ def test_keys_preserve_registry_colons_and_do_not_invent_concrete_damage():
     assert recipe_viewer.parse_key('mod:internal:name:*') == (0, 'mod:internal:name:*')
 
 
+def test_requirements_drop_empty_and_false_values_without_losing_zero_tiers_or_chances():
+    assert recipe_viewer.requirement_notes({'metadata': {'cleanroom': False}, 'mSpecialItems': None,
+                                          'empty': [], 'unexpanded': {'class': 'Example'}}) == []
+    assert recipe_viewer.requirement_notes({'metadata': {'cleanroom': True, 'low_gravity': True,
+                                                       'casing_tier': 0}, 'mInputChances': [0, 5000]}) == [
+        'Needs Cleanroom', 'Needs Low Gravity', 'Casing tier: 0',
+        'Input consumption chances (out of 10,000): 0, 5,000']
+
+
 def test_unknown_recipe_items_keep_their_network_display_name(client, data, monkeypatch):
     monkeypatch.setitem(state.network, "items", [{"mod": "example", "internal": "unknown", "damage": 3,
                                                "kind": "item", "name": "Network-only Item"}])
@@ -123,11 +157,93 @@ def test_assembly_and_nei_presentation_keeps_research_separate_from_consumed_ing
         assembly = next(r for r in shown if r['type'] == 'assembly_line')
         assert assembly['eut'] == 32768 and assembly['research']['eut'] == 8192
         assert assembly['research']['item']['key'] == 'minecraft:log:0'
+        scan = assembly['research']
+        assert scan['name'] == 'Research Station' and scan['tier'] == 'IV'
+        assert scan['usage'] == 8192 * 4
+        assert scan['max_eu'] == str(7812 * 20 * 8192 * 4)
         assert assembly['groups'][0]['alternatives_total'] == 20
         assert len(assembly['groups'][0]['alternatives']) == 16
         display = next(r for r in shown if r['type'] == 'nei')
         assert display['groups'][0]['alternatives'][0]['key'] == 'fluid:water'
         assert display['requirements']['mana'] == 2000 and 'eut' not in display and 'ticks' not in display
+    finally:
+        idx.close()
+
+
+def test_scanner_time_energy_and_voltage_stay_separate_from_assembly_costs(tmp_path):
+    from test_recipe_index import PLANKS, build_index, format3
+    from gcm import recipe_index
+    source = format3()
+    source['maps']['assembly_line']['recipes'][0]['research'] = {
+        'method': 'scanner', 'item': [0, 1], 'eut': 120, 'ticks': 100,
+    }
+    idx = build_index(tmp_path, source)
+    try:
+        rows = recipe_viewer.present_recipes(idx.making(recipe_index.ITEM, PLANKS), idx)
+        assembly = next(r for r in rows if r['type'] == 'assembly_line')
+        assert assembly['eut'] == 32768
+        scan = assembly['research']
+        assert scan['name'] == 'Scanner' and scan['tier'] == 'MV'
+        assert scan['usage'] == 120 and scan['total_eu'] == '12000'
+        assert scan['ticks'] == 100 and 'max_eu' not in scan
+    finally:
+        idx.close()
+
+
+def test_research_categories_query_native_requirements_without_becoming_manufacturing(client, tmp_path, monkeypatch):
+    import copy
+    from test_recipe_index import LOG, PLANKS, build_index, format3
+    from gcm import recipe_index
+    source = format3()
+    scanner = copy.deepcopy(source['maps']['assembly_line']['recipes'][0])
+    scanner['research'] = {'method': 'scanner', 'item': [0, 1], 'eut': 120, 'ticks': 100}
+    source['maps']['assembly_line']['recipes'].append(scanner)
+    source['maps']['nei.gt.gt.recipe.scanner'] = {'machines': [
+        {'name': 'Basic Scanner', 'key': 'gregtech:gt.blockmachines:341'},
+        {'name': 'Advanced Scanner', 'key': 'gregtech:gt.blockmachines:342'}], 'recipes': []}
+    source['format'] = 4
+    source['items'].append('gregtech:gt.metaitem.01:32708')
+    source['item_names'].append('Data Stick')
+    source['display_stacks'] = {
+        'stick': {'key': 'gregtech:gt.metaitem.01:32708', 'name': 'Data Stick', 'icon': 'item/stick.webp'},
+        'target': {'key': PLANKS, 'name': 'Target', 'icon': 'item/target.webp'},
+    }
+    native = source['maps']['assembly_line']['recipes'][0]
+    native['aux'] = [[len(source['items'])-1, 0, None, ['stick']]]
+    native['o'][0] = [2, 16, None, ['target']]
+    idx = build_index(tmp_path, source)
+    monkeypatch.setattr(gamedata, 'selected_version', lambda: '2.9.0')
+    monkeypatch.setattr(recipes, 'index', lambda version: idx)
+    try:
+        header = request(client, '/api/recipes/item', key=PLANKS).get_json()
+        assert header['making']['research.scanner'] == 1
+        assert header['making']['research.research_station'] == 1
+        assert {'Scanner', 'Research Station'} <= {m['name'] for m in header['maps']}
+        native_total = sum(idx.counts_making(recipe_index.ITEM, PLANKS).values())
+        page = request(client, '/api/recipes', key=PLANKS, map='research.scanner').get_json()
+        assert page['total'] == 1
+        row = page['recipes'][0]
+        assert row['type'] == 'research' and row['reference_only'] is True
+        assert row['scan']['total_eu'] == '12000' and row['scan']['eut'] == 120
+        assert row['preview']['family'] == 'scanner'
+        assert [m['name'] for m in row['machines']] == ['Basic Scanner', 'Advanced Scanner']
+        assert len(page['machines']['research.scanner']) == 2
+        assert row['inputs'][0]['key'] == LOG and row['outputs'][0]['key'] == PLANKS
+        station = request(client, '/api/recipes', key=PLANKS, map='research.research_station').get_json()['recipes'][0]
+        assert station['auxiliary'][0]['size'] == station['auxiliary'][0]['display_variants'][0]['size'] == 1
+        assert station['outputs'][0]['size'] == station['outputs'][0]['display_variants'][0]['size'] == 1
+        combined = request(client, '/api/recipes', key=PLANKS, limit=2, offset=native_total-1).get_json()
+        assert combined['total'] == native_total + 2
+        assert len(combined['recipes']) == 2 and combined['recipes'][0]['type'] != 'research'
+        assert combined['recipes'][1]['type'] == 'research'
+        last = request(client, '/api/recipes', key=PLANKS, limit=2, offset=native_total+1).get_json()
+        assert len(last['recipes']) == 1
+        uses = request(client, '/api/recipes', key=LOG, dir='using', map='research.scanner').get_json()
+        assert uses['total'] == 1
+        # Assembly ingredients are not scanner inputs.
+        unrelated = request(client, '/api/recipes', key='example:part:19', dir='using', map='research.scanner').get_json()
+        assert unrelated['total'] == 0
+        assert not any(m.startswith('research.') for m in idx.counts_making(recipe_index.ITEM, PLANKS))
     finally:
         idx.close()
 

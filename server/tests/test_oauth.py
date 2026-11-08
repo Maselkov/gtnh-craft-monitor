@@ -168,6 +168,7 @@ class TestConsent:
         page = client.get("/oauth/authorize", query_string=params)
         assert page.status_code == 200 and 'name="token"' in page.text
         assert "frame-ancestors 'none'" in page.headers["Content-Security-Policy"]
+        assert "font-src 'self'" in page.headers["Content-Security-Policy"]
 
         bad = client.post("/oauth/authorize", data={**params, "action": "signin", "token": "gcm_tok-x_y"})
         assert bad.status_code == 401 and "That token didn&#x27;t work" in bad.text

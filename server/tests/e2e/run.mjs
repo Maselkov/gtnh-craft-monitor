@@ -130,17 +130,20 @@ def recipes(path, ingots):
     data["coverage"] = {"handlers": ["gregtech", "crafting", "furnace"], "identity": "item_id_damage"}
     for entry in data["maps"].values():
         for r in entry["recipes"]: r["type"] = "gt"
+    data["maps"]["gt.recipe.macerator"]["recipes"][0]["requirements"] = {"metadata": {"cleanroom": False}}
     data["maps"]["crafting"] = {"machines": [{"name": "Crafting Table", "key": "minecraft:crafting_table:0"}], "recipes": [
         {"type": "shaped", "w": 2, "h": 2, "slots": [{"alts": [[0, 1]]}, None, {"alts": [[1, 1], [2, 1]], "od": "dustIron"}, None], "o": [[3, 1]]},
         {"type": "shapeless", "slots": [{"alts": [[3, 1]]}], "o": [[2, 1]]}]}
     data["maps"]["furnace"] = {"machines": [{"name": "Furnace", "key": "minecraft:furnace:0"}], "recipes": [
         {"type": "furnace", "i": [[1, 1]], "o": [[3, 1]], "d": 200}]}
-    data["maps"]["gt.recipe.viewer_assembler"] = {"machines": [{"name": "Assembler", "key": None}], "recipes": [
+    data["maps"]["gt.recipe.viewer_assembler"] = {"machines": [{"name": "Assembler", "key": None},
+        {"name": "Basic Assembler", "key": "minecraft:iron_ingot:0"},
+        {"name": "Advanced Assembler", "key": "gregtech:gt.metaitem.01:11028"}], "recipes": [
         {"type": "gt", "i": [[3, 1]], "o": [[0, 1]], "e": 30, "d": 20 + i} for i in range(30)]}
     data["items"] += ["example:assembly_result:0", "example:display_result:0"]
     data["item_names"] += ["Assembly Result", "Display Result"]
     data["maps"]["assembly_line"] = {"machines": [{"name": "Assembly Line", "key": None}], "recipes": [
-        {"type": "assembly_line", "groups": [{"alts": [[0, 4]]}, {"alts": [[1, 1], [2, 1]]}], "o": [[4, 1]], "e": 32768, "d": 400,
+        {"type": "assembly_line", "groups": [{"alts": [[0, 4]]}, {"alts": [[1, 1], [2, 1]]}], "o": [[4, 1]], "e": 31457280, "d": 400,
          "research": {"method": "research_station", "item": [2, 1], "eut": 8192, "computation": 1000000, "amperage": 4, "computation_per_second": 128}}]}
     data["maps"]["nei.example"] = {"machines": [{"name": "Special Machine", "key": None}], "recipes": [
         {"type": "nei", "groups": [{"alts": [[0, 1]]}], "o": [[5, 1]], "requirements": {"mana": 2000}, "approximate": ["nei_display"]}]}
@@ -153,11 +156,13 @@ def recipes(path, ingots):
     def slot(role, n, x, y):
         return {"role": role, "index": n, "x": x, "y": y, "w": 18, "h": 18, "asset": "frame"}
     assembly = data["maps"]["assembly_line"]["recipes"][0]
+    assembly["requirements"] = {"metadata": {"cleanroom": True}}
     assembly["groups"][0]["alts"][0] = [0, 4, None, ["charged", "empty"]]
     assembly["aux"] = [[1, 0]]
+    assembly["f"] = [[0, 147456]]
     assembly["preview"] = {"family": "assembly_line", "width": 170, "height": 84,
         "slots": [slot("groups", n, 16 + 18*(n%4), 8 + 18*(n//4)) for n in range(16)]
-                 + [slot("o", 0, 142, 8), slot("aux", 0, 142, 44)], "layers": []}
+                 + [{**slot("f", 0, 114, 8), "h": 36}, slot("o", 0, 142, 8), slot("aux", 0, 142, 44)], "layers": []}
     infusion = data["maps"]["nei.example"]["recipes"][0]
     infusion["preview"] = {"family": "infusion", "width": 166, "height": 130, "item_frames": False,
         "slots": [slot("groups", 0, 74, 62), slot("o", 0, 74, 4)],
@@ -170,6 +175,11 @@ def recipes(path, ingots):
         if n == 0: machines.append({"name": "Machine", "key": "minecraft:iron_ingot:0"})
         data["maps"][f"gt.recipe.tabs_test_{n:02}"] = {"machines": machines, "recipes": [
             {"type": "gt", "i": [[7, 1]], "o": [[6, 1]], "e": 30, "d": 20}]}
+    data["items"].append("example:scanner_result:0")
+    data["item_names"].append("Scanner Result")
+    data["maps"]["assembly_line"]["recipes"].append({
+        "type": "assembly_line", "groups": [{"alts": [[0, 1]]}], "o": [[8, 1]], "e": 120, "d": 100,
+        "research": {"method": "scanner", "item": [2, 1], "eut": 120, "ticks": 100}})
     with gzip.open(path, "wt") as f:
         json.dump(data, f)
 recipes(out + "/recipes.json.gz", 1)
@@ -187,7 +197,7 @@ for name, size in (("images.zip", 16), ("images-faithful32.zip", 32)):
 open(out + "/icons_lookup.json", "w").write(json.dumps(
     {"by_key": {"minecraft:iron_ingot:0": "item/minecraft/iron_ingot~0.png",
                 "gregtech:gt.metaitem.01:11028": "item/gregtech/gt.metaitem.01~11028.png"},
-     "fluids_by_key": {}, "by_label": {}, "bleed": {"item/minecraft/iron_ingot~0.png": 12}}))
+     "fluids_by_key": {"water": "item/minecraft/iron_ingot~0.png"}, "by_label": {}, "bleed": {"item/minecraft/iron_ingot~0.png": 12}}))
 open(out + "/item_catalog.txt", "w").write("minecraft:iron_ingot\\n")
 open(out + "/next/item_catalog.txt", "w").write("gregtech:gt.metaitem.01\\nminecraft:iron_ingot\\n")
 open(out + "/ore_dict.json", "w").write(json.dumps(
@@ -2824,36 +2834,173 @@ async function main() {
     await waitFor('faithful icon', `$$('#networkList img.network-cell-icon').some((i) => i.src.includes('~faithful32') && i.complete && i.naturalWidth === 32)`);
   });
 
-  step('recipes: grid, drilldown, browser Back/Forward, Uses, category and paging', async () => {
+  step('recipes: NEI frame, category pages, drilldown and browser Back/Forward', async () => {
     await evaluate(`openItem('Iron Ingot'), true`);
     await click(`$('#itemHistoryRecipesBtn')`);
     await waitFor('recipe grid', `visible($('#recipeViewerModal')) && $('#recipeViewerList .recipe-grid')`);
-    await waitFor('recipe URL', `location.pathname === '/recipes' && $('#recipeViewerTitle').textContent === 'Iron Ingot'`);
+    assert(await evaluate(`!$('#recipeViewerTitle') && !$('#recipeViewerMaking') && !$('#recipeViewerUsing') && !$('#recipeViewerTrail')`));
     await click(`$('#recipeViewerList [data-action="recipe-open"][data-key="gregtech:gt.metaitem.01:11028"]')`);
-    await waitFor('ingredient opened', `$('#recipeViewerTitle').textContent === 'Neutronium Ingot' && $$('#recipeViewerTrail button').length === 2`);
+    await waitFor('ingredient opened', `$('.recipe-viewer-box').dataset.itemName === 'Neutronium Ingot' && history.state.recipe.stack.length === 2`);
     await click(`$('#recipeViewerBack')`);
-    await waitFor('Back restored iron', `$('#recipeViewerTitle').textContent === 'Iron Ingot' && $('#recipeViewerList .recipe-grid')`);
+    await waitFor('Back restored iron', `$('.recipe-viewer-box').dataset.itemName === 'Iron Ingot' && $('#recipeViewerList .recipe-grid')`);
     await evaluate(`history.forward(), true`);
-    await waitFor('Forward restored ingredient', `$('#recipeViewerTitle').textContent === 'Neutronium Ingot' && $$('#recipeViewerTrail button').length === 2`);
-    await click(`$('#recipeViewerTrail button')`);
-    await waitFor('breadcrumb returned', `$('#recipeViewerTitle').textContent === 'Iron Ingot' && $$('#recipeViewerTrail button').length === 1`);
-    await click(`$('#recipeViewerUsing')`);
-    await waitFor('Uses first page', `$('#recipeViewerUsing').getAttribute('aria-pressed') === 'true' && $('#recipeViewerStatus').textContent === '20 of 31 recipes'`);
-    await click(`$('#recipeViewerMaps [data-map="gt.recipe.viewer_assembler"]')`);
-    await waitFor('category selected', `$('#recipeViewerStatus').textContent === '20 of 30 recipes'`);
-    await click(`$('#recipeViewerMaps [data-map=""]')`);
-    await waitFor('all uses', `$('#recipeViewerStatus').textContent === '20 of 31 recipes'`);
-    await click(`$('#recipeViewerMore')`);
-    await waitFor('next page appended', `$$('#recipeViewerList .recipe-viewer-row').length === 31 && $('#recipeViewerStatus').textContent === '31 of 31 recipes'`);
-    await evaluate(`$('#recipeViewerList').scrollTop = 160, true`);
-    await click(`$$('#recipeViewerList .recipe-outputs [data-action="recipe-open"]')[3]`);
-    await waitFor('drilled after paging', `$$('#recipeViewerTrail button').length === 2 && $('#recipeViewerTitle').textContent === 'Neutronium Ingot'`);
+    await waitFor('Forward restored ingredient', `$('.recipe-viewer-box').dataset.itemName === 'Neutronium Ingot'`);
     await click(`$('#recipeViewerBack')`);
-    await waitFor('pages and scroll restored', `$('#recipeViewerTitle').textContent === 'Iron Ingot' && $$('#recipeViewerList .recipe-viewer-row').length === 31 && $('#recipeViewerList').scrollTop >= 150`);
+    await waitFor('iron restored again', `$('.recipe-viewer-box').dataset.itemName === 'Iron Ingot'`);
+    await evaluate(`$('#recipeViewerList .recipe-outputs [data-key="minecraft:iron_ingot:0"]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true}));true`);
+    await waitFor('Uses selects first available category', `$('.recipe-viewer-box').dataset.direction === 'using' && $('#recipeViewerPage').textContent === 'Page 1/1'`);
+    await click(`$('#recipeViewerMaps [data-map="gt.recipe.viewer_assembler"]')`);
+    await waitFor('assembler selected', `$('#recipeViewerPage').textContent === 'Page 1/30'`);
+    const machine = await evaluate(`$('#recipeViewerMachines .recipe-machine-control').outerHTML`);
+    for (let index = 2; index <= 21; index++) {
+      await click(`$('#recipePageNext')`);
+      await waitFor('page '+index, `$('#recipeViewerPage').textContent === 'Page ${index}/30' && !$('#recipePagePrevious').disabled`);
+    }
+    assert.equal(await evaluate(`$('#recipeViewerMachines .recipe-machine-control').outerHTML`), machine);
+    assert(await evaluate(`$$('#recipeViewerList .recipe-viewer-row').length === 1`));
+    await click(`$('#recipeViewerList .recipe-outputs [data-action="recipe-open"]')`);
+    await waitFor('drilled after paging', `$('.recipe-viewer-box').dataset.itemName === 'Neutronium Ingot'`);
+    await click(`$('#recipeViewerBack')`);
+    await waitFor('category and page restored', `$('.recipe-viewer-box').dataset.itemName === 'Iron Ingot' && $('#recipeViewerPage').textContent === 'Page 21/30'`);
+    await click(`$('#recipePagePrevious')`);
+    await waitFor('previous recipe page', `$('#recipeViewerPage').textContent === 'Page 20/30'`);
+    await click(`$('#recipeCategoryPrevious')`);
+    await waitFor('category arrow selects crafting', `$('#recipeCategoryName').textContent === 'Crafting Table' && $('#recipeViewerPage').textContent === 'Page 1/1'`);
     await click(`$('[data-action="recipe-close"]')`);
     await waitFor('close returned to item', `!visible($('#recipeViewerModal')) && visible($('#itemHistoryModal')) && location.pathname.startsWith('/network/item/')`);
     await evaluate(`pressKey('Escape'), true`);
     await waitFor('item closed', `!visible($('#itemHistoryModal'))`);
+  });
+
+  step('recipes: wheel navigates pages and categories, including empty top-tab space', async () => {
+    await cdp.send('Page.navigate', {url:base+'/recipes?key=minecraft:iron_ingot:0&dir=using&map=gt.recipe.viewer_assembler'});
+    await waitFor('wheel fixture loaded', `document.readyState === 'complete' && !window.byText`);
+    await evaluate(PAGE_LIB);
+    await waitFor('wheel recipe ready', `$('#recipeViewerPage').textContent === 'Page 1/30' && $('.recipe-viewer-box').getAttribute('aria-busy') === 'false'`);
+    const wheel = async (target, deltaY, extra = {}) => {
+      const point = await evaluate(`(() => {const r=${target}.getBoundingClientRect();return {x:r.right-8,y:r.top+r.height/2};})()`);
+      await cdp.send('Input.dispatchMouseEvent', {type:'mouseMoved',...point});
+      await cdp.send('Input.dispatchMouseEvent', {type:'mouseWheel',...point,deltaX:0,deltaY,...extra});
+    };
+    await wheel(`$('#recipeViewerList')`,100);
+    await waitFor('wheel down advances recipe page', `$('#recipeViewerPage').textContent === 'Page 2/30'`);
+    await wheel(`$('#recipeViewerList')`,-100);
+    await waitFor('wheel up returns recipe page', `$('#recipeViewerPage').textContent === 'Page 1/30'`);
+    await sleep(120);
+    await wheel(`$('#recipeViewerList')`,-100);
+    await sleep(120);
+    assert(await evaluate(`$('#recipeViewerPage').textContent === 'Page 1/30'`));
+    // This point is beyond the two tabs, in their reserved empty band.
+    await wheel(`$('#recipeCategoryNav')`,100);
+    await waitFor('wheel in empty top band changes category', `$('#recipeCategoryName').textContent === 'Crafting Table' && $('.recipe-viewer-box').getAttribute('aria-busy') === 'false'`);
+    await wheel(`$('#recipeViewerMaps [aria-selected="true"]')`,-100);
+    await waitFor('wheel over a tab changes category back', `$('#recipeCategoryName').textContent === 'Assembler' && $('.recipe-viewer-box').getAttribute('aria-busy') === 'false'`);
+    await sleep(120);
+    await wheel(`$('#recipeCategoryName')`,100);
+    await waitFor('wheel on category title also changes category', `$('#recipeCategoryName').textContent === 'Crafting Table' && $('.recipe-viewer-box').getAttribute('aria-busy') === 'false'`);
+    await wheel(`$('#recipeCategoryName')`,-100);
+    await waitFor('assembler restored', `$('#recipeCategoryName').textContent === 'Assembler' && $('.recipe-viewer-box').getAttribute('aria-busy') === 'false'`);
+    await sleep(120);
+    await wheel(`$('#recipeViewerMachines .recipe-machine-control')`,100);
+    await sleep(120);
+    assert(await evaluate(`$('#recipeViewerPage').textContent === 'Page 1/30' && $('#recipeCategoryName').textContent === 'Assembler'`));
+    await wheel(`$('#recipeViewerList')`,0,{deltaX:120});
+    await sleep(120);
+    assert(await evaluate(`$('#recipeViewerPage').textContent === 'Page 1/30'`));
+    await evaluate(`pressKey('Escape');true`);
+    await waitFor('wheel fixture closed', `!visible($('#recipeViewerModal'))`);
+  });
+
+  step('recipes: fast wheel bursts and combined deltas preserve travel across categories and fetched pages', async () => {
+    await cdp.send('Page.navigate', {url:base+'/recipes?key=example:tabs_result:0&map=gt.recipe.tabs_test_00'});
+    await waitFor('fast wheel fixture loaded', `document.readyState === 'complete' && !window.byText`);
+    await evaluate(PAGE_LIB);
+    await waitFor('fast wheel categories ready', `$$('#recipeViewerMaps [role=tab]').length === 20 && $('.recipe-viewer-box').getAttribute('aria-busy') === 'false'`);
+    await evaluate(`window.burstWheel=(deltaY,category=true)=>{
+      const b=$('.recipe-viewer-box'),r=$(category?'#recipeCategoryName':'#recipeViewerList').getBoundingClientRect();
+      b.dispatchEvent(new WheelEvent('wheel',{bubbles:true,cancelable:true,deltaY,clientX:r.x+10,clientY:r.y+10}));
+    };for(let i=0;i<12;i++)window.burstWheel(100);true`);
+    await waitFor('all twelve rapid notches counted', `$('#recipeViewerMaps [aria-selected=true]').dataset.map === 'gt.recipe.tabs_test_12' && $('.recipe-viewer-box').getAttribute('aria-busy') === 'false'`);
+    const point = await evaluate(`(()=>{const r=$('#recipeCategoryName').getBoundingClientRect();return {x:r.x+10,y:r.y+10};})()`);
+    await cdp.send('Input.dispatchMouseEvent', {type:'mouseWheel',...point,deltaX:0,deltaY:600});
+    await waitFor('combined delta advances six categories', `$('#recipeViewerMaps [aria-selected=true]').dataset.map === 'gt.recipe.tabs_test_18' && $('.recipe-viewer-box').getAttribute('aria-busy') === 'false'`);
+    await evaluate(`window.burstWheel(-2500);true`);
+    await waitFor('large backward delta wraps correctly', `$('#recipeViewerMaps [aria-selected=true]').dataset.map === 'gt.recipe.tabs_test_13' && $('.recipe-viewer-box').getAttribute('aria-busy') === 'false'`);
+    await cdp.send('Page.navigate', {url:base+'/recipes?key=minecraft:iron_ingot:0&dir=using&map=gt.recipe.viewer_assembler'});
+    await waitFor('fast paging fixture loaded', `document.readyState === 'complete' && !window.byText`);
+    await evaluate(PAGE_LIB);
+    await waitFor('fast paging ready', `$('#recipeViewerPage').textContent === 'Page 1/30' && $('.recipe-viewer-box').getAttribute('aria-busy') === 'false'`);
+    await evaluate(`(()=>{
+      window.wheelFetch=window.fetch;
+      window.fetch=async(...args)=>{
+        const response=await window.wheelFetch(...args);
+        if(String(args[0]).startsWith('/api/recipes?')){
+          const body=await response.text();await new Promise(resolve=>window.releaseWheelBatch=resolve);
+          return new Response(body,{status:response.status,headers:{'Content-Type':'application/json'}});
+        }return response;
+      };
+      window.pageWheel=deltaY=>{const r=$('#recipeViewerList').getBoundingClientRect();$('.recipe-viewer-box').dispatchEvent(new WheelEvent('wheel',{bubbles:true,cancelable:true,deltaY,clientX:r.x+10,clientY:r.y+10}));};
+      window.pageWheel(2500);return true;
+    })()`);
+    await waitFor('next batch held', `typeof window.releaseWheelBatch === 'function'`);
+    await evaluate(`window.pageWheel(100);window.pageWheel(100);window.pageWheel(100);window.pageWheel(-100);true`);
+    assert(await evaluate(`$('#recipeViewerPage').textContent === 'Page 1/30' && !!$('#recipeViewerList .recipe-viewer-row')`));
+    await evaluate(`window.fetch=window.wheelFetch;window.releaseWheelBatch();true`);
+    await waitFor('travel during batch fetch retained', `$('#recipeViewerPage').textContent === 'Page 28/30'`);
+    await evaluate(`window.pageWheel(-10000);true`);
+    await waitFor('backward travel clamps at first page', `$('#recipeViewerPage').textContent === 'Page 1/30' && $('#recipePagePrevious').disabled`);
+    await evaluate(`window.pageWheel(10000);true`);
+    await waitFor('forward travel clamps at last page', `$('#recipeViewerPage').textContent === 'Page 30/30' && $('#recipePageNext').disabled`);
+    await evaluate(`pressKey('Escape');true`);
+    await waitFor('fast wheel fixture closed', `!visible($('#recipeViewerModal'))`);
+  });
+
+  step('recipes: delayed category switches keep content and counts until the next view is ready', async () => {
+    await cdp.send('Page.navigate', {url:base+'/recipes?key=minecraft:iron_ingot:0'});
+    await waitFor('switch fixture loaded', `document.readyState === 'complete' && !window.byText`);
+    await evaluate(PAGE_LIB);
+    await waitFor('initial recipe ready', `$('#recipeViewerList .recipe-grid') && $('.recipe-shell-painted') && $('.recipe-viewer-box').getAttribute('aria-busy') === 'false'`);
+    await evaluate(`(() => {
+      window.switchFetch=window.fetch; window.switchHeld=[]; window.switchSamples=[]; window.switchSampling=true;
+      window.fetch=async (...args) => {
+        const response=await window.switchFetch(...args);
+        if(String(args[0]).startsWith('/api/recipes')) {
+          const body=await response.text();
+          await new Promise(resolve=>window.switchHeld.push({url:String(args[0]),release:resolve}));
+          return new Response(body,{status:response.status,headers:{'Content-Type':'application/json'}});
+        }
+        return response;
+      };
+      window.switchRow=$('#recipeViewerList .recipe-viewer-row');
+      const sample=()=>{
+        const canvas=$('.recipe-book-canvas');
+        window.switchSamples.push({page:$('#recipeViewerPage').textContent, rows:$$('#recipeViewerList .recipe-viewer-row').length,
+          painted:canvas.getContext('2d').getImageData(canvas.width-30,canvas.height-65,1,1).data[3]===255});
+        if(window.switchSampling)requestAnimationFrame(sample);
+      }; requestAnimationFrame(sample); return true;
+    })()`);
+    await click(`$('#recipeViewerMaps [data-map="furnace"]')`);
+    await waitFor('category metadata delayed', `window.switchHeld.length === 1`);
+    await sleep(150);
+    assert(await evaluate(`$('#recipeViewerList .recipe-viewer-row') === window.switchRow
+      && $('#recipeCategoryName').textContent === 'Crafting Table' && $('#recipeViewerPage').textContent === 'Page 1/1'`));
+    await evaluate(`window.switchHeld.shift().release();true`);
+    await waitFor('category recipes delayed', `window.switchHeld.length === 1 && window.switchHeld[0].url.startsWith('/api/recipes?')`);
+    await sleep(150);
+    assert(await evaluate(`$('#recipeViewerList .recipe-viewer-row') === window.switchRow && $('#recipeViewerPage').textContent === 'Page 1/1'`));
+    await evaluate(`window.switchHeld.shift().release();true`);
+    await waitFor('new category committed', `$('#recipeCategoryName').textContent === 'Furnace'
+      && $('.recipe-viewer-box').getAttribute('aria-busy') === 'false' && $('#recipeViewerList .recipe-viewer-row') !== window.switchRow`);
+    await evaluate(`window.switchSampling=false;true`);
+    assert(await evaluate(`window.switchSamples.length > 8 && window.switchSamples.every(s=>s.rows===1 && s.page==='Page 1/1' && s.painted)`));
+    // A visited category displays synchronously even if revalidation is held.
+    await click(`$('#recipeViewerMaps [data-map="crafting"]')`);
+    assert(await evaluate(`!!$('#recipeViewerList .recipe-grid') && $('#recipeViewerPage').textContent === 'Page 1/1'`));
+    await waitFor('cached category still revalidated', `window.switchHeld.length === 1`);
+    await evaluate(`window.fetch=window.switchFetch;window.switchHeld.shift().release();true`);
+    await waitFor('cached category ready', `$('.recipe-viewer-box').getAttribute('aria-busy') === 'false'`);
+    await evaluate(`pressKey('Escape');true`);
+    await waitFor('switch fixture closed', `!visible($('#recipeViewerModal'))`);
   });
 
   step('recipes: cancelled requests cannot replace a newer selection', async () => {
@@ -2872,11 +3019,11 @@ async function main() {
     await evaluate(`openItem('Iron Ingot'), true`);
     await click(`$('#itemHistoryRecipesBtn')`);
     await waitFor('first page held', `typeof window.releaseRecipe === 'function'`);
-    await click(`$('#recipeViewerUsing')`);
-    await waitFor('new selection ready', `$('#recipeViewerStatus').textContent === '20 of 31 recipes'`);
+    await click(`$('#recipeViewerMaps [data-map="furnace"]')`);
+    await waitFor('new selection ready', `$('#recipeCategoryName').textContent === 'Furnace' && $('#recipeViewerPage').textContent === 'Page 1/1'`);
     await evaluate(`window.releaseRecipe(); window.fetch = window.recipeFetch; true`);
     await sleep(100);
-    await waitFor('old grid did not overwrite Uses', `!$('#recipeViewerList .recipe-grid-w2') && $('#recipeViewerUsing').getAttribute('aria-pressed') === 'true' && $('#recipeViewerStatus').textContent === '20 of 31 recipes'`);
+    await waitFor('old grid did not overwrite selected category', `!$('#recipeViewerList .recipe-grid-w2') && $('#recipeCategoryName').textContent === 'Furnace' && $('#recipeViewerPage').textContent === 'Page 1/1'`);
     await evaluate(`pressKey('Escape'), true`);
     await waitFor('Escape closes only recipes', `!visible($('#recipeViewerModal')) && visible($('#itemHistoryModal'))`);
     await evaluate(`pressKey('Escape'), true`);
@@ -2887,23 +3034,28 @@ async function main() {
     await cdp.send('Page.navigate', { url: base + '/recipes?key=gregtech:gt.metaitem.01:2032' });
     await waitFor('recipe page loaded', `document.readyState === 'complete' && !window.byText`);
     await evaluate(PAGE_LIB);
-    await waitFor('outside-network item opens directly', `visible($('#recipeViewerModal')) && $('#recipeViewerTitle').textContent === 'Iron Dust' && $('#recipeViewerStatus').textContent === '1 of 1 recipes'`);
+    await waitFor('outside-network item opens directly', `visible($('#recipeViewerModal')) && $('.recipe-viewer-box').dataset.itemName === 'Iron Dust' && $('#recipeViewerPage').textContent === 'Page 1/1'`);
+    assert(await evaluate(`!$('#recipeViewerList .recipe-card-requirement') && !$('#recipeViewerList .recipe-requirements')`));
     await waitFor('network arrived for stock links', `$('#networkList .network-cell')`);
-    await waitFor('stock link available', `$('#recipeViewerList [data-action="recipe-stock"][data-key="gregtech:gt.metaitem.01:11028"]')`);
-    await evaluate(`$('#recipeViewerList [data-recipe-tooltip]').dispatchEvent(new MouseEvent('mouseover', {bubbles:true,clientX:80,clientY:120})), true`);
+    assert(await evaluate(`!visible($('#recipeViewerStock')) && !$('#recipeViewerList .recipe-stack-links')`));
+    await evaluate(`$('#recipeViewerList .recipe-stack-control[data-recipe-tooltip]').dispatchEvent(new MouseEvent('mouseover', {bubbles:true,clientX:80,clientY:120})), true`);
     await waitFor('recipe tooltip matches network formatting', `visible($('.network-tooltip')) && $('.network-tooltip .network-tooltip-description .mc-b')?.textContent === 'DTPF' && $('.network-tooltip .network-tooltip-name').classList.contains('mc-d') && $('.network-tooltip .network-tooltip-mod').textContent === 'GregTech' && $('.network-tooltip').textContent.includes('Amount: 1x')`);
-    assert(await evaluate(`!$('#recipeViewerList [data-recipe-tooltip]').hasAttribute('title')`));
+    assert(await evaluate(`!$('#recipeViewerList .recipe-stack-control[data-recipe-tooltip]').hasAttribute('title')`));
     await evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', {key:'Shift'})), true`);
     await waitFor('recipe Shift details', `$('.network-tooltip .network-tooltip-description').textContent === 'Structure: 33x24x33'`);
     await evaluate(`window.dispatchEvent(new KeyboardEvent('keyup', {key:'Shift'})), true`);
     await waitFor('recipe normal details restored', `$('.network-tooltip .network-tooltip-description').textContent.includes('DTPF')`);
-    await click(`$('#recipeViewerList [data-action="recipe-stock"][data-key="gregtech:gt.metaitem.01:11028"]')`);
+    await click(`$('#recipeViewerList .recipe-stack-control[data-key="gregtech:gt.metaitem.01:11028"]')`);
+    await waitFor('current item Stock button', `$('.recipe-viewer-box').dataset.itemName === 'Neutronium Ingot' && visible($('#recipeViewerStock')) && $('#recipeViewerStock').getAttribute('aria-label') === 'Open stock page for Neutronium Ingot'`);
+    await click(`$('#recipeViewerStock')`);
     await waitFor('tooltip hidden on navigation', `!visible($('.network-tooltip'))`);
     await waitFor('stock page', `!visible($('#recipeViewerModal')) && visible($('#itemHistoryModal')) && $('#itemHistoryName').textContent === 'Neutronium Ingot'`);
     await evaluate(`history.back(), true`);
-    await waitFor('Back to recipes', `visible($('#recipeViewerModal')) && $('#recipeViewerTitle').textContent === 'Iron Dust'`);
+    await waitFor('Back to current item recipes', `visible($('#recipeViewerModal')) && $('.recipe-viewer-box').dataset.itemName === 'Neutronium Ingot' && visible($('#recipeViewerStock'))`);
+    await click(`$('#recipeViewerBack')`);
+    await waitFor('Back to ingredient origin', `$('.recipe-viewer-box').dataset.itemName === 'Iron Dust' && !visible($('#recipeViewerStock'))`);
     await evaluate(`(() => { const b = $('#recipeViewerList [data-action="recipe-open"]'); b.focus(); b.dispatchEvent(new KeyboardEvent('keydown', {key:'u', bubbles:true})); return true; })()`);
-    await waitFor('keyboard Uses', `$('#recipeViewerTitle').textContent === 'Neutronium Ingot' && $('#recipeViewerUsing').getAttribute('aria-pressed') === 'true' && $$('#recipeViewerTrail button').length === 2`);
+    await waitFor('keyboard Uses', `$('.recipe-viewer-box').dataset.itemName === 'Neutronium Ingot' && $('.recipe-viewer-box').dataset.direction === 'using' && history.state.recipe.stack.length === 2`);
     await evaluate(`pressKey('Escape'), true`);
     await waitFor('deep close returns to the in-app origin', `!visible($('#recipeViewerModal')) && !visible($('#itemHistoryModal')) && location.pathname === '/network'`);
   });
@@ -2915,49 +3067,139 @@ async function main() {
     const input = `$('#recipeViewerList .recipe-stack-control[data-key="gregtech:gt.metaitem.01:11028"]')`;
     const back = async () => {
       await click(`$('#recipeViewerBack')`);
-      await waitFor('back to source recipe', `$('#recipeViewerTitle').textContent === 'Iron Dust' && ${input}`);
+      await waitFor('back to source recipe', `$('.recipe-viewer-box').dataset.itemName === 'Iron Dust' && ${input}`);
     };
     await waitFor('source ingredient', input);
     await click(input);
-    await waitFor('left-click opens recipes', `$('#recipeViewerTitle').textContent === 'Neutronium Ingot' && $('#recipeViewerMaking').getAttribute('aria-pressed') === 'true'`);
+    await waitFor('left-click opens recipes', `$('.recipe-viewer-box').dataset.itemName === 'Neutronium Ingot' && $('.recipe-viewer-box').dataset.direction === 'making'`);
     await back();
     await evaluate(`${input}.dispatchEvent(new MouseEvent('click', {bubbles:true,button:0,shiftKey:true})), true`);
-    await waitFor('Shift for tooltips keeps left-click as recipes', `$('#recipeViewerTitle').textContent === 'Neutronium Ingot' && $('#recipeViewerMaking').getAttribute('aria-pressed') === 'true'`);
+    await waitFor('Shift for tooltips keeps left-click as recipes', `$('.recipe-viewer-box').dataset.itemName === 'Neutronium Ingot' && $('.recipe-viewer-box').dataset.direction === 'making'`);
     await back();
     const point = await evaluate(`(() => {const r=${input}.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`);
     await cdp.send('Input.dispatchMouseEvent', {type:'mouseMoved',...point});
     await cdp.send('Input.dispatchMouseEvent', {type:'mousePressed',...point,button:'right',clickCount:1});
     await cdp.send('Input.dispatchMouseEvent', {type:'mouseReleased',...point,button:'right',clickCount:1});
-    await waitFor('right-click opens uses once', `$('#recipeViewerTitle').textContent === 'Neutronium Ingot' && $('#recipeViewerUsing').getAttribute('aria-pressed') === 'true' && $$('#recipeViewerTrail button').length === 2`);
+    await waitFor('right-click opens uses once', `$('.recipe-viewer-box').dataset.itemName === 'Neutronium Ingot' && $('.recipe-viewer-box').dataset.direction === 'using' && history.state.recipe.stack.length === 2`);
     await back();
     for (const [key, direction] of [['r','Making'],['u','Using']]) {
       // Keep keyboard focus on a category control to prove hover shortcuts
       // do not depend on focusing/clicking the ingredient first.
-      await evaluate(`$('#recipeViewerMaking').focus(), true`);
+      await evaluate(`$('#recipeViewerMaps [aria-selected="true"]').focus(), true`);
       const position = await evaluate(`(() => {const r=${input}.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`);
       await cdp.send('Input.dispatchMouseEvent', {type:'mouseMoved',...position});
       await cdp.send('Input.dispatchKeyEvent', {type:'keyDown',key,code:'Key'+key.toUpperCase()});
       await cdp.send('Input.dispatchKeyEvent', {type:'keyUp',key,code:'Key'+key.toUpperCase()});
-      await waitFor('hovered '+key+' opens '+direction, `$('#recipeViewerTitle').textContent === 'Neutronium Ingot' && $('#recipeViewer${direction}').getAttribute('aria-pressed') === 'true'`);
+      await waitFor('hovered '+key+' opens '+direction, `$('.recipe-viewer-box').dataset.itemName === 'Neutronium Ingot' && $('.recipe-viewer-box').dataset.direction === '${direction === 'Making' ? 'making' : 'using'}'`);
       await back();
     }
     await cdp.send('Input.dispatchMouseEvent', {type:'mouseMoved',x:5,y:5});
     await evaluate(`${input}.focus(), true`);
     await cdp.send('Input.dispatchKeyEvent', {type:'keyDown',key:'r',code:'KeyR'});
     await cdp.send('Input.dispatchKeyEvent', {type:'keyUp',key:'r',code:'KeyR'});
-    await waitFor('focused R remains available', `$('#recipeViewerTitle').textContent === 'Neutronium Ingot' && $('#recipeViewerMaking').getAttribute('aria-pressed') === 'true'`);
+    await waitFor('focused R remains available', `$('.recipe-viewer-box').dataset.itemName === 'Neutronium Ingot' && $('.recipe-viewer-box').dataset.direction === 'making'`);
     await evaluate(`pressKey('Escape'), true`);
     await waitFor('mouse navigation closed', `!visible($('#recipeViewerModal')) && location.pathname === '/network'`);
   });
 
-  step('recipes: assembly research, ingredient groups and NEI display costs', async () => {
-    await cdp.send('Page.navigate', {url: base + '/recipes?key=example:assembly_result:0'});
+  step('recipes: machine sidebars share rich tooltips, stock counts and item navigation', async () => {
+    const url = base + '/recipes?key=minecraft:iron_ingot:0&dir=using&map=gt.recipe.viewer_assembler';
+    await cdp.send('Page.navigate', {url});
+    await waitFor('machine page loaded', `document.readyState === 'complete' && !window.byText`);
+    await evaluate(PAGE_LIB);
+    const machine = `$('#recipeViewerMachines .recipe-machine-control[data-key="gregtech:gt.metaitem.01:11028"]')`;
+    await waitFor('both machine variants displayed once', `$$('#recipeViewerMachines .recipe-machine-control').length === 2
+      && $$('#recipeViewerList .recipe-viewer-row').length === 1 && $('#networkList .network-cell')`);
+    await evaluate(`${machine}.focus();${machine}.dispatchEvent(new MouseEvent('mouseover',{bubbles:true,clientX:100,clientY:200}));true`);
+    await waitFor('machine tooltip includes stock and standard description', `$('.network-tooltip')?.textContent.includes('Amount in system:')
+      && $('.network-tooltip .network-tooltip-description .mc-b')?.textContent === 'DTPF'
+      && $('.network-tooltip .network-tooltip-name').textContent === 'Advanced Assembler'
+      && $('.network-tooltip .network-tooltip-mod').textContent === 'GregTech'`);
+    await evaluate(`window.dispatchEvent(new KeyboardEvent('keydown',{key:'Shift'}));true`);
+    await waitFor('machine extended description', `$('.network-tooltip .network-tooltip-description').textContent === 'Structure: 33x24x33'`);
+    await evaluate(`window.dispatchEvent(new KeyboardEvent('keyup',{key:'Shift'}));true`);
+    for (const [action, direction] of [['click','Making'], ['contextmenu','Using'], ['r','Making'], ['u','Using']]) {
+      await evaluate(action.length > 1
+        ? `${machine}.dispatchEvent(new MouseEvent('${action}',{bubbles:true,cancelable:true,button:${action === 'contextmenu' ? 2 : 0}}));true`
+        : `${machine}.focus();${machine}.dispatchEvent(new KeyboardEvent('keydown',{key:'${action}',bubbles:true}));true`);
+      await waitFor('machine '+action+' opens '+direction, `$('.recipe-viewer-box').dataset.itemName === 'Neutronium Ingot'
+        && $('.recipe-viewer-box').dataset.direction === '${direction === 'Making' ? 'making' : 'using'}'`);
+      await click(`$('#recipeViewerBack')`);
+      await waitFor('machine group restored', `$('.recipe-viewer-box').dataset.itemName === 'Iron Ingot' && ${machine}`);
+    }
+    await click(`$('#recipePageNext')`);
+    await waitFor('machine dock persists on next recipe', `$('#recipeViewerPage').textContent === 'Page 2/30'
+      && $$('#recipeViewerMachines .recipe-machine-sidebar').length === 1 && $$('#recipeViewerMachines .recipe-machine-control').length === 2`);
+    await evaluate(`pressKey('Escape');true`);
+    await waitFor('machine page closed', `!visible($('#recipeViewerModal'))`);
+  });
+
+  step('recipes: assembly and research tabs render game-style cards', async () => {
+    await cdp.send('Page.navigate', {url: base + '/recipes?key=example:assembly_result:0&map=assembly_line'});
     await waitFor('assembly page loaded', `document.readyState === 'complete' && !window.byText`);
     await evaluate(PAGE_LIB);
-    await waitFor('assembly research', `$('#recipeViewerList .recipe-research')?.textContent.includes('8,192 EU/t')`);
-    assert(await evaluate(`$('#recipeViewerList').textContent.includes('32,768 EU/t') && $('#recipeViewerList').textContent.includes('1,000,000 total computation')`));
-    await waitFor('positioned assembly slots', `$$('#recipeViewerList .recipe-preview-slot').length === 18 && $('#recipeViewerList .recipe-preview-slot').style.left !== ''`);
+    await waitFor('assembly canvas energy', `$('#recipeViewerList .recipe-card .recipe-energy')?.textContent.includes('Time: 20 seconds')`);
+    assert(await evaluate(`$('#recipeViewerList .recipe-card .recipe-card-requirement')?.textContent === 'Needs Cleanroom'
+      && !$('#recipeViewerList .recipe-requirements')`));
+    assert(await evaluate(`!$('#recipeViewerList .recipe-research') && $('#recipeViewerMaps [data-map="research.research_station"]')`));
+    await waitFor('positioned assembly slots', `$$('#recipeViewerList .recipe-preview-slot').length === 19 && $('#recipeViewerList .recipe-preview-slot').style.left !== ''`);
+    assert(await evaluate(`(() => {
+      const fluid = $('#recipeViewerList .recipe-stack-fluid');
+      const amount = fluid.querySelector('.recipe-stack-amount');
+      const image = fluid.querySelector('img');
+      return amount.textContent === '148kL'
+        && getComputedStyle(amount).whiteSpace === 'nowrap'
+        && parseFloat(getComputedStyle(amount).fontSize) >= 12
+        && amount.getBoundingClientRect().width <= fluid.getBoundingClientRect().width
+        && getComputedStyle(image).objectFit === 'cover'
+        && !$('#recipeViewerList .recipe-stack-links');
+    })()`));
+    await evaluate(`$('#recipeViewerList .recipe-stack-fluid').dispatchEvent(new MouseEvent('mouseover', {bubbles:true,clientX:120,clientY:140}));true`);
+    await waitFor('compact fluid label retains exact tooltip amount', `$('.network-tooltip')?.textContent.includes('Amount: 147,456 mB')`);
+    await evaluate(`$('#recipeViewerList .recipe-stack-fluid').dispatchEvent(new MouseEvent('mouseout', {bubbles:true}));true`);
     assert(await evaluate(`$('#recipeViewerList .recipe-preview').textContent.includes('NC')`));
+    await evaluate(`document.fonts.ready`);
+    await waitFor('painted recipe lettering', `$('#recipeViewerList .recipe-card-painted')`);
+    await waitFor('painted NEI frame', `$('.recipe-shell-painted')`);
+    assert(await evaluate(`document.fonts.check('700 16px "GCM Recipe"')
+      && getComputedStyle($('#recipeViewerList .recipe-voltage-tier.mc-bold')).fontWeight === '700'`));
+    await waitFor('pixel scale shared by statistics lines', `(() => {
+      const stats = $('#recipeViewerList .recipe-energy');
+      const size = parseFloat(getComputedStyle(stats).fontSize);
+      return size % 8 === 0 && [...stats.children].every(line => parseFloat(getComputedStyle(line).fontSize) === size);
+    })()`);
+    await cdp.send('Emulation.setAutoDarkModeOverride', {enabled:true});
+    try {
+      const clip = await evaluate(`(() => {
+        const stats = $('#recipeViewerList .recipe-energy');
+        const card = stats.closest('.recipe-card');
+        const scheme = getComputedStyle(card).colorScheme;
+        if (!scheme.includes('light') || !scheme.includes('only')) throw new Error('recipe canvas must opt out of automatic darkening');
+        const r = stats.getBoundingClientRect();
+        return {x:r.x, y:r.y, width:r.width, height:r.height, scale:1};
+      })()`);
+      const shot = await cdp.send('Page.captureScreenshot', {format:'png', clip});
+      const pixels = spawnSync(process.env.PYTHON || 'python3', ['-c',
+        'import sys; from PIL import Image; im=Image.open(sys.stdin.buffer).convert("RGB"); print(sum(r<24 and g<24 and b<24 for r,g,b in im.getdata()))'],
+      {input:Buffer.from(shot.data, 'base64'), encoding:'utf8'});
+      assert.equal(pixels.status, 0, pixels.stderr);
+      assert(Number(pixels.stdout) > 20, 'recipe statistics should paint black under browser automatic darkening');
+      const paper = await evaluate(`(() => {
+        const r=$('.recipe-book-paper').getBoundingClientRect();
+        return {x:r.right-30,y:r.bottom-60,width:4,height:4,scale:1};
+      })()`);
+      const frameShot = await cdp.send('Page.captureScreenshot', {format:'png',clip:paper});
+      const framePixels = spawnSync(process.env.PYTHON || 'python3', ['-c',
+        'import sys; from PIL import Image; im=Image.open(sys.stdin.buffer).convert("RGB"); assert all(max(abs(v-198) for v in pixel)<=1 for pixel in im.getdata()), list(im.getdata())'],
+      {input:Buffer.from(frameShot.data,'base64'),encoding:'utf8'});
+      assert.equal(framePixels.status, 0, 'NEI frame should stay grey under automatic darkening: '+framePixels.stderr);
+    } finally { await cdp.send('Emulation.setAutoDarkModeOverride', {enabled:false}); }
+    assert(await evaluate(`(() => {
+      const count = $('#recipeViewerList .recipe-preview .recipe-stack-amount');
+      const style = getComputedStyle(count);
+      return document.fonts.check('20px "GCM Recipe"') && style.fontFamily.includes('GCM Recipe')
+        && style.backgroundColor === 'rgba(0, 0, 0, 0)' && style.textShadow !== 'none' && parseFloat(style.fontSize) >= 14;
+    })()`));
     await waitFor('NBT display names cycle', `$('#recipeViewerList .recipe-preview-slot .recipe-stack-control').getAttribute('aria-label') === 'Recipes for Empty part'`);
     assert(await evaluate(`$('#recipeViewerList .recipe-preview-slot .recipe-stack-control').dataset.key === 'gregtech:gt.metaitem.01:11028'`));
     await evaluate(`window.previewChoice = $('#recipeViewerList .recipe-preview-slot .recipe-stack-control'); window.previewChoice.dispatchEvent(new MouseEvent('mouseover', {bubbles:true,clientX:120,clientY:140})); true`);
@@ -2967,16 +3209,34 @@ async function main() {
     assert(await evaluate(`$('.network-tooltip .network-tooltip-name').textContent === 'Empty part' && window.previewChoice.getAttribute('aria-label') === 'Recipes for Empty part'`));
     await evaluate(`window.previewChoice.dispatchEvent(new MouseEvent('mouseout', {bubbles:true})), true`);
     await waitFor('tooltip hides on exit', `!visible($('.network-tooltip'))`);
-    await evaluate(`$('#recipeViewerList .recipe-research [data-action="recipe-open"]').click()`);
-    await waitFor('research item navigation', `$('#recipeViewerTitle').textContent === 'Neutronium Dust'`);
+    await click(`$('#recipeViewerMaps [data-map="research.research_station"]')`);
+    await waitFor('Research Station tab selected', `$('#recipeCategoryName').textContent === 'Research Station' && $('#recipeViewerMaps [data-map="research.research_station"]').getAttribute('aria-selected') === 'true' && $('#recipeViewerList .recipe-preview-wires')`);
+    assert(await evaluate(`(() => {
+      const card = $('#recipeViewerList .recipe-card');
+      const stats = card.querySelector('.recipe-energy');
+      return stats.textContent.includes('Max EU: 5,119,672,320 EU')
+        && stats.textContent.includes('Min Computation: 128 /s')
+        && stats.querySelector('.recipe-voltage-tier.mc-9').textContent === 'IV'
+        && !stats.textContent.includes('Time:') && card.querySelector('.recipe-preview')
+        && getComputedStyle(stats).fontFamily.includes('GCM Recipe');
+    })()`));
+    await evaluate(`$('#recipeViewerList .recipe-preview-slot [data-action="recipe-open"]').click()`);
+    await waitFor('research item navigation', `$('.recipe-viewer-box').dataset.itemName === 'Neutronium Dust'`);
+    await click(`$('#recipeViewerBack')`);
+    await waitFor('Back restores research tab', `$('#recipeCategoryName').textContent === 'Research Station' && $('#recipeViewerList .recipe-preview-wires')`);
+    await cdp.send('Page.navigate', {url: base + '/recipes?key=example:scanner_result:0&map=research.scanner'});
+    await waitFor('scanner page loaded', `document.readyState === 'complete' && !window.byText`);
+    await evaluate(PAGE_LIB);
+    await waitFor('Scanner tab and scan costs', `$('#recipeCategoryName').textContent === 'Scanner' && $('#recipeViewerList .recipe-card .recipe-energy')?.textContent.includes('Time: 5 seconds')`);
+    assert(await evaluate(`!$('#recipeViewerList .recipe-energy').textContent.includes('Computation:') && !$('#recipeViewerList .recipe-preview-wires')`));
     await cdp.send('Page.navigate', {url: base + '/recipes?key=example:display_result:0'});
     await waitFor('display page loaded', `document.readyState === 'complete' && !window.byText`);
     await evaluate(PAGE_LIB);
-    await waitFor('display recipe', `$('#recipeViewerList').textContent.includes('NEI display recipe')`);
+    await waitFor('display recipe', `$('#recipeViewerList .recipe-card')`);
     await waitFor('infusion costs and static research', `$('#recipeViewerList .recipe-preview-instability')?.textContent === 'Instability: 0' && $('#recipeViewerList .recipe-preview-research').textContent.includes('Infusion Research') && $('#recipeViewerList .recipe-preview-aspect').textContent.includes('25')`);
     assert(await evaluate(`$('#recipeViewerList .recipe-preview-layers image').getAttribute('href').startsWith('/icons?path=')`));
-    await evaluate(`$('#recipeViewerList .recipe-requirements').open = true`);
-    assert(await evaluate(`$('#recipeViewerList').textContent.includes('Mana: 2,000')`));
+    assert(await evaluate(`$('#recipeViewerList .recipe-card .recipe-energy').textContent.includes('Mana: 2,000')
+      && !$('#recipeViewerList .recipe-requirements') && !$('#recipeViewerList').textContent.includes('NEI display recipe')`));
     await evaluate(`pressKey('Escape')`);
     await waitFor('display closed', `!visible($('#recipeViewerModal'))`);
   });
@@ -3006,17 +3266,17 @@ async function main() {
     for(const [key,dir] of [['r','Making'],['u','Using']]) {
       await evaluate(`$('#tabBtnNetwork').focus(), true`);
       await hover(iron); await press(key);
-      await waitFor('network '+key, `visible($('#recipeViewerModal')) && $('#recipeViewerTitle').textContent === 'Iron Ingot' && $('#recipeViewer${dir}').getAttribute('aria-pressed') === 'true'`);
+      await waitFor('network '+key, `visible($('#recipeViewerModal')) && $('.recipe-viewer-box').dataset.itemName === 'Iron Ingot' && $('.recipe-viewer-box').dataset.direction === '${dir === 'Making' ? 'making' : 'using'}'`);
       await close();
     }
     await cdp.send('Input.dispatchMouseEvent', {type:'mouseMoved',x:5,y:5});
     await evaluate(`(${iron}).focus(), true`); await press('u');
-    await waitFor('focused network Uses', `$('#recipeViewerTitle').textContent === 'Iron Ingot' && $('#recipeViewerUsing').getAttribute('aria-pressed') === 'true'`);
+    await waitFor('focused network Uses', `$('.recipe-viewer-box').dataset.itemName === 'Iron Ingot' && $('.recipe-viewer-box').dataset.direction === 'using'`);
     await close();
     const water = `$$('#networkList .network-cell').find(c=>c.getAttribute('aria-label').startsWith('Water'))`;
     await evaluate(`$('#tabBtnNetwork').focus(), true`);
     await hover(water); await press('u');
-    await waitFor('fluid shortcut uses namespace', `new URLSearchParams(location.search).get('key') === 'fluid:water' && $('#recipeViewerUsing').getAttribute('aria-pressed') === 'true'`);
+    await waitFor('fluid shortcut uses namespace', `new URLSearchParams(location.search).get('key') === 'fluid:water' && $('.recipe-viewer-box').dataset.direction === 'using'`);
     await close();
 
     await click(`$('#tabBtnCrafts')`); await postCrafts(base, true);
@@ -3024,7 +3284,7 @@ async function main() {
     await waitFor('craft output identity', `${output}?.dataset.internal`);
     await evaluate(`$('#tabBtnCrafts').focus(), true`);
     await hover(output); await press('r');
-    await waitFor('craft output recipes', `$('#recipeViewerTitle').textContent === 'Iron Ingot' && $('#recipeViewerMaking').getAttribute('aria-pressed') === 'true'`);
+    await waitFor('craft output recipes', `$('.recipe-viewer-box').dataset.itemName === 'Iron Ingot' && $('.recipe-viewer-box').dataset.direction === 'making'`);
     await close();
     await waitFor('returned to Crafts', `$('#tabBtnCrafts').classList.contains('active') && !visible($('#itemHistoryModal'))`);
     await click(`card('W01').querySelector('.ingredients-btn')`);
@@ -3042,7 +3302,7 @@ async function main() {
     const ingredient = `$('#ingredientsGrid .ingredient-cell[data-internal="iron_ingot"]')`;
     const label = await evaluate(`(${ingredient}).dataset.name`);
     await hover(ingredient); await press('u');
-    await waitFor('ingredient Uses', `$('#recipeViewerTitle').textContent === ${JSON.stringify(label)} && $('#recipeViewerUsing').getAttribute('aria-pressed') === 'true'`);
+    await waitFor('ingredient Uses', `$('.recipe-viewer-box').dataset.itemName === ${JSON.stringify(label)} && $('.recipe-viewer-box').dataset.direction === 'using'`);
     await close();
     await waitFor('ingredient modal restored', `visible($('#ingredientsModal')) && $('#ingredientsGrid .ingredient-cell')`);
     await evaluate(`pressKey('Escape'), true`);
@@ -3057,7 +3317,7 @@ async function main() {
     await waitFor('plan cells ready', `$('#craftPlanBody .plan-cell')`);
     await evaluate(`$('#craftRequestModal .modal-box').focus(), true`);
     await hover(`$('#craftPlanBody .plan-cell')`); await press('r');
-    await waitFor('crafting plan opens recipes above the plan', `visible($('#recipeViewerModal')) && $('#recipeViewerMaking').getAttribute('aria-pressed') === 'true'`);
+    await waitFor('crafting plan opens recipes above the plan', `visible($('#recipeViewerModal')) && $('.recipe-viewer-box').dataset.direction === 'making'`);
     await close();
     await waitFor('Escape preserves underlying plan', `visible($('#craftRequestModal')) && visible($('#craftPlan')) && $('#craftRequestAmount').value === '10'`);
     await evaluate(`pressKey('Escape'), true`);
@@ -3071,15 +3331,15 @@ async function main() {
     await cdp.send('Page.navigate', {url:base + '/recipes?key=example:tabs_result:0'});
     await waitFor('tabs fixture loaded', `document.readyState === 'complete' && !window.byText`);
     await evaluate(PAGE_LIB);
-    await waitFor('category icon strip', `$$('#recipeViewerMaps [role="tab"]').length === 21 && $('#recipeTabsNext').hidden === false`);
-    assert(await evaluate(`$('#recipeViewerMaps [aria-selected="true"]').dataset.map === '' && $('#recipeViewerMaps [aria-selected="true"]').tabIndex === 0 && $('#recipeCategoryName').textContent === 'All categories' && $('#recipeCategoryCount').textContent === '20 recipes'`));
+    await waitFor('category icon strip', `$$('#recipeViewerMaps [role="tab"]').length === 20 && $('#recipeTabsNext').hidden === false`);
+    assert(await evaluate(`$('#recipeViewerMaps [aria-selected="true"]').dataset.map === 'gt.recipe.tabs_test_00' && $('#recipeViewerMaps [aria-selected="true"]').tabIndex === 0 && $('#recipeCategoryName').textContent === 'Category 00' && $('#recipeViewerPage').textContent === 'Page 1/1'`));
     assert(await evaluate(`$('#recipeViewerMaps [data-map="gt.recipe.tabs_test_00"] img') && $('#recipeViewerMaps [data-map="gt.recipe.tabs_test_01"] .recipe-map-fallback')`));
     await click(`$('#recipeTabsNext')`);
     await waitFor('category strip scrolled', `$('#recipeViewerMaps').scrollLeft > 50 && !$('#recipeTabsPrevious').disabled`);
     await evaluate(`$('#recipeViewerMaps [aria-selected="true"]').focus(), true`);
     await cdp.send('Input.dispatchKeyEvent', {type:'keyDown',key:'End',code:'End'});
     await cdp.send('Input.dispatchKeyEvent', {type:'keyUp',key:'End',code:'End'});
-    await waitFor('End focuses final category without selecting', `document.activeElement.dataset.map === 'gt.recipe.tabs_test_19' && $('#recipeViewerMaps [aria-selected="true"]').dataset.map === '' && visible($('.network-tooltip')) && $('.network-tooltip-name').textContent === 'Category 19'`);
+    await waitFor('End focuses final category without selecting', `document.activeElement.dataset.map === 'gt.recipe.tabs_test_19' && $('#recipeViewerMaps [aria-selected="true"]').dataset.map === 'gt.recipe.tabs_test_00' && visible($('.network-tooltip')) && $('.network-tooltip-name').textContent === 'Category 19'`);
     for (const [key, map] of [['ArrowLeft','gt.recipe.tabs_test_18'],['ArrowRight','gt.recipe.tabs_test_19']]) {
       await cdp.send('Input.dispatchKeyEvent', {type:'keyDown',key,code:key});
       await cdp.send('Input.dispatchKeyEvent', {type:'keyUp',key,code:key});
@@ -3087,20 +3347,20 @@ async function main() {
     }
     await cdp.send('Input.dispatchKeyEvent', {type:'keyDown',key:'Enter',code:'Enter',windowsVirtualKeyCode:13,text:'\r'});
     await cdp.send('Input.dispatchKeyEvent', {type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13});
-    await waitFor('Enter activates category', `$('#recipeViewerMaps [aria-selected="true"]').dataset.map === 'gt.recipe.tabs_test_19' && $('#recipeCategoryName').textContent === 'Category 19' && $('#recipeViewerStatus').textContent === '1 of 1 recipes' && document.activeElement === $('#recipeViewerMaps [aria-selected="true"]')`);
+    await waitFor('Enter activates category', `$('#recipeViewerMaps [aria-selected="true"]').dataset.map === 'gt.recipe.tabs_test_19' && $('#recipeCategoryName').textContent === 'Category 19' && $('#recipeViewerPage').textContent === 'Page 1/1' && document.activeElement === $('#recipeViewerMaps [aria-selected="true"]')`);
     assert(await evaluate(`(() => {const t=$('#recipeViewerMaps [aria-selected="true"]').getBoundingClientRect(),v=$('#recipeViewerMaps').getBoundingClientRect();return t.left >= v.left - 1 && t.right <= v.right + 1 && $('#recipeViewerList').getAttribute('aria-labelledby') === $('#recipeViewerMaps [aria-selected="true"]').id;})()`));
     await evaluate(`$('#recipeViewerList .recipe-stack-control[data-key="example:tabs_input:0"]').click(), true`);
-    await waitFor('ingredient opened from category', `$('#recipeViewerTitle').textContent === 'Tabs Input'`);
+    await waitFor('ingredient opened from category', `$('.recipe-viewer-box').dataset.itemName === 'Tabs Input'`);
     await click(`$('#recipeViewerBack')`);
-    await waitFor('category restored', `$('#recipeViewerTitle').textContent === 'Tabs Result' && $('#recipeViewerMaps [aria-selected="true"]').dataset.map === 'gt.recipe.tabs_test_19' && $('#recipeViewerStatus').textContent === '1 of 1 recipes'`);
+    await waitFor('category restored', `$('.recipe-viewer-box').dataset.itemName === 'Tabs Result' && $('#recipeViewerMaps [aria-selected="true"]').dataset.map === 'gt.recipe.tabs_test_19' && $('#recipeViewerPage').textContent === 'Page 1/1'`);
     await evaluate(`$('#recipeViewerMaps [aria-selected="true"]').focus(), true`);
     await cdp.send('Input.dispatchKeyEvent', {type:'keyDown',key:'Home',code:'Home'});
     await cdp.send('Input.dispatchKeyEvent', {type:'keyUp',key:'Home',code:'Home'});
-    await waitFor('Home focuses All', `document.activeElement.dataset.map === '' && document.activeElement.closest('#recipeViewerMaps')`);
+    await waitFor('Home focuses first category', `document.activeElement.dataset.map === 'gt.recipe.tabs_test_00' && document.activeElement.closest('#recipeViewerMaps')`);
     await cdp.send('Input.dispatchKeyEvent', {type:'keyDown',key:' ',code:'Space',windowsVirtualKeyCode:32,text:' '});
     await cdp.send('Input.dispatchKeyEvent', {type:'keyUp',key:' ',code:'Space',windowsVirtualKeyCode:32});
-    await waitFor('Space activates All', `$('#recipeViewerMaps [aria-selected="true"]').dataset.map === '' && $('#recipeViewerStatus').textContent === '20 of 20 recipes'`);
-    assert(await evaluate(`(() => {const b=$('#recipeViewerModal .modal-box').getBoundingClientRect();return b.left >= 0 && b.right <= document.documentElement.clientWidth && $('#recipeTabsPrevious').disabled;})()`));
+    await waitFor('Space activates first category', `$('#recipeViewerMaps [aria-selected="true"]').dataset.map === 'gt.recipe.tabs_test_00' && $('#recipeViewerPage').textContent === 'Page 1/1'`);
+    await waitFor('first category revealed within the phone viewport', `(() => {const b=$('.recipe-viewer-box').getBoundingClientRect();return b.left >= 0 && b.right <= document.documentElement.clientWidth && $('#recipeTabsPrevious').disabled;})()`);
     await evaluate(`pressKey('Escape'), true`);
     await waitFor('tabs closed', `!visible($('#recipeViewerModal')) && !visible($('.network-tooltip'))`);
     await cdp.send('Emulation.clearDeviceMetricsOverride');
@@ -3113,7 +3373,7 @@ async function main() {
     await waitFor('phone recipe page loaded', `document.readyState === 'complete' && !window.byText`);
     await evaluate(PAGE_LIB);
     await waitFor('phone recipe grid', `$('#recipeViewerList .recipe-grid-w2') && $('#recipeViewerList .recipe-outputs img')`);
-    await waitFor('dialog fits the phone', `(() => { const r = $('#recipeViewerModal .modal-box').getBoundingClientRect(); return r.left >= 0 && r.right <= document.documentElement.clientWidth && r.bottom <= innerHeight; })()`);
+    await waitFor('dialog fits the phone', `(() => { const r = $('.recipe-viewer-box').getBoundingClientRect(); return r.left >= 0 && r.right <= document.documentElement.clientWidth && r.bottom <= innerHeight; })()`);
     await waitFor('still icons', `$('#recipeViewerList .recipe-outputs img').src.includes('still=1')`);
     const first = await evaluate(`$('#recipeViewerList .recipe-choice:nth-child(3) [data-action="recipe-open"]').dataset.key`);
     await sleep(1100);

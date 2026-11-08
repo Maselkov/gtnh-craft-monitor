@@ -52,11 +52,8 @@ def listing():
             raise ValueError("Choose a limit from 1 to 20 and a nonnegative offset.")
         version, idx, assets = _dataset()
         map_name = request.args.get("map") or None
-        if map_name is not None and map_name not in idx.maps():
-            raise ValueError("Unknown recipe category.")
-        query = idx.made_by if direction == "making" else idx.used_by
-        rows, total = query(kind, key, map_name, limit=limit, offset=offset)
+        shown, total = recipe_viewer.listing(idx, kind, key, direction, map_name, limit=limit, offset=offset)
         return _response(version, idx, assets, total=total, offset=offset,
-                       recipes=recipe_viewer.present_recipes(rows, idx))
+                       recipes=shown, machines=recipe_viewer.machine_summaries(shown))
     except ValueError as e:
         return _error(e)

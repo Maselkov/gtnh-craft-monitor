@@ -390,38 +390,40 @@
   </div>
 
   <div id="recipeViewerModal" class="modal-overlay" style="display:none;">
-    <div class="modal-box recipe-viewer-box">
-      <div class="modal-header">
-        <button class="modal-btn secondary recipe-back" id="recipeViewerBack" data-action="recipe-back" disabled>← Back</button>
-        <img id="recipeViewerIcon" class="modal-icon" src="" alt="" hidden>
-        <div class="history-name-wrap">
-          <div id="recipeViewerTitle" class="modal-item-name">Recipes</div>
-          <div id="recipeViewerIdentity" class="recipe-identity"></div>
-        </div>
-        <button class="history-close-btn" data-action="recipe-close" title="Close recipe viewer" aria-label="Close recipe viewer">&times;</button>
-      </div>
-      <nav id="recipeViewerTrail" class="recipe-trail" aria-label="Recipe trail"></nav>
-      <div class="recipe-directions" role="group" aria-label="Recipe direction">
-        <button class="modal-btn secondary" id="recipeViewerMaking" data-action="recipe-direction" data-dir="making" aria-pressed="true">Recipes</button>
-        <button class="modal-btn secondary" id="recipeViewerUsing" data-action="recipe-direction" data-dir="using" aria-pressed="false">Uses</button>
-      </div>
+    <div class="recipe-viewer-box" role="dialog" aria-modal="true" aria-label="Recipe book">
+      <canvas class="recipe-book-canvas" aria-hidden="true"></canvas>
       <div id="recipeCategoryNav" class="recipe-category-nav" hidden>
         <div class="recipe-tab-strip">
-          <button id="recipeTabsPrevious" class="recipe-tab-scroll" data-action="recipe-tabs-previous" aria-label="Scroll categories left" hidden>&lsaquo;</button>
+          <button id="recipeTabsPrevious" class="recipe-tab-scroll recipe-game-button" data-action="recipe-tabs-previous" aria-label="Scroll categories left" hidden>&lt;</button>
           <div id="recipeViewerMaps" class="recipe-map-tabs" role="tablist" aria-label="Recipe category"></div>
-          <button id="recipeTabsNext" class="recipe-tab-scroll" data-action="recipe-tabs-next" aria-label="Scroll categories right" hidden>&rsaquo;</button>
+          <button id="recipeTabsNext" class="recipe-tab-scroll recipe-game-button" data-action="recipe-tabs-next" aria-label="Scroll categories right" hidden>&gt;</button>
         </div>
-        <div class="recipe-category-heading"><span id="recipeCategoryName"></span><span id="recipeCategoryCount"></span></div>
       </div>
-      <div id="recipeViewerList" class="recipe-viewer-list" role="tabpanel" tabindex="0" aria-label="Recipes"></div>
-      <div class="recipe-viewer-footer">
-        <span id="recipeViewerStatus" role="status" aria-live="polite"></span>
-        <button class="modal-btn secondary" id="recipeViewerMore" data-action="recipe-more" hidden>Load more</button>
-        <button class="modal-btn secondary" id="recipeViewerRetry" data-action="recipe-retry" hidden>Retry</button>
+      <div id="recipeViewerMachines" class="recipe-machine-dock"></div>
+      <div class="recipe-book-paper">
+        <div class="recipe-book-heading">
+          <button class="recipe-game-button" id="recipeCategoryPrevious" data-action="recipe-category-previous" aria-label="Previous category">&lt;</button>
+          <span id="recipeCategoryName">Recipes</span>
+          <button class="recipe-game-button" id="recipeCategoryNext" data-action="recipe-category-next" aria-label="Next category">&gt;</button>
+        </div>
+        <div class="recipe-book-heading recipe-book-pagination">
+          <button class="recipe-game-button" id="recipePagePrevious" data-action="recipe-page-previous" aria-label="Previous recipe page" disabled>&lt;</button>
+          <span id="recipeViewerPage" aria-live="polite">Page …</span>
+          <button class="recipe-game-button" id="recipePageNext" data-action="recipe-page-next" aria-label="Next recipe page" disabled>&gt;</button>
+        </div>
+        <div id="recipeViewerList" class="recipe-viewer-list" role="tabpanel" tabindex="0" aria-label="Recipes"></div>
+        <div class="recipe-book-status"><span id="recipeViewerStatus" role="status" aria-live="polite"></span><button class="recipe-game-button" id="recipeViewerRetry" data-action="recipe-retry" hidden>Retry</button></div>
+        <div class="recipe-book-tools">
+          <button class="recipe-game-button" id="recipeViewerBack" data-action="recipe-back" aria-label="Back to previous item" title="Back to previous item" disabled>&larr;</button>
+          <button class="recipe-game-button recipe-stock-button" id="recipeViewerStock" data-action="recipe-stock" hidden>Stock</button>
+          <details class="recipe-book-details"><summary class="recipe-game-button" aria-label="Recipe information" title="Recipe information">i</summary><div class="recipe-book-information">
+            <div id="recipeViewerInfo" class="game-text recipe-item-info"></div>
+            <div id="recipeViewerCoverage" class="recipe-coverage"></div>
+            <p>Left-click or R: recipes. Right-click or U: uses. Hover or focus an item; hold Shift for more detail. Wheel: recipe pages. Wheel over the top tabs or category title: machine categories.</p>
+          </div></details>
+          <button class="recipe-game-button recipe-book-close" data-action="recipe-close" title="Close recipe viewer" aria-label="Close recipe viewer">&times;</button>
+        </div>
       </div>
-      <details id="recipeViewerDetails" hidden><summary>Item details</summary><div id="recipeViewerInfo" class="game-text recipe-item-info"></div></details>
-      <div id="recipeViewerCoverage" class="recipe-coverage"></div>
-      <div class="recipe-help">Left-click a stack for recipes; right-click or choose Uses to see where it is used. Hover or focus a stack and press R or U.</div>
     </div>
   </div>
 

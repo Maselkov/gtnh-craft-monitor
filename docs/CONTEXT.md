@@ -2204,14 +2204,85 @@ data. Unknown recipe names can use a non-variant network entry's display name.
 `recipe-render.js` supplies static pattern-check stacks and interactive viewer
 stacks. `recipe-viewer.js` owns its list outside the Crafts root. Browser history
 is authoritative for a trail; direction/category changes replace the current
-entry, drilldown pushes, breadcrumbs go to ancestors, and Close goes back to the
+entry, drilldown pushes, Back revisits an earlier item, and Close goes back to the
 pre-viewer entry. A fresh shared URL creates a Network origin. Entries retain the
 original tab/item/ingredients state. A 100-frame cache retains recent pages and
 scroll; evicted frames refetch. Aborted/stale generations never replace another
 selection. Cycle timers clear on navigation/close, pause for hover/focus and stop
-under reduced motion. Network snapshot events update only stock links, without
-resetting loaded pages. `dev.py` supplies typed crafting/furnace/GT demo chains and
+under reduced motion. Network snapshot events update the current item's Stock
+button at the bottom of the frame without resetting loaded pages. Recipe slots have no
+secondary action buttons over their tooltips. `dev.py` supplies typed crafting/furnace/GT demo chains and
 34 circuit uses for paging. Its recipes are illustrative, not pack knowledge.
+
+Assembly Line research has separate `research.scanner` and
+`research.research_station` category tabs in the viewer. Native metadata supplies
+voltage, amperage, time and computation. Viewer-only queries project these
+requirements into reference cards; the underlying production graph and MCP
+manufacturing queries stay unchanged. Making matches targets; Uses matches only
+the research item, rather than every Assembly Line ingredient. All-category
+pagination appends research references after production, with matching counts.
+Station usage is voltage times amperage. NEI's displayed Max EU uses
+`max(1, computation // minimum_per_second) * 20 * usage`, including its whole-second
+rounding. Research energy totals cross the API as decimal strings to preserve large
+integers. Category and scroll survive returning through the trail. Statistics
+render inside the same grey canvas as the diagram, with a companion pixel
+alphabet and GTNH 2.9's `GTValues.TIER_COLORS` in both themes. Quantity overlays
+and statistics use locally served regular/bold derivatives of Idrees Hassan's
+OFL-1.1 Minecraft-Font, with the license and provenance in `static/fonts/`.
+`tools/make-count-font.py` regenerates them from checksum-verified upstream files.
+Joined glyph outlines and true descenders replace the hand-drawn approximation;
+integer pixel scales keep strokes crisp. Each statistics block shares a scale
+that fits its longest line, and a resize observer updates it when the viewport
+changes. Statistics and the paper behind them are painted together on an opaque
+canvas, retaining the text in the DOM for accessibility and copying. This avoids
+browser automatic darkening recolouring HTML text separately from exported
+artwork. The canvas also requests `color-scheme: only light`. Font loading and
+viewport changes repaint it, with real regular/bold faces for the tier labels.
+Captured requirements use the same painted statistics block. Empty values and
+false top-level flags are omitted, while valid zero tiers and consumption chances
+remain. Cleanroom and low-gravity flags become direct requirement lines; long
+labels wrap at the statistics' pixel scale. Infusion's research, instability and
+aspects are not repeated in the costs. The repeated NEI display notice is removed;
+coverage remains available in the information control.
+
+Recipe pages return rich machine summaries once per category, alongside the
+simple catalyst identities on each row. The viewer chooses the first available
+category and shows one recipe per page in a single NEI-style paper window.
+Icon tabs protrude above the frame; the selected category's machine rail attaches
+to its left edge and scrolls independently, including on phones. The category
+arrows wrap between categories; page arrows stop at either end. API batches of
+20 recipes are fetched as needed, while the current page and scroll stay in the
+frame cache for Back/Forward. Production recipe ordering is unchanged. Each item
+and category identify a cached selection, bounded to 100 selections.
+Loading preserves the last complete view until metadata and recipes can commit
+together; unknown totals use a loading label rather than a synthetic zero.
+Visited categories render from cache immediately and revalidate the dataset.
+Scroll and stock actions follow the displayed model while a request is pending.
+Aborted or stale generations cannot commit or clear a newer request's busy state.
+`recipe-wheel.js` routes vertical wheel input by geometry: the tab band (including
+unused space) and category heading switch categories, while the remainder of the
+window changes recipe pages. Sidebar/information scrolling, horizontal gestures
+and browser modifier gestures stay native. Fine pixel deltas accumulate by
+distance; fast wheel events are not throttled. Coalesced large deltas can advance
+multiple steps, with category wrapping and page clamping. Wheel travel received
+while a recipe batch loads updates the requested page; sequential fetches satisfy
+the latest target without dropping notches or committing an empty page.
+The item header, direction bar, breadcrumbs and All-categories tab are removed; item
+clicks and R/U still choose Recipes/Uses. Back, Stock, information and Close live
+at the bottom of the frame. Coverage and item details are inside information.
+Concrete catalysts replace generic name-only NEI category labels when available.
+GT category names use the exported Machine Type line where present; machine
+variant names stay intact. Sidebars reuse item tooltips and Recipes/Uses
+navigation, with live network quantities. Tooltip identities include the machine
+role so ingredient amounts cannot replace machine stock counts. No new export
+or index rebuild is needed.
+
+`recipe-shell.js` paints the outer window as well: the stepped NEI paper edge,
+joined category tabs, recessed catalyst rail, heading strips and bevelled black
+controls share a fixed game palette. Transparent DOM controls retain focus,
+labels and event handling above the canvas. Resize, font, scroll and DOM-change
+observers repaint the frame. This also prevents automatic browser darkening from
+turning the outer paper dark while the recipe's painted paper stays grey.
 
 
 **Recipe source format 3 and index format 4: coverage audit.** The follow-up

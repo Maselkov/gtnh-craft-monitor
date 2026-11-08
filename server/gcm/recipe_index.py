@@ -569,6 +569,36 @@ class RecipeIndex:
         """(rows, total) taking key; all slot alternatives are indexed."""
         return self._page("input", kind, key, map_name, limit, offset)
 
+    def _research_where(self, kind, key, direction, method=None):
+        where, args = self._where(kind, key, "assembly_line")
+        where += " AND x.kind = 0 AND json_extract(r.body, '$.research.method') IS NOT NULL"
+        if direction == "using":
+            where += " AND json_extract(r.body, '$.research.item[0]') = x.k"
+        elif direction != "making":
+            raise ValueError("invalid research direction")
+        if method is not None:
+            where += " AND json_extract(r.body, '$.research.method') = ?"
+            args.append(method)
+        return where, args
+
+    def research_counts(self, kind, key, direction):
+        """Viewer references to native research; never manufacturing recipes."""
+        where, args = self._research_where(kind, key, direction)
+        table = "output" if direction == "making" else "input"
+        return dict(self._all(
+            f"SELECT json_extract(r.body, '$.research.method'), COUNT(DISTINCT r.id) "
+            f"FROM {table} x JOIN recipe r ON r.id = x.recipe WHERE {where} GROUP BY 1", args))
+
+    def research_page(self, kind, key, direction, method=None, *, limit=20, offset=0):
+        if type(limit) is not int or not 1 <= limit <= PAGE_MAX or type(offset) is not int or offset < 0:
+            raise ValueError("invalid research page")
+        where, args = self._research_where(kind, key, direction, method)
+        table = "output" if direction == "making" else "input"
+        rows = self._all(
+            f"SELECT DISTINCT r.id, r.body FROM {table} x JOIN recipe r ON r.id = x.recipe "
+            f"WHERE {where} ORDER BY r.eut, r.ticks, r.id LIMIT ? OFFSET ?", [*args, limit, offset])
+        return [(rid, "assembly_line", json.loads(body)) for rid, body in rows]
+
     def find_names(self, query, limit=200):
         """[(kind, key, name), ...] for every named item and fluid whose
         name contains query, ignoring case (ASCII), up to limit."""

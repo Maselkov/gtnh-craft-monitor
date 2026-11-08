@@ -454,26 +454,67 @@ in the ME network. It reads the GTNH version selected in
 [Game data](server.md#game-data).
 
 **Recipes** shows ways to make the item; **Uses** shows recipes that take it.
-The top icon tabs select a machine category; the grid tab includes **All
-categories**. Hover or focus a tab for its category name, recipe count and mod
-where known. The selected tab is raised, with its full name and count below the
-row. Categories without a machine icon use initials. Swipe/scroll the row or use
-its side arrows when there are more tabs than fit. With a tab focused,
+The recipe book uses the game's grey window: category tabs protrude from the
+top and machine icons from the left. There is no item header or Recipes/Uses
+bar inside the window. It opens the first available category, or the category
+in a shared link. Hover or focus a tab for its category name, recipe count and
+mod where known. The selected tab joins the frame, with its name in the first
+navigation row. That row's arrows select the previous or next category.
+Categories without a machine icon use initials. Swipe/scroll the tabs or use
+their side arrows when there are more tabs than fit. With a tab focused,
 **Left/Right** and **Home/End** move between tabs; **Enter** or **Space** selects
-one. The same tabs are available for both Recipes and Uses. Recipes load 20 at a time; **Load more** adds the next page.
+one. The second navigation row shows **Page X/Y**; its arrows move between
+recipes in the selected category, one recipe per page.
+The mouse wheel over the window also changes recipe pages: down for next, up
+for previous. Over the top tabs, their empty reserved space or the category
+title, it changes machine categories instead. The machine sidebar and open
+information panel keep their normal scrolling. Horizontal gestures and
+modified wheel gestures keep the browser's usual behavior.
+Rapid wheel turns advance through multiple pages or categories; they are not
+limited to one step per turn. Page navigation stops at the first or last page.
+While a new selection loads, the current recipe and page count stay visible
+until its replacement is ready. Recently visited categories return immediately
+to their previous page while the viewer checks that the game data still matches.
 Crafting comes first, then furnace recipes, then GregTech and Assembly Line recipes by absolute
 EU/t and duration, with approximate NEI displays last. Machine recipes show voltage, time, heat and output chances
 where available. Crafting recipes show their grid, or **Shapeless** when order
 does not matter. A zero-size input is labelled **not used up**, or **NC** in a
 positioned preview.
+Fluid previews fill their slots, with compact litre quantities such as **3kL**
+and **2.5ML** in larger lettering. Their tooltips show the exact amount in mB.
+
+The machine sidebar attached to the left of the window shows the exported variants
+and tiers as icons. Hover or focus one for its standard item tooltip, including
+its current amount in the ME network; hold **Shift** for extended details.
+Left-click or **R** opens that machine's recipes; right-click or **U** opens its
+uses. Machines without an exported item identity show initials and a name.
+The sidebar remains on the left on narrow screens, with smaller icons. Long
+machine lists scroll independently from the recipe.
 
 Newer bundles show positioned previews for Assembly Line, standard GregTech
 layouts and captured NEI displays. Infusion previews show the central item,
 surrounding ingredients, instability, essentia amounts and research name. The
 research label does not indicate whether your player has completed it. Exact
 NBT display variants can change an icon or its label while keeping the recipe's
-item identity for navigation. GT previews also show total EU before overclocking.
+item identity for navigation. The rendered recipe card includes total EU before
+overclocking, usage and time on the same grey canvas as the diagram, with pixel
+lettering. The canvas keeps its grey background and black text in either theme,
+including when the browser automatically darkens pages. Production usage includes
+the voltage tier in GregTech's colours. Item quantities use larger
+white pixel digits with a dark shadow, without a solid box over the icon.
+Captured conditions appear directly below the costs in the same pixel lettering,
+for example **Needs Cleanroom**. False or empty requirements are omitted; there
+is no separate requirements expander. Long conditions wrap to fit the card.
 Custom NEI graphics and dynamic costs can still require checking in game.
+
+Assembly Line targets have their own **Scanner** or **Research Station** category
+tab at the top. It shows the research item, the target it unlocks and the Data
+Stick, with research costs printed inside its recipe card. Scanner research shows
+time and total EU; Research Station research shows total computation, minimum
+computation per second and NEI's **Max EU** estimate. When multiple amps are
+required, voltage and amperage appear separately from total usage. These tabs
+also appear in **Uses** for the research item. Scanning unlocks the pictured target's
+Assembly Line recipe; it does not manufacture the target.
 
 Hover an ingredient or output for the same instant item tooltip used in the
 Network browser: rarity colour, exported description and mod name. Hold **Shift**
@@ -482,7 +523,7 @@ non-consumed stacks say **Not consumed**. The tooltip follows the displayed
 alternative and also appears when a stack receives keyboard focus.
 
 **Left-click** any ingredient or output to open its recipes. **Right-click**
-opens its uses; the small **Uses** button does the same. **R** opens recipes
+opens its uses. **R** opens recipes
 and **U** opens uses for the stack under the pointer, or the focused stack
 when no stack is hovered. Holding Shift for tooltip details does not change
 what left-click does. Slots with alternative
@@ -492,22 +533,25 @@ choice. In crafting grids, the tooltip names the ore entry when known and says w
 sample is smaller than the full alternative count. Every exported alternative is
 included in Uses searches.
 
-**Back**, the breadcrumbs and browser Back/Forward move through the trail.
-Loaded pages and scroll are kept when returning to a recent selection.
+The **Back arrow** at the bottom and browser Back/Forward move through visited
+items. The selected category, recipe page and scroll are kept when returning
+to a recent selection.
 Closing the dialog with **×**, Escape or its backdrop returns to where it was
-opened. A **Stock** link appears beside stacks found in the latest network
-snapshot (focus or point at a positioned slot to reveal its links); it opens their stock page, and browser Back returns to the recipes.
-The machine name narrows the list to that category. The `/recipes?key=...`
+opened. A **Stock** button at the bottom of the frame
+appears when the current item is in the latest network snapshot. It opens
+that item's stock page, and browser Back returns to the recipes. To check an
+ingredient's stock, first click it to open its recipe page.
+The `/recipes?key=...`
 address can be copied or bookmarked; a fresh link opens over the Network tab.
 
-The footer states coverage. New bundles include supported GregTech,
+The **i** control at the bottom opens item details, coverage and shortcut help. New bundles include supported GregTech,
 crafting-table and furnace recipes; older bundles have GregTech only. Custom
 NBT-dependent conversions and handlers that need a live world or player may be
 missing. Format-3 bundles add Assembly Line recipes with Scanner or Research Station
-requirements. They also include labelled **NEI display recipes**, such as AE2
+requirements. They also include **NEI display recipes**, such as AE2
 inscriber, Avaritia, Botania and supported magic recipes. These displays can omit
-extra costs, catalysts or dynamic behavior; check NEI in game. **Additional
-requirements** shows captured costs and conditions. Research requirements are
+extra costs, catalysts or dynamic behavior; check NEI in game. Captured costs
+and conditions are printed inside the recipe card. Research requirements are
 shown separately from production inputs. Approximation notes flag recipes whose
 NBT or custom matching rules are not fully represented. No results means
 there is no supported recipe for that selection in this bundle, rather than
