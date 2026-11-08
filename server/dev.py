@@ -652,6 +652,33 @@ def recipe_maps(changed):
     maps["gt.recipe.viewer_assembler"] = {"machines": ["Assembler"], "recipes": [
         {"i": [[circuit, 1], [_recipe_key("Iron Ingot"), 2]], "o": [[_recipe_key(it["name"]), 1]], "e": 30, "d": 20 + i}
         for i, it in enumerate(CATALOG[:40]) if it["kind"] == "item" and it["name"] not in ("Any IV Circuit", "Ultimate Circuit")]}
+    maps["assembly_line"] = {"machines": ["Assembly Line"], "recipes": [
+        {"type": "assembly_line", "groups": [{"alts": [[circuit, 4]]}, {"alts": [[wafer, 16]]}],
+         "o": [[_recipe_key("Ultimate Circuit"), 1]], "e": 32768, "d": 400,
+         "research": {"method": "research_station", "item": [wafer, 1], "eut": 8192,
+                      "computation": 1000000, "computation_per_second": 128, "amperage": 4}}]}
+    maps["nei.dev"] = {"machines": ["Illustrative NEI Machine"], "recipes": [
+        {"type": "nei", "groups": [{"alts": [[foil, 2], [wire, 2]]}], "o": [[_recipe_key("Ultimate Circuit"), 1]],
+         "requirements": {"mana": 2000}, "approximate": ["nei_display"]}]}
+    def slot(role, index, x, y):
+        return {"role": role, "index": index, "x": x, "y": y, "w": 18, "h": 18}
+    maps["assembly_line"]["recipes"][0]["preview"] = {
+        "family": "assembly_line", "width": 170, "height": 84, "layers": [],
+        "slots": [slot("groups", n, 16 + 18 * (n % 4), 8 + 18 * (n // 4)) for n in range(16)]
+                 + [slot("f", n, 106, 8 + 18 * n) for n in range(4)]
+                 + [slot("o", 0, 142, 8)],
+    }
+    import math
+    maps["nei.infusion.dev"] = {"machines": ["Arcane Infusion"], "recipes": [{
+        "type": "nei", "groups": [{"alts": [[key, 1]]} for key in [wafer, foil, wire, foil, wire]],
+        "o": [[_recipe_key("Ultimate Circuit"), 1]], "requirements": {
+            "instability": 0, "research": "DEV_INFUSION", "essentia": {"ordo": 25}},
+        "preview": {"family": "infusion", "width": 166, "height": 130, "layers": [], "item_frames": False,
+                    "slots": [slot("o", 0, 74, 4), slot("groups", 0, 74, 62)] + [
+                        slot("groups", n + 1, 74 + round(40 * math.cos(math.radians(-90 + 90*n))),
+                             62 + round(40 * math.sin(math.radians(-90 + 90*n)))) for n in range(4)]},
+        "approximate": ["nei_display"],
+    }]}
     return maps
 
 
@@ -667,10 +694,16 @@ def write_recipes(path, maps):
     for map_name, entry in maps.items():
         recipes = []
         for r in entry["recipes"]:
-            recipe = {k: v for k, v in r.items() if k not in ("i", "o", "f", "g", "slots")}
+            recipe = {k: v for k, v in r.items() if k not in ("i", "o", "f", "g", "slots", "groups", "research")}
             recipe.setdefault("type", "gt")
             if "slots" in r:
                 recipe["slots"] = [None if slot is None else {**slot, "alts": [[index("items", key), size] for key, size in slot["alts"]]} for slot in r["slots"]]
+            if "groups" in r:
+                recipe["groups"] = [{**group, "alts": [[index("fluids" if group.get("kind") == "fluid" else "items", key), size]
+                                                      for key, size in group["alts"]]} for group in r["groups"]]
+            if "research" in r:
+                key, size = r["research"]["item"]
+                recipe["research"] = {**r["research"], "item": [index("items", key), size]}
             for side, table in (("i", "items"), ("o", "items"), ("f", "fluids"), ("g", "fluids")):
                 if side in r:
                     recipe[side] = [[index(table, key), size] for key, size in r[side]]
@@ -678,8 +711,11 @@ def write_recipes(path, maps):
         out[map_name] = {"machines": [m if isinstance(m, dict) else {"name": m, "key": None} for m in entry["machines"]], "recipes": recipes}
     names = {_recipe_key(it["name"]): it["name"] for it in CATALOG if it["kind"] != "essentia"}
     data = {
-        "format": 2,
-        "coverage": {"handlers": ["gregtech", "crafting", "furnace"], "identity": "item_id_damage",
+        "format": 4,
+        "display_stacks": {}, "ui_assets": {},
+        "research_info": {"DEV_INFUSION": {"name": "Infusion", "category_name": "Dev research"}},
+        "aspects": {"ordo": {"name": "Ordo", "icon": "aspect/ordo.png"}},
+        "coverage": {"handlers": ["gregtech", "crafting", "furnace", "assembly_line", "nei"], "identity": "item_id_damage",
                      "limitations": ["Illustrative dev recipes; NBT and custom matching may differ"]},
         "items": list(tables["items"]), "item_names": [names[k] for k in tables["items"]],
         "fluids": list(tables["fluids"]), "fluid_names": [names[k] for k in tables["fluids"]],

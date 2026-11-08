@@ -32,7 +32,8 @@ import {
   updateNetworkSearchHighlight,
 } from './network.js';
 import { fetchPowerBadge, powerMachineFromUrl, setupPowerActions } from './power.js';
-import { recipeViewerFromUrl, setupRecipeViewer } from './recipe-viewer.js';
+import { openRecipeViewer, recipeViewerFromUrl, setupRecipeViewer } from './recipe-viewer.js';
+import { setupItemRecipeShortcuts } from './item-shortcuts.js';
 import { setupRecipeCheckActions } from './recipe-check.js';
 import { fetchStockRules, setupStockActions } from './stock.js';
 import { applyHistoryState, focusNetworkSearch, pathToTab, refreshActiveTab, setupTabActions, switchTab } from './tabs.js';
@@ -97,6 +98,7 @@ function initFromUrl() {
 setupNotifications();
 setupNetworkTooltipEvents();
 setupCraftHistoryLinks();
+setupItemRecipeShortcuts(openRecipeViewer);
 setupAmountInputForDevice();
 // scrollLeft can change from cursor movement alone (arrow keys past
 // the visible edge), with no 'input' event firing - the overlay's

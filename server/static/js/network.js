@@ -2,15 +2,16 @@
 
 import { AUTH_USER, expireAuthentication, isOperator } from './auth.js';
 import { openCraftRequestModal } from './craft-actions.js';
-import { descriptionHtml, descriptionPlainText, formulaSearchText, nameHtml, nameText } from './description.js';
+import { descriptionPlainText, formulaSearchText, nameText } from './description.js';
 import { openItemHistory, tryOpenItemFromUrl, updateItemHistoryPinButton } from './history.js';
 import { buildSearchHighlightHtml, itemMatchesSearch, parseSearchQuery, searchNeedsItemInfo } from './search.js';
+import { itemTooltipHtml } from './item-tooltip.js';
 import { stockBadgeFor } from './stock.js';
 import { activeTab } from './tabs.js';
 import { bindCellTooltip, hideTooltip, showTooltip, tooltipVisible } from './tooltip.js';
 import {
   closeNote, delegateActions, escapeHtml, essentiaBadgeHtml, formatDuration, formatQty, formatRate,
-  formatRelativeTime, iconClass, iconKeyUrl, iconUrl, kindTooltipHtml, noteClosed, PIN_ICON, TERMINAL_DOCS_URL,
+  formatRelativeTime, iconClass, iconKeyUrl, iconUrl, noteClosed, PIN_ICON, TERMINAL_DOCS_URL,
 } from './util.js';
 
 // ---------- Network browser ----------
@@ -79,9 +80,9 @@ async function fetchNetworkItemInfo() {
 }
 
 function refreshTooltip() {
-  if (tooltipVisible() && tooltipCell && tooltipCell.isConnected) {
+  if (tooltipVisible(document.getElementById('networkList')) && tooltipCell && tooltipCell.isConnected) {
     const html = networkTooltipHtml(tooltipCell);
-    if (html) showTooltip(html);
+    if (html) showTooltip(html, undefined, undefined, document.getElementById('networkList'));
   }
 }
 
@@ -194,22 +195,8 @@ function networkTooltipHtml(cell) {
   const change = changeOf(it);
   const changeLine = change ? changeTooltipHtml(change, it.kind) : '';
   const info = infoOf(it);
-  const description = (shiftHeld && info.shift_description) || info.description;
-  const modName = modNameOf(it) || it.mod;
-  // The name in its rarity's colour, as the game shows it.
-  const nameClass = 'network-tooltip-name' + (info.rarity ? ' mc-' + info.rarity : '');
-
-  return `
-    <div class="${nameClass}">${nameHtml(it.name || '?')}</div>
-    ${it.variant_name ? `<div class="network-tooltip-variant">${escapeHtml(nameText(it.variant_name))}</div>` : ''}
-    ${info.shift_description && !shiftHeld ? '<div class="network-tooltip-hint">[shift]</div>' : ''}
-    <div class="network-tooltip-stat">${statLine}</div>
-    ${changeLine}
-    ${kindTooltipHtml(it.kind)}
-    ${it.isCraftable ? `<div class="network-tooltip-craftable">Craftable</div>` : ''}
-    ${description ? `<div class="game-text network-tooltip-description">${descriptionHtml(description)}</div>` : ''}
-    ${modName ? `<div class="network-tooltip-mod">${escapeHtml(modName)}</div>` : ''}
-  `;
+  return itemTooltipHtml(it, info, { shiftHeld, stat: statLine,
+    details: changeLine, modName: modNameOf(it) || it.mod });
 }
 
 // ---------- Keyboard ----------
@@ -306,12 +293,12 @@ function showCellTooltip(cell) {
   const html = networkTooltipHtml(cell);
   if (!html) return;
   const r = cell.getBoundingClientRect();
-  showTooltip(html, r.right - 8, r.bottom - 8);
+  showTooltip(html, r.right - 8, r.bottom - 8, document.getElementById('networkList'));
 }
 
 export function setupNetworkTooltipEvents() {
   const listEl = document.getElementById('networkList');
-  bindCellTooltip(listEl, '.network-cell', networkTooltipHtml);
+  bindCellTooltip(listEl, '.network-cell', networkTooltipHtml, cell => networkShownItems[Number(cell.dataset.idx)]);
   // Holding Shift shows a tooltip's Shift text (a multiblock's structure).
   const setShift = (held) => {
     if (held === shiftHeld) return;
@@ -701,7 +688,7 @@ function renderNetworkList() {
   // mouse-move event firing (e.g. typing in the search box) - hide
   // any currently-shown tooltip so it can't linger showing stale
   // data for whatever used to be there.
-  hideTooltip();
+  if (tooltipVisible(document.getElementById('networkList'))) hideTooltip();
 
   const listEl = document.getElementById('networkList');
   const emptyEl = document.getElementById('networkEmpty');

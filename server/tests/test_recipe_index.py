@@ -228,3 +228,115 @@ def test_atomic_source_replacement_does_not_mix_fingerprint_and_recipes(tmp_path
         assert not recipe_index.is_current(path, str(tmp_path / "source.gz"))
     finally:
         idx.close()
+
+
+def format3():
+    data = format2()
+    data['format'] = 3
+    data['coverage']['handlers'] += ['assembly_line', 'nei']
+    data['maps']['assembly_line'] = {'machines': [{'name': 'Assembly Line', 'key': 'gregtech:gt.blockmachines:1170'}],
+        'recipes': [{'type': 'assembly_line', 'groups': [{'alts': [[n, 2] for n in range(3, 23)]}],
+                     'f': [[0, 144]], 'o': [[2, 1]], 'e': 32768, 'd': 400,
+                     'research': {'method': 'research_station', 'item': [0, 1], 'eut': 8192,
+                                  'ticks': 4000, 'computation': 1000000, 'amperage': 4, 'computation_per_second': 128},
+                     'snapshot': {'output': {'nbt': '{example:1}'}},
+                     'requirements': {'nbt_sensitive': True, 'nbt_inputs': [{'item': 'example:part:0', 'nbt': '{large:1}'}]}}]}
+    data['maps']['nei.example'] = {'machines': [{'name': 'Special Machine'}], 'recipes': [
+        {'type': 'nei', 'groups': [{'kind': 'fluid', 'alts': [[0, 1000], [1, 500]]}], 'o': [[2, 1]],
+         'requirements': {'mana': 2000}, 'approximate': ['nei_display'],
+         'snapshot': {'other': [{'item': 'example:catalyst:0'}]}}],
+        'archive': [{'dynamic': True, 'unindexed_output': 'example:archive:0'}]}
+    return data
+
+
+def test_assembly_research_and_nei_alternatives_are_indexed_without_raw_archives(tmp_path):
+    idx = build_index(tmp_path, format3())
+    try:
+        assert idx.source_format == 3
+        assert idx.counts_using(recipe_index.ITEM, 'example:part:19')['assembly_line'] == 1
+        assert idx.counts_using(recipe_index.ITEM, LOG)['assembly_line'] == 1
+        assert idx.counts_using(recipe_index.FLUID, 'mod:fluid')['nei.example'] == 1
+        rows, _ = idx.made_by(recipe_index.ITEM, PLANKS)
+        assembly = next(r[2] for r in rows if r[2]['type'] == 'assembly_line')
+        display = next(r[2] for r in rows if r[2]['type'] == 'nei')
+        assert assembly['e'] == 32768 and assembly['research']['eut'] == 8192
+        assert display['requirements'] == {'mana': 2000} and rows[-1][2]['type'] == 'nei'
+        assert 'snapshot' not in assembly and 'snapshot' not in display
+        assert assembly['requirements'] == {'nbt_sensitive': True}
+        assert idx.counts_making(recipe_index.ITEM, 'example:archive:0') == {}
+        assert recipes._maps_named('Assembly Line', idx) == recipes._maps_named('Special Machine', idx) == set()
+        assert all(row[2]['type'] == 'gt' for row in recipes._Matcher().making(idx, recipe_index.ITEM, PLANKS))
+    finally:
+        idx.close()
+
+
+@pytest.mark.parametrize('change', [
+    lambda r: r.update(groups=[{'alts': []}]),
+    lambda r: r.update(groups=[{'kind': 'essentia', 'alts': [[0, 1]]}]),
+    lambda r: r['research'].update(item=[999, 1]),
+    lambda r: r['research'].update(computation=-1),
+    lambda r: r['research'].update(method='unknown'),
+])
+def test_invalid_assembly_requirements_are_rejected(tmp_path, change):
+    data = format3()
+    change(data['maps']['assembly_line']['recipes'][0])
+    with pytest.raises(ValueError):
+        build_index(tmp_path, data)
+
+
+def test_research_diagrams_do_not_claim_to_manufacture_the_research_target(tmp_path):
+    data = format3()
+    for name in recipe_index.REFERENCE_ONLY_MAPS:
+        data['maps'][name] = data['maps']['nei.example']
+    idx = build_index(tmp_path, data)
+    try:
+        rows, total = idx.made_by(recipe_index.ITEM, PLANKS)
+        assert total == 7 and all(name not in recipe_index.REFERENCE_ONLY_MAPS for _, name, _ in rows)
+    finally:
+        idx.close()
+
+
+def format4():
+    data = format3()
+    data['format'] = 4
+    data['display_stacks'] = {
+        'charged': {'key': 'minecraft:log:7', 'name': 'Charged Log', 'nbt': '{charge:10}', 'icon': 'item/charged.webp'},
+        'empty': {'key': 'minecraft:log:8', 'name': 'Empty Log', 'nbt': None, 'icon': 'item/empty.webp'},
+    }
+    data['ui_assets'] = {'frame': {'path': 'ui/frame.webp', 'width': 18, 'height': 18}}
+    data['research_info'] = {'INFUSION': {'name': 'Infusion Research', 'category_name': 'Thaumaturgy', 'icon': 'frame'}}
+    data['aspects'] = {'ordo': {'name': 'Order', 'icon': 'aspect/ordo.webp'}}
+    r = data['maps'][EBF]['recipes'][0]
+    r['i'] = [[1, 2, None, ['charged', 'empty']]]
+    r['aux'] = [[0, 0, None, ['empty']]]
+    r['extras'] = [{'alts': [[3, 0, None, ['empty']]]}]
+    r['requirements'] = {'research': 'INFUSION', 'instability': 0, 'essentia': {'ordo': 25}}
+    r['preview_indices'] = {'i': [2]}
+    data['maps'][EBF]['preview'] = {'family': 'gt', 'width': 166, 'height': 84,
+        'slots': [{'role': 'i', 'index': 2, 'x': 8, 'y': 8, 'w': 18, 'h': 18, 'asset': 'frame'},
+                  {'role': 'i', 'index': 0, 'x': 26, 'y': 8, 'asset': 'frame'},
+                  {'role': 'aux', 'index': 0, 'x': 80, 'y': 8, 'asset': 'frame'}],
+        'layers': [{'asset': 'frame', 'x': 44, 'y': 8, 'w': 18, 'h': 18, 'uv': [0, 0, 1, .5]}]}
+    return data
+
+
+def test_display_pool_can_follow_maps_and_keeps_semantic_identity(tmp_path):
+    raw = format4()
+    raw['display_stacks'] = raw.pop('display_stacks')
+    idx = build_index(tmp_path, raw)
+    try:
+        body = next(b for _, m, b in idx.making(recipe_index.ITEM, PLANKS) if m == EBF and b.get('aux'))
+        assert body['i'][0] == [ANY_LOG, 2, None, ['charged', 'empty']]
+        assert idx.display_stacks(['charged'])['charged']['nbt'] == '{charge:10}'
+        assert idx.layout(EBF)['slots'][0]['index'] == 2
+        assert EBF not in idx.counts_using(recipe_index.ITEM, 'example:part:0')  # display extras are not consumed
+        assert idx.presentation['research_info']['INFUSION']['name'] == 'Infusion Research'
+    finally:
+        idx.close()
+
+
+def test_missing_display_reference_fails_instead_of_losing_variant(tmp_path):
+    raw = format4()
+    del raw['display_stacks']['charged']
+    with pytest.raises(ValueError, match='unknown display stack reference'):
+        build_index(tmp_path, raw)

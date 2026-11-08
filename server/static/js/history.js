@@ -1,5 +1,6 @@
 // Item history popup and its chart.
 
+import { bindItemRecipeTarget } from './item-shortcuts.js';
 import { AUTH_USER, isOperator } from './auth.js';
 import { openCraftRequestModal, showToast } from './craft-actions.js';
 import { descriptionHtml, descriptionPlainText, nameText } from './description.js';
@@ -169,6 +170,13 @@ export function setupCraftHistoryLinks() {
   // listeners would need rebinding each time.
   for (const id of ['root', 'jobLinkNote', 'ingredientsModal', 'craftHistory', 'craftStats']) {
     const container = document.getElementById(id);
+    bindItemRecipeTarget(container, '.item-history-link, .craft-title', cell => {
+      const link = cell.matches('.item-history-link') ? cell : cell.querySelector('.item-history-link');
+      if (!link?.dataset.internal) return null;
+      return { mod: link.dataset.mod || null, internal: link.dataset.internal,
+        damage: readDamageFromDataset(link.dataset.damage) ?? 0,
+        kind: link.dataset.kind || (link.dataset.mod ? 'item' : 'fluid') };
+    });
     container.addEventListener('click', (e) => {
       const link = e.target.closest('.item-history-link');
       if (link) openItemFromLink(link);

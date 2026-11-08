@@ -193,3 +193,23 @@ class TestPatternCheck:
         assert [r["status"] for r in found["patterns"]] == ["broken", "changed"]
         assert found["patterns"][0]["makes"] == ["C"] and found["patterns"][1]["changes"]
         assert found["patterns_needing_attention"] == 2
+
+
+def test_find_recipes_includes_research_and_display_costs(tmp_path, monkeypatch):
+    from gcm.mcp import tools
+    from test_recipe_index import build_index, format3
+    idx = build_index(tmp_path, format3())
+    monkeypatch.setattr(tools, '_recipe_index', lambda: ('2.9.0', idx))
+    try:
+        result = tools.find_recipes(None, {'item': 'minecraft|planks|0|item', 'limit': 10})
+        assembly = next(r for r in result['recipes'] if r['type'] == 'assembly_line')
+        assert assembly['eu_per_tick'] == 32768 and assembly['research']['eut'] == 8192
+        assert assembly['research']['item']['name'] == 'Oak Log'
+        assert assembly['ingredient_groups'][0]['alternatives_total'] == 20
+        assert len(assembly['ingredient_groups'][0]['alternatives']) == 16
+        display = next(r for r in result['recipes'] if r['type'] == 'nei')
+        assert display['requirements'] == {'mana': 2000}
+        assert display['ingredient_groups'][0]['alternatives'][0]['unit'] == 'mB'
+        assert 'eu_per_tick' not in display and 'seconds' not in display
+    finally:
+        idx.close()

@@ -113,7 +113,8 @@ final class ExportJob {
                 "item/" + splitFirst(fileId) + ".png",
                 id.modId + ":" + id.name + ":" + damage,
                 id.modId + ":" + id.name,
-                safeLabel(stack),
+                // Some mod name getters initialize NBT. Keep the exported identity stable.
+                safeLabel(stack.copy()),
                 nbt != null);
         if (nbt != null && nbt.hasKey("GT.ToolStats", 10)) {
             String material = nbt.getCompoundTag("GT.ToolStats").getString("PrimaryMaterial");

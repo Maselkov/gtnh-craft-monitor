@@ -72,7 +72,7 @@ _zip_lock = threading.Lock()
 
 # Top-level folders inside images.zip. A path starting with anything else
 # carries a version prefix.
-_ZIP_ROOTS = ("item", "fluid", "aspect")
+_ZIP_ROOTS = ("item", "fluid", "aspect", "ui")
 
 
 class _Table:
@@ -381,3 +381,12 @@ def attach_job_icons(jobs):
         attach_item_icons(job.get("pending"))
         attach_item_icons(job.get("stored"))
     return jobs
+
+
+def recipe_image(path):
+    """An exported relative preview image in the selected texture zip."""
+    if not isinstance(path, str) or ".." in path or "\\" in path or path.split("/", 1)[0] not in _ZIP_ROOTS:
+        return None
+    if not path.endswith((".webp", ".png")):
+        return None
+    return _prefixed(path)

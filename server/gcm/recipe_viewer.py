@@ -41,7 +41,10 @@ def entry(kind, key, size, names, chance=None):
 
 def map_info(idx, name):
     machines = [{**m, "name": mctext.plain(m["name"]), "icon": icons.icon_for_key(m.get("key"))} for m in idx.machines(name)]
-    return {"id": name, "name": mctext.plain(machines[0]["name"]) if machines else name, "machines": machines}
+    key = next((m["key"] for m in machines if m.get("key")), None)
+    mod = key.partition(":")[0] if key else None
+    return {"id": name, "name": mctext.plain(machines[0]["name"]) if machines else name, "machines": machines,
+            "mod_name": (item_info.mod_name(mod) or mod) if mod else None}
 
 
 def present_recipes(rows, idx):
@@ -54,15 +57,57 @@ def present_recipes(rows, idx):
         for slot in body.get("slots", []):
             if slot:
                 wanted[ITEM].update(s[0] for s in slot["alts"][:ALTERNATIVES])
+        for group in [*body.get("groups", []), *body.get("extras", [])]:
+            wanted[FLUID if group["kind"] == "fluid" else ITEM].update(s[0] for s in group["alts"][:ALTERNATIVES])
+        if body.get("research"):
+            wanted[ITEM].add(body["research"]["item"][0])
+    refs = set()
+    for _, _, body in rows:
+        for stack in recipe_stacks(body):
+            if len(stack) > 3:
+                refs.update(stack[3])
+        wanted[ITEM].update(s[0] for s in body.get("aux", []))
+    variants = idx.display_stacks(refs)
     names = {(kind, key): name for kind, keys in wanted.items() for key, name in idx.names(kind, keys).items()}
+    tooltip_cache = {}
+    def tooltip_info(value, display=None):
+        identity = (value["key"], display.get("key"), display.get("name")) if display else (value["key"],)
+        if identity not in tooltip_cache:
+            lookup = value
+            if display:
+                mod, _, rest = display["key"].partition(":")
+                internal, _, damage = rest.rpartition(":")
+                lookup = {**value, "mod": mod, "internal": internal,
+                          "damage": None if damage == "*" else int(damage),
+                          "name": display.get("name") or value["name"], "variant": bool(display.get("nbt"))}
+            tooltip_cache[identity] = {**item_info.describe(lookup), "mod_name": item_info.mod_name(lookup.get("mod"))}
+        return tooltip_cache[identity]
+
+    def stack_entry(kind, stack):
+        value = entry(kind, stack[0], stack[1], names, stack[2] if len(stack) > 2 else None)
+        value["info"] = tooltip_info(value)
+        choices = []
+        for ref in stack[3] if len(stack) > 3 else []:
+            display = variants.get(ref)
+            if not display:
+                continue
+            choice = {**value, "display_id": ref,
+                      "name": mctext.plain(display.get("name") or value["name"]),
+                      "icon": icons.recipe_image(display.get("icon")) or value.get("icon"),
+                      "info": tooltip_info(value, display)}
+            choices.append(choice)
+        if choices:
+            value.update(name=choices[0]["name"], icon=choices[0]["icon"], info=choices[0]["info"], display_variants=choices)
+        return value
+
     out = []
     for rid, map_name, body in rows:
         row = {"id": rid, "map": map_name, "type": body["type"], "machines": map_info(idx, map_name)["machines"],
-               "inputs": [entry(ITEM, s[0], s[1], names) for s in body["i"]]
-               + [entry(FLUID, s[0], s[1], names) for s in body["f"]],
-               "outputs": [entry(ITEM, s[0], s[1], names, s[2] if len(s) > 2 else None) for s in body["o"]]
-               + [entry(FLUID, s[0], s[1], names) for s in body["g"]]}
-        if body["type"] == "gt":
+               "inputs": [stack_entry(ITEM, s) for s in body["i"]]
+               + [stack_entry(FLUID, s) for s in body["f"]],
+               "outputs": [stack_entry(ITEM, s) for s in body["o"]]
+               + [stack_entry(FLUID, s) for s in body["g"]]}
+        if body["type"] in ("gt", "assembly_line"):
             row.update(eut=body["e"], tier=recipes._tier(body["e"]), special=body["s"], heat=map_name in recipes.HEAT_MAPS)
         if "d" in body:
             row["ticks"] = body["d"]
@@ -72,12 +117,34 @@ def present_recipes(rows, idx):
             slots = []
             for slot in body["slots"]:
                 slots.append(None if slot is None else {
-                    "alternatives": [entry(ITEM, s[0], s[1], names) for s in slot["alts"][:ALTERNATIVES]],
+                    "alternatives": [stack_entry(ITEM, s) for s in slot["alts"][:ALTERNATIVES]],
                     "alternatives_total": len(slot["alts"]), "ore": slot.get("od"),
                 })
             row["grid"] = {"slots": slots, "shapeless": body["type"] == "shapeless",
                            "w": body.get("w", 3), "h": body.get("h", (len(slots) + 2) // 3),
                            "mirrored": body.get("mirrored", False)}
+        if "groups" in body:
+            row["groups"] = [{"alternatives": [stack_entry(FLUID if group["kind"] == "fluid" else ITEM, s)
+                                               for s in group["alts"][:ALTERNATIVES]],
+                              "alternatives_total": len(group["alts"])} for group in body["groups"]]
+        if body.get("research"):
+            research = body["research"]
+            row["research"] = {**research, "item": stack_entry(ITEM, research["item"])}
+        if body.get("requirements"):
+            row["requirements"] = body["requirements"]
+            row["requirement_notes"] = requirement_notes(body["requirements"])
+        row["extras"] = [{"alternatives": [stack_entry(FLUID if g["kind"] == "fluid" else ITEM, s)
+                                             for s in g["alts"][:ALTERNATIVES]]}
+                         for g in body.get("extras", [])]
+        row["auxiliary"] = [stack_entry(ITEM, s) for s in body.get("aux", [])]
+        layout = body.get("preview") or idx.layout(map_name)
+        if layout:
+            sources = {side: [[stack_entry(kind, s)] for s in body[side]]
+                       for side, kind in (("i", ITEM), ("o", ITEM), ("f", FLUID), ("g", FLUID))}
+            sources["extras"] = [g["alternatives"] for g in row["extras"]]
+            sources["aux"] = [[e] for e in row["auxiliary"]]
+            sources["groups"] = [group["alternatives"] for group in row.get("groups", [])]
+            row["preview"] = present_layout(layout, sources, body, idx)
         out.append(row)
     return out
 
@@ -100,3 +167,92 @@ def item_summary(idx, kind, key):
     maps.sort(key=lambda m: (0 if m["id"] == "crafting" else 1 if m["id"] == "furnace" else 2, m["name"]))
     return {"item": it, "info": item_info.describe(it), "making": making, "using": using, "maps": maps,
             "coverage": recipes.coverage_summary(idx)}
+
+
+def requirement_notes(value):
+    """Readable, bounded labels for native/NEI costs; raw data stays available to MCP."""
+    labels = {"mSpecialItems": "Special items", "mAltFluidInputs": "Fluid alternatives",
+              "mInputChances": "Input consumption chances (out of 10,000)",
+              "mFluidInputChances": "Fluid consumption chances (out of 10,000)",
+              "mFluidOutputChances": "Fluid output chances (out of 10,000)",
+              "nbt_sensitive": "NBT-sensitive inputs", "lp": "Life points", "lp_amount": "Life points", "manaUsage": "Mana",
+              "prereqs": "Research", "eut": "EU/t"}
+    def readable(v):
+        if isinstance(v, dict):
+            return ", ".join(f"{labels.get(k, k)}: {readable(x)}" for k, x in v.items()
+                             if k not in ("class", "unexpanded_class"))
+        if isinstance(v, list):
+            return ", ".join(readable(x) for x in v[:32])
+        if isinstance(v, bool):
+            return "Yes" if v else "No"
+        return f"{v:,}" if isinstance(v, (int, float)) else str(v)
+    out = []
+    for key, val in value.items():
+        if key in ("nbt_inputs", "nbt_outputs"):
+            continue
+        if key == "metadata" and isinstance(val, dict):
+            out.extend(requirement_notes(val))
+            continue
+        label = labels.get(key) or re.sub(r"(?<=[a-z])(?=[A-Z])", " ", key.replace("_", " ")).capitalize()
+        text = readable(val)
+        if text:
+            out.append(f"{label}: {text}"[:512])
+    return out[:32]
+
+
+def recipe_stacks(body):
+    for side in ("i", "o", "f", "g", "aux"):
+        yield from body.get(side, [])
+    for group in [*body.get("groups", []), *body.get("extras", [])]:
+        yield from group["alts"][:ALTERNATIVES]
+    for slot in body.get("slots", []):
+        if slot:
+            yield from slot["alts"][:ALTERNATIVES]
+    if body.get("research"):
+        yield body["research"]["item"]
+
+
+def present_layout(layout, sources, body, idx):
+    """Only bounded geometry and structured values cross the preview API."""
+    import math
+    def number(value, default=0):
+        return value if type(value) in (int, float) and math.isfinite(value) and -4096 <= value <= 4096 else default
+    out = {"family": str(layout.get("family", "positioned")),
+           "width": max(1, number(layout.get("width"), 166)),
+           "height": max(1, number(layout.get("height"), 100)), "slots": [], "layers": []}
+    assets = idx.presentation["ui_assets"]
+    def asset(ref):
+        return icons.recipe_image(assets.get(ref, {}).get("path"))
+    for slot in layout.get("slots", [])[:256]:
+        role, index = slot.get("role"), slot.get("index")
+        if role not in sources or type(index) is not int or index < 0:
+            continue
+        indices = body.get("preview_indices", {}).get(role)
+        if indices is not None:
+            index = indices.index(index) if index in indices else -1
+        alternatives = sources[role][index] if 0 <= index < len(sources[role]) else []
+        out["slots"].append({**{k: number(slot.get(k), 18 if k in ("w", "h") else 0) for k in ("x", "y", "w", "h")},
+                             "role": role, "index": slot["index"], "alternatives": alternatives,
+                             "framed": bool(layout.get("item_frames", True)),
+                             "frame": asset(slot.get("asset")) if layout.get("item_frames", True) else None})
+    for layer in layout.get("layers", [])[:64]:
+        uv = layer.get("uv", [0, 0, 1, 1])
+        if not isinstance(uv, list) or len(uv) != 4 or not all(type(v) in (int, float) and 0 <= v <= 1 for v in uv):
+            continue
+        if asset(layer.get("asset")):
+            out["layers"].append({**{k: number(layer.get(k)) for k in ("x", "y", "w", "h")},
+                                  "image": asset(layer["asset"]), "uv": uv})
+    requirements = body.get("requirements", {})
+    out["aspects"] = []
+    for tag, amount in sorted(requirements.get("essentia", {}).items(), key=lambda e: -(e[1] if type(e[1]) is int else 0)):
+        if type(amount) is not int:
+            continue
+        info = idx.presentation["aspects"].get(tag, {})
+        out["aspects"].append({"tag": tag, "name": info.get("name", tag), "amount": amount,
+                               "icon": icons.recipe_image(info.get("icon", f"aspect/{tag}.webp"))})
+    research = requirements.get("research")
+    if isinstance(research, str) and research:
+        info = idx.presentation["research_info"].get(research, {})
+        out["research"] = {"key": research, "name": mctext.plain(info.get("name", research)),
+                           "category": mctext.plain(info["category_name"]) if info.get("category_name") else None, "icon": asset(info.get("icon")), "state": "unknown"}
+    return out

@@ -536,3 +536,95 @@ def test_recipe_contract_rejects_incomplete_exports(change):
     change(data)
     with pytest.raises(ValueError):
         validate.validate_recipes(data)
+
+
+def recipe_fixture3():
+    data = recipe_fixture()
+    data['format'] = 3
+    data['coverage']['handlers'] += ['assembly_line', 'nei']
+    data['coverage'].update(assembly_line={'registered': 2, 'exported': 1, 'skipped': {'merged_research_overlay': 1}},
+                            gt_maps={'gt.recipe.example': {'registered': 1, 'exported': 1}},
+                            nei_handlers={'example': {'status': 'display', 'registered': 1, 'exported': 1, 'skipped': {}}})
+    data['maps']['assembly_line'] = {'recipes': [
+        {'type': 'assembly_line', 'groups': [{'alts': [[0, 2]]}], 'o': [[1, 1]], 'e': 32768, 'd': 400,
+         'research': {'method': 'research_station', 'item': [0, 1], 'eut': 8192, 'computation': 10000}}]}
+    data['maps']['nei.example'] = {'recipes': [
+        {'type': 'nei', 'groups': [{'alts': [[0, 1]]}], 'o': [[1, 1]],
+         'requirements': {'mana': 1000}, 'snapshot': {'other': []}, 'approximate': ['nei_display']}]}
+    return data
+
+
+def test_extended_recipe_contract():
+    validate.validate_recipes(recipe_fixture3())
+
+
+@pytest.mark.parametrize('change', [
+    lambda d: d['maps']['assembly_line']['recipes'][0]['research'].update(item=[999, 1]),
+    lambda d: d['maps']['assembly_line']['recipes'][0]['research'].update(computation=-1),
+    lambda d: d['maps']['nei.example']['recipes'][0]['groups'][0].update(alts=[]),
+    lambda d: d['coverage']['assembly_line']['skipped'].update(adapter_error=1),
+])
+def test_extended_recipe_contract_rejects_lost_requirements(change):
+    data = recipe_fixture3()
+    change(data)
+    with pytest.raises(ValueError):
+        validate.validate_recipes(data)
+
+
+def test_gt_fuel_records_are_accounted_for_without_inventing_item_outputs():
+    data = recipe_fixture3()
+    data['maps']['gt.fuel'] = {'recipes': [], 'archive': [{'type': 'gt', 'i': [[0, 1]], 'e': 0, 'd': 0, 's': 128}]}
+    data['coverage']['gt_maps']['gt.fuel'] = {'registered': 1, 'archived': 1}
+    validate.validate_recipes(data)
+    data['maps']['gt.fuel']['archive'] = []
+    with pytest.raises(ValueError, match='wrong GT archive counts'):
+        validate.validate_recipes(data)
+
+
+def recipe_fixture4():
+    data = recipe_fixture3()
+    data.update(format=4, display_stacks={
+        'one': {'key': 'minecraft:log:0', 'name': 'Charged Log', 'nbt': '{charge:1}', 'icon': 'item/log.webp'}},
+        ui_assets={}, research_info={}, aspects={})
+    data['maps']['assembly_line']['recipes'][0]['groups'][0]['alts'] = [[0, 2, None, ['one']]]
+    data['maps']['nei.example']['recipes'][0]['extras'] = [{'alts': [[0, 0, None, ['one']]]}]
+    return data
+
+
+def test_presentation_contract_keeps_exact_display_references():
+    validate.validate_recipes(recipe_fixture4())
+    data = recipe_fixture4()
+    data['display_stacks'].clear()
+    with pytest.raises(ValueError, match='unknown display stack reference'):
+        validate.validate_recipes(data)
+
+
+def test_preview_only_images_survive_conversion_and_texture_fallback(tmp_path):
+    lookup = tmp_path / 'icons_lookup.json'
+    lookup.write_text(json.dumps({'by_variant': {'one': 'item/log~nbt.png'},
+                                  'ui_assets': {'frame': 'ui/frame.png'}}))
+    write_zip(tmp_path / 'images.zip', {'item/log~nbt.png': RED, 'ui/frame.png': BLUE, 'item/unused.png': RED})
+    export.finish_images(tmp_path)
+    assert export.lookup_paths(lookup) == {'item/log~nbt.webp', 'ui/frame.webp'}
+    with zipfile.ZipFile(tmp_path / 'images.zip') as zf:
+        assert set(zf.namelist()) == export.lookup_paths(lookup)
+        assert all(validate.is_webp(zf.read(p)) for p in zf.namelist())
+    write_zip(tmp_path / 'textured.zip', {'ui/frame.webp': RED_WEBP})
+    export.merge_textures(tmp_path / 'images.zip', tmp_path / 'textured.zip', lookup,
+                          tmp_path / 'faithful.zip', 'Credits')
+    with zipfile.ZipFile(tmp_path / 'faithful.zip') as zf:
+        assert zf.read('ui/frame.webp') == RED_WEBP
+        assert zf.read('item/log~nbt.webp') == RED_WEBP
+
+
+def test_preview_crop_and_asset_references_are_validated():
+    data = recipe_fixture4()
+    data['ui_assets']['runes'] = {'path': 'ui/runes.webp', 'width': 512, 'height': 512}
+    scene = {'family': 'infusion', 'width': 166, 'height': 122, 'slots': [],
+             'layers': [{'asset': 'runes', 'x': 46, 'y': 35, 'w': 74, 'h': 74,
+                         'uv': [207 / 256, 78 / 256, 249 / 256, 120 / 256]}]}
+    data['maps']['nei.example']['recipes'][0]['preview'] = scene
+    validate.validate_recipes(data)
+    scene['layers'][0]['uv'][2] = .1
+    with pytest.raises(ValueError, match='texture crop'):
+        validate.validate_recipes(data)

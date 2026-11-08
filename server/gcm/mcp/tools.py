@@ -778,6 +778,11 @@ def find_recipes(user, args):
     item_keys.update(alt[0] for _, _, b in found for slot in b.get("slots", []) if slot
                      for alt in slot["alts"][:RECIPE_ALTERNATIVES_MAX])
     fluid_keys = {s[0] for _, _, b in found for side in ("f", "g") for s in b[side]}
+    for _, _, b in found:
+        for group in b.get("groups", []):
+            (fluid_keys if group["kind"] == "fluid" else item_keys).update(s[0] for s in group["alts"][:RECIPE_ALTERNATIVES_MAX])
+        if b.get("research"):
+            item_keys.add(b["research"]["item"][0])
     item_names = idx.names(recipe_index.ITEM, item_keys | ({rkey} if kind == recipe_index.ITEM else set()))
     fluid_names = idx.names(recipe_index.FLUID, fluid_keys | ({rkey} if kind == recipe_index.FLUID else set()))
     rows = []
@@ -786,7 +791,7 @@ def find_recipes(user, args):
         row = {
             "machine": machines[0] if machines else map_name,
             "type": b["type"],
-            "outputs": _stacks(b["o"], "item", item_names, chances=True) + _stacks(b["g"], "fluid", fluid_names),
+            "outputs": _stacks(b["o"], "item", item_names, chances=True) + _stacks(b["g"], "fluid", fluid_names, chances=True),
         }
         if b["type"] in ("shaped", "shapeless"):
             row["slots"] = []
@@ -806,7 +811,16 @@ def find_recipes(user, args):
                 row.update(width=b["w"], height=b["h"], mirrored=b["mirrored"])
         else:
             row["inputs"] = _stacks(b["i"], "item", item_names) + _stacks(b["f"], "fluid", fluid_names)
-        if b["type"] == "gt":
+        if "groups" in b:
+            row["ingredient_groups"] = [{"alternatives": _stacks(group["alts"][:RECIPE_ALTERNATIVES_MAX], group["kind"],
+                                                                 fluid_names if group["kind"] == "fluid" else item_names),
+                                          "alternatives_total": len(group["alts"])} for group in b["groups"]]
+        if b.get("research"):
+            research = b["research"]
+            row["research"] = {**research, "item": _stacks([research["item"]], "item", item_names)[0]}
+        if b.get("requirements"):
+            row["requirements"] = b["requirements"]
+        if b["type"] in ("gt", "assembly_line"):
             row.update(eu_per_tick=b["e"], tier=recipes._tier(b["e"]))
         if "d" in b:
             row["seconds"] = round(b["d"] / 20, 2)
@@ -824,8 +838,8 @@ def find_recipes(user, args):
     names = item_names if kind == recipe_index.ITEM else fluid_names
     has_crafting = "crafting" in idx.coverage.get("handlers", [])
     coverage = recipes.coverage_summary(idx)
-    note = ("Supported GregTech, crafting-table and furnace recipes from the game data. "
-            "Crafting first, then furnace, then GregTech by absolute EU/t and duration. "
+    note = ("Supported GregTech, crafting-table and furnace recipes from the game data. Assembly-line research and NEI display recipes are included when the bundle reports them. "
+            "Crafting first, then furnace, then GregTech/Assembly Line by absolute EU/t and duration; NEI displays last. "
             "Slot alternatives are samples; their totals include every exported alternative. "
             "NBT variants, custom matching and other handlers may be missing or approximate." if has_crafting else
             "GregTech machine recipes from this older bundle, cheapest first. Recipes for a crafting table, furnace and other "

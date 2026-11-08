@@ -35,7 +35,10 @@ final class CraftingRecipes {
     int craftingCount;
     int furnaceCount;
 
-    CraftingRecipes(Function<ItemStack, Integer> itemIndex) {
+    private final Function<ItemStack, List<String>> displays;
+
+    CraftingRecipes(Function<ItemStack, Integer> itemIndex, Function<ItemStack, List<String>> displays) {
+        this.displays = displays;
         this.itemIndex = itemIndex;
         for (String name : OreDictionary.getOreNames()) {
             oreNames.put(OreDictionary.getOres(name), name);
@@ -44,6 +47,7 @@ final class CraftingRecipes {
 
     Map<String, Object> collect(Map<String, Object> maps) {
         List<Object> crafting = new ArrayList<>();
+        List<Object> archive = new ArrayList<>();
         Map<String, Object> craftingReport = report();
         @SuppressWarnings("unchecked")
         Map<String, Object> classes = (Map<String, Object>) craftingReport.get("classes");
@@ -59,6 +63,7 @@ final class CraftingRecipes {
                 increment(craftingReport, "exported");
                 increment(classReport, "exported");
             } catch (Skipped e) {
+                archive.add(java.util.Arrays.asList(e.getMessage(), RecipeSnapshot.of(entry)));
                 skip(craftingReport, e.getMessage());
                 skip(classReport, e.getMessage());
             } catch (Throwable e) {
@@ -68,7 +73,10 @@ final class CraftingRecipes {
             }
         }
         craftingCount = crafting.size();
-        maps.put("crafting", map("Crafting Table", "minecraft:crafting_table:0", crafting));
+        Map<String,Object> craftingMap = map("Crafting Table", "minecraft:crafting_table:0", crafting);
+        craftingMap.put("archive", archive);
+        craftingReport.put("archived", archive.size());
+        maps.put("crafting", craftingMap);
 
         List<Object> furnace = new ArrayList<>();
         Map<String, Object> furnaceReport = report();
@@ -101,7 +109,7 @@ final class CraftingRecipes {
         coverage.put("identity", "item_id_damage");
         coverage.put("limitations", Arrays.asList("NBT constraints and variants are not indexed",
                 "Custom matching, tool damage and returned containers may differ",
-                "Other recipe handlers and dynamic crafting recipes are not included"));
+                "NEI displays may omit costs or conditions; unavailable/non-enumerable handlers and dynamic crafting remain limited"));
         coverage.put("crafting", craftingReport);
         coverage.put("furnace", furnaceReport);
         IconExportMod.LOG.info("Exported {} crafting and {} furnace recipes.", craftingCount, furnaceCount);
@@ -223,8 +231,8 @@ final class CraftingRecipes {
         for (Object choice : choices) {
             if (!(choice instanceof ItemStack)) throw new Skipped("unsupported_ingredient");
             ItemStack stack = (ItemStack) choice;
-            List<Integer> entry = stack(stack, 1, approximate);
-            unique.putIfAbsent(Recipes.keyOf(stack), entry);
+            List<Object> entry = stack(stack, 1, approximate);
+            unique.putIfAbsent(Recipes.keyOf(stack) + "|" + (stack.hasTagCompound() ? stack.getTagCompound().toString() : ""), entry);
         }
         if (unique.isEmpty()) throw new Skipped("unresolved_ingredient");
         Map<String, Object> slot = new LinkedHashMap<>();
@@ -233,11 +241,11 @@ final class CraftingRecipes {
         return slot;
     }
 
-    private List<Integer> stack(ItemStack stack, int amount, TreeSet<String> approximate) {
+    private List<Object> stack(ItemStack stack, int amount, TreeSet<String> approximate) {
         Integer index = stack == null ? null : itemIndex.apply(stack);
         if (index == null || amount <= 0) throw new Skipped("unresolved_stack");
         if (stack.hasTagCompound()) approximate.add("nbt");
-        return Arrays.asList(index, amount);
+        return Arrays.asList(index, amount, null, displays.apply(stack));
     }
 
     private static boolean implementsInterface(Class<?> cls, String name) {

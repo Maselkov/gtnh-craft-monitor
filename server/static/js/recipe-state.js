@@ -1,6 +1,14 @@
 // Recipe URLs and trail operations, independent of dialogs and fetches.
 export function recipeItemKey(item) {
-  if (!item || item.kind === 'essentia' || !item.internal) return null;
+  if (!item || item.kind === 'essentia') return null;
+  // Crafting-plan entries retain the ME storage key instead of repeating
+  // its identity fields: mod|internal|damage|kind[|NBT variant].
+  if (!item.internal && typeof item.key === 'string') {
+    const [mod, internal, damage, kind] = item.key.split('|');
+    if (!internal || !['item', 'fluid'].includes(kind) || !/^\d*$/.test(damage)) return null;
+    return recipeItemKey({ mod, internal, damage: damage === '' ? 0 : Number(damage), kind });
+  }
+  if (!item.internal) return null;
   if (item.kind === 'fluid' || !item.mod) return `fluid:${item.internal}`;
   return `${item.mod}:${item.internal}:${item.damage == null ? '*' : item.damage}`;
 }

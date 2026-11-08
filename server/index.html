@@ -405,8 +405,15 @@
         <button class="modal-btn secondary" id="recipeViewerMaking" data-action="recipe-direction" data-dir="making" aria-pressed="true">Recipes</button>
         <button class="modal-btn secondary" id="recipeViewerUsing" data-action="recipe-direction" data-dir="using" aria-pressed="false">Uses</button>
       </div>
-      <div id="recipeViewerMaps" class="recipe-map-tabs" role="group" aria-label="Recipe category"></div>
-      <div id="recipeViewerList" class="recipe-viewer-list" tabindex="0" aria-label="Recipes"></div>
+      <div id="recipeCategoryNav" class="recipe-category-nav" hidden>
+        <div class="recipe-tab-strip">
+          <button id="recipeTabsPrevious" class="recipe-tab-scroll" data-action="recipe-tabs-previous" aria-label="Scroll categories left" hidden>&lsaquo;</button>
+          <div id="recipeViewerMaps" class="recipe-map-tabs" role="tablist" aria-label="Recipe category"></div>
+          <button id="recipeTabsNext" class="recipe-tab-scroll" data-action="recipe-tabs-next" aria-label="Scroll categories right" hidden>&rsaquo;</button>
+        </div>
+        <div class="recipe-category-heading"><span id="recipeCategoryName"></span><span id="recipeCategoryCount"></span></div>
+      </div>
+      <div id="recipeViewerList" class="recipe-viewer-list" role="tabpanel" tabindex="0" aria-label="Recipes"></div>
       <div class="recipe-viewer-footer">
         <span id="recipeViewerStatus" role="status" aria-live="polite"></span>
         <button class="modal-btn secondary" id="recipeViewerMore" data-action="recipe-more" hidden>Load more</button>
@@ -414,7 +421,7 @@
       </div>
       <details id="recipeViewerDetails" hidden><summary>Item details</summary><div id="recipeViewerInfo" class="game-text recipe-item-info"></div></details>
       <div id="recipeViewerCoverage" class="recipe-coverage"></div>
-      <div class="recipe-help">Select a stack for recipes. Right-click, Shift-click or choose Uses to see where it is used. Focus a stack and press R or U.</div>
+      <div class="recipe-help">Left-click a stack for recipes; right-click or choose Uses to see where it is used. Hover or focus a stack and press R or U.</div>
     </div>
   </div>
 

@@ -5,7 +5,10 @@
 // noticeable OS-level hover delay before it appears, which is exactly
 // what a "like in-game" browse experience shouldn't have. This shows
 // immediately on mouseover instead, positioned at the cursor.
+import { bindItemRecipeTarget } from './item-shortcuts.js';
+
 let tooltipEl = null;
+let tooltipOwner = null;
 // Last cursor position over a bound cell, so a grid that re-renders
 // under a still cursor can put the tooltip back in the same place.
 let lastX = 0;
@@ -21,12 +24,13 @@ function ensureTooltip() {
   return tooltipEl;
 }
 
-export function tooltipVisible() {
-  return !!tooltipEl && tooltipEl.style.display !== 'none';
+export function tooltipVisible(owner = null) {
+  return !!tooltipEl && tooltipEl.style.display !== 'none' && (!owner || owner === tooltipOwner);
 }
 
 export function hideTooltip() {
   if (tooltipEl) tooltipEl.style.display = 'none';
+  tooltipOwner = null;
 }
 
 function positionTooltip(x, y) {
@@ -47,7 +51,8 @@ function positionTooltip(x, y) {
 
 // Shows html at (x, y), or at the last known cursor position if those
 // are left out.
-export function showTooltip(html, x = lastX, y = lastY) {
+export function showTooltip(html, x = lastX, y = lastY, owner = null) {
+  tooltipOwner = owner;
   const tip = ensureTooltip();
   tip.innerHTML = html;
   tip.style.display = 'block';
@@ -58,14 +63,16 @@ export function showTooltip(html, x = lastX, y = lastY) {
 // cells come and go with every render (some grids still replace their
 // content wholesale), so per-cell listeners would need rebinding.
 // htmlForCell returns the tooltip markup, or null for no tooltip.
-export function bindCellTooltip(container, cellSelector, htmlForCell) {
+// itemForCell optionally resolves the live item for shared R/U navigation.
+export function bindCellTooltip(container, cellSelector, htmlForCell, itemForCell = null) {
+  if (itemForCell) bindItemRecipeTarget(container, cellSelector, itemForCell);
   container.addEventListener('mouseover', (e) => {
     const cell = e.target.closest(cellSelector);
     if (!cell) return;
     lastX = e.clientX;
     lastY = e.clientY;
     const html = htmlForCell(cell);
-    if (html) showTooltip(html, lastX, lastY); else hideTooltip();
+    if (html) showTooltip(html, lastX, lastY, container); else hideTooltip();
   });
   container.addEventListener('mousemove', (e) => {
     const cell = e.target.closest(cellSelector);

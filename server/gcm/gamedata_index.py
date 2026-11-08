@@ -32,10 +32,10 @@ from urllib.parse import quote
 FILE = "index.sqlite"
 # Bumped when the schema or what goes in it changes: an index of another
 # format is built again.
-FORMAT = 2
+FORMAT = 3
 # The icon lookup's tables (icons_lookup.json's keys), numbered for the
 # icon table's ns column.
-ICON_TABLES = ("by_key", "by_key_label", "by_key_material", "by_label", "fluids_by_key", "aspects_by_key", "bleed")
+ICON_TABLES = ("by_key", "by_key_label", "by_key_material", "by_label", "fluids_by_key", "aspects_by_key", "bleed", "by_variant", "ui_assets")
 
 SCHEMA = """
 CREATE TABLE meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);

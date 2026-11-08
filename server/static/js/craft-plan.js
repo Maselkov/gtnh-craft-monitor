@@ -708,5 +708,5 @@ export function setupCraftPlanActions() {
   bindCellTooltip(document.getElementById('craftPlanBody'), '.plan-cell', (cell) => {
     const it = itemsByKey.get(cell.dataset.key);
     return it ? cellTooltipHtml(it) : null;
-  });
+  }, cell => itemsByKey.get(cell.dataset.key));
 }

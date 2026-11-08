@@ -60,7 +60,8 @@ function mergeItems(job) {
       let m = merged.get(key);
       if (!m) {
         m = {
-          key, name: it.name, icon: it.icon, mod: it.mod, internal: it.internal, damage: it.damage,
+          key, name: it.name, icon: it.icon, mod: it.mod, internal: it.internal, damage: it.damage ?? 0,
+          kind: it.kind || (it.mod ? 'item' : 'fluid'),
           crafting: 0, scheduled: 0, stored: 0,
         };
         merged.set(key, m);
@@ -102,7 +103,7 @@ function cellHtml(m) {
     ? `<img class="${iconClass('ingredient-cell-icon', m.icon)}" src="${iconUrl(m.icon)}" alt="" loading="lazy" data-remove-on-error>`
     : '';
   const linkAttrs = `data-mod="${escapeHtml(m.mod || '')}" data-internal="${escapeHtml(m.internal || '')}" `
-    + `data-damage="${m.damage != null ? m.damage : ''}" data-name="${escapeHtml(m.name || '?')}" `
+    + `data-kind="${escapeHtml(m.kind)}" data-damage="${m.damage != null ? m.damage : ''}" data-name="${escapeHtml(m.name || '?')}" `
     + `data-icon="${escapeHtml(m.icon || '')}"`;
   const focusable = m.internal ? ' tabindex="0" role="button"' : '';
   return `<div class="ingredient-cell item-history-link${m.crafting > 0 ? ' crafting' : ''}"${focusable} data-key="${escapeHtml(m.key)}" ${linkAttrs}>
@@ -167,9 +168,9 @@ function renderGrid(job) {
   // The cell under a still cursor may have new numbers, or be gone (no
   // mouseout fires for a removed element) - refresh the tooltip from the
   // same item, or drop it if that item is gone.
-  if (tooltipVisible() && hoveredKey) {
+  if (tooltipVisible(grid) && hoveredKey) {
     const m = shownItems.get(hoveredKey);
-    if (m) showTooltip(tooltipHtml(m)); else hideTooltip();
+    if (m) showTooltip(tooltipHtml(m), undefined, undefined, grid); else hideTooltip();
   }
 }
 
@@ -313,5 +314,5 @@ export function setupIngredientsActions() {
     const m = shownItems.get(cell.dataset.key);
     hoveredKey = m ? m.key : null;
     return m ? tooltipHtml(m) : null;
-  });
+  }, cell => shownItems.get(cell.dataset.key));
 }

@@ -13,6 +13,8 @@ import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -106,11 +108,17 @@ final class ExportOutput {
     }
 
     /** structures: the multiblocks (Structures.collect), or null. */
-    void finish(List<ExportJob> jobs, Map<String, Object> report, Structures.Result structures) throws IOException {
+    void finish(List<ExportJob> jobs, Map<String, Object> report, Structures.Result structures, Recipes recipes, Map<String,Object> recipeFile) throws IOException {
         zip.close();
         Files.move(zipTmp.toPath(), new File(outDir, "images.zip").toPath(), StandardCopyOption.REPLACE_EXISTING);
 
         Map<String, Object> lookup = buildLookup(jobs);
+        lookup.put("by_variant", recipes.presentation.imageLookup(jobs));
+        lookup.put("ui_assets", recipes.presentation.assetLookup());
+        @SuppressWarnings("unchecked") Map<String,Integer> bleed=(Map<String,Integer>)lookup.get("bleed");
+        @SuppressWarnings("unchecked") Map<String,String> displays=(Map<String,String>)lookup.get("by_variant");
+        Set<String> displayed=new HashSet<>(displays.values());
+        for(ExportJob job:jobs)if(job.bleeds&&displayed.contains(job.imagePath))bleed.put(job.imagePath,IconRenderer.BLEED);
         writeJson("icons_lookup.json", lookup, false);
 
         TreeSet<String> catalog = new TreeSet<>();
@@ -145,8 +153,6 @@ final class ExportOutput {
         report.put("fluidInfo", ((Map<?, ?>) info.get("fluids")).size());
         report.put("modNames", ((Map<?, ?>) info.get("mods")).size());
 
-        Recipes recipes = new Recipes();
-        Map<String, Object> recipeFile = recipes.collect();
         new File(outDir, "recipes.json.gz").delete();
         if (recipeFile != null) {
             writeGzipJson("recipes.json.gz", recipeFile);

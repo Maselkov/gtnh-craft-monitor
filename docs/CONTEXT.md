@@ -2212,3 +2212,42 @@ selection. Cycle timers clear on navigation/close, pause for hover/focus and sto
 under reduced motion. Network snapshot events update only stock links, without
 resetting loaded pages. `dev.py` supplies typed crafting/furnace/GT demo chains and
 34 circuit uses for paging. Its recipes are illustrative, not pack knowledge.
+
+
+**Recipe source format 3 and index format 4: coverage audit.** The follow-up
+[audit](recipe-coverage.md) inventories GT maps and registered NEI categories from
+the real 2.9.0 client, not guessed handler coverage. `AssemblyRecipes` merges
+TecTech research overlays with native GT assembly-line production, preserving
+ordered alternatives, fluids and NBT in its matching signature. Research EU/t is
+separate: TecTech uses its inherited `mEUt` for research, not production. Unmatched
+or ambiguous research overlays fail export.
+
+`NeiRecipes` captures approximate displays outside native adapters, including
+larger crafting and fluid groups. `ThaumcraftRecipes` captures static infusion
+when NEI's dynamic expansion fails without a player. GT fake maps are retained
+as displays. Scanner/research/duplicate assembly diagrams stay in the source but
+are not indexed as ways to manufacture their fake research-target outputs.
+GT records with no usable outputs (especially generator fuels) and skipped
+crafting records are archived. CI balances every registered GT record against
+native, display or archived counts and requires nonempty Assembly Line/audit data.
+
+`RecipeSnapshot` retains available values, stack roles, NBT and positions without
+walking entire registry/client/world graphs. Raw snapshots and archive arrays stay
+in the compressed source; the streaming index discards them record by record.
+Unknown/cyclic/deep values are marked, not silently claimed complete. Later readers
+can interpret captured archives without another Minecraft render; arbitrary
+matching code, uncaptured values and world/player-dependent content remain limits.
+Every NEI category has a native/display/archive/empty/unavailable audit outcome.
+`coverage_summary` returns bounded aggregate coverage, leaving the full inventory
+in the bundle. The viewer and MCP show research separately and label displays and
+captured additional requirements; processing checks remain native-GT-only.
+
+
+Recipe preview presentation (source format 4, SQLite format 5): canonical recipe
+keys remain ID/damage, with exact NBT display stacks referenced independently.
+The source also carries resolved GUI images, declarative layouts, static
+research metadata and aspect names. The index streams the display pool and
+batches page lookups. The viewer renders texture crops and positioned slots
+without inline markup styles. NEI other-stack roles stay display-only; static
+research metadata carries no player completion state. Arbitrary Java drawing
+callbacks and player-dependent recipe generation remain outside this contract.

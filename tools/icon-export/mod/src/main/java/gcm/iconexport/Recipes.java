@@ -21,10 +21,10 @@ import codechicken.nei.recipe.RecipeCatalysts;
 import cpw.mods.fml.common.registry.GameRegistry;
 
 /**
- * recipes.json.gz: GregTech's recipe maps, for the server's check of the network's patterns
- * against another GTNH version's recipes (server/gcm/recipes.py).
+ * recipes.json.gz: native GT/crafting/assembly-line recipes and NEI displays/archives,
+ * for the recipe viewer and the native-GT processing-pattern check.
  *
- * <p>{@code {"format": 2, "items": [key, ...], "item_names": [...], "fluids": [name, ...],
+ * <p>{@code {"format": 3, "items": [key, ...], "item_names": [...], "fluids": [name, ...],
  * "fluid_names": [...], "maps": {name: {"machines": [{"name", "key"}, ...], "recipes": [...]}}}}.
  * Items are keyed as ExportJob keys them ({@code mod:internal:damage}, damage {@code *} for any),
  * fluids by registry name, and recipes refer to both by index; the names lists hold each one's
@@ -36,7 +36,7 @@ import cpw.mods.fml.common.registry.GameRegistry;
  *
  * <p>A map's machines are what NEI lists as catalysts for its recipe categories: their names are
  * what the ME Interface Terminal calls a machine, which tells the server which map a pattern is
- * for. Fake recipes (NEI-only displays) and disabled ones are left out.
+ * for. NEI-only displays are separate from production; disabled and outputless records stay in archives.
  *
  * <p>GregTech is read by reflection, so the mod still compiles against NEI alone and runs
  * without GregTech; field names that changed between GTNH versions have fallbacks.
@@ -47,6 +47,7 @@ final class Recipes {
     private final List<String> itemNames = new ArrayList<>();
     private final Map<String, Integer> fluids = new LinkedHashMap<>();
     private final List<String> fluidNames = new ArrayList<>();
+    final RecipePresentation presentation = new RecipePresentation();
     int recipeCount;
     int mapsWithMachines;
     Map<String, Object> coverage;
@@ -64,24 +65,45 @@ final class Recipes {
             return null;
         }
         Map<String, Object> maps = new TreeMap<>();
+        Map<String, Object> mapAudit = new TreeMap<>();
         boolean catalystsLoaded = false;
         for (Map.Entry<?, ?> entry : all.entrySet()) {
             Object map = entry.getValue();
             String name = String.valueOf(entry.getKey());
             List<Object> recipes = new ArrayList<>();
+            List<Object> displays = new ArrayList<>();
+            List<Object> archive = new ArrayList<>();
+            Map<String, Integer> counts = new TreeMap<>();
+            mapAudit.put(name, counts);
             try {
                 Collection<?> list = (Collection<?>) map.getClass().getMethod("getAllRecipes").invoke(map);
                 for (Object recipe : list) {
+                    counts.merge("registered", 1, Integer::sum);
+                    if (flag(recipe, "mFakeRecipe", false)) counts.merge("fake", 1, Integer::sum);
+                    else if (!flag(recipe, "mEnabled", true)) counts.merge("disabled", 1, Integer::sum);
                     Map<String, Object> out = recipe(recipe);
+                    if (out == null && flag(recipe, "mFakeRecipe", false) && flag(recipe, "mEnabled", true)) {
+                        out = recipe(recipe, true);
+                        if (out != null) {
+                            out.put("type", "nei"); out.put("groups", java.util.Collections.emptyList());
+                            out.put("approximate", java.util.Collections.singletonList("nei_display"));
+                            displays.add(out); counts.merge("display_exported", 1, Integer::sum);
+                        } else {
+                            archive.add(recipe(recipe, true, true)); counts.merge("archived", 1, Integer::sum);
+                        }
+                        continue;
+                    }
                     if (out != null) {
                         recipes.add(out);
+                        counts.merge("exported", 1, Integer::sum);
+                    } else {
+                        archive.add(recipe(recipe, true, true)); counts.merge("archived", 1, Integer::sum);
                     }
                 }
             } catch (Throwable t) {
-                IconExportMod.LOG.warn("Couldn't read GregTech recipe map {}: {}", name, t.toString());
-                continue;
+                throw new IllegalStateException("Could not read GregTech recipe map " + name, t);
             }
-            if (recipes.isEmpty()) {
+            if (recipes.isEmpty() && displays.isEmpty() && archive.isEmpty()) {
                 continue;
             }
             List<Object> machines = machines(map, name);
@@ -100,18 +122,36 @@ final class Recipes {
             }
             Map<String, Object> out = new LinkedHashMap<>();
             out.put("machines", machines);
+            out.put("preview", presentation.gt(map));
             out.put("recipes", recipes);
-            maps.put(name, out);
+            if (!archive.isEmpty()) out.put("archive", archive);
+            if (!recipes.isEmpty() || !archive.isEmpty()) maps.put(name, out);
+            if (!displays.isEmpty()) {
+                Map<String, Object> displayMap = new LinkedHashMap<>();
+                displayMap.put("machines", machines); displayMap.put("recipes", displays);
+                displayMap.put("preview", out.get("preview"));
+                maps.put("nei.gt." + name, displayMap);
+            }
             recipeCount += recipes.size();
         }
         IconExportMod.LOG.info("Exported {} GregTech recipes from {} maps, {} with machines.", recipeCount,
                 maps.size(), mapsWithMachines);
-        CraftingRecipes crafting = new CraftingRecipes(this::itemIndex);
+        CraftingRecipes crafting = new CraftingRecipes(this::itemIndex, presentation::variants);
         coverage = crafting.collect(maps);
+        coverage.put("assembly_line", new AssemblyRecipes(this).collect(maps));
+        coverage.put("gt_maps", mapAudit);
+        coverage.put("thaumcraft_infusion", new ThaumcraftRecipes(this).collect(maps));
+        coverage.put("nei_handlers", new NeiRecipes(this).collect(maps));
+        coverage.put("handlers", java.util.Arrays.asList("gregtech", "crafting", "furnace", "assembly_line", "nei"));
         craftingCount = crafting.craftingCount;
         furnaceCount = crafting.furnaceCount;
         Map<String, Object> file = new LinkedHashMap<>();
-        file.put("format", 2);
+        file.put("format", 4);
+        presentation.aspects();
+        file.put("display_stacks", presentation.variants);
+        file.put("ui_assets", presentation.assets);
+        file.put("research_info", presentation.research);
+        file.put("aspects", presentation.aspects);
         file.put("coverage", coverage);
         file.put("items", new ArrayList<>(items.keySet()));
         file.put("item_names", itemNames);
@@ -121,8 +161,12 @@ final class Recipes {
         return file;
     }
 
-    private Map<String, Object> recipe(Object recipe) {
-        if (flag(recipe, "mFakeRecipe", false) || !flag(recipe, "mEnabled", true)) {
+    private Map<String, Object> recipe(Object recipe) { return recipe(recipe, false); }
+
+    private Map<String, Object> recipe(Object recipe, boolean display) { return recipe(recipe, display, false); }
+
+    private Map<String, Object> recipe(Object recipe, boolean display, boolean archive) {
+        if (!archive && ((!display && flag(recipe, "mFakeRecipe", false)) || !flag(recipe, "mEnabled", true))) {
             return null;
         }
         ItemStack[] inputs = (ItemStack[]) field(recipe, "mInputs");
@@ -136,11 +180,15 @@ final class Recipes {
         }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("type", "gt");
+        if (archive) {
+            out.put("source_enabled", flag(recipe, "mEnabled", true));
+            out.put("source_fake", flag(recipe, "mFakeRecipe", false));
+        }
         putIfAny(out, "i", stacks(inputs, null));
         putIfAny(out, "f", fluidStacks(fluidInputs));
         putIfAny(out, "o", stacks(outputs, chances instanceof int[] ? (int[]) chances : null));
-        putIfAny(out, "g", fluidStacks(fluidOutputs));
-        if (!out.containsKey("o") && !out.containsKey("g")) {
+        putIfAny(out, "g", fluidStacks(fluidOutputs, field(recipe, "mFluidOutputChances")));
+        if (!archive && !out.containsKey("o") && !out.containsKey("g")) {
             return null;
         }
         out.put("e", intField(recipe, "mEUt"));
@@ -149,10 +197,51 @@ final class Recipes {
         if (special != 0) {
             out.put("s", special);
         }
+        Map<String, Object> details = new LinkedHashMap<>();
+        try {
+            Object storage = recipe.getClass().getMethod("getMetadataStorage").invoke(recipe);
+            if (storage != null) {
+                Map<String, Object> metadata = new TreeMap<>();
+                for (Object entry : (java.util.Set<?>) storage.getClass().getMethod("getEntries").invoke(storage)) {
+                    Map.Entry<?, ?> e = (Map.Entry<?, ?>) entry;
+                    metadata.put(metadataName(e.getKey()), RecipeSnapshot.of(e.getValue()));
+                }
+                if (!metadata.isEmpty()) details.put("metadata", metadata);
+            }
+            Object description = recipe.getClass().getMethod("getNeiDesc").invoke(recipe);
+            if (description != null) details.put("description", RecipeSnapshot.of(description));
+        } catch (NoSuchMethodException olderVersion) {
+            // Older GT versions carry these in the special value instead.
+        } catch (ReflectiveOperationException e) { throw new IllegalStateException(e); }
+        for (String field : new String[] { "mSpecialItems", "mAltFluidInputs", "mInputChances", "mFluidInputChances", "mFluidOutputChances" }) {
+            Object value = field(recipe, field);
+            if (value != null) details.put(field, RecipeSnapshot.of(value));
+        }
+        boolean nbt = flag(recipe, "isNBTSensitive", false);
+        if (inputs != null) for (ItemStack stack : inputs) nbt |= stack != null && stack.hasTagCompound();
+        if (outputs != null) for (ItemStack stack : outputs) nbt |= stack != null && stack.hasTagCompound();
+        if (nbt) {
+            details.put("nbt_sensitive", true);
+            details.put("nbt_inputs", RecipeSnapshot.of(inputs));
+            details.put("nbt_outputs", RecipeSnapshot.of(outputs));
+            out.put("approximate", java.util.Collections.singletonList("nbt"));
+        }
+        if (flag(recipe, "mNeedsEmptyOutput", false)) details.put("needs_empty_output", true);
+        Object specialItems=field(recipe,"mSpecialItems");
+        if(specialItems instanceof ItemStack) out.put("aux",stacks(new ItemStack[]{(ItemStack)specialItems},null));
+        else if(specialItems instanceof ItemStack[]) out.put("aux",stacks((ItemStack[])specialItems,null));
+        Map<String,Object> indices=new LinkedHashMap<>();
+        for(Object[] side:new Object[][]{{"i",inputs},{"o",outputs},{"f",fluidInputs},{"g",fluidOutputs}}) {
+            List<Integer> positions=new ArrayList<>();
+            if(side[1]!=null) for(int n=0;n<java.lang.reflect.Array.getLength(side[1]);n++) if(java.lang.reflect.Array.get(side[1],n)!=null) positions.add(n);
+            indices.put((String)side[0],positions);
+        }
+        out.put("preview_indices",indices);
+        if (!details.isEmpty()) out.put("requirements", details);
         return out;
     }
 
-    private List<Object> stacks(ItemStack[] stacks, int[] chances) {
+    List<Object> stacks(ItemStack[] stacks, int[] chances) {
         List<Object> out = new ArrayList<>();
         if (stacks == null) {
             return out;
@@ -162,23 +251,29 @@ final class Recipes {
             if (index == null) {
                 continue;
             }
-            List<Integer> entry = new ArrayList<>(3);
+            List<Object> entry = new ArrayList<>(4);
             entry.add(index);
             entry.add(stacks[i].stackSize);
             if (chances != null && i < chances.length && chances[i] > 0 && chances[i] < 10000) {
                 entry.add(chances[i]);
-            }
+            } else entry.add(null);
+            entry.add(presentation.variants(stacks[i]));
             out.add(entry);
         }
         return out;
     }
 
-    private List<Object> fluidStacks(FluidStack[] stacks) {
+    List<Object> fluidStacks(FluidStack[] stacks) { return fluidStacks(stacks, null); }
+
+    List<Object> fluidStacks(FluidStack[] stacks, Object rawChances) {
+        int[] chances = rawChances instanceof int[] ? (int[]) rawChances : null;
+        int at = -1;
         List<Object> out = new ArrayList<>();
         if (stacks == null) {
             return out;
         }
         for (FluidStack stack : stacks) {
+            at++;
             if (stack == null || stack.getFluid() == null) {
                 continue;
             }
@@ -192,12 +287,13 @@ final class Recipes {
             List<Integer> entry = new ArrayList<>(2);
             entry.add(index);
             entry.add(stack.amount);
+            if (chances != null && at < chances.length && chances[at] > 0 && chances[at] < 10000) entry.add(chances[at]);
             out.add(entry);
         }
         return out;
     }
 
-    private Integer itemIndex(ItemStack stack) {
+    Integer itemIndex(ItemStack stack) {
         String key = keyOf(stack);
         if (key == null) {
             return null;
@@ -272,6 +368,15 @@ final class Recipes {
         return new ArrayList<>(byName.values());
     }
 
+    private static String metadataName(Object key) {
+        for (Class<?> c=key.getClass();c!=null;c=c.getSuperclass()) {
+            try { Field f=c.getDeclaredField("identifier");f.setAccessible(true);return String.valueOf(f.get(key)); }
+            catch(NoSuchFieldException absent) { /* Try superclass. */ }
+            catch(IllegalAccessException e) { throw new IllegalStateException(e); }
+        }
+        return String.valueOf(key);
+    }
+
     /** A display name, or null where getting it throws (some need a world) or there's none. */
     private static String nameOf(Supplier<String> name) {
         try {
@@ -288,7 +393,7 @@ final class Recipes {
         }
     }
 
-    private static Object field(Object target, String name) {
+    static Object field(Object target, String name) {
         try {
             return target.getClass().getField(name).get(target);
         } catch (Throwable t) {
@@ -296,7 +401,7 @@ final class Recipes {
         }
     }
 
-    private static int intField(Object target, String name) {
+    static int intField(Object target, String name) {
         Object value = field(target, name);
         return value instanceof Integer ? (Integer) value : 0;
     }

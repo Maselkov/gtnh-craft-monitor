@@ -21,7 +21,7 @@ function isShown(overlay) {
 }
 
 // The dialog on top: the highest z-index, then the latest in the page.
-function topDialog() {
+export function topDialog() {
   let top = null;
   let topZ = -Infinity;
   for (const overlay of document.querySelectorAll('.modal-overlay')) {

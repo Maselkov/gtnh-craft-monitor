@@ -111,3 +111,92 @@ def test_old_gt_only_bundles_still_present_recipes(client, game_recipes):
     assert body['coverage']['handlers'] == ['gregtech'] and 'crafting' not in body['making']
     rows = request(client, '/api/recipes', key='gregtech:gt.metaitem.01:12028').get_json()['recipes']
     assert rows[0]['type'] == 'gt' and rows[0]['eut'] == 120 and 'grid' not in rows[0]
+
+
+def test_assembly_and_nei_presentation_keeps_research_separate_from_consumed_ingredients(tmp_path):
+    from test_recipe_index import PLANKS, build_index, format3
+    from gcm import recipe_index
+    idx = build_index(tmp_path, format3())
+    try:
+        rows, _ = idx.made_by(recipe_index.ITEM, PLANKS)
+        shown = recipe_viewer.present_recipes(rows, idx)
+        assembly = next(r for r in shown if r['type'] == 'assembly_line')
+        assert assembly['eut'] == 32768 and assembly['research']['eut'] == 8192
+        assert assembly['research']['item']['key'] == 'minecraft:log:0'
+        assert assembly['groups'][0]['alternatives_total'] == 20
+        assert len(assembly['groups'][0]['alternatives']) == 16
+        display = next(r for r in shown if r['type'] == 'nei')
+        assert display['groups'][0]['alternatives'][0]['key'] == 'fluid:water'
+        assert display['requirements']['mana'] == 2000 and 'eut' not in display and 'ticks' not in display
+    finally:
+        idx.close()
+
+
+def test_preview_variants_geometry_nc_and_static_research(tmp_path):
+    from test_recipe_index import EBF, PLANKS, build_index, format4
+    from gcm import recipe_index
+    idx = build_index(tmp_path, format4())
+    try:
+        shown = recipe_viewer.present_recipes(idx.making(recipe_index.ITEM, PLANKS), idx)
+        row = next(r for r in shown if r['map'] == EBF and r['auxiliary'])
+        slots = row['preview']['slots']
+        choices = slots[0]['alternatives'][0]['display_variants']
+        assert [e['name'] for e in choices] == ['Charged Log', 'Empty Log']
+        assert all(e['key'] == 'minecraft:log:*' and e['wildcard'] and e['damage'] is None for e in choices)
+        assert choices[0]['icon'].endswith('item/charged.webp')
+        assert slots[1]['alternatives'] == []  # a hole keeps its original position
+        assert slots[2]['alternatives'][0]['size'] == 0
+        assert slots[0]['frame'].endswith('ui/frame.webp')
+        assert row['preview']['layers'][0]['uv'] == [0, 0, 1, .5]
+        assert row['preview']['aspects'][0]['name'] == 'Order'
+        assert row['preview']['research']['state'] == 'unknown'
+        assert row['preview']['research']['name'] == 'Infusion Research'
+    finally:
+        idx.close()
+
+
+@pytest.mark.parametrize('path', ['https://evil.test/item/a.webp', 'ui/../x.webp', '/ui/a.webp', 'ui/a.svg', 'ui\\x.webp'])
+def test_preview_images_reject_foreign_and_traversal_paths(path):
+    from gcm import icons
+    assert icons.recipe_image(path) is None
+
+
+def test_recipe_tooltips_use_display_identity_without_changing_recipe_navigation(tmp_path, monkeypatch):
+    from test_recipe_index import EBF, PLANKS, build_index, format4
+    from gcm import item_info, recipe_index
+    raw = format4()
+    raw['display_stacks']['charged']['nbt'] = '{charge:10}'
+    seen = []
+    def describe(item):
+        seen.append(dict(item))
+        return {'description': f"{item['name']} / {item.get('damage')}", 'shift_description': 'More details', 'rarity': 'd'}
+    monkeypatch.setattr(item_info, 'describe', describe)
+    monkeypatch.setattr(item_info, 'mod_name', lambda mod: 'Minecraft' if mod == 'minecraft' else mod)
+    idx = build_index(tmp_path, raw)
+    try:
+        shown = recipe_viewer.present_recipes(idx.making(recipe_index.ITEM, PLANKS), idx)
+        row = next(r for r in shown if r['map'] == EBF and r['auxiliary'])
+        charged = row['preview']['slots'][0]['alternatives'][0]['display_variants'][0]
+        assert charged['info'] == {'description': 'Charged Log / 7', 'shift_description': 'More details',
+                                   'rarity': 'd', 'mod_name': 'Minecraft'}
+        assert charged['key'] == 'minecraft:log:*' and charged['damage'] is None
+        assert any(i['name'] == 'Charged Log' and i['damage'] == 7 and i.get('variant') for i in seen)
+        assert row['inputs'][0]['info'] == charged['info']
+    finally:
+        idx.close()
+
+
+def test_category_metadata_finds_mod_after_the_category_label(tmp_path, monkeypatch):
+    from test_recipe_index import EBF, build_index, format2
+    from gcm import item_info
+    raw = format2()
+    raw['maps'][EBF]['machines'] = [{'name': 'Blast Furnace', 'key': None},
+                                  {'name': 'Machine', 'key': 'gregtech:gt.blockmachines:1000'}]
+    monkeypatch.setattr(item_info, 'mod_name', lambda mod: 'GregTech' if mod == 'gregtech' else None)
+    idx = build_index(tmp_path, raw)
+    try:
+        info = recipe_viewer.map_info(idx, EBF)
+        assert info['name'] == 'Blast Furnace' and info['mod_name'] == 'GregTech'
+        assert info['machines'][1]['key'] == 'gregtech:gt.blockmachines:1000'
+    finally:
+        idx.close()

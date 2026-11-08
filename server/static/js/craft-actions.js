@@ -355,12 +355,12 @@ export function setupCraftDialogActions() {
     if (e.key === 'Escape') {
       if (document.getElementById('settingsMenu').style.display !== 'none') {
         closeSettingsMenu();
+      } else if (recipeViewerOpen()) {
+        closeRecipeViewer();
       } else if (document.getElementById('craftRequestModal').style.display !== 'none') {
         closeCraftRequestModal();
       } else if (document.getElementById('cancelConfirmModal').style.display !== 'none') {
         closeCancelConfirmModal();
-      } else if (recipeViewerOpen()) {
-        closeRecipeViewer();
       } else if (kitOpen()) {
         // Before the item dialog it's opened over.
         closeKit();

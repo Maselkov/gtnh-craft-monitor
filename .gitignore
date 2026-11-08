@@ -295,3 +295,5 @@ __marimo__/
 
 # Local Claude worktree checkouts
 /.claude/worktrees/
+
+TOOD.md

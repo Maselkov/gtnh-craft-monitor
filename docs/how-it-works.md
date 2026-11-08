@@ -38,8 +38,11 @@ never connects into the game.
 
 Game data bundles include recipes exported from the selected GTNH client pack.
 Format 2 adds supported crafting-table and furnace recipes to the GregTech maps;
-format 1 has GregTech only. The server converts either into a read-only SQLite
-index (format 3), normally built beside shared game data to avoid rebuilding it
+format 1 has GregTech only. Format 3 adds native Assembly Line recipes/research,
+GT display maps, NEI display recipes and an audit of registered handlers. Format 4
+adds exact display-stack references, resolved GUI textures, slot geometry, aspect
+names and static research metadata. The server
+reads source formats 1–4 into a read-only SQLite index (format 5), normally built beside shared game data to avoid rebuilding it
 on each hosted instance. The builder reads two passes of the compressed file,
 keeping intern tables and one recipe in memory instead of the full JSON. The
 [exporter guide](../tools/icon-export/README.md#bundle-format) describes the schema.
@@ -48,7 +51,8 @@ Crafting recipes retain grid holes and every ingredient alternative. The input
 index lists a recipe under each alternative; concrete item queries also find
 wildcard-damage ingredients. Queries deduplicate recipe IDs before counting and
 paging, with a stable order: crafting, furnace, then GregTech by absolute EU/t
-and duration, and recipe ID for ties. Each index exposes its source fingerprint
+and duration (including Assembly Line), with approximate NEI displays last and recipe
+ID for ties. Each index exposes its source fingerprint
 so consumers can keep pages within the same bundle generation.
 
 The [recipe viewer](using.md#recipes-and-uses) and assistant read a bounded sample of each slot's alternatives plus the full
@@ -56,8 +60,15 @@ count. NBT variants and custom matching/returned-container behavior are not
 fully represented, and dynamic handlers can be absent. Coverage and approximation
 flags accompany results. A mandatory slot with no alternatives excludes the
 recipe rather than becoming an empty grid cell. The processing-pattern check
-filters out crafting/furnace maps in matching, fallback recipes and uses/removal
+accepts only native GT processing recipes in matching, fallback recipes and uses/removal
 classification, so adding these maps does not change what the check promises.
+
+Category navigation uses accessible icon tabs over the existing map filter.
+The first available machine icon represents a category; unknown icons fall back
+to initials. Overflow controls and selected-tab reveal use the tab row's actual
+width. Manual keyboard activation keeps focus in the row while asynchronous
+recipe requests run. Category metadata stays available during filtering, while
+old recipe rows are cleared and requests remain generation-guarded.
 
 The viewer's read-only `/api/recipes/item` and `/api/recipes` routes follow the
 base's public/private viewer policy. They return the selected version, recipe
@@ -70,6 +81,16 @@ Forward and breadcrumb jumps restore that selection, while Close returns to
 its origin. Request generations and abort signals discard late responses after
 navigation. Alternative icons cycle only while visible and motion is allowed;
 focus or hover freezes the slot's icon, label and clicked identity together.
+Recipe entries include cached, page-local item descriptions from the same bundle
+lookup used by Network. The views share tooltip formatting, including Shift text,
+rarity and mod name. The shared tooltip tracks its owning view, so background
+Network refreshes cannot replace a recipe tooltip. Display variants resolve their
+concrete tooltip identity separately from recipe navigation.
+Display NBT controls the icon and label, while navigation keeps the recipe's
+canonical key (including wildcard damage). Positioned previews render exported
+slots and texture crops; auxiliary NEI stacks do not enter the consumed-input
+index. Assembly Line research costs remain separate from production costs.
+Infusion completion status is never inferred from static research metadata.
 
 ## Crafting CPUs
 
@@ -337,3 +358,12 @@ EU the LSC keeps; every 5 minutes it uploads what's above it to the network
 and downloads up to it. The script posts the raw counts and leaves the
 arithmetic to the server, so a change to it doesn't need a script update.
 The LSC's averaged EU in/out are per tick; the page shows them per second.
+
+
+Item recipe shortcuts are registered beside tooltip bindings, with each view
+resolving the current item from its live data rather than a saved tooltip name.
+The shared R/U handler selects the hovered item, then keyboard focus, within the
+topmost dialog. Network, CPU ingredients, craft-plan lists, recipe stacks and
+craft item links share it. Typing, modifier shortcuts, repeats, unknown identities
+and essentia are excluded. Recipe navigation can sit above a crafting plan;
+Escape closes the recipe view first and preserves the plan underneath.

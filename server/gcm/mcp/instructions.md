@@ -14,13 +14,13 @@ an ME Interface Terminal is connected.
 It doesn't see items outside the ME network, players' inventories, or
 inside machines (only as the steps that hold a job up).
 
-`find_recipes` knows this GTNH version's supported recipes; `game_item` knows
-tooltips, including multiblock structures. Use these instead of memory. Respect
-returned `coverage`: older bundles are GT-only; newer ones add crafting/furnace
-recipes. Slot alternatives are choices, with samples and totals. NBT/custom
-rules and other handlers may be missing or approximate; no result doesn't
-prove an item cannot be made. `base_patterns` shows this base's actual patterns
-and machines.
+`find_recipes` knows supported game recipes; `game_item` knows tooltips and
+multiblock structures. Use them instead of memory. Respect returned `coverage`:
+older bundles are GT-only; newer ones add crafting, furnace, Assembly Line research
+and approximate NEI displays. Research is separate from production inputs. Display recipes can omit
+dynamic costs/catalysts; check requirements and in-game NEI. Slot alternatives are
+choices, with samples and totals. NBT/custom rules can be missing; no result doesn't
+prove an item cannot be made. `base_patterns` shows this base's patterns/machines.
 
 ## Automation it can't see
 

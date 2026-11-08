@@ -112,10 +112,16 @@ def selected_index():
 
 def coverage_summary(idx):
     """Class diagnostics remain in the bundle, not every tool/API response."""
-    out = {k: v for k, v in idx.coverage.items() if k not in ("crafting", "furnace")}
-    for handler in ("crafting", "furnace"):
+    out = {k: v for k, v in idx.coverage.items() if k not in ("crafting", "furnace", "assembly_line", "gt_maps", "nei_handlers")}
+    for handler in ("crafting", "furnace", "assembly_line"):
         if handler in idx.coverage:
             out[handler] = {k: v for k, v in idx.coverage[handler].items() if k != "classes"}
+    handlers = idx.coverage.get("nei_handlers", {})
+    if handlers:
+        out["nei"] = {"handlers": len(handlers),
+                      "display_recipes": sum(h.get("exported", 0) for h in handlers.values()),
+                      "unavailable_handlers": sum(h.get("status") == "unavailable" for h in handlers.values()),
+                      "empty_or_not_enumerable_handlers": sum(h.get("status") == "not_enumerable" for h in handlers.values())}
     return out
 
 
@@ -447,7 +453,7 @@ def _maps_named(provider_name, idx):
     name = _norm(provider_name)
     best, maps = 0, set()
     for map_name in idx.maps():
-        if map_name in recipe_index.NON_GT_MAPS:
+        if map_name in recipe_index.NON_GT_MAPS or map_name.startswith("nei."):
             continue
         for machine in idx.machines(map_name):
             m = _norm(machine["name"])
@@ -536,7 +542,7 @@ def _classify(row, matcher, new_idx, names):
             ][:MAX_ALTERNATIVES]
             if not row["new_shown"]:
                 # Nothing makes it at all: removed, or made outside GregTech.
-                used = [m for m in new_idx.using(first_kind, first_key) if m not in recipe_index.NON_GT_MAPS]
+                used = [m for m in new_idx.using(first_kind, first_key) if m not in recipe_index.NON_GT_MAPS and not m.startswith("nei.")]
                 row["removed"] = (first_kind, first_key, used)
         return
     old_sigs = {_omitted(row["in"], row["out"], m, matcher): m for m in old}

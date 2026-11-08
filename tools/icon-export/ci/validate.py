@@ -91,7 +91,7 @@ MAX_FALLBACK_SHARE = 0.05
 MIN_ANIMATED_ICONS = 1000
 MAX_ICON_BYTES = 2_000_000
 # export.py's; every icon's path in them must name a WebP.
-LOOKUP_TABLES = ("by_key", "by_key_label", "by_key_material", "fluids_by_key", "aspects_by_key", "by_label")
+LOOKUP_TABLES = ("by_key", "by_key_label", "by_key_material", "fluids_by_key", "aspects_by_key", "by_label", "by_variant", "ui_assets")
 
 
 def is_webp(data):
@@ -108,15 +108,15 @@ def is_flat(png):
 
 
 def validate_recipes(data):
-    """Validate the format-2 contract before publishing. Empty mandatory
+    """Validate supported typed recipe contracts before publishing. Empty mandatory
     alternatives and missing intern references must never become free inputs.
     Unsupported/dynamic handlers are expected; adapter failures are not."""
     def require(ok, why):
         if not ok:
             raise ValueError(why)
 
-    require(isinstance(data, dict) and type(data.get("format")) is int and data["format"] == 2,
-            "expected recipe format 2")
+    require(isinstance(data, dict) and type(data.get("format")) is int and data["format"] in (2, 3, 4),
+            "expected recipe format 2, 3 or 4")
     for key in ("items", "fluids"):
         require(isinstance(data.get(key), list) and all(isinstance(k, str) and k for k in data[key]),
                 f"invalid {key} intern table")
@@ -126,20 +126,55 @@ def validate_recipes(data):
     def stacks(raw, table, positive=False):
         require(isinstance(raw, list), "stacks must be a list")
         for s in raw:
-            require(isinstance(s, list) and len(s) in (2, 3), "invalid stack")
+            require(isinstance(s, list) and len(s) in ((2, 3, 4) if data["format"] >= 4 else (2, 3)), "invalid stack")
             require(type(s[0]) is int and 0 <= s[0] < len(data[table]), "invalid intern reference")
             require(type(s[1]) is int and s[1] >= (1 if positive else 0), "invalid stack amount")
-            if len(s) == 3:
+            if len(s) >= 3 and (len(s) != 4 or s[2] is not None):
                 require(type(s[2]) is int and 0 < s[2] <= 10000, "invalid output chance")
+
+            if len(s) == 4:
+                require(isinstance(s[3], list) and len(s[3]) <= 16 and all(
+                    isinstance(ref, str) and ref in data.get("display_stacks", {}) for ref in s[3]),
+                    "unknown display stack reference")
+
+    if data["format"] >= 4:
+        for field in ("display_stacks", "ui_assets", "research_info", "aspects"):
+            require(isinstance(data.get(field), dict), f"missing {field}")
+        for value in data["display_stacks"].values():
+            require(isinstance(value, dict) and isinstance(value.get("key"), str)
+                    and isinstance(value.get("name"), str), "invalid display stack")
+
+    def layout(scene):
+        require(isinstance(scene, dict) and isinstance(scene.get("family"), str), "invalid preview layout")
+        require(all(type(scene.get(k)) in (int, float) and 0 < scene[k] <= 4096
+                    for k in ("width", "height")), "invalid preview dimensions")
+        require(isinstance(scene.get("slots"), list) and len(scene["slots"]) <= 256
+                and isinstance(scene.get("layers"), list) and len(scene["layers"]) <= 64, "invalid preview contents")
+        for slot in scene["slots"]:
+            require(isinstance(slot, dict) and slot.get("role") in ("i", "o", "f", "g", "groups", "aux", "extras")
+                    and type(slot.get("index")) is int and 0 <= slot["index"] < 256, "invalid preview slot")
+        for part in scene["slots"] + scene["layers"]:
+            require(all(type(part.get(k)) in (int, float) and -4096 <= part[k] <= 4096
+                        for k in ("x", "y", "w", "h")), "invalid preview geometry")
+            if part.get("asset") is not None:
+                require(part["asset"] in data.get("ui_assets", {}), "unknown preview asset")
+        for layer in scene["layers"]:
+            uv = layer.get("uv")
+            require(isinstance(uv, list) and len(uv) == 4 and all(type(v) in (int, float) and 0 <= v <= 1 for v in uv)
+                    and uv[0] < uv[2] and uv[1] < uv[3], "invalid preview texture crop")
 
     maps = data.get("maps")
     require(isinstance(maps, dict), "missing recipe maps")
     for name, entry in maps.items():
         require(isinstance(entry, dict) and isinstance(entry.get("recipes"), list), "invalid recipe map")
+        if entry.get("preview") is not None:
+            layout(entry["preview"])
         for r in entry["recipes"]:
+            if "preview" in r:
+                layout(r["preview"])
             require(isinstance(r, dict), "invalid recipe")
             kind = r.get("type")
-            allowed = {"shaped", "shapeless"} if name == "crafting" else {"furnace"} if name == "furnace" else {"gt"}
+            allowed = {"shaped", "shapeless"} if name == "crafting" else {"furnace"} if name == "furnace" else {"gt", "assembly_line", "nei"} if data["format"] >= 3 else {"gt"}
             require(kind in allowed, f"invalid recipe type in {name}")
             for side, table in (("i", "items"), ("o", "items"), ("f", "fluids"), ("g", "fluids")):
                 stacks(r.get(side, []), table)
@@ -147,7 +182,7 @@ def validate_recipes(data):
             if "approximate" in r:
                 require(isinstance(r["approximate"], list) and all(isinstance(f, str) and f for f in r["approximate"]),
                         "invalid approximation flags")
-            if kind == "gt":
+            if kind in ("gt", "assembly_line"):
                 require(all(type(r.get(k)) is int for k in ("e", "d")), "GT recipe needs EU/t and duration")
             elif kind == "furnace":
                 require(len(r.get("i", [])) == len(r.get("o", [])) == 1 and not r.get("f") and not r.get("g"),
@@ -155,7 +190,7 @@ def validate_recipes(data):
                 stacks(r["i"] + r["o"], "items", positive=True)
                 if "d" in r:
                     require(type(r["d"]) is int and r["d"] > 0, "invalid furnace duration")
-            else:
+            elif kind in ("shaped", "shapeless"):
                 slots = r.get("slots")
                 require(isinstance(slots, list) and 1 <= len(slots) <= 9, "invalid crafting slots")
                 require(not r.get("i") and not r.get("f") and not r.get("g") and len(r.get("o", [])) == 1,
@@ -176,9 +211,32 @@ def validate_recipes(data):
                     if "od" in slot:
                         require(isinstance(slot["od"], str) and slot["od"], "invalid ore name")
 
+            if kind in ("assembly_line", "nei"):
+                groups = r.get("groups")
+                require(isinstance(groups, list) and (kind != "assembly_line" or groups), "missing processing groups")
+                for group in groups:
+                    require(isinstance(group, dict) and group.get("kind", "item") in ("item", "fluid"), "invalid processing group")
+                    require(group.get("alts"), "unresolved processing group")
+                    stacks(group["alts"], "fluids" if group.get("kind") == "fluid" else "items")
+            for group in r.get("extras", []):
+                require(isinstance(group, dict) and group.get("kind", "item") in ("item", "fluid"), "invalid extra display group")
+                stacks(group.get("alts"), "fluids" if group.get("kind") == "fluid" else "items")
+            if "aux" in r:
+                stacks(r["aux"], "items")
+            if "research" in r:
+                research = r["research"]
+                require(kind == "assembly_line" and isinstance(research, dict)
+                        and research.get("method") in ("scanner", "research_station"), "invalid research")
+                stacks([research.get("item")], "items", positive=True)
+                require(all(type(research.get(k, 0)) is int and research.get(k, 0) >= 0
+                            for k in ("ticks", "eut", "computation", "amperage", "computation_per_second")), "invalid research cost")
+            for key in ("requirements", "snapshot"):
+                if key in r:
+                    require(isinstance(r[key], dict), f"invalid {key}")
+
     coverage = data.get("coverage")
     require(isinstance(coverage, dict) and coverage.get("identity") == "item_id_damage", "missing identity coverage")
-    require(coverage.get("handlers") == ["gregtech", "crafting", "furnace"], "missing handler coverage")
+    require(isinstance(coverage.get("handlers"), list) and {"gregtech", "crafting", "furnace"}.issubset(coverage["handlers"]), "missing handler coverage")
 
     def counts(report):
         require(isinstance(report, dict), "missing export counts")
@@ -194,6 +252,23 @@ def validate_recipes(data):
         require(handler in maps and maps[handler]["recipes"], f"empty {handler} map")
         _, exported = counts(coverage.get(handler))
         require(exported == len(maps[handler]["recipes"]), f"wrong {handler} exported count")
+    if data["format"] >= 3:
+        _, exported = counts(coverage.get("assembly_line"))
+        require(exported > 0 and exported == len(maps.get("assembly_line", {}).get("recipes", [])), "empty or wrong assembly-line count")
+        require({"assembly_line", "nei"}.issubset(coverage["handlers"]), "missing extended handler coverage")
+        require(isinstance(coverage.get("gt_maps"), dict) and coverage["gt_maps"]
+                and isinstance(coverage.get("nei_handlers"), dict) and coverage["nei_handlers"], "missing recipe audit")
+        for name, report in coverage["gt_maps"].items():
+            saved = [report.get(k, 0) for k in ("exported", "display_exported", "archived")]
+            require(all(type(n) is int and n >= 0 for n in saved), "invalid GT map audit count")
+            require(report.get("registered", 0) == sum(saved), f"unaccounted GT records in {name}")
+            require(saved[0] == len(maps.get(name, {}).get("recipes", []))
+                    and saved[1] == len(maps.get("nei.gt." + name, {}).get("recipes", []))
+                    and saved[2] == len(maps.get(name, {}).get("archive", [])), f"wrong GT archive counts in {name}")
+        for report in coverage["nei_handlers"].values():
+            require(report.get("status") in ("native", "display", "not_enumerable", "informational_or_unsupported", "unavailable"), "missing handler status")
+            if "registered" in report:
+                counts(report)
     classes = coverage["crafting"].get("classes")
     require(isinstance(classes, dict) and classes, "missing crafting class coverage")
     totals = [counts(report) for report in classes.values()]
@@ -206,7 +281,8 @@ def check(out_dir):
     report = json.loads((out_dir / "export-report.json").read_text())
     try:
         with gzip.open(out_dir / "recipes.json.gz", "rt") as f:
-            validate_recipes(json.load(f))
+            recipe_data = json.load(f)
+            validate_recipes(recipe_data)
     except (OSError, ValueError, TypeError, KeyError) as e:
         problems.append(f"recipes.json.gz: {e}")
     for key, minimum in MINIMUMS.items():
@@ -258,6 +334,10 @@ def check(out_dir):
     if not_webp:
         problems.append(f"{len(not_webp)} paths in the lookup aren't .webp, "
                         f"e.g. {not_webp[0]}")
+    for table in ("by_variant", "ui_assets"):
+        missing_paths = set(lookup.get(table, {}).values()) - names
+        if missing_paths:
+            problems.append(f"{len(missing_paths)} {table} images are missing from images.zip")
     paths = sorted(set(lookup["by_key"].values()))
     sample = random.Random(0).sample(paths, min(FLAT_SAMPLE, len(paths)))
     with zipfile.ZipFile(out_dir / "images.zip") as zf:

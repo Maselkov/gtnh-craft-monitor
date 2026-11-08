@@ -108,10 +108,10 @@ icon:
 Bundles made before it existed have none of it. Before it, `ore_dict.json`
 also left out names only one item has.
 
-`recipes.json.gz` format 2 holds GregTech's recipe maps plus `crafting` and
+`recipes.json.gz` format 4 holds GregTech's recipe maps plus `crafting` and
 `furnace` maps. The [pattern check](../../docs/using.md#pattern-check) still
 compares only GT maps; the assistant's `find_recipes` also reads the new maps.
-Format-1 bundles contain GT recipes only and remain readable by new servers.
+Formats 1 (GT only), 2 (GT/crafting/furnace) and 3 (extended displays) remain readable by new servers.
 
 `items` and `fluids` intern keys (`modid:internalname:damage`, damage `*` for
 any; fluid registry names), with parallel `item_names` and `fluid_names` lists
@@ -140,7 +140,48 @@ for DreamCraft universal recipes), AE2 crafting ingredient expansion, and IC2
 advanced recipes. Other dynamic classes, null outputs, disabled recipes and
 mandatory slots with no alternatives are skipped, with reasons counted rather
 than turning an unresolved ingredient into a free slot. Custom NBT-dependent
-Shulker conversions and non-crafting handlers are outside this format's coverage.
+Shulker conversions remain unsupported; additional handlers use the display
+fallback described below.
+
+Format 3 adds two processing display types:
+
+- `assembly_line`: native GT ingredients as ordered `groups` (each has complete
+  `alts`), fluids in `f`, output in `o`, production `e`/`d`, and optional `research`.
+  Research has an interned `item` stack, `method` (`scanner` or `research_station`),
+  `eut`, `ticks`, and where applicable `computation`, `computation_per_second` and
+  `amperage`. TecTech research overlays are merged into their matching native GT
+  recipes; their research EU/t never replaces production EU/t. A mismatch fails
+  export. Group identity includes the original NBT, quantities, order and fluids.
+- `nei`: an approximate recipe display, with flat stacks and/or ingredient
+  `groups`; a group can have `kind:"fluid"` and fluid-index alternatives. No
+  unknown power/time value is invented. The viewer marks these as NEI displays;
+  they never participate in processing-pattern checks. GT fake/display maps are
+  retained under `nei.gt.*`, rather than silently discarded. Scanner/research and
+  duplicate Assembly Line diagrams stay in the source but are excluded from the
+  query index: their fake outputs identify research targets, not manufactured items. Native static
+  Thaumcraft infusion is a fallback where NEI's dynamic expansion needs a player.
+
+`requirements` retains GT metadata, descriptions, special items, fluid alternatives,
+input/fluid chances and supported NEI costs. GT entries without usable outputs
+(including many generator fuels), disabled entries and skipped crafting records
+are retained in source archives; CI accounts for every registered GT record. Fluid output chances use the third
+stack element as item chances do. Raw `snapshot` fields retain NEI ingredient/result/
+other stack roles, positions, alternatives, NBT and cached recipe values; map-level
+`archive` arrays retain captures that cannot safely become a browsable recipe.
+The source bundle retains these even though the SQLite query index omits raw
+snapshots/archives, so later readers can improve presentation without rerunning
+Minecraft. Snapshots are deliberately bounded (five nested levels, 512 entries
+per collection), exclude client/world/registry graphs, and mark unexpanded data.
+They are an archive of available display data, not an exact serialization of
+arbitrary Java recipe logic.
+
+The coverage audit collects both NEI crafting and usage registries, deduplicating
+by class and category. It lists every GT map and NEI handler, including native coverage,
+exported displays, archived records, unavailable handlers and categories returning
+no recipes. Empty enumeration does not prove that a category has no recipes.
+See the [2.9.0 coverage audit](../../docs/recipe-coverage.md) for the complete
+measured inventory. Some dynamic crafting, world/player-dependent recipes and non-enumerable handlers
+remain unsupported; use the report before deciding a bundle is complete.
 
 `coverage` records handler coverage, identity limitations and registered/exported/
 skipped totals, by crafting class as well. It is repeated as `recipeCoverage` in
@@ -148,14 +189,55 @@ skipped totals, by crafting class as well. It is repeated as `recipeCoverage` in
 and `furnaceRecipes` count their respective exported recipes. CI validates types,
 grids, references and balanced counts; unexpected adapter errors fail validation.
 
-The server builds SQLite index format 3, accepting source formats 1 and 2. Every
-slot alternative is indexed for Uses; concrete item queries also match wildcard
-damage, deduplicated before counting/paging. Deploy compatible readers before
-publishing format-2 bundles. Rebuild shared/shipped `recipes.sqlite` indexes with
-the new server's `app.py index-gamedata` before hosted instances need them;
-an outdated index triggers a local build. The builder streams recipes in two
-passes with the standard library; the 2.9.0 extended index measured about 46 MiB
-peak RSS, four seconds to build and 135 MiB on disk (242,717 recipes).
+Format 4 adds presentation without changing recipe-search identity:
+
+- Item tuples may have four elements: `[item,n,chance_or_null,[display_id,...]]`.
+  `display_stacks` maps each ID to its concrete key, localized name, optional
+  SNBT and exact icon path. Wildcard ingredients retain `*` in the recipe;
+  up to 16 concrete display samples are separate from all semantic alternatives.
+  Wildcards use the icon exporter's collected NEI overrides/subtypes/variants:
+  `ItemList.itemMap` is empty at the menu, and a bare damage-zero fallback loses
+  charged creative variants. An explicitly supplied NBT constraint is retained.
+  Failed or blank renders have `render_failed:true` and no icon; readers use
+  their normal fallback. Reading a display name must not mutate exported NBT.
+- A map-level `preview`, or a recipe-level override, describes `family`, `width`,
+  `height`, ordered `layers` and positioned `slots`. A slot has a role (`i`, `o`,
+  `f`, `g`, `groups`, `aux`, `extras`), index, x/y/w/h and optional frame asset.
+  `preview_indices` retains original GT slot positions after null stacks are
+  removed. Layer crops are normalized `[left,top,right,bottom]` UV coordinates.
+- `ui_assets` maps resource locations to resolved image paths and dimensions.
+  Frames, GT backgrounds/pipes/logo and the infusion rune crop are copied through
+  Minecraft's resource manager. The `ui_assets` and `by_variant` icon lookup
+  tables keep these images through WebP conversion, animation and texture-pack
+  fallback. GUI layers are static; custom Java drawing callbacks are not replayed.
+- `aux` contains GT special-slot stacks, including the Assembly Line data stick
+  with amount zero (`NC`). NEI `extras` retain other positioned stacks and their
+  alternatives for display. They do not become consumed ingredients or Uses
+  matches merely because NEI draws them.
+- `research_info` carries static research names/category icons; `aspects` carries
+  aspect names and glyph paths. Player research completion is unknown. Infusion
+  ingredients use TC4Tweaks' enhanced ingredient API and the pack's configured
+  ore-dictionary rules, preserving alternatives. Static add-NBT operations have
+  representative output icons; runic/enchantment and other player-dependent
+  expansions remain limited and archived. Parent fields shadowed by a subclass
+  are retained under qualified names in raw snapshots.
+
+Assembly Line has its dedicated 16-item/four-fluid layout. Standard GT layouts
+come from frontend UI properties; generic NEI displays retain stack positions.
+The latter are marked `slots_only`, and GT layouts `standard_widgets`: arbitrary
+handler graphics, callbacks and dynamic text are not a promise of pixel-perfect
+NEI reproduction.
+
+The server builds SQLite index format 5, accepting source formats 1–4. Every
+ingredient alternative is indexed for Uses; concrete queries also match wildcard
+damage, deduplicated before counting/paging. Display variants are streamed into
+SQLite separately and fetched only for the current page. Deploy compatible
+readers before publishing format-4 bundles. Rebuild shared/shipped
+`recipes.sqlite` indexes with the new server's `app.py index-gamedata` before
+hosted instances need them; an outdated index triggers a local build. The builder
+streams two passes, retaining intern tables and one recipe. The earlier format-3
+2.9.0 audit measured about 50 MiB peak RSS, 6.4 seconds and 178 MiB on disk;
+format 4 also stores display stacks and layouts.
 Bundles made before recipe export existed cannot be compared.
 
 `structures.json.gz` holds the blocks each GregTech multiblock is built

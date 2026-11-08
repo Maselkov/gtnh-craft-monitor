@@ -197,16 +197,22 @@ public final class ExportDriver {
         }
     }
 
+    private Recipes capturedRecipes;
+    private Map<String,Object> capturedRecipeFile;
+
     private void startRendering() throws Exception {
         if (!IconRenderer.framebuffersAvailable()) {
             throw new IllegalStateException(
                     "Framebuffers are unavailable (fboEnable=false in options.txt, or no GL support).");
         }
 
-        jobs = new ArrayList<>();
-        Set<String> paths = new HashSet<>();
         List<ItemStack> stacks = NeiItems.collect();
         IconExportMod.LOG.info("NEI item list: {} stacks.", stacks.size());
+        capturedRecipes = new Recipes();
+        capturedRecipes.presentation.registerDisplays(stacks);
+        capturedRecipeFile = capturedRecipes.collect();
+        jobs = new ArrayList<>();
+        Set<String> paths = new HashSet<>();
         List<ItemStack> fromRecipes = RecipeItems.collect();
         IconExportMod.LOG.info("Ore dictionary and recipes: {} stacks.", fromRecipes.size());
         stacks.addAll(fromRecipes);
@@ -214,7 +220,7 @@ public final class ExportDriver {
         // comparatively expensive job construction (display names, NBT hashes).
         Set<String> seen = new HashSet<>();
         for (ItemStack stack : stacks) {
-            String identity = Item.itemRegistry.getNameForObject(stack.getItem()) + ":" + stack.getItemDamage()
+            String identity = Item.itemRegistry.getNameForObject(stack.getItem()) + ":" + net.minecraft.init.Items.feather.getDamage(stack)
                     + ":" + (stack.hasTagCompound() ? stack.getTagCompound().toString() : "");
             if (!seen.add(identity)) {
                 continue;
@@ -223,6 +229,11 @@ public final class ExportDriver {
             if (job != null && paths.add(job.imagePath)) {
                 jobs.add(job);
             }
+        }
+        // Keep these exact jobs: copying a mod's NBT again can change its string
+        // ordering, and therefore the path hash used by display references.
+        for(ExportJob display:capturedRecipes.presentation.jobs.values()) {
+            if(paths.add(display.imagePath))jobs.add(display);
         }
         for (Fluid fluid : FluidRegistry.getRegisteredFluids().values()) {
             ExportJob job = ExportJob.forFluid(fluid);
@@ -415,6 +426,7 @@ public final class ExportDriver {
         for (Object table : ExportOutput.buildLookup(jobs).values()) {
             referenced.addAll(((Map<?, String>) table).values());
         }
+        for(ExportJob display:capturedRecipes.presentation.jobs.values())referenced.add(display.imagePath);
         passJobs = new ArrayList<>();
         for (ExportJob job : jobs) {
             // Aspects are read from their textures, which don't animate.
@@ -650,7 +662,8 @@ public final class ExportDriver {
         report.put("random", random);
         output.finishAnimations(sequences, 50);
         report.putAll(structureReport);
-        output.finish(jobs, report, structures);
+        capturedRecipes.presentation.writeImages(output);
+        output.finish(jobs, report, structures, capturedRecipes, capturedRecipeFile);
 
         IconExportMod.LOG.info("Icon export complete: {}", config.outDir.getAbsolutePath());
         exit(0);

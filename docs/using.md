@@ -439,6 +439,13 @@ Elsewhere, item names on the Crafts tab and the cells in a CPU's ingredients
 are reached with **Tab** and open with **Enter**. **Tab** stays inside an open
 dialog, and closing one puts focus back where it was.
 
+**R** opens Recipes and **U** opens Uses for the item under the pointer, or the
+focused item when none is hovered. This works in Network, on craft item names,
+in CPU ingredient grids and in crafting-plan list cells, as well as inside the
+recipe browser. Closing the recipe book returns to the underlying view. Typing
+in a search/amount field keeps normal text entry. Shortcuts use the item/fluid
+identity, so old name-only craft reports and essentia do not open a recipe book.
+
 ## Recipes and Uses
 
 Open an item's stock page and choose **Recipes** or **Uses**. The separate
@@ -447,34 +454,61 @@ in the ME network. It reads the GTNH version selected in
 [Game data](server.md#game-data).
 
 **Recipes** shows ways to make the item; **Uses** shows recipes that take it.
-Choose a machine category to narrow the list, or **All** to include every
-category. Recipes load 20 at a time; **Load more** adds the next page.
-Crafting comes first, then furnace recipes, then GregTech recipes by absolute
-EU/t and duration. Machine recipes show voltage, time, heat and output chances
+The top icon tabs select a machine category; the grid tab includes **All
+categories**. Hover or focus a tab for its category name, recipe count and mod
+where known. The selected tab is raised, with its full name and count below the
+row. Categories without a machine icon use initials. Swipe/scroll the row or use
+its side arrows when there are more tabs than fit. With a tab focused,
+**Left/Right** and **Home/End** move between tabs; **Enter** or **Space** selects
+one. The same tabs are available for both Recipes and Uses. Recipes load 20 at a time; **Load more** adds the next page.
+Crafting comes first, then furnace recipes, then GregTech and Assembly Line recipes by absolute
+EU/t and duration, with approximate NEI displays last. Machine recipes show voltage, time, heat and output chances
 where available. Crafting recipes show their grid, or **Shapeless** when order
-does not matter. A zero-size input is labelled **not used up**.
+does not matter. A zero-size input is labelled **not used up**, or **NC** in a
+positioned preview.
 
-Select any ingredient or output to open its recipes. Choose the small **Uses**
-button, right-click, or Shift-click to see its uses instead. With a stack
-focused, **R** opens recipes and **U** opens uses. Slots with alternative
+Newer bundles show positioned previews for Assembly Line, standard GregTech
+layouts and captured NEI displays. Infusion previews show the central item,
+surrounding ingredients, instability, essentia amounts and research name. The
+research label does not indicate whether your player has completed it. Exact
+NBT display variants can change an icon or its label while keeping the recipe's
+item identity for navigation. GT previews also show total EU before overclocking.
+Custom NEI graphics and dynamic costs can still require checking in game.
+
+Hover an ingredient or output for the same instant item tooltip used in the
+Network browser: rarity colour, exported description and mod name. Hold **Shift**
+for extended details where available. Recipe tooltips show the recipe amount;
+non-consumed stacks say **Not consumed**. The tooltip follows the displayed
+alternative and also appears when a stack receives keyboard focus.
+
+**Left-click** any ingredient or output to open its recipes. **Right-click**
+opens its uses; the small **Uses** button does the same. **R** opens recipes
+and **U** opens uses for the stack under the pointer, or the focused stack
+when no stack is hovered. Holding Shift for tooltip details does not change
+what left-click does. Slots with alternative
 ingredients cycle through a sample of their icons; holding the pointer or
 keyboard focus on a slot pauses it. Reduced-motion settings keep a still
-choice. The tooltip names the ore entry when known and says when the sample
-is smaller than the full alternative count. Every exported alternative is
+choice. In crafting grids, the tooltip names the ore entry when known and says when the
+sample is smaller than the full alternative count. Every exported alternative is
 included in Uses searches.
 
 **Back**, the breadcrumbs and browser Back/Forward move through the trail.
 Loaded pages and scroll are kept when returning to a recent selection.
 Closing the dialog with **×**, Escape or its backdrop returns to where it was
 opened. A **Stock** link appears beside stacks found in the latest network
-snapshot; it opens their stock page, and browser Back returns to the recipes.
+snapshot (focus or point at a positioned slot to reveal its links); it opens their stock page, and browser Back returns to the recipes.
 The machine name narrows the list to that category. The `/recipes?key=...`
 address can be copied or bookmarked; a fresh link opens over the Network tab.
 
 The footer states coverage. New bundles include supported GregTech,
 crafting-table and furnace recipes; older bundles have GregTech only. Custom
-NBT-dependent conversions, Thaumcraft arcane/infusion/crucible, AE2 inscriber
-and other handlers may be missing. Approximation notes flag recipes whose
+NBT-dependent conversions and handlers that need a live world or player may be
+missing. Format-3 bundles add Assembly Line recipes with Scanner or Research Station
+requirements. They also include labelled **NEI display recipes**, such as AE2
+inscriber, Avaritia, Botania and supported magic recipes. These displays can omit
+extra costs, catalysts or dynamic behavior; check NEI in game. **Additional
+requirements** shows captured costs and conditions. Research requirements are
+shown separately from production inputs. Approximation notes flag recipes whose
 NBT or custom matching rules are not fully represented. No results means
 there is no supported recipe for that selection in this bundle, rather than
 proof the item cannot be made. With no recipe data installed, the dialog says
@@ -777,7 +811,10 @@ Those are choices for that slot, not ingredients to supply together.
 
 Recipe identity uses item ID and damage. NBT variants and custom matching rules
 can be approximate; dynamic recipes such as NBT-dependent Shulker conversions
-and handlers such as Thaumcraft infusion or the AE2 inscriber are not included.
+remain limited. Format-3 bundles include Assembly Line research and labelled NEI
+displays for additional handlers, including AE2 inscriber and supported Thaumcraft
+recipes. Their captured requirements accompany the result; displays may omit
+dynamic costs or conditions and should be checked in game.
 The tool reports approximation flags and export coverage, so an empty result
 means the bundle has no supported recipe for it, not that it cannot be made.
 The [pattern check](#pattern-check) continues to compare only GregTech recipes.
