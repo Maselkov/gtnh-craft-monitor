@@ -3505,7 +3505,8 @@ async function main() {
   });
 
   step('recipes: icon category tabs, tooltips, overflow and keyboard navigation', async () => {
-    await cdp.send('Emulation.setDeviceMetricsOverride', {width:390,height:844,deviceScaleFactor:1,mobile:true});
+    await cdp.send('Emulation.setTouchEmulationEnabled', {enabled:false});
+    await cdp.send('Emulation.setDeviceMetricsOverride', {width:390,height:844,deviceScaleFactor:1,mobile:false});
     await cdp.send('Page.navigate', {url:base + '/recipes?key=example:tabs_result:0'});
     await waitFor('tabs fixture loaded', `document.readyState === 'complete' && !window.byText`);
     await evaluate(PAGE_LIB);
@@ -3528,9 +3529,11 @@ async function main() {
     await waitFor('Enter activates category', `$('#recipeViewerMaps [aria-selected="true"]').dataset.map === 'gt.recipe.tabs_test_19' && $('#recipeCategoryName').textContent === 'Category 19' && $('#recipeViewerPage').textContent === 'Page 1/1' && document.activeElement === $('#recipeViewerMaps [aria-selected="true"]')`);
     assert(await evaluate(`(() => {const t=$('#recipeViewerMaps [aria-selected="true"]').getBoundingClientRect(),v=$('#recipeViewerMaps').getBoundingClientRect();return t.left >= v.left - 1 && t.right <= v.right + 1 && $('#recipeViewerList').getAttribute('aria-labelledby') === $('#recipeViewerMaps [aria-selected="true"]').id;})()`));
     await waitFor('activated category recipe loaded', `$('.recipe-viewer-box').getAttribute('aria-busy') === 'false' && $('#recipeViewerList .recipe-stack-control[data-key="example:tabs_input:0"]')`);
+    // Headless Chrome may report pointer:none even though CDP can send mouse input.
+    assert(await evaluate(`!matchMedia('(pointer: coarse)').matches`));
+    await evaluate(`$('#recipeViewerList .recipe-stack-control[data-key="example:tabs_input:0"]').dispatchEvent(new MouseEvent('mouseover',{bubbles:true,clientX:100,clientY:200}));true`);
+    await waitFor('narrow desktop keeps hover tooltips', `visible($('.network-tooltip')) && $('.network-tooltip').textContent.includes('Tabs Input') && !visible($('#recipeInspect'))`);
     await evaluate(`$('#recipeViewerList .recipe-stack-control[data-key="example:tabs_input:0"]').click(), true`);
-    await waitFor('category ingredient inspected on mobile', `visible($('#recipeInspect'))`);
-    await click(`$('#recipeInspectActions [data-action="recipe-inspect-recipes"]')`);
     await waitFor('ingredient opened from category', `$('.recipe-viewer-box').dataset.itemName === 'Tabs Input'`);
     await click(`$('#recipeViewerBack')`);
     await waitFor('category restored', `$('.recipe-viewer-box').dataset.itemName === 'Tabs Result' && $('#recipeViewerMaps [aria-selected="true"]').dataset.map === 'gt.recipe.tabs_test_19' && $('#recipeViewerPage').textContent === 'Page 1/1'`);
@@ -3723,6 +3726,7 @@ async function main() {
     await tap('#recipeViewerList [data-recipe-tooltip]');
     await waitFor('touch tooltip sheet', `visible($('#recipeInspect')) && $('#recipeInspectContent').textContent.includes('Amount in system:')`);
     assert.equal(await evaluate(`location.href`), original);
+    assert(await evaluate(`matchMedia('(pointer: coarse)').matches`));
     assert(await evaluate(`!visible($('.network-tooltip')) && visible($('#recipeInspectActions [data-action="recipe-inspect-recipes"]'))
       && visible($('#recipeInspectActions [data-action="recipe-inspect-uses"]')) && visible($('#recipeInspectActions [data-action="recipe-inspect-stock"]'))
       && $('#recipeInspect').getBoundingClientRect().bottom<=visualViewport.height+1`));

@@ -3593,7 +3593,7 @@ button.recipe-search-open .ui-icon { width:18px; height:18px; }
 }
 
 /* Touch recipe inspection uses the shared game-tooltip content in a stable sheet. */
-.recipe-mobile-zoom, .recipe-mobile-help { display:none; }
+.recipe-mobile-zoom, .recipe-mobile-help, .recipe-touch-hint { display:none; }
 .recipe-inspect[hidden] { display:none; }
 .recipe-inspect {
   position:absolute; bottom:0; left:0; right:0; z-index:5;
@@ -3650,6 +3650,8 @@ button.recipe-search-open .ui-icon { width:18px; height:18px; }
   .recipe-mobile-zoom button { min-width:44px; min-height:44px; border:1px solid var(--recipe-frame-mid); border-radius:4px; background:var(--recipe-canvas); color:var(--recipe-canvas-ink); font-size:16px; }
   .recipe-mobile-zoom button:disabled { opacity:.4; }
   .recipe-book-tools { gap:6px; }
-  .recipe-desktop-help { display:none; }
-  .recipe-mobile-help { display:block; }
+}
+@media (pointer:coarse) {
+  .recipe-desktop-help, .recipe-pointer-hint { display:none; }
+  .recipe-mobile-help, .recipe-touch-hint { display:block; }
 }

@@ -502,7 +502,10 @@ On phones and touch devices, the book fills the screen. Machine icons sit in a
 horizontal strip below the swipeable category tabs, leaving the full width for
 the recipe. Page and category arrows have larger touch targets.
 
-Tap an ingredient, output, machine or essentia icon to inspect it in a fixed
+Touch interaction follows the device’s primary pointer, not the window width.
+A narrow desktop window keeps hover tooltips and direct click navigation.
+
+On touch devices, tap an ingredient, output, machine or essentia icon to inspect it in a fixed
 bottom sheet. It uses the same tooltip content as desktop, including **Amount
 in system**, plus the recipe quantity. Choose **Recipes**, **Uses**, or **Stock**
 when available; tapping an icon itself stays on the current recipe. Essentia

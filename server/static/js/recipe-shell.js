@@ -1,4 +1,4 @@
-import { recipeTouchQuery } from './recipe-touch.js';
+import { recipeCompactQuery } from './recipe-touch.js';
 
 // Paint NEI's fixed palette as one image, like the recipe cards themselves.
 // DOM controls retain their labels, focus rings and normal event handling.
@@ -8,7 +8,7 @@ export function setupRecipeShell(book) {
 
   function paint() {
     pending = false;
-    if (matchMedia(recipeTouchQuery).matches) { book.classList.remove('recipe-shell-painted'); return; }
+    if (matchMedia(recipeCompactQuery).matches) { book.classList.remove('recipe-shell-painted'); return; }
     if (!book.offsetWidth || !document.fonts.check('16px "GCM Recipe"')) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;

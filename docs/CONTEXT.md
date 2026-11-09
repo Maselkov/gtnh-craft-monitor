@@ -2426,8 +2426,10 @@ frame stays painted throughout and loading animation respects reduced motion.
 
 
 **Touch recipe inspection.** `recipe-touch.js` owns a bottom sheet inside the dialog,
-alongside the painted recipe paper. At widths up to 700px or with a coarse primary pointer,
-recipe-slot taps inspect rather than navigate; explicit Recipes/Uses/Stock
+alongside the painted recipe paper. Compact layout follows widths up to 700px
+or a coarse primary pointer, while inspection uses only `pointer: coarse`. A
+narrow desktop window retains hover tooltips and direct click navigation. On
+touch devices, recipe-slot taps inspect rather than navigate; explicit Recipes/Uses/Stock
 buttons preserve canonical identities and use the existing viewer/history entry
 points. Shared item-tooltip markup supplies descriptions and network stock,
 with a touch More details control for Shift descriptions. Selected alternatives

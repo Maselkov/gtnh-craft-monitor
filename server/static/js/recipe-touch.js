@@ -2,7 +2,8 @@
 import { delegateActions, escapeHtml, iconUrl, updateHtml } from './util.js';
 import { hideTooltip } from './tooltip.js';
 
-export const recipeTouchQuery = '(max-width: 700px), (pointer: coarse)';
+export const recipeTouchQuery = '(pointer: coarse)';
+export const recipeCompactQuery = '(max-width: 700px), (pointer: coarse)';
 const clampRecipeZoom = scale => Math.max(1, Math.min(3, scale));
 
 export function setupRecipeTouch(book, {entryForCell, htmlForCell, openRecipes, openStock, layout}) {
