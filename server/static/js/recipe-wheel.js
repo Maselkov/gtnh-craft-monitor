@@ -1,4 +1,25 @@
 // NEI wheel regions follow geometry, so empty space in the tab band works too.
+export function setupPageWheel(container, {isOpen, page}) {
+  let direction = 0, pixels = 0, lastEvent = -Infinity;
+  container.addEventListener('wheel', event => {
+    if (!isOpen() || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey
+        || !event.deltaY || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+    const next = Math.sign(event.deltaY);
+    if (direction !== next || event.timeStamp-lastEvent > 180) pixels = 0;
+    direction = next; lastEvent = event.timeStamp;
+    event.preventDefault(); event.stopPropagation();
+    const amount = Math.abs(event.deltaY);
+    let steps;
+    if (event.deltaMode !== 0 || amount >= 40) {
+      steps = Math.max(1, Math.round(amount / (event.deltaMode === 1 ? 3 : event.deltaMode === 2 ? 1 : 100)));
+      pixels = 0;
+    } else {
+      pixels += amount; steps = Math.floor(pixels / 40); pixels %= 40;
+    }
+    if (steps) page(direction * steps);
+  }, {passive:false});
+}
+
 export function setupRecipeWheel(book, {isOpen, page, category}) {
   let region = null, direction = 0, pixels = 0, lastEvent = -Infinity;
   book.addEventListener('wheel', event => {

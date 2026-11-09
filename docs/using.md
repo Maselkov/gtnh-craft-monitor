@@ -448,6 +448,38 @@ identity, so old name-only craft reports and essentia do not open a recipe book.
 
 ## Recipes and Uses
 
+Choose **Recipes** in the main toolbar, or the book icon beside the settings
+cog on mobile, to search items and fluids, including those absent from your
+ME network. This search is separate from the
+Network inventory filter. Match words in a name or registry ID; `@mod` narrows
+item results by mod ID (for example, `@gregtech circuit`). Use **All**, **Items**
+or **Fluids** and the page arrows to browse more results. Some named items have
+no supported recipe; selecting one says so.
+
+On desktop the recipe book stays in a right-hand drawer alongside the recipe.
+Results use a dense icon grid: hover or focus an icon for its name, details and
+amount in the system. Each page fills the available rows and columns, adapting
+when you resize the window. Scroll the wheel over the drawer to turn pages;
+scrolling past either end wraps around. On mobile, named rows have **← Recipes** and **Uses →**
+buttons. Tapping the icon or name also opens recipes. Counts stay in tooltips.
+On mobile the book opens as a sheet and closes when you choose a result. You can also
+swipe left on the small handle at the right edge of the Network page to open it,
+or swipe right across the sheet's heading to close it. **Find** inside a recipe
+opens the same search without losing your current recipe.
+
+Click a result for recipes, right-click or choose **Uses** for its uses, or
+Shift-left-click for its stock page. **R/U** work on hovered or focused results;
+typing in the search field keeps those letters as text. Enter selects the first
+result, and Down moves focus from the search field into the results. Escape
+closes search first, leaving an open recipe underneath. With an empty query,
+recent lookups appear above all items. The last eight are remembered in this
+browser for the selected GTNH version and can be cleared.
+
+If installed game data lacks recipes or searchable item names, the book shows
+an update message pointing administrators to **Settings → Game data**, rather
+than reporting no matches. Older data that supports search continues to work;
+its recipe coverage may be smaller than a newer export's.
+
 Open an item's stock page and choose **Recipes** or **Uses** in the compact row
 below the item header. The footer keeps the crafting and multiblock-kit actions.
 The separate recipe dialog works for items and fluids, including ingredients that are not
@@ -466,6 +498,11 @@ their side arrows when there are more tabs than fit. With a tab focused,
 **Left/Right** and **Home/End** move between tabs; **Enter** or **Space** selects
 one. The second navigation row shows **Page X/Y**; its arrows move between
 recipes in the selected category, one recipe per page.
+Loaded recipe batches are reused when you revisit an item or category. After
+the selected recipe appears, the book loads neighboring categories and the
+next batch in the background. Items with many recipes still load in batches;
+opening one does not download every recipe. Fast wheel bursts skip loading
+categories passed on the way to your destination.
 The mouse wheel over the window also changes recipe pages: down for next, up
 for previous. Over the top tabs, their empty reserved space or the category
 title, it changes machine categories instead. The machine sidebar and open

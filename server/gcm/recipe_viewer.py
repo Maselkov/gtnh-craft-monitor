@@ -318,6 +318,17 @@ def item_summary(idx, kind, key):
             "coverage": recipes.coverage_summary(idx)}
 
 
+def catalog_items(rows):
+    """Small named results with the same identities and tooltips as recipe slots."""
+    names = {(kind, key): name for kind, key, name in rows}
+    out = []
+    for kind, key, _ in rows:
+        value = entry(kind, key, 1, names)
+        value["info"] = {**item_info.describe(value), "mod_name": item_info.mod_name(value.get("mod"))}
+        out.append(value)
+    return out
+
+
 def requirement_notes(value, *, handled_metadata=()):
     """Readable, bounded labels for native/NEI costs; raw data stays available to MCP."""
     labels = {"mSpecialItems": "Special items", "mAltFluidInputs": "Fluid alternatives",

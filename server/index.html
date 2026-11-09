@@ -41,6 +41,11 @@
           title="Enter your personal access token to sign in">
         <button type="submit" class="notif-btn" id="authBtn">Sign in</button>
       </form>
+      <div class="header-tools">
+        <button class="notif-btn recipe-search-open" id="recipeBookButton" data-action="recipe-search-open" aria-label="Recipe book" aria-haspopup="dialog" aria-controls="recipeSearchModal" aria-expanded="false" title="Search all items and recipes">
+          <svg class="ui-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4C7 2 4 2 2 3v13c3-1 5-1 8 1 3-2 5-2 8-1V3c-2-1-5-1-8 1zm0 0v13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+          <span>Recipes</span>
+        </button>
       <div class="settings-wrap" id="settingsWrap">
         <button class="notif-btn settings-btn" id="settingsBtn" title="Settings"
           aria-label="Settings" aria-haspopup="true" aria-expanded="false"
@@ -83,6 +88,7 @@
           <button class="settings-menu-item danger" id="signOutBtn" role="menuitem"
             data-action="sign-out">Sign out</button>
         </div>
+      </div>
       </div>
     </div>
   </div>
@@ -418,10 +424,11 @@
         <div class="recipe-book-tools">
           <button class="recipe-game-button" id="recipeViewerBack" data-action="recipe-back" aria-label="Back to previous item" title="Back to previous item" disabled>&larr;</button>
           <button class="recipe-game-button recipe-stock-button" id="recipeViewerStock" data-action="recipe-stock" hidden>Stock</button>
+          <button class="recipe-game-button" id="recipeViewerFind" data-action="recipe-search-open" aria-controls="recipeSearchModal" aria-expanded="false" title="Search all items and recipes">Find</button>
           <details class="recipe-book-details"><summary class="recipe-game-button" aria-label="Recipe information" title="Recipe information">i</summary><div class="recipe-book-information">
             <div id="recipeViewerInfo" class="game-text recipe-item-info"></div>
             <div id="recipeViewerCoverage" class="recipe-coverage"></div>
-            <p>Left-click or R: recipes. Right-click or U: uses. Hover or focus an item; hold Shift for more detail. Wheel: recipe pages. Wheel over the top tabs or category title: machine categories.</p>
+            <p>Left-click or R: recipes. Right-click or U: uses. Shift-left-click: stock. Hover or focus an item; hold Shift for more detail. Find: search any item. Wheel: recipe pages. Wheel over the top tabs or category title: machine categories.</p>
           </div></details>
           <button class="recipe-game-button recipe-book-close" data-action="recipe-close" title="Close recipe viewer" aria-label="Close recipe viewer">&times;</button>
         </div>
@@ -750,6 +757,27 @@
       </div>
       <div id="userHistoryList" class="craft-history-list user-history-list"></div>
     </div>
+  </div>
+
+  <button class="recipe-search-edge" id="recipeSearchEdge" data-action="recipe-search-open" aria-label="Open recipe book; swipe left" title="Recipe book">&#8249;</button>
+  <div id="recipeSearchModal" class="modal-overlay recipe-search-overlay" data-nonmodal="true" style="display:none;">
+    <aside class="modal-box recipe-search-box" aria-labelledby="recipeSearchTitle">
+      <header class="recipe-search-header">
+        <div><h2 class="modal-item-name" id="recipeSearchTitle">Recipe book</h2></div>
+        <button class="history-close-btn" data-action="recipe-search-close" aria-label="Close recipe book">&times;</button>
+      </header>
+      <div class="recipe-search-fields">
+        <label class="sr-only" for="recipeSearchInput">Search items and fluids</label>
+        <input type="search" id="recipeSearchInput" placeholder="Search items and fluids…" maxlength="160" autocomplete="off" aria-controls="recipeSearchResults">
+        <select id="recipeSearchKind" aria-label="Search type"><option value="all">All</option><option value="item">Items</option><option value="fluid">Fluids</option></select>
+      </div>
+      <div class="recipe-search-status"><span id="recipeSearchStatus" role="status" aria-live="polite"></span><button class="range-btn" data-action="recipe-search-retry" id="recipeSearchRetry" hidden>Retry</button></div>
+      <div id="recipeSearchResults" class="recipe-search-results" aria-busy="false"></div>
+      <footer class="recipe-search-footer">
+        <div class="recipe-search-pagination"><button class="range-btn" id="recipeSearchPrevious" data-action="recipe-search-previous" aria-label="Previous results page" disabled>&larr;</button><span id="recipeSearchPage"></span><button class="range-btn" id="recipeSearchNext" data-action="recipe-search-next" aria-label="Next results page" disabled>&rarr;</button></div>
+        <p>Click or R: recipes · Right-click or U: uses<br>Shift-click: stock · Filter a mod with @mod</p>
+      </footer>
+    </aside>
   </div>
 
   <script type="module" src="/static/js/main.js?v=__ASSET_VERSION__"></script>

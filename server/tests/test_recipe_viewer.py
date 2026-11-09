@@ -31,6 +31,62 @@ def test_header_counts_metadata_and_coverage_work_outside_the_network(client, da
     assert 'classes' not in body['coverage']['crafting']
 
 
+def test_catalog_search_is_paged_and_independent_of_network_stock(client, data):
+    body = request(client, '/api/recipes/search', q='planks', limit=1).get_json()
+    assert body['total'] == 1 and body['items'][0]['key'] == 'minecraft:planks:0'
+    assert body['items'][0]['name'] == 'Planks' and 'info' in body['items'][0]
+    assert body['version'] == '2.9.0' and body['fingerprint'] == data.fingerprint
+    assert request(client, '/api/recipes/search', q='planks', offset=1).get_json()['items'] == []
+    assert request(client, '/api/recipes/search', q='minecraft:planks:0').get_json()['total'] == 1
+    all_items = request(client, '/api/recipes/search', limit=1).get_json()
+    assert all_items['total'] > 1 and len(all_items['items']) == 1
+    assert request(client, '/api/recipes/search', q='fluid', kind='fluid').get_json()['items'][0]['key'] == 'fluid:mod:fluid'
+    assert request(client, '/api/recipes/search', q='@minecraft log', kind='item').get_json()['total'] == 2
+    assert request(client, '/api/recipes/search', q='@mine log', kind='item').get_json()['total'] == 2
+    assert request(client, '/api/recipes/search', q='not a real material').get_json()['total'] == 0
+
+
+def test_catalog_recents_follow_current_dataset_and_drop_unknown_keys(client, data):
+    path = '/api/recipes/search?recent_version=2.9.0&key=minecraft:planks:0&key=bad&key=example:missing:0&key=fluid:mod:fluid'
+    body = client.get(path).get_json()
+    assert [i['key'] for i in body['recent']] == ['minecraft:planks:0', 'fluid:mod:fluid']
+    assert client.get(path.replace('2.9.0', 'old')).get_json()['recent'] == []
+    assert client.get(path+'&q=planks').get_json()['recent'] == []
+
+
+def test_catalog_reports_missing_legacy_names_instead_of_empty_search(client, data, monkeypatch):
+    monkeypatch.setattr(data, 'has_names', lambda: False)
+    response = request(client, '/api/recipes/search', q='planks')
+    assert response.status_code == 409
+    assert response.get_json()['code'] == 'catalog_unavailable'
+    assert 'Settings → Game data' in response.get_json()['error']
+
+
+def test_catalog_keeps_compatible_legacy_data_and_explains_missing_recipes(client, data, monkeypatch):
+    monkeypatch.setattr(data, 'source_format', 1)
+    assert request(client, '/api/recipes/search', q='planks').status_code == 200
+    monkeypatch.setattr(recipes, 'index', lambda _: None)
+    response = request(client, '/api/recipes/search')
+    assert response.status_code == 404 and response.get_json()['code'] == 'missing_recipes'
+    assert 'update' in response.get_json()['error']
+    def failed(_):
+        raise ValueError('unsupported source format')
+    monkeypatch.setattr(recipes, 'index', failed)
+    response = request(client, '/api/recipes/search')
+    assert response.status_code == 503 and response.get_json()['code'] == 'index_failed'
+    assert 'Settings → Game data' in response.get_json()['error']
+
+
+@pytest.mark.parametrize('query', [{'limit': 1025}, {'offset': -1}, {'offset': 'nan'}, {'kind': 'essentia'},
+                                 {'q': 'x'*161}, {'q': 'a '*13}, {'q': '%'}, {'q': '_'}])
+def test_catalog_search_validates_bounds_and_treats_wildcards_literally(client, data, query):
+    result = request(client, '/api/recipes/search', **query)
+    if query.get('q') in ('%', '_'):
+        assert result.status_code == 200 and result.get_json()['total'] == 0
+    else:
+        assert result.status_code == 400
+
+
 def test_pages_present_grids_wildcards_chances_and_fluids(client, data):
     body = request(client, '/api/recipes', key='minecraft:planks:0', limit=2).get_json()
     assert body['total'] == 5 and len(body['recipes']) == 2
@@ -159,7 +215,7 @@ def test_data_errors_are_distinct(client, monkeypatch):
 
 def test_private_data_requires_a_viewer_but_page_is_public(client, data):
     auth.set_private(True)
-    for endpoint in ('/api/recipes', '/api/recipes/item'):
+    for endpoint in ('/api/recipes', '/api/recipes/item', '/api/recipes/search'):
         assert request(client, endpoint, key='minecraft:planks:0').status_code == 401
     assert client.get('/recipes?key=minecraft:planks:0').status_code == 200
     login_as(client, 'reader', 'viewer')

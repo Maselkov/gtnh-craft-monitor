@@ -2369,3 +2369,53 @@ names; `isResearched` and other export-player/layout fields are not user costs.
 Shaped recipes use the workbench grid/wand crops; shapeless recipes retain only
 the shared output decoration. Both omit raw `vis`/`prereqs`/`aspects` text. This
 presentation correction works with existing bundles without relaunching the pack.
+
+Recipe catalog lookup is separate from network search: `/api/recipes/search`
+pages the existing immutable recipe-name table, with literal ANDed name/ID terms,
+an optional item/fluid filter, and `@mod` matches on the registry namespace. It
+needs no new export or SQLite schema. The viewer-required endpoint resolves
+icons and normal item tooltips for at most 1024 results; recent keys are bounded,
+validated against the current index and namespaced by GTNH version. Client search
+is debounced/abortable and ignores stale responses. Only keys/version (eight
+lookups) go into localStorage; current names/icons/stock always come from the
+selected data and current network report.
+
+Desktop catalog capacity follows measured square grid cells and available
+height, subtracting recent lookups and headings. Resize recalculates the page
+containing the current offset. Wheel navigation wraps pages and accumulates
+destinations during an in-flight request, then loads the final destination.
+Mobile retains 40-result pages with native list scrolling.
+
+The recipe-search drawer is a nonmodal companion on desktop (1000px and above),
+reserving space beside the recipe window. `dialogs.js` includes its controls in
+the recipe's focus loop and marks the paired recipe nonmodal. Below that width
+it is a normal topmost modal sheet; result selection closes it. Edge/header swipes
+are confined to their handles so results retain native vertical scrolling.
+Escape closes the drawer before underlying dialogs. Other modal dialogs close
+the desktop companion; private sign-out aborts lookup and clears visible results.
+
+Desktop catalog results are an icon-only grid; names remain accessible labels
+and standard tooltips. Mobile retains named rows with separate Recipes/Uses
+arrow buttons. Stock amounts live only in tooltips. Search checks for a usable
+name table before returning matches: old exports without names return a distinct
+`catalog_unavailable` error with an update instruction, while compatible legacy
+exports remain searchable. Missing recipes and unreadable data also explain how
+an administrator can update the selected game data.
+
+Recipe browsing performance: the server retains verified index file identities
+(path, device, inode, size, mtime/ctime in nanoseconds, and index format). Warm
+lookups stat the source, shipped index and fallback index, without rehashing the
+archive. Changes trigger checksum validation/building as before; reset/prune
+clear the identity cache. Files changed during validation are not memoized.
+
+`recipe-data.js` shares 20-recipe batches across history frames, keyed by item,
+direction, category, offset and the complete dataset identity. It keeps at most
+100 batches and 50 metadata entries; metadata revalidation expires after 30s,
+and explicit retry clears the shared caches. Per-frame page/scroll state stays
+in the viewer. Requests deduplicate, including preloads promoted to navigation.
+The scheduler allows at most two active requests and only one background
+request. After 200ms at a destination it warms the two adjacent categories'
+first batches and the next batch of the current category. Queued preloads are
+cancelled on navigation/close; active requests may complete into the cache but
+generation checks prevent obsolete results changing the visible view. Wheel
+destinations coalesce for 60ms; the URL tracks every notch immediately.

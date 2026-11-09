@@ -25,7 +25,7 @@ export function topDialog() {
   let top = null;
   let topZ = -Infinity;
   for (const overlay of document.querySelectorAll('.modal-overlay')) {
-    if (!isShown(overlay)) continue;
+    if (!isShown(overlay) || overlay.dataset.nonmodal === 'true') continue;
     const z = parseInt(getComputedStyle(overlay).zIndex, 10) || 0;
     if (z >= topZ) {
       top = overlay;
@@ -44,7 +44,7 @@ function markUp(overlay) {
   const box = overlay.querySelector('.modal-box');
   if (!box) return;
   box.setAttribute('role', 'dialog');
-  box.setAttribute('aria-modal', 'true');
+  box.setAttribute('aria-modal', overlay.dataset.nonmodal === 'true' ? 'false' : 'true');
   box.tabIndex = -1;  // focusable by script, so focus can wait in the dialog itself
   const title = box.querySelector('.modal-item-name, .craft-title');
   if (title) {
@@ -89,7 +89,9 @@ function trapTab(e) {
   const overlay = topDialog();
   if (!overlay) return;
   const box = overlay.querySelector('.modal-box') || overlay;
-  const items = focusables(box);
+  const companion = overlay.id === 'recipeViewerModal'
+    ? document.querySelector('#recipeSearchModal[data-nonmodal="true"]:not([style*="none"])') : null;
+  const items = [...focusables(box), ...(companion ? focusables(companion) : [])];
   if (!items.length) {
     e.preventDefault();
     box.focus({ preventScroll: true });
@@ -98,7 +100,7 @@ function trapTab(e) {
   const first = items[0];
   const last = items[items.length - 1];
   const active = document.activeElement;
-  const inside = box.contains(active) && active !== box;
+  const inside = (box.contains(active) && active !== box) || companion?.contains(active);
   if (e.shiftKey && (!inside || active === first)) {
     e.preventDefault();
     last.focus();

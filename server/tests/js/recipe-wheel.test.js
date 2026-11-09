@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { setupRecipeWheel } from '../../static/js/recipe-wheel.js';
+import { setupPageWheel, setupRecipeWheel } from '../../static/js/recipe-wheel.js';
 
-function fixture() {
+function fixture(simple = false) {
   let handler, open = true, time = 0;
   const moves = [];
   const book = {addEventListener: (_name, callback) => { handler = callback; },
     querySelector: () => ({getBoundingClientRect: () => ({top:100})})};
-  setupRecipeWheel(book, {isOpen:() => open, page:n => moves.push(['page',n]), category:n => moves.push(['category',n])});
+  (simple ? setupPageWheel : setupRecipeWheel)(book, {isOpen:() => open, page:n => moves.push(['page',n]), category:n => moves.push(['category',n])});
   return {moves, close:() => { open = false; }, wheel: (options = {}) => {
     let prevented = false;
     handler({deltaX:0, deltaY:100, deltaMode:0, clientY:150, timeStamp:time += 200,
@@ -15,6 +15,16 @@ function fixture() {
     return prevented;
   }};
 }
+
+test('catalog wheel preserves rapid page travel and leaves mobile/modifier scrolling native', () => {
+  const f = fixture(true);
+  f.wheel({deltaY:600,timeStamp:0});
+  f.wheel({deltaY:-100,timeStamp:1});
+  for(let timeStamp=2;timeStamp<6;timeStamp++)f.wheel({deltaY:10,timeStamp});
+  assert.deepEqual(f.moves, [['page',6],['page',-1],['page',1]]);
+  for(const options of [{ctrlKey:true},{shiftKey:true},{metaKey:true},{altKey:true},{deltaX:200},{deltaY:0}])assert.equal(f.wheel(options),false);
+  f.close();assert.equal(f.wheel(),false);
+});
 
 test('wheel changes pages below the category heading and categories above it, including empty tab space', () => {
   const f = fixture();

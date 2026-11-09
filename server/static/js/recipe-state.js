@@ -1,4 +1,21 @@
 // Recipe URLs and trail operations, independent of dialogs and fetches.
+export function recipeCatalogCapacity(width, height, reserved = 0, gap = 4, minimum = 36) {
+  const columns = Math.max(1, Math.floor((width + gap) / (minimum + gap)));
+  const cell = (width - (columns - 1) * gap) / columns;
+  const rows = Math.max(1, Math.floor((height - reserved + gap) / (cell + gap)));
+  return Math.min(1024, columns * rows);
+}
+
+export function parseRecipeRecents(raw) {
+  try {
+    const value = JSON.parse(raw);
+    if (typeof value?.version !== 'string' || !Array.isArray(value.keys)) throw new Error();
+    return {version:value.version.slice(0,64), keys:[...new Set(value.keys.filter(key =>
+      typeof key === 'string' && key.length <= 1024 && !/\s/.test(key)
+      && /^(?:fluid:.+|[^:]+:.+:(?:\d+|\*))$/.test(key)))].slice(0,8)};
+  } catch { return {version:'', keys:[]}; }
+}
+
 export function moveRecipePage(index, delta, total, wrap = false) {
   if (!total) return 0;
   const target = index + delta;

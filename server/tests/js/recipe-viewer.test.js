@@ -1,9 +1,26 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { amountText, craftingHtml, craftingTitle, energyHtml, gridHtml, machineSidebarHtml, stackHtml, stepHtml, voltageHtml } from '../../static/js/recipe-render.js';
-import { moveRecipePage, recipeFromUrl, recipeItemKey, recipeUrl, sameRecipeDataset, trailDistance } from '../../static/js/recipe-state.js';
+import { moveRecipePage, parseRecipeRecents, recipeCatalogCapacity, recipeFromUrl, recipeItemKey, recipeUrl, sameRecipeDataset, trailDistance } from '../../static/js/recipe-state.js';
 
 const item = { key: 'mod:item:*', name: 'Any Item', mod: 'mod', internal: 'item', damage: null, kind: 'item', size: 1, wildcard: true };
+
+test('catalog pages fit complete rows and account for recent lookups and viewport changes', () => {
+  assert.equal(recipeCatalogCapacity(338,720), 128);
+  assert.equal(recipeCatalogCapacity(338,720,100), 112);
+  assert.equal(recipeCatalogCapacity(338,400), 72);
+  assert.equal(recipeCatalogCapacity(258,720), 96);
+  assert.equal(recipeCatalogCapacity(338,100000), 1024);
+  assert.equal(recipeCatalogCapacity(0,0), 1);
+});
+
+test('recent recipe lookups tolerate broken storage and retain only bounded canonical keys', () => {
+  for (const value of [null, 'bad', 'null', '{}', '[]']) assert.deepEqual(parseRecipeRecents(value), {version:'',keys:[]});
+  const keys = ['fluid:water','mod:item:*','mod:item:*','bad','fluid:','mod:has space:0',null,...Array.from({length:12},(_,i)=>`mod:item:${i}`)];
+  const parsed = parseRecipeRecents(JSON.stringify({version:'2.9.0',keys}));
+  assert.equal(parsed.version, '2.9.0');
+  assert.deepEqual(parsed.keys, ['fluid:water','mod:item:*',...Array.from({length:6},(_,i)=>`mod:item:${i}`)]);
+});
 
 test('wheel pages wrap in both directions and across full laps while arrows remain bounded', () => {
   assert.equal(moveRecipePage(29,1,30,true), 0);

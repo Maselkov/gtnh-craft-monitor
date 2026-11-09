@@ -33,6 +33,7 @@ import {
 } from './network.js';
 import { fetchPowerBadge, powerMachineFromUrl, setupPowerActions } from './power.js';
 import { openRecipeViewer, recipeViewerFromUrl, setupRecipeViewer } from './recipe-viewer.js';
+import { setupRecipeSearch } from './recipe-search.js';
 import { setupItemRecipeShortcuts } from './item-shortcuts.js';
 import { setupRecipeCheckActions } from './recipe-check.js';
 import { fetchStockRules, setupStockActions } from './stock.js';
@@ -56,6 +57,7 @@ setupAdminActions();
 setupGameDataActions();
 setupRecipeCheckActions();
 setupRecipeViewer();
+setupRecipeSearch();
 setupCraftsActions();
 setupJobLink(() => { if (lastData) render(lastData); });
 setupCraftHistory();

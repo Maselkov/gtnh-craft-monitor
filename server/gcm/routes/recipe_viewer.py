@@ -39,6 +39,43 @@ def item():
         return _error(e)
 
 
+@bp.route("/api/recipes/search", methods=["GET"])
+@auth.viewer_required
+def search():
+    try:
+        query = request.args.get("q", "").strip()
+        kind = request.args.get("kind", "all")
+        if kind not in ("all", "item", "fluid"):
+            raise ValueError("Choose items, fluids, or both.")
+        limit, offset = int(request.args.get("limit", "40")), int(request.args.get("offset", "0"))
+        keys = request.args.getlist("key")
+        if len(keys) > 12:
+            raise ValueError("Too many recent items.")
+        version, idx, assets = _dataset()
+        if not idx.has_names():
+            raise recipes.RecipeUnavailable(
+                "Recipe search needs newer game data. Ask an administrator to update it in Settings → Game data.",
+                "catalog_unavailable", 409)
+        rows, total = idx.search_names(query, {"all": None, "item": 0, "fluid": 1}[kind], limit=limit, offset=offset)
+        recent = []
+        if not query and request.args.get("recent_version") == version:
+            for key in dict.fromkeys(keys):
+                try:
+                    k, identity = recipe_viewer.parse_key(key)
+                except ValueError:
+                    continue
+                name = idx.names(k, [identity]).get(identity)
+                if name and (kind == "all" or (k == 1) == (kind == "fluid")):
+                    recent.append((k, identity, name))
+        return _response(version, idx, assets, items=recipe_viewer.catalog_items(rows),
+                         recent=recipe_viewer.catalog_items(recent), total=total, offset=offset, limit=limit, query=query)
+    except ValueError as e:
+        if isinstance(e, recipes.RecipeUnavailable) and e.code in ("missing_recipes", "index_failed"):
+            message = "Recipe search cannot read the selected game data." if e.code == "index_failed" else "This game data does not include recipes."
+            e = recipes.RecipeUnavailable(message + " Ask an administrator to update it in Settings → Game data.", e.code, e.status)
+        return _error(e)
+
+
 @bp.route("/api/recipes", methods=["GET"])
 @auth.viewer_required
 def listing():

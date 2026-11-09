@@ -526,3 +526,35 @@ def test_an_index_is_rebuilt_when_its_recipes_change(tmp_path):
     time.sleep(0.01)
     write_recipes(source, {EBF: [ebf(), ebf(dust=2)]})
     assert not recipe_index.is_current(path, source)
+
+
+def test_open_index_skips_hashing_until_source_or_index_changes(tmp_path, monkeypatch):
+    source = write_recipes(str(tmp_path / "recipes.json.gz"), {EBF: [ebf()]})
+    shipped = str(tmp_path / recipe_index.FILE)
+    recipe_index.build(source, shipped)
+    monkeypatch.setattr(recipes, "source", lambda version: source)
+    first = recipes.index("test")
+    hashes = []
+    original = recipe_index.fingerprint
+    monkeypatch.setattr(recipe_index, "fingerprint", lambda path: (hashes.append(path), original(path))[1])
+    for _ in range(20):
+        assert recipes.index("test") is first
+    assert hashes == []
+    # Replacement can preserve size and mtime: inode/ctime must invalidate too.
+    st = os.stat(shipped)
+    replacement = str(tmp_path / "replacement.sqlite")
+    shutil.copyfile(shipped, replacement)
+    os.utime(replacement, ns=(st.st_atime_ns, st.st_mtime_ns))
+    os.replace(replacement, shipped)
+    assert recipes.index("test") is first  # equivalent index; verified again
+    assert hashes
+    hashes.clear()
+    assert recipes.index("test") is first
+    assert hashes == []
+    write_recipes(source, {EBF: [ebf(), ebf(dust=2)]})
+    second = recipes.index("test")
+    assert second is not first and second.fingerprint != first.fingerprint
+    assert len(second.making(recipe_index.ITEM, HOT)) == 2
+    hashes.clear()
+    assert recipes.index("test") is second
+    assert hashes == []

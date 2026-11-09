@@ -612,6 +612,39 @@ class RecipeIndex:
         pattern = "%" + query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
         return self._all("SELECT kind, k, v FROM name WHERE v LIKE ? ESCAPE '\\' LIMIT ?", (pattern, limit))
 
+    def has_names(self):
+        return bool(self._all("SELECT 1 FROM name LIMIT 1"))
+
+    def search_names(self, query, kind=None, *, limit=40, offset=0):
+        """Paged catalog lookup, independent of network stock. Words are ANDed."""
+        if kind not in (None, ITEM, FLUID) or not 1 <= limit <= 1024 or not 0 <= offset <= 1000000:
+            raise ValueError("Invalid catalog page.")
+        terms = query.strip().split()
+        if len(query) > 160 or len(terms) > 12:
+            raise ValueError("Use a shorter search (up to 160 characters and 12 words).")
+        def escaped(value):
+            return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        clauses, args = [], []
+        if kind is not None:
+            clauses.append("kind = ?")
+            args.append(kind)
+        for term in terms:
+            if term.startswith("@") and len(term) > 1:
+                clauses.append("substr(k, 1, instr(k, ':')-1) LIKE ? ESCAPE '\\'")
+                args.append("%" + escaped(term[1:]) + "%")
+            else:
+                clauses.append("(v LIKE ? ESCAPE '\\' OR k LIKE ? ESCAPE '\\')")
+                args.extend(["%" + escaped(term) + "%"] * 2)
+        where = " AND ".join(clauses) or "1"
+        total = self._all(f"SELECT COUNT(*) FROM name WHERE {where}", args)[0][0]
+        order = "v COLLATE NOCASE, kind, k"
+        if terms:
+            order = "CASE WHEN v = ? COLLATE NOCASE THEN 0 WHEN v LIKE ? ESCAPE '\\' THEN 1 ELSE 2 END, " + order
+            args.extend([query.strip(), escaped(query.strip()) + "%"])
+        rows = self._all(f"SELECT kind, k, v FROM name WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?",
+                         [*args, limit, offset])
+        return rows, total
+
     def names(self, kind, keys):
         """{key: display name} for those of keys the export named."""
         keys = list(keys)

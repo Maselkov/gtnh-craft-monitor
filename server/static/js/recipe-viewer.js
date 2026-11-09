@@ -10,6 +10,7 @@ import { craftingTitle, displayChoices, layoutRecipePreviews, machineSidebarHtml
 import { setupRecipeTabs } from './recipe-tabs.js';
 import { setupRecipeShell } from './recipe-shell.js';
 import { setupRecipeWheel } from './recipe-wheel.js';
+import { createRecipeData } from './recipe-data.js';
 import { moveRecipePage, recipeFromUrl, recipeUrl, sameRecipeDataset } from './recipe-state.js';
 import { delegateActions, escapeHtml, onBackdropClick, updateHtml } from './util.js';
 
@@ -17,11 +18,12 @@ let state = null;
 let closing = false;
 let serial = 0;
 let generation = 0;
-let requestController = null;
+let categoryTimer = null, preloadTimer = null;
 let cycleTimer = null;
 let categoryTabs = null;
 let rendered = null;
 const cache = new Map();
+const dataCache = createRecipeData(get);
 const choices = new Map();
 const tooltipEntries = new Map();
 const tooltipIds = new Map();
@@ -84,7 +86,8 @@ export function hideRecipeViewer() {
   state = null;
   closing = false;
   generation++;
-  requestController?.abort();
+  clearTimeout(categoryTimer); clearTimeout(preloadTimer);
+  dataCache.cancelPreloads();
   clearInterval(cycleTimer);
   cycleTimer = null;
   document.getElementById('recipeViewerModal').style.display = 'none';
@@ -134,18 +137,26 @@ export function recipeViewerFromUrl() {
   }
 }
 
-function select(dir, map) {
+function select(dir, map, defer = false) {
   if (!state) return;
   if (current().dir === dir && current().map === map) return;
   rememberScroll();
   const frame = { ...current(), dir, map };
   state = { ...state, recipe: { stack: [...state.recipe.stack.slice(0, -1), frame] } };
   writeState(true);
-  loadFrame();
+  clearTimeout(categoryTimer); clearTimeout(preloadTimer);
+  dataCache.cancelPreloads();
+  // Coalesce wheel destinations; the URL follows every step, requests do not.
+  if (defer && !cached(frame)?.loaded) {
+    generation++;
+    book().setAttribute('aria-busy', 'true');
+    status('Loading recipes…');
+    categoryTimer = setTimeout(() => loadFrame(), 60);
+  } else loadFrame();
 }
 
-async function get(url, signal) {
-  const response = await fetch(url, { signal });
+async function get(url) {
+  const response = await fetch(url);
   const body = await response.json();
   if (!response.ok) throw Object.assign(new Error(body.error || 'Could not load recipes.'), { code: body.code });
   return body;
@@ -159,13 +170,13 @@ function status(text, error = false) {
 }
 
 async function loadFrame(force = false) {
+  clearTimeout(categoryTimer); clearTimeout(preloadTimer);
+  dataCache.cancelPreloads();
+  if (force) dataCache.clear();
   clearTooltip();
   const frame = current();
   if (!frame) return;
   const token = ++generation;
-  requestController?.abort();
-  requestController = new AbortController();
-  const signal = requestController.signal;
   clearInterval(cycleTimer);
   document.getElementById('recipeViewerModal').style.display = 'flex';
   let model = !force && cached(frame);
@@ -181,7 +192,7 @@ async function loadFrame(force = false) {
   }
   status(model?.loaded ? '' : 'Loading recipes…');
   try {
-    const metadata = await get('/api/recipes/item?' + new URLSearchParams({ key: frame.key }), signal);
+    const metadata = await dataCache.item(frame.key);
     if (token !== generation) return;
     if (!frame.map || !metadata[frame.dir][frame.map]) {
       frame.map = metadata.maps.find(map => metadata[frame.dir][map.id])?.id || '';
@@ -199,10 +210,11 @@ async function loadFrame(force = false) {
     // On first open, metadata can supply the tabs before recipes arrive.
     // Once a recipe is visible, commit its successor only as a complete view.
     if (!rendered?.model?.loaded) render(model);
-    if (!model.loaded) await page(model, frame, token, signal);
+    if (!model.loaded) await page(model, frame, token);
     if (token !== generation) return;
     render(model);
     startCycling();
+    warm(model, frame, token);
   } catch (e) {
     if (token !== generation || e.name === 'AbortError') return;
     if (e.code === 'stale_recipes' && !force) { loadFrame(true); return; }
@@ -215,17 +227,31 @@ async function loadFrame(force = false) {
   }
 }
 
-async function page(model, frame, token, signal, offset = 0) {
-  const query = new URLSearchParams({ key: frame.key, dir: frame.dir, offset: String(offset), limit: '20',
-    version: model.metadata.version, fingerprint: model.metadata.fingerprint, assets: model.metadata.assets || '' });
-  if (frame.map) query.set('map', frame.map);
-  const data = await get('/api/recipes?' + query, signal);
+async function page(model, frame, token, offset = 0) {
+  const data = await dataCache.batch(model.metadata,frame,offset);
   if (token !== generation) return;
   if (!sameRecipeDataset(model.metadata, data)) throw Object.assign(new Error('Game data changed. Reload recipes to continue.'), { code: 'stale_recipes' });
   data.recipes.forEach((recipe,index) => { model.recipes[offset+index] = recipe; });
   model.machines = {...model.machines, ...data.machines};
   model.total = data.total;
   model.loaded = true;
+}
+
+function warm(model, frame, token) {
+  clearTimeout(preloadTimer);
+  preloadTimer = setTimeout(() => {
+    if (token !== generation || !state) return;
+    const maps = model.metadata.maps.filter(map => model.metadata[frame.dir][map.id]);
+    const index = maps.findIndex(map => map.id === frame.map);
+    // Only two neighboring first batches, even for ingredients with thousands
+    // of uses. The queue deduplicates and promotes a preload when selected.
+    for (const step of new Set([1, maps.length-1])) {
+      const map = maps[(index+step)%maps.length];
+      if (map && map.id !== frame.map) dataCache.preload(model.metadata,{...frame,map:map.id});
+    }
+    const offset = Math.floor((model.page || 0)/20)*20+20;
+    if (offset < model.total) dataCache.preload(model.metadata,frame,offset);
+  }, 200);
 }
 
 async function turnPage(direction, wrap = false) {
@@ -250,11 +276,11 @@ async function turnPage(direction, wrap = false) {
       status('Loading recipes…');
       // Wrapping to the last page must not download every intervening page.
       const offset = Math.floor(model.requestedPage / 20) * 20;
-      await page(model, frame, token, requestController.signal, offset);
+      await page(model, frame, token, offset);
     }
     if (token === generation) {
       model.page = Math.max(0, Math.min(model.requestedPage, model.total - 1)); model.scroll = 0;
-      render(model); startCycling();
+      render(model); startCycling(); warm(model, frame, token);
     }
   } catch (e) {
     if (token !== generation || e.name === 'AbortError') return;
@@ -282,7 +308,7 @@ function turnCategory(direction) {
   const metadata = cached(frame)?.metadata || (rendered?.frame.key === frame?.key ? rendered.model?.metadata : null);
   const maps = metadata?.maps.filter(map => metadata[frame.dir][map.id]) || [];
   const index = maps.findIndex(map => map.id === frame?.map);
-  if (maps.length > 1) select(frame.dir, maps[(index + direction % maps.length + maps.length) % maps.length].id);
+  if (maps.length > 1) select(frame.dir, maps[(index + direction % maps.length + maps.length) % maps.length].id, true);
 }
 
 function stockItem(entry) {

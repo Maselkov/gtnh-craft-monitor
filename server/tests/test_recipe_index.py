@@ -342,6 +342,18 @@ def test_missing_display_reference_fails_instead_of_losing_variant(tmp_path):
         build_index(tmp_path, raw)
 
 
+def test_legacy_source_without_names_has_no_search_catalog(tmp_path):
+    raw = format4()
+    raw.pop('item_names')
+    raw.pop('fluid_names')
+    idx = build_index(tmp_path, raw)
+    try:
+        assert not idx.has_names()
+        assert idx.making(recipe_index.ITEM, PLANKS)  # Production lookup still works.
+    finally:
+        idx.close()
+
+
 def test_nei_stack_overrides_keep_production_inputs_and_validate_display_refs(tmp_path):
     raw = format4()
     raw['maps'][EBF]['recipes'][0]['preview_stacks'] = {'i': [[0, 64, None, ['charged']]], 'f': [[0, 10000]]}

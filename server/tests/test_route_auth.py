@@ -7,6 +7,7 @@ from conftest import login_as
 VIEWER_ENDPOINTS = {
     "recipe_viewer.item",
     "recipe_viewer.listing",
+    "recipe_viewer.search",
     "crafts.crafts_get",
     "crafts.crafts_history_get",
     "crafts.crafts_stats_get",  # totals over the same history

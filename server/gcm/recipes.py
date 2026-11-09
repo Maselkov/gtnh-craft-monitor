@@ -69,6 +69,7 @@ MAX_ALTERNATIVES = 5
 
 _lock = threading.Lock()
 _indexes = {}   # version -> (index path, recipe_index.RecipeIndex)
+_index_files = {}  # verified source/index file identities; avoid hashing on every lookup
 _index_locks = {}  # serialize cold builds/opening of each version across requests
 _results = {}   # (from, to, patterns updated_at, oredict version) -> result
 _job = {"key": None, "error": None, "thread": None}
@@ -142,14 +143,24 @@ def _index(version):
     if path is None:
         return None
     shipped = os.path.join(os.path.dirname(path), recipe_index.FILE)
+    local = os.path.join(_dir(), f"{version}.sqlite")
+    files = _index_file_state(path, shipped, local)
+    with _lock:
+        cached = _indexes.get(version)
+        if cached and _index_files.get(version) == files:
+            return cached[1]
     if os.path.dirname(path) != _dir() and recipe_index.is_current(shipped, path):
         out = shipped
     else:
-        out = os.path.join(_dir(), f"{version}.sqlite")
+        out = local
     with _lock:
         cached = _indexes.get(version)
     if cached and cached[0] == out and recipe_index.is_current(out, path):
+        with _lock:
+            if files == _index_file_state(path, shipped, local):
+                _index_files[version] = files
         return cached[1]
+    rebuilt = False
     if out != shipped and not recipe_index.is_current(out, path):
         os.makedirs(_dir(), exist_ok=True)
         log.info("Indexing the %s recipes...", version)
@@ -168,13 +179,31 @@ def _index(version):
                       if result.returncode < 0 else (result.stderr.strip().splitlines() or ["unknown error"])[-1])
             raise ValueError(f"Couldn't index GTNH {version}'s recipes: {reason}.")
         log.info("Indexed the %s recipes in %.1fs", version, time.monotonic() - started)
+        rebuilt = True
+    before_open = _index_file_state(path, shipped, local)
     opened = recipe_index.RecipeIndex(out)
+    after_open = _index_file_state(path, shipped, local)
     with _lock:
         old = _indexes.get(version)
         _indexes[version] = (out, opened)
+        _index_files.pop(version, None)
+        # Do not bless files replaced during verification/build/opening.
+        if (files[1:3] == after_open[1:3] and before_open == after_open
+                and (rebuilt or files == after_open)):
+            _index_files[version] = after_open
     if old:
         old[1].close()
     return opened
+
+
+def _index_file_state(*paths):
+    def identity(path):
+        try:
+            st = os.stat(path)
+            return path, st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns
+        except OSError:
+            return path, None
+    return (recipe_index.FORMAT, *(identity(path) for path in paths))
 
 
 def fetch(version, keep=()):
@@ -221,6 +250,7 @@ def _prune(keep):
             continue
         with _lock:
             cached = _indexes.pop(version, None)
+            _index_files.pop(version, None)
         if cached:
             cached[1].close()
         path = os.path.join(_dir(), name)
@@ -759,3 +789,4 @@ def reset():
         for _, idx in _indexes.values():
             idx.close()
         _indexes.clear()
+        _index_files.clear()
