@@ -503,6 +503,9 @@ the selected recipe appears, the book loads neighboring categories and the
 next batch in the background. Items with many recipes still load in batches;
 opening one does not download every recipe. Fast wheel bursts skip loading
 categories passed on the way to your destination.
+The selected tab and category heading change immediately. If its recipe is
+still loading, a loading indicator appears in the recipe area while the page
+count and machine navigation remain available.
 The mouse wheel over the window also changes recipe pages: down for next, up
 for previous. Over the top tabs, their empty reserved space or the category
 title, it changes machine categories instead. The machine sidebar and open

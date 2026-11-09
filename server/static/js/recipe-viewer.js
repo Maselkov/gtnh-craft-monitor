@@ -146,13 +146,31 @@ function select(dir, map, defer = false) {
   writeState(true);
   clearTimeout(categoryTimer); clearTimeout(preloadTimer);
   dataCache.cancelPreloads();
+  showSelection();
   // Coalesce wheel destinations; the URL follows every step, requests do not.
   if (defer && !cached(frame)?.loaded) {
     generation++;
     book().setAttribute('aria-busy', 'true');
-    status('Loading recipes…');
     categoryTimer = setTimeout(() => loadFrame(), 60);
   } else loadFrame();
+}
+
+function showSelection() {
+  const frame = current();
+  const metadata = dataCache.peekItem(frame.key)
+    || (rendered?.frame.key === frame.key ? rendered.model?.metadata : null);
+  let model = cached(frame);
+  if (metadata && (!model || !sameRecipeDataset(model.metadata,metadata))) {
+    model = {metadata, recipes:[], total:metadata[frame.dir][frame.map] || 0, scroll:0, page:0, loaded:false};
+    model.machines = {[frame.map]:metadata.maps.find(map => map.id === frame.map)?.machines || []};
+    cache.set(frameKey(frame),model);
+    if (cache.size > 100) cache.delete(cache.keys().next().value);
+  }
+  if (model && !model.loaded) {
+    const data = dataCache.peekBatch(model.metadata,frame);
+    if (data) { model.recipes=data.recipes.slice(); model.machines=data.machines; model.total=data.total; model.loaded=true; }
+  }
+  if (model) render(model);
 }
 
 async function get(url) {
@@ -167,6 +185,9 @@ function status(text, error = false) {
   el.textContent = text;
   el.classList.toggle('modal-error', error);
   document.getElementById('recipeViewerRetry').hidden = !error;
+  if (error && list().querySelector('.recipe-loading')) {
+    updateHtml(list(), '<div class="recipe-loading" role="status">Could not load recipes.</div>');
+  }
 }
 
 async function loadFrame(force = false) {
@@ -180,8 +201,7 @@ async function loadFrame(force = false) {
   clearInterval(cycleTimer);
   document.getElementById('recipeViewerModal').style.display = 'flex';
   let model = !force && cached(frame);
-  // A pending selection must not replace a complete view with empty rows or
-  // zero counts. Cached selections can display immediately while revalidated.
+  // Selection feedback is immediate; pending cards keep real metadata/counts.
   if (model?.loaded || !rendered) render(model);
   book().setAttribute('aria-busy', 'true');
   document.getElementById('recipeViewerBack').disabled = state.recipe.stack.length < 2;
@@ -190,7 +210,7 @@ async function loadFrame(force = false) {
     document.getElementById('recipePagePrevious').disabled = true;
     document.getElementById('recipePageNext').disabled = true;
   }
-  status(model?.loaded ? '' : 'Loading recipes…');
+  status('');
   try {
     const metadata = await dataCache.item(frame.key);
     if (token !== generation) return;
@@ -207,9 +227,7 @@ async function loadFrame(force = false) {
     if (cache.size > 100) cache.delete(cache.keys().next().value);
     frame.name = metadata.item.name;
     writeState(true);
-    // On first open, metadata can supply the tabs before recipes arrive.
-    // Once a recipe is visible, commit its successor only as a complete view.
-    if (!rendered?.model?.loaded) render(model);
+    render(model);
     if (!model.loaded) await page(model, frame, token);
     if (token !== generation) return;
     render(model);
@@ -380,11 +398,12 @@ function render(model) {
       choices.set(`${row.id}:${index}`, displayChoices(slot.alternatives));
     });
   }
-  updateHtml(list(), rows.map(row => `<article class="recipe-viewer-row" data-id="recipe-${row.id}">${stepHtml(row, {interactive:true, tooltipKey, machineSidebar:true})}</article>`).join(''));
+  updateHtml(list(), model?.loaded ? rows.map(row => `<article class="recipe-viewer-row" data-id="recipe-${row.id}">${stepHtml(row, {interactive:true, tooltipKey, machineSidebar:true})}</article>`).join('')
+    : '<div class="recipe-loading" role="status"><span class="recipe-loading-spinner" aria-hidden="true"></span><span>Loading recipes…</span></div>');
   layoutRecipePreviews(list());
   if (model) list().scrollTop = model.scroll;
   updatePageButtons(model);
-  status(model?.loaded ? model.total ? '' : 'No supported recipes in this bundle for this item.' : 'Loading recipes…');
+  status(model?.loaded && !model.total ? 'No supported recipes in this bundle for this item.' : '');
 }
 
 function startCycling() {

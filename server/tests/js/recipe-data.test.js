@@ -10,8 +10,10 @@ test('metadata is shared across category selections, expires and retries failure
   let time=0, calls=0, fail=false;
   const data = createRecipeData(async () => { calls++; if(fail)throw Error('offline'); return meta; },{now:()=>time});
   assert.strictEqual(await data.item(frame.key),meta);
+  assert.strictEqual(data.peekItem(frame.key),meta);
   await data.item(frame.key); assert.equal(calls,1);
   time=30001; fail=true;
+  assert.equal(data.peekItem(frame.key),undefined);
   await assert.rejects(data.item(frame.key),/offline/);
   fail=false; await data.item(frame.key); assert.equal(calls,3);
   data.clear(); await data.item(frame.key); assert.equal(calls,4);
@@ -30,6 +32,8 @@ test('preloads deduplicate with selected batches; background leaves room and for
   const selected=data.batch(meta,{...frame,map:'c'});
   await tick(); assert.deepEqual(calls,['a','c']);
   releases[1](); await selected;
+  assert.deepEqual(data.peekBatch(meta,{...frame,map:'c'}),{...meta,recipes:[]});
+  assert.equal(data.peekBatch({...meta,assets:'other'}, {...frame,map:'c'}),undefined);
   // Another selection of the same prefetched batch never issues a request.
   await data.batch(meta,{...frame,map:'c'}); assert.equal(calls.length,2);
   releases[0](); await tick(); assert.deepEqual(calls,['a','c','b']);

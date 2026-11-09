@@ -26,6 +26,7 @@ export function createRecipeData(get, {now = Date.now} = {}) {
     }
     const task = {foreground, run:() => get(url).then(check)};
     record = {task, promise:new Promise((resolve,reject) => { task.resolve=resolve; task.reject=reject; })};
+    record.promise.then(value => { record.value = value; }, () => {});
     task.evict = () => { if (cache.get(key) === record) cache.delete(key); };
     remember(cache,key,record,max);
     record.promise.catch(() => { if (cache.get(key) === record) cache.delete(key); });
@@ -42,9 +43,12 @@ export function createRecipeData(get, {now = Date.now} = {}) {
       return data;
     });
   }
-  function batch(meta, frame, offset = 0, foreground = true) {
-    const query = new URLSearchParams({key:frame.key,dir:frame.dir,map:frame.map,offset:String(offset),limit:'20',
+  function batchQuery(meta, frame, offset) {
+    return new URLSearchParams({key:frame.key,dir:frame.dir,map:frame.map,offset:String(offset),limit:'20',
       version:meta.version,fingerprint:meta.fingerprint,assets:meta.assets || ''});
+  }
+  function batch(meta, frame, offset = 0, foreground = true) {
+    const query = batchQuery(meta,frame,offset);
     return request(batches,query.toString(),'/api/recipes?'+query,foreground,100,data => {
       if (!sameRecipeDataset(meta,data)) throw Object.assign(new Error('Game data changed. Reload recipes to continue.'),{code:'stale_recipes'});
       return data;
@@ -58,6 +62,8 @@ export function createRecipeData(get, {now = Date.now} = {}) {
     }
   }
   return {item,batch,cancelPreloads,
+    peekItem:key => { const record=metadata.get(key); return record?.expires > now() ? record.value : undefined; },
+    peekBatch:(meta,frame,offset=0) => batches.get(batchQuery(meta,frame,offset).toString())?.value,
     preload:(meta,frame,offset=0) => { batch(meta,frame,offset,false).catch(() => {}); },
     clear:() => { cancelPreloads(); metadata.clear(); batches.clear(); }};
 }

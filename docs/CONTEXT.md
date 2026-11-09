@@ -2419,3 +2419,7 @@ first batches and the next batch of the current category. Queued preloads are
 cancelled on navigation/close; active requests may complete into the cache but
 generation checks prevent obsolete results changing the visible view. Wheel
 destinations coalesce for 60ms; the URL tracks every notch immediately.
+The selected tab, heading and known page count also track the destination
+immediately. Unloaded categories replace the old recipe with a loading card;
+cached/preloaded batches render synchronously without a loading flash. The
+frame stays painted throughout and loading animation respects reduced motion.

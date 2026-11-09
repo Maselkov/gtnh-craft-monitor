@@ -3020,7 +3020,8 @@ async function main() {
     await evaluate(`window.burstFetch=window.fetch;window.burstRequests=[];window.fetch=(...args)=>{if(String(args[0]).startsWith('/api/recipes'))window.burstRequests.push(String(args[0]));return window.burstFetch(...args);};window.burstWheel=(deltaY,category=true)=>{
       const b=$('.recipe-viewer-box'),r=$(category?'#recipeCategoryName':'#recipeViewerList').getBoundingClientRect();
       b.dispatchEvent(new WheelEvent('wheel',{bubbles:true,cancelable:true,deltaY,clientX:r.x+10,clientY:r.y+10}));
-    };for(let i=0;i<12;i++)window.burstWheel(100);true`);
+    };window.burstSelections=[];for(let i=0;i<12;i++){window.burstWheel(100);window.burstSelections.push($('#recipeViewerMaps [aria-selected=true]').dataset.map);}true`);
+    assert.deepEqual(await evaluate(`window.burstSelections`), Array.from({length:12},(_,i)=>'gt.recipe.tabs_test_'+String(i+1).padStart(2,'0')));
     await waitFor('all twelve rapid notches counted', `$('#recipeViewerMaps [aria-selected=true]').dataset.map === 'gt.recipe.tabs_test_12' && $('.recipe-viewer-box').getAttribute('aria-busy') === 'false'`);
     assert(await evaluate(`window.burstRequests.filter(url=>url.startsWith('/api/recipes/item?')).length===0
       && window.burstRequests.filter(url=>url.startsWith('/api/recipes?')).length===1`));
@@ -3085,7 +3086,7 @@ async function main() {
     await waitFor('long recipe list closed', `!visible($('#recipeViewerModal'))`);
   });
 
-  step('recipes: delayed category switches keep content and counts until the next view is ready', async () => {
+  step('recipes: delayed category switches select immediately with a loading card and real counts', async () => {
     await cdp.send('Page.navigate', {url:base+'/recipes?key=minecraft:iron_ingot:0'});
     await waitFor('switch fixture loaded', `document.readyState === 'complete' && !window.byText`);
     await evaluate(PAGE_LIB);
@@ -3112,13 +3113,14 @@ async function main() {
     await click(`$('#recipeViewerMaps [data-map="furnace"]')`);
     await waitFor('category recipes delayed', `window.switchHeld.length === 1`);
     await sleep(150);
-    assert(await evaluate(`$('#recipeViewerList .recipe-viewer-row') === window.switchRow
-      && $('#recipeCategoryName').textContent === 'Shaped Crafting' && $('#recipeViewerPage').textContent === 'Page 1/1'`));
+    assert(await evaluate(`!$('#recipeViewerList .recipe-viewer-row') && !!$('#recipeViewerList .recipe-loading-spinner')
+      && $('#recipeViewerMaps [aria-selected=true]').dataset.map === 'furnace'
+      && $('#recipeCategoryName').textContent === 'Furnace' && $('#recipeViewerPage').textContent === 'Page 1/1'`));
     await evaluate(`window.switchHeld.shift().release();true`);
     await waitFor('new category committed', `$('#recipeCategoryName').textContent === 'Furnace'
       && $('.recipe-viewer-box').getAttribute('aria-busy') === 'false' && $('#recipeViewerList .recipe-viewer-row') !== window.switchRow`);
     await evaluate(`window.switchSampling=false;true`);
-    assert(await evaluate(`window.switchSamples.length > 8 && window.switchSamples.every(s=>s.rows===1 && s.page==='Page 1/1' && s.painted)`));
+    assert(await evaluate(`window.switchSamples.length > 8 && window.switchSamples.every(s=>s.rows<=1 && s.page==='Page 1/1' && s.painted)`));
     // A visited category needs neither metadata nor a recipe request.
     await evaluate(`window.switchRequests=[];window.fetch=(...args)=>{if(String(args[0]).startsWith('/api/recipes'))window.switchRequests.push(String(args[0]));return window.switchFetch(...args);};true`);
     await click(`$('#recipeViewerMaps [data-map="crafting"]')`);
@@ -3521,6 +3523,7 @@ async function main() {
     await cdp.send('Input.dispatchKeyEvent', {type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13});
     await waitFor('Enter activates category', `$('#recipeViewerMaps [aria-selected="true"]').dataset.map === 'gt.recipe.tabs_test_19' && $('#recipeCategoryName').textContent === 'Category 19' && $('#recipeViewerPage').textContent === 'Page 1/1' && document.activeElement === $('#recipeViewerMaps [aria-selected="true"]')`);
     assert(await evaluate(`(() => {const t=$('#recipeViewerMaps [aria-selected="true"]').getBoundingClientRect(),v=$('#recipeViewerMaps').getBoundingClientRect();return t.left >= v.left - 1 && t.right <= v.right + 1 && $('#recipeViewerList').getAttribute('aria-labelledby') === $('#recipeViewerMaps [aria-selected="true"]').id;})()`));
+    await waitFor('activated category recipe loaded', `$('.recipe-viewer-box').getAttribute('aria-busy') === 'false' && $('#recipeViewerList .recipe-stack-control[data-key="example:tabs_input:0"]')`);
     await evaluate(`$('#recipeViewerList .recipe-stack-control[data-key="example:tabs_input:0"]').click(), true`);
     await waitFor('ingredient opened from category', `$('.recipe-viewer-box').dataset.itemName === 'Tabs Input'`);
     await click(`$('#recipeViewerBack')`);
