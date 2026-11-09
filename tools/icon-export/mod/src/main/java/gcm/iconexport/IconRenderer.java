@@ -27,6 +27,7 @@ import net.minecraft.client.renderer.texture.TextureMap;
 import net.minecraft.client.renderer.tileentity.TileEntityRendererDispatcher;
 import net.minecraft.client.shader.Framebuffer;
 import net.minecraft.item.ItemStack;
+import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.util.IIcon;
 import net.minecraftforge.client.IItemRenderer;
 import net.minecraftforge.client.MinecraftForgeClient;
@@ -172,11 +173,17 @@ final class IconRenderer {
         neiRenderErrors.removeAll(Collections.singletonList(stack));
         // The cosmic shader steps its texture animation by this; AnimationClock sets the rest.
         standInPlayer.ticksExisted = ExportClock.tick();
+        EntityClientPlayerMP previousPlayer = mc.thePlayer;
+        EntityLivingBase previousView = mc.renderViewEntity;
         mc.thePlayer = standInPlayer;
+        // Thaumcraft's Runic Matrix reads the camera tick count even for its
+        // inventory model. The main menu has no camera, just as it has no player.
+        if (mc.renderViewEntity == null) mc.renderViewEntity = standInPlayer;
         try {
             return renderItemOnce(stack);
         } finally {
-            mc.thePlayer = null;
+            mc.thePlayer = previousPlayer;
+            mc.renderViewEntity = previousView;
         }
     }
 

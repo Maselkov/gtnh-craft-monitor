@@ -16,6 +16,9 @@ test('shared item tooltip formats rarity, Shift descriptions, mod and context sa
   assert.match(normal, /Amount: 2x/);
   assert.match(normal, /A &amp; B/);
   assert.doesNotMatch(normal, /Shift details|Stored:|<part>|<text>/);
+  const touch = itemTooltipHtml(item, info, {hideShiftHint:true});
+  assert.match(touch, /Regular/);
+  assert.doesNotMatch(touch, /\[shift\]/);
   const shifted = itemTooltipHtml(item, info, {shiftHeld:true});
   assert.match(shifted, /Shift details/);
   assert.doesNotMatch(shifted, /Regular|\[shift\]/);

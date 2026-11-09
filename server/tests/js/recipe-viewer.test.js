@@ -232,3 +232,20 @@ test('production totals use game scientific formatting without losing exact hove
   assert.match(energyHtml({eut:1000000, ticks:1000000}), /Total: 1e12 EU/);
   assert.match(energyHtml({eut:1000000, ticks:999999}), /Total: 999,999,000,000 EU/);
 });
+
+
+test('infusion essentia and arcane vis use shared focusable tooltips without recipe links', () => {
+  for (const family of ['infusion', 'arcane']) {
+    const entries = [];
+    const html = stepHtml({id:1, map:family, inputs:[], outputs:[], machines:[], preview:{
+      family,width:166,height:142,slots:[],layers:[],
+      aspects:[{tag:'ignis',name:'Ignis',amount:8,icon:'aspect/ignis.webp',x:56,y:122,w:16,h:16}]
+    }}, {interactive:true,tooltipKey:entry => { entries.push(entry); return 'aspect'; }});
+    assert.match(html, /data-recipe-tooltip="aspect" tabindex="0" aria-label="Ignis"/);
+    assert.doesNotMatch(html, /title="Ignis|data-action="recipe-open"/);
+    assert.equal(entries[0].kind, family === 'arcane' ? 'vis' : 'essentia');
+    assert.equal(entries[0].internal, 'ignis');
+    assert.equal(entries[0].info.mod_name, 'Thaumcraft');
+    assert.equal(entries[0].vis, family === 'arcane');
+  }
+});

@@ -419,3 +419,11 @@ def test_category_metadata_finds_mod_after_the_category_label(tmp_path, monkeypa
         assert info['machines'][1]['key'] == 'gregtech:gt.blockmachines:1000'
     finally:
         idx.close()
+
+
+def test_legacy_infusion_category_has_runic_matrix_and_mod(data, monkeypatch):
+    monkeypatch.setattr(data, "machines", lambda name: [{"name": "Arcane Infusion"}])
+    info = recipe_viewer.map_info(data, "nei.thaumcraft.infusion")
+    assert info["name"] == "Arcane Infusion"
+    assert info["mod_name"] == "Thaumcraft"
+    assert info["machines"][0]["key"] == "Thaumcraft:blockStoneDevice:2"

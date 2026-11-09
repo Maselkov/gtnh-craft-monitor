@@ -498,6 +498,22 @@ their side arrows when there are more tabs than fit. With a tab focused,
 **Left/Right** and **Home/End** move between tabs; **Enter** or **Space** selects
 one. The second navigation row shows **Page X/Y**; its arrows move between
 recipes in the selected category, one recipe per page.
+On phones and touch devices, the book fills the screen. Machine icons sit in a
+horizontal strip below the swipeable category tabs, leaving the full width for
+the recipe. Page and category arrows have larger touch targets.
+
+Tap an ingredient, output, machine or essentia icon to inspect it in a fixed
+bottom sheet. It uses the same tooltip content as desktop, including **Amount
+in system**, plus the recipe quantity. Choose **Recipes**, **Uses**, or **Stock**
+when available; tapping an icon itself stays on the current recipe. Essentia
+has details and Stock, while vis costs have details only. **More details** shows
+information that normally requires Shift. Tap another icon to update the sheet,
+close it with **×**, tap outside it, or swipe down from its handle.
+
+Pinch the recipe to zoom, then drag to see the enlarged card. The **− / +**
+controls also adjust zoom; tap the percentage to fit the recipe to the window.
+Changing the recipe page or category resets zoom and closes item details.
+
 Loaded recipe batches are reused when you revisit an item or category. After
 the selected recipe appears, the book loads neighboring categories and the
 next batch in the background. Items with many recipes still load in batches;
@@ -513,8 +529,8 @@ information panel keep their normal scrolling. Horizontal gestures and
 modified wheel gestures keep the browser's usual behavior.
 Rapid wheel turns advance through multiple pages or categories; they are not
 limited to one step per turn. Wheel paging wraps from the last page to the first, and from the first to the last.
-While a new selection loads, the current recipe and page count stay visible
-until its replacement is ready. Recently visited categories return immediately
+When another recipe page needs a new batch, its current card stays visible
+until the destination arrives. Recently visited categories return immediately
 to their previous page while the viewer checks that the game data still matches.
 Crafting comes first, then furnace recipes, then GregTech and Assembly Line recipes by absolute
 EU/t and duration, with approximate NEI displays last. Machine recipes show voltage, time, heat and output chances
@@ -525,12 +541,14 @@ positioned preview, where **NC** appears in yellow at the top-left of the icon.
 Fluid previews fill their slots, with compact litre quantities such as **3kL**
 and **2.5ML** in larger lettering. Fluid stock amounts in tooltips use mB.
 
-The machine sidebar attached to the left of the window shows the exported variants
+Infusion essentia and arcane vis icons support the same hover and keyboard-focus tooltips as recipe items. Infusion essentia tooltips show the amount in your system when network stock is available.
+
+On desktop, the machine sidebar attached to the left of the window shows the exported variants
 and tiers as icons. Hover or focus one for its standard item tooltip, including
 its current amount in the ME network; hold **Shift** for extended details.
 Left-click or **R** opens that machine's recipes; right-click or **U** opens its
 uses. Machines without an exported item identity show initials and a name.
-The sidebar remains on the left on narrow screens, with smaller icons. Long
+On touch screens the machines occupy a horizontal strip above the recipe. Long
 machine lists scroll independently from the recipe.
 
 Newer bundles show positioned previews for Assembly Line, standard GregTech

@@ -17,7 +17,7 @@ export function itemTooltipHtml(item, info = {}, options = {}) {
   const mod = options.modName || info.mod_name || item.mod;
   return `<div class="network-tooltip-name${rarity}">${nameHtml(item.name || '?')}</div>
     ${item.variant_name ? `<div class="network-tooltip-variant">${escapeHtml(nameText(item.variant_name))}</div>` : ''}
-    ${info.shift_description && !options.shiftHeld ? '<div class="network-tooltip-hint">[shift]</div>' : ''}
+    ${info.shift_description && !options.shiftHeld && !options.hideShiftHint ? '<div class="network-tooltip-hint">[shift]</div>' : ''}
     ${options.stat ? `<div class="network-tooltip-stat">${escapeHtml(options.stat)}</div>` : ''}
     ${options.details || ''}
     ${kindTooltipHtml(item.kind)}

@@ -283,8 +283,23 @@ def validate_recipes(data):
             and sum(t[1] for t in totals) == coverage["crafting"]["exported"], "crafting class counts do not balance")
 
 
+def check_infusion_icon(data, lookup, image_paths):
+    """A failed camera-dependent inventory render used to silently lose this tab icon."""
+    infusion = data.get("maps", {}).get("nei.thaumcraft.infusion")
+    if infusion is None:
+        return []
+    key = "Thaumcraft:blockStoneDevice:2"
+    if not any(isinstance(m, dict) and m.get("key") == key for m in infusion.get("machines", [])):
+        return ["Arcane Infusion is missing its Runic Matrix catalyst identity"]
+    path = lookup.get("by_key", {}).get(key)
+    if not path or path not in image_paths:
+        return ["Arcane Infusion is missing its Runic Matrix icon"]
+    return []
+
+
 def check(out_dir):
     problems = []
+    recipe_data = {}
     report = json.loads((out_dir / "export-report.json").read_text())
     try:
         with gzip.open(out_dir / "recipes.json.gz", "rt") as f:
@@ -309,6 +324,8 @@ def check(out_dir):
                         f"expected >= {MIN_ANIMATED_ICONS}")
     with zipfile.ZipFile(out_dir / "images.zip") as zf:
         biggest = max(zf.infolist(), key=lambda info: info.file_size)
+        lookup = json.loads((out_dir / "icons_lookup.json").read_text())
+        problems.extend(check_infusion_icon(recipe_data, lookup, set(zf.namelist())))
     if biggest.file_size > MAX_ICON_BYTES:
         problems.append(f"{biggest.filename} is {biggest.file_size} bytes")
 

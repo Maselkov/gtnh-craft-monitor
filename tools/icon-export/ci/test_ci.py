@@ -648,3 +648,16 @@ def test_preview_crop_and_asset_references_are_validated():
     scene['layers'][0]['uv'][2] = .1
     with pytest.raises(ValueError, match='texture crop'):
         validate.validate_recipes(data)
+
+
+def test_infusion_catalyst_image_cannot_silently_disappear_from_bundle():
+    key = "Thaumcraft:blockStoneDevice:2"
+    path = "item/Thaumcraft/blockStoneDevice~2.webp"
+    data = {"maps": {"nei.thaumcraft.infusion": {"machines": [{"name": "Arcane Infusion"}]}}}
+    assert "identity" in validate.check_infusion_icon(data, {}, set())[0]
+    data["maps"]["nei.thaumcraft.infusion"]["machines"][0]["key"] = key
+    assert "icon" in validate.check_infusion_icon(data, {}, set())[0]
+    lookup = {"by_key": {key: path}}
+    assert "icon" in validate.check_infusion_icon(data, lookup, set())[0]
+    assert validate.check_infusion_icon(data, lookup, {path}) == []
+    assert validate.check_infusion_icon({"maps": {}}, {}, set()) == []

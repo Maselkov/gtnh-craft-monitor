@@ -37,9 +37,12 @@ for about 3 minutes), plus a one-time
 3. Restart the server, or pick the version on the Game data page.
 
 `out/export-report.json` lists the counts and any items that failed to
-render. A few hundred always do: items whose renderer needs a player or a
-world (the bow, Thaumcraft devices, some Botania and Chisel blocks), since the
-export never loads one. They fall back to `by_label` or show no icon.
+render. The exporter retries failed inventory renders with a temporary player
+and camera entity, allowing models such as Thaumcraft’s Runic Matrix to render
+at the main menu. Some items still fail when they need a world or more player
+state (the bow, some Botania and Chisel blocks), since the export never loads a
+world. They fall back to `by_label` or show no icon. CI also checks that an
+export containing Arcane Infusion includes its Runic Matrix catalyst and image.
 
 Settings: `GCM_MAX_MEMORY` (default `6G`), `GCM_ICON_SIZE` (default 64 px),
 `GCM_ANIMATION_TICKS` (default 400, i.e. up to 20 s of animation; 0 for still icons only),

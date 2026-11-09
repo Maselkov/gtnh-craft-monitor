@@ -123,7 +123,11 @@ def entry(kind, key, size, names, chance=None):
 
 
 def map_info(idx, name):
-    machines = [{**m, "name": mctext.plain(m["name"]), "icon": icons.icon_for_key(m.get("key"))} for m in idx.machines(name)]
+    catalysts = idx.machines(name)
+    # Older exports omitted the native infusion catalyst entirely.
+    if name == "nei.thaumcraft.infusion" and not any(m.get("key") for m in catalysts):
+        catalysts = [{"name": "Arcane Infusion", "key": "Thaumcraft:blockStoneDevice:2"}]
+    machines = [{**m, "name": mctext.plain(m["name"]), "icon": icons.icon_for_key(m.get("key"))} for m in catalysts]
     key = next((m["key"] for m in machines if m.get("key")), None)
     mod = key.partition(":")[0] if key else None
     title = mctext.plain(machines[0]["name"]) if machines else name

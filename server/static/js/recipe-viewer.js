@@ -8,6 +8,7 @@ import { activeTab } from './tabs.js';
 import { setPageView } from './page-title.js';
 import { craftingTitle, displayChoices, layoutRecipePreviews, machineSidebarHtml, stackHtml, stepHtml } from './recipe-render.js';
 import { setupRecipeTabs } from './recipe-tabs.js';
+import { setupRecipeTouch } from './recipe-touch.js';
 import { setupRecipeShell } from './recipe-shell.js';
 import { setupRecipeWheel } from './recipe-wheel.js';
 import { createRecipeData } from './recipe-data.js';
@@ -20,7 +21,7 @@ let serial = 0;
 let generation = 0;
 let categoryTimer = null, preloadTimer = null;
 let cycleTimer = null;
-let categoryTabs = null;
+let categoryTabs = null, touch = null;
 let rendered = null;
 const cache = new Map();
 const dataCache = createRecipeData(get);
@@ -31,7 +32,7 @@ let tooltipCell = null;
 let shiftHeld = false;
 
 function tooltipKey(entry) {
-  const identity = JSON.stringify([entry.key, entry.display_id, entry.name, entry.size, entry.chance, entry.machine]);
+  const identity = JSON.stringify([entry.key, entry.display_id, entry.name, entry.size, entry.chance, entry.machine, entry.kind, entry.internal, entry.vis]);
   if (!tooltipIds.has(identity)) {
     const id = String(tooltipIds.size);
     tooltipIds.set(identity, id);
@@ -52,12 +53,14 @@ function recipeTooltipHtml(cell) {
   const notes = [entry.wildcard ? 'Any damage' : '', cell.dataset.tooltipNote,
     entry.chance ? `${entry.chance}% chance` : ''].filter(Boolean).join(' · ');
   const stock = stockItem(entry);
-  return itemTooltipHtml({...entry, isCraftable:stock?.isCraftable}, entry.info, { shiftHeld,
-    aggregateStockVariants:true,
+  return itemTooltipHtml({...entry, isCraftable:stock?.isCraftable}, entry.info, { shiftHeld:shiftHeld || touch?.expanded(),
+    aggregateStockVariants:true, hideShiftHint:touch?.isMobile(),
+    ...(entry.vis ? {stockAmount:null,stat:'Vis'} : {}),
     details: notes ? `<div class="network-tooltip-stat">${escapeHtml(notes)}</div>` : '' });
 }
 
 function refreshTooltip() {
+  touch?.refresh();
   if (!tooltipVisible(book()) || !tooltipCell?.isConnected) return;
   const html = recipeTooltipHtml(tooltipCell);
   if (html) showTooltip(html, undefined, undefined, book());
@@ -79,6 +82,7 @@ function rememberScroll() {
 }
 
 export function hideRecipeViewer() {
+  touch?.reset();
   clearTooltip();
   tooltipEntries.clear(); tooltipIds.clear();
   rememberScroll();
@@ -339,7 +343,10 @@ function currentStockItem() {
 }
 
 function openStackStock(el) {
-  const entry = tooltipEntries.get(el.dataset.recipeTooltip);
+  return openEntryStock(tooltipEntries.get(el.dataset.recipeTooltip));
+}
+
+function openEntryStock(entry) {
   if (!entry || entry.wildcard) return false;
   const item = stockItem(entry) || {...entry, size:null, isCraftable:false};
   hideRecipeViewer();
@@ -382,6 +389,7 @@ function render(model) {
   updateHtml(info, (meta?.info.description ? descriptionHtml(meta.info.description) : '') + (ore.length ? `<div class="recipe-grid-note">Ore dictionary: ${escapeHtml(ore.join(', '))}</div>` : '')
     + (row?.approximate?.some(flag => flag !== 'nei_display') ? '<div class="recipe-approximation">Approximate: NBT or custom matching rules may differ.</div>' : ''));
   clearTooltip();
+  touch?.reset();
   choices.clear(); tooltipEntries.clear(); tooltipIds.clear();
   const rows = model?.recipes.slice(model.page || 0, (model.page || 0) + 1) || [];
   updateHtml(document.getElementById('recipeViewerMachines'), machineSidebarHtml(model?.machines?.[frame.map] || [], {tooltipKey}));
@@ -414,7 +422,7 @@ function startCycling() {
     let changed = false;
     for (const el of list().querySelectorAll('[data-choice]')) {
       const alternatives = choices.get(el.dataset.choice);
-      if (!alternatives || alternatives.length < 2 || el.contains(document.activeElement) || el.matches(':hover')) continue;
+      if (!alternatives || alternatives.length < 2 || el.contains(document.activeElement) || el.matches(':hover') || touch?.isSelected(el)) continue;
       const next = (Number(el.dataset.frame || 0) + 1) % alternatives.length;
       el.dataset.frame = String(next);
       updateHtml(el.querySelector('.recipe-preview-choice') || el, stackHtml(alternatives[next], { interactive: true, compact: true, preview: el.classList.contains('recipe-preview-slot'), tooltipKey }));
@@ -427,6 +435,11 @@ function startCycling() {
 export function setupRecipeViewer() {
   categoryTabs = setupRecipeTabs();
   setupRecipeShell(book());
+  touch = setupRecipeTouch(book(), {
+    entryForCell:cell => tooltipEntries.get(cell.dataset.recipeTooltip),
+    htmlForCell:recipeTooltipHtml, openRecipes:openRecipeViewer, openStock:openEntryStock,
+    layout:() => layoutRecipePreviews(list()),
+  });
   setupRecipeWheel(book(), {isOpen:recipeViewerOpen, page:steps => turnPage(steps,true), category:turnCategory});
   let previewWidth = 0;
   const resize = new ResizeObserver(([entry]) => {
@@ -444,7 +457,7 @@ export function setupRecipeViewer() {
   book().addEventListener('scroll', clearTooltip, { passive: true, capture: true });
   book().addEventListener('focusin', e => {
     const cell = e.target.closest('[data-recipe-tooltip]');
-    if (!cell?.matches(':focus-visible')) return;
+    if (touch.isMobile() || !cell?.matches(':focus-visible')) return;
     const html = recipeTooltipHtml(cell);
     const r = cell.getBoundingClientRect();
     if (html) showTooltip(html, r.right - 8, r.bottom - 8, book());
@@ -478,6 +491,6 @@ export function setupRecipeViewer() {
   const modal = document.getElementById('recipeViewerModal');
   modal.addEventListener('contextmenu', e => {
     const el = e.target.closest('[data-action="recipe-open"]');
-    if (el) { e.preventDefault(); e.stopPropagation(); openRecipeViewer(el.dataset.key, 'using'); }
+    if (el) { e.preventDefault(); e.stopPropagation(); if (!touch.isMobile()) openRecipeViewer(el.dataset.key, 'using'); }
   });
 }

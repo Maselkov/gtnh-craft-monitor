@@ -2423,3 +2423,17 @@ The selected tab, heading and known page count also track the destination
 immediately. Unloaded categories replace the old recipe with a loading card;
 cached/preloaded batches render synchronously without a loading flash. The
 frame stays painted throughout and loading animation respects reduced motion.
+
+
+**Touch recipe inspection.** `recipe-touch.js` owns a bottom sheet inside the dialog,
+alongside the painted recipe paper. At widths up to 700px or with a coarse primary pointer,
+recipe-slot taps inspect rather than navigate; explicit Recipes/Uses/Stock
+buttons preserve canonical identities and use the existing viewer/history entry
+points. Shared item-tooltip markup supplies descriptions and network stock,
+with a touch More details control for Shift descriptions. Selected alternatives
+pause cycling until dismissed. Page/category redraws, close and input-mode
+changes dismiss inspection and reset zoom. A two-finger gesture resizes the
+recipe row between 1× and 3×, retaining the gesture anchor; one finger pans or
+scrolls normally. Buttons provide the same zoom without a gesture. The compact
+touch shell uses DOM controls instead of the desktop frame canvas, horizontal
+machine and category strips, and 44px navigation controls.

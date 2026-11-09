@@ -3392,6 +3392,8 @@ async function main() {
     await evaluate(PAGE_LIB);
     await waitFor('display recipe', `$('#recipeViewerList .recipe-card')`);
     await waitFor('infusion costs and static research', `$('#recipeViewerList .recipe-preview-instability')?.textContent === 'Instability: 0' && $('#recipeViewerList .recipe-preview-research').textContent.includes('Infusion Research') && $('#recipeViewerList .recipe-preview-aspect').textContent.includes('25')`);
+    await evaluate(`$('#recipeViewerList .recipe-preview-aspect').dispatchEvent(new MouseEvent('mouseover', {bubbles:true,clientX:120,clientY:140}));true`);
+    await waitFor('essentia shared tooltip', `visible($('.network-tooltip')) && $('.network-tooltip').textContent.includes('Order') && $('.network-tooltip').textContent.includes('Essentia') && $('.network-tooltip').textContent.includes('Amount in system:') && $('.network-tooltip').textContent.includes('Thaumcraft')`);
     assert(await evaluate(`$('#recipeViewerList .recipe-preview-layers image').getAttribute('href').startsWith('/icons?path=')`));
     assert(await evaluate(`$('#recipeViewerList .recipe-card .recipe-energy').textContent.includes('Mana: 2,000')
       && !$('#recipeViewerList .recipe-requirements') && !$('#recipeViewerList').textContent.includes('NEI display recipe')`));
@@ -3406,11 +3408,13 @@ async function main() {
     await waitFor('arcane glyph loaded', `$('#recipeViewerList .recipe-preview-aspect img')?.naturalWidth > 0`);
     assert(await evaluate(`$('#recipeCategoryName').textContent === 'Shaped Arcane Crafting'
       && $$('#recipeViewerList .recipe-preview-choice button').length === 10
-      && $('#recipeViewerList .recipe-preview-aspect').title === 'Order: 10 vis'
+      && $('#recipeViewerList .recipe-preview-aspect').hasAttribute('data-recipe-tooltip')
       && $('#recipeViewerList .recipe-preview-aspect .recipe-stack-amount').textContent === '10'
       && $('#recipeViewerList .recipe-preview-research').textContent === 'Research: Digi-sentia Storage'
       && !$('#recipeViewerList .recipe-energy')
       && !/isResearched|prevX|chance:|permutated:/.test($('#recipeViewerList').textContent)`));
+    await evaluate(`$('#recipeViewerList .recipe-preview-aspect').focus();true`);
+    await waitFor('vis focus tooltip', `visible($('.network-tooltip')) && $('.network-tooltip').textContent.includes('Vis') && !$('.network-tooltip').textContent.includes('Amount in system:')`);
     await evaluate(`pressKey('Escape')`);
     await waitFor('arcane closed', `!visible($('#recipeViewerModal'))`);
   });
@@ -3525,6 +3529,8 @@ async function main() {
     assert(await evaluate(`(() => {const t=$('#recipeViewerMaps [aria-selected="true"]').getBoundingClientRect(),v=$('#recipeViewerMaps').getBoundingClientRect();return t.left >= v.left - 1 && t.right <= v.right + 1 && $('#recipeViewerList').getAttribute('aria-labelledby') === $('#recipeViewerMaps [aria-selected="true"]').id;})()`));
     await waitFor('activated category recipe loaded', `$('.recipe-viewer-box').getAttribute('aria-busy') === 'false' && $('#recipeViewerList .recipe-stack-control[data-key="example:tabs_input:0"]')`);
     await evaluate(`$('#recipeViewerList .recipe-stack-control[data-key="example:tabs_input:0"]').click(), true`);
+    await waitFor('category ingredient inspected on mobile', `visible($('#recipeInspect'))`);
+    await click(`$('#recipeInspectActions [data-action="recipe-inspect-recipes"]')`);
     await waitFor('ingredient opened from category', `$('.recipe-viewer-box').dataset.itemName === 'Tabs Input'`);
     await click(`$('#recipeViewerBack')`);
     await waitFor('category restored', `$('.recipe-viewer-box').dataset.itemName === 'Tabs Result' && $('#recipeViewerMaps [aria-selected="true"]').dataset.map === 'gt.recipe.tabs_test_19' && $('#recipeViewerPage').textContent === 'Page 1/1'`);
@@ -3692,6 +3698,74 @@ async function main() {
     await cdp.send('Emulation.setDeviceMetricsOverride',{width:1366,height:768,deviceScaleFactor:1,mobile:false});
     // Resize listeners close floating pickers; settle before the next step opens one.
     await evaluate(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))`);
+  });
+
+  step('recipes: touch inspection, explicit navigation, zoom and dismissal', async () => {
+    await cdp.send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
+    await cdp.send('Emulation.setTouchEmulationEnabled',{enabled:true});
+    const visit = async key => {
+      await cdp.send('Page.navigate',{url:base+'/recipes?key='+encodeURIComponent(key)});
+      await waitFor('touch recipe document', `document.readyState==='complete' && !window.byText`);
+      await evaluate(PAGE_LIB);
+      await waitFor('touch recipe ready', `$('.recipe-viewer-box').getAttribute('aria-busy')==='false' && !!$('#recipeViewerList [data-recipe-tooltip]')`);
+    };
+    const tap = async selector => {
+      const p = await evaluate(`(()=>{const r=$('${selector}').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`);
+      await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[p]});
+      await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+    };
+    await visit('gregtech:gt.metaitem.01:2032');
+    assert(await evaluate(`$('.recipe-viewer-box').getBoundingClientRect().bottom<=visualViewport.height+1
+      && $('#recipePageNext').getBoundingClientRect().height>=44
+      && getComputedStyle($('.recipe-machine-grid')).display==='flex'
+      && !$('.recipe-viewer-box').classList.contains('recipe-shell-painted')`));
+    const original = await evaluate(`location.href`);
+    await tap('#recipeViewerList [data-recipe-tooltip]');
+    await waitFor('touch tooltip sheet', `visible($('#recipeInspect')) && $('#recipeInspectContent').textContent.includes('Amount in system:')`);
+    assert.equal(await evaluate(`location.href`), original);
+    assert(await evaluate(`!visible($('.network-tooltip')) && visible($('#recipeInspectActions [data-action="recipe-inspect-recipes"]'))
+      && visible($('#recipeInspectActions [data-action="recipe-inspect-uses"]')) && visible($('#recipeInspectActions [data-action="recipe-inspect-stock"]'))
+      && $('#recipeInspect').getBoundingClientRect().bottom<=visualViewport.height+1`));
+    assert(await evaluate(`visible($('#recipeInspectMore'))`));
+    await click(`$('#recipeInspectMore')`);
+    await waitFor('touch More details', `$('#recipeInspectContent').textContent.includes('33x24x33') && !$('#recipeInspectContent').textContent.includes('[shift]')`);
+    await click(`$('#recipeInspectMore')`);
+    const inspectKey = await evaluate(`$('#recipeViewerList .recipe-inspected').dataset.key`);
+    await click(`$('#recipeInspectActions [data-action="recipe-inspect-uses"]')`);
+    await waitFor('explicit Uses', `!visible($('#recipeInspect')) && $('.recipe-viewer-box').dataset.direction==='using' && new URL(location.href).searchParams.get('key')===${JSON.stringify(inspectKey)}`);
+    await visit('gregtech:gt.metaitem.01:2032');
+    await tap('#recipeViewerList [data-recipe-tooltip]');
+    await waitFor('stock sheet', `visible($('#recipeInspect'))`);
+    await click(`$('#recipeInspectActions [data-action="recipe-inspect-stock"]')`);
+    await waitFor('sheet stock opens', `!visible($('#recipeViewerModal')) && visible($('#itemHistoryModal'))`);
+    await visit('example:display_result:0');
+    await tap('#recipeViewerList .recipe-preview-aspect');
+    await waitFor('essentia inspection', `visible($('#recipeInspect')) && $('#recipeInspectContent').textContent.includes('Order') && $('#recipeInspectContent').textContent.includes('Amount in system:')`);
+    assert(await evaluate(`!$('#recipeInspectActions [data-action="recipe-inspect-recipes"]') && !$('#recipeInspectActions [data-action="recipe-inspect-uses"]') && !!$('#recipeInspectActions [data-action="recipe-inspect-stock"]')`));
+    await evaluate(`pressKey('Escape');true`);
+    await waitFor('Escape closes inspection first', `!visible($('#recipeInspect')) && visible($('#recipeViewerModal'))`);
+    await tap('#recipeViewerList .recipe-preview-aspect');
+    const handle = await evaluate(`(()=>{const r=$('#recipeInspectHandle').getBoundingClientRect();return {x:r.x+30,y:r.y+12};})()`);
+    await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[handle]});
+    await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:handle.x,y:handle.y+65}]});
+    await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+    await waitFor('swipe dismisses inspection', `!visible($('#recipeInspect'))`);
+    await visit('example:tabs_result:0');
+    await click(`$('#recipeZoomIn')`);
+    await waitFor('recipe zoom and pan', `$('#recipeZoomFit').textContent==='150%' && $('#recipeViewerList').scrollWidth>$('#recipeViewerList').clientWidth`);
+    await click(`$('#recipeZoomFit')`);
+    assert.equal(await evaluate(`$('#recipeZoomFit').textContent`),'100%');
+    const center = await evaluate(`(()=>{const r=$('#recipeViewerList').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+60};})()`);
+    await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:center.x-30,y:center.y},{x:center.x+30,y:center.y}]});
+    await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:center.x-60,y:center.y},{x:center.x+60,y:center.y}]});
+    await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+    assert(await evaluate(`parseInt($('#recipeZoomFit').textContent)>150 && !visible($('#recipeInspect'))`));
+    await sleep(450);
+    await click(`$('#recipeCategoryNext')`);
+    await waitFor('category resets zoom', `$('#recipeZoomFit').textContent==='100%' && !visible($('#recipeInspect'))`);
+    await evaluate(`pressKey('Escape');true`);
+    await cdp.send('Emulation.setTouchEmulationEnabled',{enabled:false});
+    await cdp.send('Emulation.setDeviceMetricsOverride',{width:1366,height:768,deviceScaleFactor:1,mobile:false});
   });
 
   step('kit choices survive a reload while quantities and stock shortages reset', async () => {

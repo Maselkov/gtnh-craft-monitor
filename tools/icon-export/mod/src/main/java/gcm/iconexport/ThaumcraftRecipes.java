@@ -97,7 +97,7 @@ final class ThaumcraftRecipes {
             } catch(ReflectiveOperationException e) { throw new IllegalStateException("Infusion adapter failed",e); }
         }
         Map<String,Object> map=new LinkedHashMap<>();
-        map.put("machines",Collections.singletonList(AssemblyRecipes.machine("Arcane Infusion",null)));
+        map.put("machines",Collections.singletonList(AssemblyRecipes.machine("Arcane Infusion","Thaumcraft:blockStoneDevice:2")));
         map.put("recipes",recipes);map.put("archive",archive);maps.put("nei.thaumcraft.infusion",map);
         report.put("enhanced_ingredients",true);
         report.put("registered",registered);report.put("exported",recipes.size());
