@@ -2949,7 +2949,12 @@ async function main() {
     await evaluate(`$('#recipeViewerList .recipe-outputs [data-key="minecraft:iron_ingot:0"]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true}));true`);
     await waitFor('Uses selects first available category', `$('.recipe-viewer-box').dataset.direction === 'using' && $('#recipeViewerPage').textContent === 'Page 1/1'`);
     await click(`$('#recipeViewerMaps [data-map="gt.recipe.viewer_assembler"]')`);
-    await waitFor('assembler selected', `$('#recipeViewerPage').textContent === 'Page 1/30'`);
+    // Counts and category selection paint before the batch arrives. Only
+    // compare the stable, loaded sidebar across pages, not its pending label.
+    await waitFor('assembler recipe and machine loaded', `$('#recipeViewerPage').textContent === 'Page 1/30'
+      && $('.recipe-viewer-box').getAttribute('aria-busy') === 'false'
+      && $('#recipeViewerList .recipe-viewer-row')
+      && $('#recipeViewerMachines .recipe-machine-control[data-key="minecraft:iron_ingot:0"]')`);
     const machine = await evaluate(`$('#recipeViewerMachines .recipe-machine-control').outerHTML`);
     for (let index = 2; index <= 21; index++) {
       await click(`$('#recipePageNext')`);
