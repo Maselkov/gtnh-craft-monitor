@@ -3,7 +3,7 @@
 import { descriptionHtml, nameText } from './description.js';
 import { itemTooltipHtml } from './item-tooltip.js';
 import { bindCellTooltip, hideTooltip, showTooltip, tooltipVisible } from './tooltip.js';
-import { findNetworkItem, openItemHistory } from './history.js';
+import { findNetworkItem, findNetworkSpecies, openItemHistory } from './history.js';
 import { activeTab } from './tabs.js';
 import { setPageView } from './page-title.js';
 import { craftingTitle, displayChoices, layoutRecipePreviews, machineSidebarHtml, stackHtml, stepHtml } from './recipe-render.js';
@@ -343,6 +343,7 @@ function turnCategory(direction) {
 
 function stockItem(entry) {
   if (!entry || entry.wildcard) return null;
+  if (entry.species) return findNetworkSpecies(entry.mod, entry.internal, entry.damage, entry.species);
   return findNetworkItem(entry.mod, entry.internal, entry.damage, entry.kind);
 }
 

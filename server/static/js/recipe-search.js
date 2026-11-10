@@ -5,7 +5,7 @@ import { recipeShortcutDirection } from './item-shortcuts.js';
 import { moveRecipePage, parseRecipeRecents, recipeCatalogCapacity } from './recipe-state.js';
 import { setupPageWheel } from './recipe-wheel.js';
 import { topDialog } from './dialogs.js';
-import { findNetworkItem, openItemHistory } from './history.js';
+import { findNetworkItem, findNetworkSpecies, openItemHistory } from './history.js';
 import { hideRecipeViewer, openRecipeViewer, recipeViewerOpen } from './recipe-viewer.js';
 import { ensureNetworkStock } from './network-stock.js';
 import { delegateActions, escapeHtml, iconClass, iconUrl, updateHtml } from './util.js';
@@ -108,7 +108,8 @@ function activate(key, direction = 'making', stock = false) {
   remember(item);
   hideTooltip();
   if (stock && !item.wildcard) {
-    const stored = findNetworkItem(item.mod, item.internal, item.damage, item.kind);
+    const stored = item.species ? findNetworkSpecies(item.mod, item.internal, item.damage, item.species)
+      : findNetworkItem(item.mod, item.internal, item.damage, item.kind);
     close();
     if (recipeViewerOpen()) hideRecipeViewer();
     openItemHistory(stored || {...item, size:null, isCraftable:false});

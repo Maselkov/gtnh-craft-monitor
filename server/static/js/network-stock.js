@@ -27,6 +27,7 @@ export function amountInSystem(item, {aggregateVariants = false} = {}) {
         || stock.internal !== item.internal) continue;
     if (kind === 'item' && !item.wildcard && (stock.damage ?? 0) !== (item.damage ?? 0)) continue;
     if ((!aggregateVariants || item.variant) && (stock.variant || null) !== (item.variant || null)) continue;
+    if (item.species && stock.species !== item.species) continue; // One bee species of the item.
     amount += Number(stock.size) || 0;
   }
   return amount;

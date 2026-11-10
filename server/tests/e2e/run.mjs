@@ -192,6 +192,28 @@ def recipes(path, ingots):
                          "vis": [{"chance": 10000, "relx": 75, "rely": 122, "item": {"nbt": '{Aspect:"ordo"}'}}]},
         "preview": {"family": "positioned", "width": 166, "height": 142, "layers": [],
                     "slots": [slot("groups", n, 46+28*(n%3), 37+27*(n//3)) for n in range(9)] + [slot("o", 0, 74, 4)]}}]}
+    # Bees: one item id per kind, the species in display stacks' NBT.
+    bees = ["Forestry:beePrincessGE:0", "Forestry:beeDroneGE:0", "Forestry:beeQueenGE:0"]
+    first_bee = len(data["items"])
+    data["items"] += bees
+    data["item_names"] += ["Scanned Princess", "Scanned Drone", "Scanned Queen"]
+    kinds = ("Princess", "Drone", "Queen")
+    for species in ("Forest", "Meadows", "Common"):
+        for n, kind in enumerate(kinds):
+            data["display_stacks"][f"{species}-{kind}"] = {"key": bees[n], "name": f"{species} {kind}",
+                "icon": "item/minecraft/iron_ingot~0.png",
+                "nbt": '{Genome:{Chromosomes:[0:{Slot:0b,UID0:"forestry.species%s",UID1:"forestry.species%s"}]}}' % (species, species)}
+    def bee(species, n):
+        return [first_bee + n, 1, None, [f"{species}-{kinds[n]}"]]
+    data["maps"]["nei.net.bdew.neiaddons.forestry.bees.BeeBreedingHandler::"] = {"machines": [{"name": "Bee Breeding", "key": None}], "recipes": [
+        {"type": "nei", "groups": [{"alts": [bee("Forest", 0)]}, {"alts": [bee("Meadows", 1)]}], "o": [bee("Common", 2)],
+         "requirements": {"chance": 15.0, "requirements": ["Requires Warm temperature."]}, "approximate": ["nei_display"],
+         "preview": {"family": "positioned", "width": 166, "height": 80, "layers": [],
+                     "slots": [slot("groups", 0, 21, 18), slot("groups", 1, 74, 18), slot("o", 0, 128, 18)]}}]}
+    data["maps"]["nei.hellfirepvp.beebetteratbees.client.gui.BBABGuiRecipeTreeHandler::"] = {"machines": [{"name": "Bee Breeding Tree", "key": None}], "recipes": [
+        {"type": "nei", "groups": [{"alts": [bee("Forest", 1)]}, {"alts": [bee("Meadows", 1)]}], "o": [bee("Common", 0)], "approximate": ["nei_display"],
+         "preview": {"family": "positioned", "width": 166, "height": 80, "layers": [],
+                     "slots": [slot("o", 0, 73, 0), slot("groups", 0, 33, 49), slot("groups", 1, 113, 49)]}}]}
     data["items"] += [f"example:catalog:{n}" for n in range(500)]
     data["item_names"] += [f"Catalog Material {n:02}" for n in range(500)]
     with gzip.open(path, "wt") as f:
@@ -3483,6 +3505,30 @@ async function main() {
     await waitFor('vis focus tooltip', `visible($('.network-tooltip')) && $('.network-tooltip').textContent.includes('Vis') && !$('.network-tooltip').textContent.includes('Amount in system:')`);
     await evaluate(`pressKey('Escape')`);
     await waitFor('arcane closed', `!visible($('#recipeViewerModal'))`);
+  });
+
+  step('recipes: bees by species, breeding chance and conditions, and the breeding tree', async () => {
+    await cdp.send('Page.navigate', {url: base + '/recipes?key=' + encodeURIComponent('Forestry:beeQueenGE:0#forestry.speciesCommon')});
+    await waitFor('bee page loaded', `document.readyState === 'complete' && !window.byText`);
+    await evaluate(PAGE_LIB);
+    await waitFor('one species, its breeding card', `$('.recipe-viewer-box').dataset.itemName === 'Common Queen'
+      && $('#recipeCategoryName').textContent === 'Bee Breeding' && $('#recipeViewerPage').textContent === 'Page 1/1'`);
+    assert(await evaluate(`$$('#recipeViewerList .recipe-card-line').some(l => l.textContent === 'Chance: 15%')
+      && $('#recipeViewerList .recipe-card-requirement').textContent === 'Requires Warm temperature.'
+      && !/requirements:|chance: 15\.0/i.test($('#recipeViewerList').textContent)`), 'bee breeding card');
+    await click(`$('#recipeViewerList .recipe-stack-control[data-key="Forestry:beePrincessGE:0#forestry.speciesForest"]')`);
+    await waitFor('a parent opens its own species', `$('.recipe-viewer-box').dataset.itemName === 'Forest Princess'`);
+    await cdp.send('Page.navigate', {url: base + '/recipes?key=' + encodeURIComponent('Forestry:beePrincessGE:0#forestry.speciesCommon')});
+    await waitFor('tree page loaded', `document.readyState === 'complete' && !window.byText`);
+    await evaluate(PAGE_LIB);
+    await waitFor('breeding tree with lines and the chance', `$('#recipeCategoryName').textContent === 'Bee Breeding Tree'
+      && $$('#recipeViewerList .recipe-tree-line').length === 2
+      && $('#recipeViewerList .recipe-tree-chance')?.textContent === '15%'
+      && $('#recipeViewerList .recipe-tree-chance').title === 'Requires Warm temperature.'`);
+    await click(`$('#recipeViewerList .recipe-stack-control[data-key="Forestry:beeDroneGE:0#forestry.speciesMeadows"]')`);
+    await waitFor('a tree bee opens its species', `$('.recipe-viewer-box').dataset.itemName === 'Meadows Drone'`);
+    await evaluate(`pressKey('Escape')`);
+    await waitFor('bees closed', `!visible($('#recipeViewerModal'))`);
   });
 
   step('recipes: shared R/U in Network, craft cards, ingredients and crafting plans', async () => {

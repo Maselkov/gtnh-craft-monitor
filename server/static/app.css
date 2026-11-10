@@ -35,6 +35,10 @@
   /* Counts sit on textured icons, so keep NEI's white with a dark shadow. */
   --recipe-count-text: #fff;
   --recipe-nc-text: #ffff55;
+  /* Bee breeding trees (BBAB) on the recipe canvas, which is Minecraft's
+     grey in both themes: the lines and chances BBAB draws. */
+  --recipe-tree-line: #c25a5a;
+  --recipe-tree-chance: #aa0000;
   --recipe-search-width: 380px;
   --recipe-count-shadow: #222;
   /* Fills under white text (primary and destructive buttons, the stale
@@ -3501,6 +3505,12 @@ body.oauth-page {
 .recipe-preview { position:relative; width:100%; max-width:510px; margin:12px auto; container-type:inline-size; image-rendering:pixelated; }
 .recipe-preview-layers { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; overflow:visible; }
 .recipe-preview-slot { position:absolute; display:block; }
+.recipe-tree-line { stroke:var(--recipe-tree-line); stroke-width:1; }
+.recipe-tree-chance {
+  display:flex; align-items:center; justify-content:center; overflow:visible; white-space:nowrap;
+  font-family:"GCM Recipe", monospace; font-size:clamp(14px, 4.7cqw, 24px); line-height:1;
+  color:var(--recipe-tree-chance); pointer-events:auto;
+}
 .recipe-preview-frame { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
 .recipe-preview-choice, .recipe-preview .recipe-stack-wrap { display:block; width:100%; height:100%; max-width:none; }
 .recipe-preview .recipe-stack-control { width:100%; height:100%; min-height:0; padding:5.56%; border:0; border-radius:0; background:transparent; }

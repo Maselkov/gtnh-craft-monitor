@@ -486,6 +486,12 @@ def _item_history_variants(conn):
     conn.execute("INSERT INTO pending_nbt_cleanup (id) VALUES (1)")
 
 
+def _item_history_snapshot_species(conn):
+    # A Forestry genome item's species (gcm/inventory.py), its recipe-book
+    # identity: kept so a restart doesn't lose it until the next scan.
+    conn.execute("ALTER TABLE network_snapshot ADD COLUMN species TEXT")
+
+
 def _item_history_pattern_snapshot(conn):
     # The last complete pattern scan (gcm/patterns.py) as one JSON list,
     # so a restart doesn't leave the server without patterns until the
@@ -781,6 +787,7 @@ ITEM_HISTORY_MIGRATIONS = [
     _item_history_variants,
     _item_history_pattern_snapshot,
     _item_history_compact,
+    _item_history_snapshot_species,
 ]
 
 

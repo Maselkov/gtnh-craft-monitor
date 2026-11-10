@@ -578,6 +578,26 @@ still sharing a key (label fallback) are summed. The first scan after the
 change deleted the mixed history under the old plain keys
 (`pending_nbt_cleanup`).
 
+**The recipe book keys Forestry genomes by species, not by NBT hash.**
+A network `variant` is a hash of the whole tag, so two Forest Drones with
+different stats or health differ, and the game data's display stacks
+(analyzed, default genome) never hash like a real bee. The species is the
+only part both sides share: chromosome 0's `UID0` (the active allele), read
+from the binary tag (`nbt.genome_species()`) and from the exporter's SNBT
+string (`recipe_index.species_from_snbt()`, a regex, so the index build
+stays standard-library only). The recipe key is `mod:internal:damage#species`;
+`#` is neither in item keys nor in allele UIDs, and whitespace in a UID (GT++'s
+`gtpp.bee.speciesDragon Blood`) becomes `_` so keys stay space-free for URLs
+and recents. The index adds species rows beside the bare key's rather than
+replacing them, so the pattern check, planner and anything else asking for
+the bare key see what they saw before. The MCP tools' item keys carry a
+species as the variant `species:<uid>`; a network bee's hash variant is
+mapped to its species through the scan. The breeding tree's lines are not
+in NEI's stacks (BBAB draws them in `drawExtras`), so the viewer rebuilds
+them from slot geometry: each row halves the spacing of the one above, so a
+bee's parents are the nearest bees left and right on the next row, kept when
+NEI Addons has that mutation or when they sit symmetrically.
+
 Craft requests for a variant pick the pattern by NBT too. GregTech tools
 share id, damage and label per tool type (every material's "Huge
 Turbine"), so only the NBT tells their patterns apart. The server keeps

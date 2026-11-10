@@ -498,7 +498,7 @@ bar inside the window. It opens the first available category, or the category
 in a shared link. Hover or focus a tab for its category name, recipe count and
 mod where known. The selected tab joins the frame, with its name in the first
 navigation row. That row's arrows select the previous or next category.
-Categories without a machine icon use initials. Swipe/scroll the tabs or use
+A tab shows the icon NEI gives the category, or else its first machine's; categories with neither use initials. Swipe/scroll the tabs or use
 their side arrows when there are more tabs than fit. With a tab focused,
 **Left/Right** and **Home/End** move between tabs; **Enter** or **Space** selects
 one. The second navigation row shows **Page X/Y**; its arrows move between
@@ -640,6 +640,36 @@ NBT or custom matching rules are not fully represented. No results means
 there is no supported recipe for that selection in this bundle, rather than
 proof the item cannot be made. With no recipe data installed, the dialog says
 so; an admin can pick game data and then **Retry**.
+
+### Bees
+
+Every species of a Forestry bee has its own entry in the recipe book: search
+`Diligent` to get the Diligent Princess, Drone and Queen. The same goes for
+saplings, butterflies and pollen, which also store their species in NBT. A
+species' **Recipes** show only the ways to breed that species, and its **Uses**
+only the breeding it takes part in. The item without a species (**Scanned
+Princess**, for example) still lists every species' recipes.
+
+A **Bee Breeding** card shows the princess and drone a mutation needs, the
+queen it can make, the mutation's chance (**Chance: 10%**), and any conditions
+it has, such as a temperature, a biome, the time of day or a foundation block.
+
+The **Bee Breeding Tree** category shows the species' ancestry the way Bee
+Better At Bees draws it in NEI, up to four generations. Red lines join each bee
+to its two parents, with the mutation's chance under the bee. Hover a chance to
+see the mutation's conditions. Base species, which come from hives, have no
+parents. Click any bee in the tree to open that species, including the ones on
+the bottom row, to follow its ancestry further.
+
+A queen's **Uses** include **Bee Produce**: every comb and other product the
+species makes, each with its chance per work cycle, as NEI Addons lists them.
+That includes its specialty products, which a bee only makes while its
+conditions for them are met. Game data built before this change lists only the first product.
+
+A bee from your ME network opens its own species' recipes, as long as
+OpenComputers sends item NBT (on by default in GTNH; see
+[In-game setup](in-game.md)). Its **Amount in system** counts only that
+species.
 
 ## Requesting and cancelling crafts
 
