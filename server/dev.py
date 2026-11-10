@@ -811,10 +811,13 @@ def bee_maps():
                "preview": {"family": "positioned", "width": 166, "height": 80, "layers": [], "graphics": "slots_only",
                            "slots": [slot("groups", 0, 21, 18)] + [slot("o", n, 95 + 18 * n, 7) for n in range(3)]}}
     return {
-        "nei.net.bdew.neiaddons.forestry.bees.BeeProduceHandler::": {"machines": ["Bee Produce"], "recipes": [produce]},
-        "nei.net.bdew.neiaddons.forestry.bees.BeeBreedingHandler::": {"machines": ["Bee Breeding"], "recipes": breeding},
+        # The icon NEI draws on their tabs, as the export records it.
+        "nei.net.bdew.neiaddons.forestry.bees.BeeProduceHandler::": {
+            "machines": ["Bee Produce"], "recipes": [produce], "icon": bee_key("Queen")},
+        "nei.net.bdew.neiaddons.forestry.bees.BeeBreedingHandler::": {
+            "machines": ["Bee Breeding"], "recipes": breeding, "icon": bee_key("Queen")},
         "nei.hellfirepvp.beebetteratbees.client.gui.BBABGuiRecipeTreeHandler::": {
-            "machines": ["Bee Breeding Tree"], "recipes": [tree]},
+            "machines": ["Bee Breeding Tree"], "recipes": [tree], "icon": bee_key("Queen")},
     }
 
 
@@ -854,6 +857,8 @@ def write_recipes(path, maps):
                     recipe[side] = [stack(table, alt) for alt in r[side]]
             recipes.append(recipe)
         out[map_name] = {"machines": [m if isinstance(m, dict) else {"name": m, "key": None} for m in entry["machines"]], "recipes": recipes}
+        if entry.get("icon"):
+            out[map_name]["icon"] = entry["icon"]
     names = {_recipe_key(it["name"]): it["name"] for it in CATALOG if it["kind"] != "essentia"}
     names.update({bee_key(kind): kind for kind in BEE_KINDS})
     data = {

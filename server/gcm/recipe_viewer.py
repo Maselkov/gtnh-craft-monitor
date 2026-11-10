@@ -17,6 +17,17 @@ BEE_BREEDING_MAP = BREEDING_PREFIX + "bees.BeeBreedingHandler::"
 BBAB_TREE_MAP = "nei.hellfirepvp.beebetteratbees.client.gui.BBABGuiRecipeTreeHandler::"
 
 
+# NEI's tab icons (its handlers.csv) for categories bundles exported before
+# map icons existed show initials for: no catalyst names an item.
+FALLBACK_MAP_ICONS = {
+    BEE_BREEDING_MAP: "Forestry:beeQueenGE:0",
+    BREEDING_PREFIX + "bees.BeeProduceHandler::": "Forestry:beeQueenGE:0",
+    BREEDING_PREFIX + "trees.TreeBreedingHandler::": "Forestry:saplingGE:0",
+    BREEDING_PREFIX + "trees.TreeProduceHandler::": "Forestry:saplingGE:0",
+    BBAB_TREE_MAP: "Forestry:beeQueenGE:0",
+}
+
+
 def is_breeding_map(map_name):
     return map_name.startswith(BREEDING_PREFIX) and map_name.endswith("BreedingHandler::")
 
@@ -166,9 +177,13 @@ def map_info(idx, name):
     # Older exports omitted the native infusion catalyst entirely.
     if name == "nei.thaumcraft.infusion" and not any(m.get("key") for m in catalysts):
         catalysts = [{"name": "Arcane Infusion", "key": "Thaumcraft:blockStoneDevice:2"}]
-    machines = [{**m, "name": mctext.plain(m["name"]), "icon": icons.icon_for_key(m.get("key"))} for m in catalysts]
+    # NEI's tab icon; a name-only category label (no catalyst item) shows it too.
+    icon_key = idx.map_icon(name) or FALLBACK_MAP_ICONS.get(name)
+    icon = icons.icon_for_key(icon_key)
+    machines = [{**m, "name": mctext.plain(m["name"]),
+                 "icon": icons.icon_for_key(m["key"]) if m.get("key") else icon} for m in catalysts]
     key = next((m["key"] for m in machines if m.get("key")), None)
-    mod = key.partition(":")[0] if key else None
+    mod = (key or icon_key).partition(":")[0] if key or icon_key else None
     title = mctext.plain(machines[0]["name"]) if machines else name
     if name.startswith("gt.") and key:
         machine = machine_entry(next(m for m in machines if m.get("key")))
@@ -177,7 +192,7 @@ def map_info(idx, name):
         if match:
             title = match[1].strip()
     title = (idx.layout(name) or {}).get("title") or title
-    return {"id": name, "name": mctext.plain(title), "machines": machines,
+    return {"id": name, "name": mctext.plain(title), "machines": machines, "icon": icon,
             "mod_name": (item_info.mod_name(mod) or mod) if mod else None}
 
 

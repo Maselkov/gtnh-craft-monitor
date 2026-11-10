@@ -55,6 +55,8 @@ SCHEMA = """
 CREATE TABLE meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
 CREATE TABLE display_stack (id TEXT PRIMARY KEY, body TEXT NOT NULL) WITHOUT ROWID;
 CREATE TABLE preview_layout (map INTEGER PRIMARY KEY, body TEXT NOT NULL);
+-- The item NEI draws on a map's tab (its handler's), as an item key.
+CREATE TABLE map_icon (map INTEGER PRIMARY KEY, k TEXT NOT NULL);
 CREATE TABLE map (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE);
 -- What NEI lists as the map's machines, in its order: v is {"name", "key"}.
 CREATE TABLE machine (map INTEGER NOT NULL, seq INTEGER NOT NULL, v TEXT NOT NULL, PRIMARY KEY (map, seq)) WITHOUT ROWID;
@@ -375,6 +377,8 @@ def _source_events(source_file):
                         yield "layout", map_name, reader.value()
                     elif field == "machines":
                         yield "machines", map_name, reader.value()
+                    elif field == "icon":
+                        yield "icon", map_name, reader.value()
                     else:
                         reader.value()
         if reader.peek():
@@ -437,6 +441,11 @@ def _build(source_file, out_path, raw, map_ids, signature, species=None):
                     if not isinstance(value, dict):
                         raise ValueError("invalid preview layout")
                     conn.execute("INSERT INTO preview_layout VALUES (?, ?)", (map_ids[map_name], json.dumps(value)))
+                continue
+            if event == "icon":
+                # Display only: an unusable one is left out, not an error.
+                if isinstance(value, str) and 0 < len(value) <= 512:
+                    conn.execute("INSERT OR REPLACE INTO map_icon VALUES (?, ?)", (map_ids[map_name], value))
                 continue
             if event not in ("machines", "recipe"):
                 continue
@@ -547,6 +556,7 @@ class RecipeIndex:
         self.presentation = {k: json.loads(meta.get(k, "{}")) for k in ("ui_assets", "research_info", "aspects")}
         self._layouts = {self._maps[m]: json.loads(body) for m, body in self._conn.execute("SELECT map, body FROM preview_layout")}
         self._memo = {}
+        self._icons = {self._maps[m]: k for m, k in self._conn.execute("SELECT map, k FROM map_icon")}
         self._machines = {}
         for map_id, v in self._conn.execute("SELECT map, v FROM machine ORDER BY map, seq"):
             self._machines.setdefault(self._maps[map_id], []).append(json.loads(v))
@@ -566,6 +576,10 @@ class RecipeIndex:
 
     def maps(self):
         return list(self._maps.values())
+
+    def map_icon(self, map_name):
+        """The item key NEI draws on the map's tab, or None."""
+        return self._icons.get(map_name)
 
     def memo(self, name, build):
         """build(), once per index: a table derived from its recipes."""

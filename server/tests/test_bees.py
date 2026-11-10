@@ -67,7 +67,7 @@ def source():
                 mutation("Forest", "Meadows", "Common", 15),
                 mutation("Common", "Forest", "Cultivated", 12, ["Requires Warm temperature."]),
                 mutation("Forest", "Dragon Blood", "Common", 5)]},
-            TREE: {"machines": [{"name": "Bee Breeding Tree"}], "recipes": [tree()]},
+            TREE: {"machines": [{"name": "Bee Breeding Tree"}], "recipes": [tree()], "icon": QUEEN},
         },
     }
 
@@ -178,3 +178,18 @@ def test_find_recipes_by_species_name_and_key(client, idx):
     assert recipe["outputs"][0]["item"] == found["item"]
     again = ok(client, token, "find_recipes", item=found["item"])
     assert again["recipes_total"] == 1
+
+
+def test_category_tabs_use_neis_icon_or_a_known_one(idx, monkeypatch):
+    monkeypatch.setattr(recipe_viewer.icons, "icon_for_key", lambda key: key and f"icon/{key}")
+    assert idx.map_icon(TREE) == QUEEN
+    assert recipe_viewer.map_info(idx, TREE)["icon"] == f"icon/{QUEEN}"
+    # Bundles exported before map icons: NEI's own for the bee categories.
+    assert idx.map_icon(BREEDING) is None
+    assert recipe_viewer.map_info(idx, BREEDING)["icon"] == f"icon/{QUEEN}"
+    # The category label stands in for a machine with the same icon, and
+    # the tab names the icon's mod.
+    monkeypatch.setattr(recipe_viewer.item_info, "mod_name", lambda mod: {"Forestry": "Forestry for Minecraft"}.get(mod))
+    info = recipe_viewer.map_info(idx, BREEDING)
+    assert info["machines"] == [{"name": "Bee Breeding", "key": None, "icon": f"icon/{QUEEN}"}]
+    assert info["mod_name"] == "Forestry for Minecraft"

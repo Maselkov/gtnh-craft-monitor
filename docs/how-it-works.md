@@ -64,8 +64,10 @@ accepts only native GT processing recipes in matching, fallback recipes and uses
 classification, so adding these maps does not change what the check promises.
 
 Category navigation uses accessible icon tabs over the existing map filter.
-The first available machine icon represents a category; unknown icons fall back
-to initials. Overflow controls and selected-tab reveal use the tab row's actual
+A category shows the item NEI draws on its tab (its handler's, which the export
+records from format-4 bundles exported since; bee and tree categories have a
+built-in fallback), else its first machine icon; unknown icons fall back to
+initials. Overflow controls and selected-tab reveal use the tab row's actual
 width. Manual keyboard activation keeps focus in the row while asynchronous
 recipe requests run. Category metadata stays available during filtering, while
 old recipe rows are cleared and requests remain generation-guarded.

@@ -498,7 +498,7 @@ bar inside the window. It opens the first available category, or the category
 in a shared link. Hover or focus a tab for its category name, recipe count and
 mod where known. The selected tab joins the frame, with its name in the first
 navigation row. That row's arrows select the previous or next category.
-Categories without a machine icon use initials. Swipe/scroll the tabs or use
+A tab shows the icon NEI gives the category, or else its first machine's; categories with neither use initials. Swipe/scroll the tabs or use
 their side arrows when there are more tabs than fit. With a tab focused,
 **Left/Right** and **Home/End** move between tabs; **Enter** or **Space** selects
 one. The second navigation row shows **Page X/Y**; its arrows move between

@@ -13,6 +13,8 @@ import net.minecraftforge.fluids.FluidStack;
 
 import codechicken.nei.PositionedStack;
 import codechicken.nei.recipe.GuiCraftingRecipe;
+import codechicken.nei.recipe.GuiRecipeTab;
+import codechicken.nei.recipe.HandlerInfo;
 import codechicken.nei.recipe.GuiUsageRecipe;
 import codechicken.nei.recipe.IRecipeHandler;
 import codechicken.nei.recipe.IUsageHandler;
@@ -83,6 +85,8 @@ final class NeiRecipes {
                         if(catalyst.item!=null) machines.add(AssemblyRecipes.machine(catalyst.item.getDisplayName(),Recipes.keyOf(catalyst.item)));
                     }
                     Map<String,Object> map=new LinkedHashMap<>();map.put("machines",machines);map.put("recipes",recipes);map.put("archive",archive);
+                    String icon=tabIcon(original);
+                    if(icon!=null) map.put("icon",icon);
                     maps.put("nei."+id,map);
                 }
             } catch(Throwable e) { report.put("status","unavailable"); report.put("error",e.toString()); }
@@ -184,6 +188,15 @@ final class NeiRecipes {
             snapshot.put("details",details);
         }
         return snapshot;
+    }
+
+    /** The item NEI draws on the handler's tab (handlers.csv, or a mod's IMC), as an item key; null for none or an image. */
+    private static String tabIcon(IRecipeHandler handler) {
+        try {
+            HandlerInfo info=GuiRecipeTab.getHandlerInfo(handler);
+            ItemStack stack=info==null ? null : info.getItemStack();
+            return stack==null || stack.getItem()==null ? null : Recipes.keyOf(stack);
+        } catch(RuntimeException unavailable) { return null; }
     }
 
     /** A cached recipe's "products" list (NEI Addons' bee and tree produce), or null. */
