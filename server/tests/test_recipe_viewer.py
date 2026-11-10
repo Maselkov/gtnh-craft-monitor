@@ -230,6 +230,8 @@ def test_keys_preserve_registry_colons_and_do_not_invent_concrete_damage():
 def test_requirements_drop_empty_and_false_values_without_losing_zero_tiers_or_chances():
     assert recipe_viewer.requirement_notes({'metadata': {'cleanroom': False}, 'mSpecialItems': None,
                                           'empty': [], 'unexpanded': {'class': 'Example'}}) == []
+    assert recipe_viewer.requirement_notes({'nbt_sensitive': True, 'nbt_inputs': [{'item': 'mod:dust:0'}],
+                                          'nbt_outputs': [{'item': 'mod:mixture:0'}]}) == []
     assert recipe_viewer.requirement_notes({'metadata': {'cleanroom': True, 'low_gravity': True,
                                                        'casing_tier': 0}, 'mInputChances': [0, 5000]}) == [
         'Needs Cleanroom', 'Needs Low Gravity', 'Casing tier: 0',
