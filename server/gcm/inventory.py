@@ -10,7 +10,7 @@ import sys
 import threading
 import time
 
-from gcm import charts, config, icons, nbt, rates, state, store
+from gcm import charts, config, icons, nbt, rates, recipe_index, state, store
 
 log = logging.getLogger(__name__)
 
@@ -98,6 +98,10 @@ def assign_variant(item):
             log.debug("unreadable NBT on %s:%s: %s", item.get("mod"), item.get("internal"), e)
         else:
             item["variant"] = nbt.canonical_hash(root)
+            species = recipe_index.species_id(nbt.genome_species(root))
+            if species:
+                # Its recipe-book key: mod:internal:damage#species.
+                item["species"] = species
             name = nbt.describe(root)
             if name:
                 item["variant_name"] = name

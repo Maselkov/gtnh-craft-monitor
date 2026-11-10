@@ -42,7 +42,7 @@ format 1 has GregTech only. Format 3 adds native Assembly Line recipes/research,
 GT display maps, NEI display recipes and an audit of registered handlers. Format 4
 adds exact display-stack references, resolved GUI textures, slot geometry, aspect
 names and static research metadata. The server
-reads source formats 1–4 into a read-only SQLite index (format 5), normally built beside shared game data to avoid rebuilding it
+reads source formats 1–4 into a read-only SQLite index (format 7), normally built beside shared game data to avoid rebuilding it
 on each hosted instance. The builder reads two passes of the compressed file,
 keeping intern tables and one recipe in memory instead of the full JSON. The
 [exporter guide](../tools/icon-export/README.md#bundle-format) describes the schema.
@@ -91,6 +91,19 @@ canonical key (including wildcard damage). Positioned previews render exported
 slots and texture crops; auxiliary NEI stacks do not enter the consumed-input
 index. Assembly Line research costs remain separate from production costs.
 Infusion completion status is never inferred from static research metadata.
+
+Forestry genome items (bees, saplings, butterflies, pollen) share one item id
+across every species; only their NBT names the species. The index also files
+each recipe stack whose display stack carries a genome under
+`mod:internal:damage#<species>` (the species chromosome's active allele, for
+example `Forestry:beeQueenGE:0#forestry.speciesCommon`), named like that stack
+("Common Queen"), so search lists each species and a species key pages only its
+own recipes. The bare key still matches every species. Network items with NBT
+carry the same `species`, so a bee from the network opens its species. NEI
+Addons' breeding cards show the mutation's chance and conditions, and Bee Better
+At Bees' tree gets the lines and chances BBAB draws itself: each bee is joined to
+the two nearest bees on the row below, confirmed against NEI Addons' mutations,
+which also give the chance.
 
 ## Crafting CPUs
 

@@ -182,6 +182,62 @@ def _item(index, name, shape, colour):
 CATALOG = [_item(i, *entry) for i, entry in enumerate(ITEMS)]
 BY_NAME = {it["name"]: it for it in CATALOG}
 
+# Forestry bees: one item id per kind (princess, drone, queen), the species
+# only in their NBT, as the game has them. Recipes and icons know each
+# species (game data's display stacks and by_key_label); the network has a
+# few, with their NBT. Illustrative mutations, for the recipe book's
+# breeding cards and Bee Better At Bees' tree: (species, colour, parents,
+# chance, conditions).
+BEE_KINDS = {"Princess": "beePrincessGE", "Drone": "beeDroneGE", "Queen": "beeQueenGE"}
+BEES = [
+    ("Forest", (60, 120, 220), None, None, []),
+    ("Meadows", (220, 60, 60), None, None, []),
+    ("Common", (180, 180, 180), ("Forest", "Meadows"), 15, []),
+    ("Cultivated", (90, 200, 90), ("Common", "Forest"), 12, []),
+    ("Diligent", (200, 70, 200), ("Cultivated", "Common"), 10,
+     ["Requires Warm temperature.", "Requires Block of Diamond as a foundation."]),
+]
+BEE_SPECIES = {name: (f"forestry.species{name}", colour) for name, colour, *_ in BEES}
+# What the fake network holds: (species, kind, amount).
+NETWORK_BEES = [("Diligent", "Princess", 1), ("Cultivated", "Drone", 12), ("Forest", "Drone", 30)]
+
+
+def bee_key(kind):
+    return f"Forestry:{BEE_KINDS[kind]}:0"
+
+
+def bee_snbt(species):
+    """A bee's NBT as the exporter writes it (NBTTagCompound.toString())."""
+    uid = BEE_SPECIES[species][0]
+    return ('{MaxH:20,Health:20,IsAnalyzed:1b,Genome:{Chromosomes:[0:{Slot:0b,UID0:"%s",UID1:"%s"}]}}' % (uid, uid))
+
+
+def bee_tag(species):
+    """The same NBT as network_browser.lua sends it: gzipped binary, hex."""
+    def name(text):
+        raw = text.encode()
+        return struct.pack(">H", len(raw)) + raw
+    uid = BEE_SPECIES[species][0]
+    chromosome = (b"\x01" + name("Slot") + b"\x00" + b"\x08" + name("UID0") + name(uid)
+                  + b"\x08" + name("UID1") + name(uid) + b"\x00")
+    genome = b"\x09" + name("Chromosomes") + b"\x0a" + struct.pack(">i", 1) + chromosome + b"\x00"
+    body = b"\x01" + name("IsAnalyzed") + b"\x01" + b"\x0a" + name("Genome") + genome + b"\x00"
+    return gzip.compress(b"\x0a\x00\x00" + body).hex()
+
+
+def bee_icon_path(species, kind):
+    return f"item/Forestry/{BEE_KINDS[kind]}~0~{species.lower()}.webp"
+
+
+def bee_display_id(species, kind):
+    return f"dev-bee-{species.lower()}-{kind.lower()}"
+
+
+def bee_display_stacks():
+    return {bee_display_id(species, kind): {"key": bee_key(kind), "name": f"{species} {kind}",
+                                            "nbt": bee_snbt(species), "icon": bee_icon_path(species, kind)}
+            for species in BEE_SPECIES for kind in BEE_KINDS}
+
 
 def stack(name, size):
     """An item as the game reports it in a craft or scan."""
@@ -475,6 +531,10 @@ def _mask(shape, x, y):
         return 2 <= x <= 13 and 3 <= y <= 12
     if shape == "gem":
         return abs(dx) + abs(dy) <= 6.5
+    if shape == "bee":
+        body = ((dx + 1) / 6) ** 2 + ((dy - 2) / 3.6) ** 2 <= 1
+        wing = ((dx - 1) / 3) ** 2 + ((dy + 3) / 2.5) ** 2 <= 1
+        return body or wing
     if shape == "frame":
         edge = x in (2, 3, 12, 13) or y in (2, 3, 12, 13)
         return 2 <= x <= 13 and 2 <= y <= 13 and (edge or x == y or x == 15 - y)
@@ -493,6 +553,11 @@ def _pixel(shape, colour, x, y):
         return (230, 200, 80, 255)
     if shape == "block" and (x in (1, 14) or y in (1, 14)):
         shade *= 0.7
+    if shape == "bee":
+        if y < 6:
+            return (235, 240, 250, 255)  # wings
+        if x % 3 == 0:
+            return (30, 30, 30, 255)  # stripes
     return tuple(max(0, min(255, int(c * shade))) for c in colour) + (255,)
 
 
@@ -544,8 +609,15 @@ def install_icons(data_dir, prerelease=False):
                 path = f"item/{it['mod']}/{it['internal']}~{it['damage']}.webp"
                 by_key[f"{it['mod']}:{it['internal']}:{it['damage']}"] = path
             zf.writestr(path, _webp(it["shape"], it["colour"]))
+        by_key_label = {}
+        for species, (_, colour) in BEE_SPECIES.items():
+            for kind in BEE_KINDS:
+                path = bee_icon_path(species, kind)
+                zf.writestr(path, _webp("bee", colour))
+                by_key_label[f"{bee_key(kind)}|{species} {kind}"] = path
+                by_key.setdefault(bee_key(kind), path)
     with open(os.path.join(bundle, "icons_lookup.json"), "w", encoding="utf-8") as f:
-        json.dump({"by_key": by_key, "fluids_by_key": fluids_by_key, "by_label": {}}, f)
+        json.dump({"by_key": by_key, "by_key_label": by_key_label, "fluids_by_key": fluids_by_key, "by_label": {}}, f)
     with open(os.path.join(bundle, "ore_dict.json"), "w", encoding="utf-8") as f:
         json.dump(ore_dict(), f)
     with open(os.path.join(bundle, "item_info.json"), "w", encoding="utf-8") as f:
@@ -692,7 +764,51 @@ def recipe_maps(changed):
                              + [slot("o", 0, 74, 4)]},
         "approximate": ["nei_display"],
     }]}
+    maps.update(bee_maps())
     return maps
+
+
+def bee_maps():
+    """NEI Addons' bee breeding (one card per mutation) and Bee Better At
+    Bees' tree for the last species, as the exporter captures them."""
+    def bee(species, kind):
+        return [bee_key(kind), 1, bee_display_id(species, kind)]
+
+    def slot(role, index, x, y):
+        return {"role": role, "index": index, "x": x, "y": y, "w": 18, "h": 18}
+    breeding = []
+    for species, _, parents, chance, conditions in BEES:
+        if parents:
+            breeding.append({
+                "type": "nei", "groups": [{"alts": [bee(parents[0], "Princess")]}, {"alts": [bee(parents[1], "Drone")]}],
+                "o": [bee(species, "Queen")], "requirements": {"chance": chance, "requirements": conditions},
+                "preview": {"family": "positioned", "width": 166, "height": 80, "layers": [], "graphics": "slots_only",
+                            "slots": [slot("groups", 0, 21, 18), slot("groups", 1, 74, 18), slot("o", 0, 128, 18)]},
+                "approximate": ["nei_display"]})
+    # The tree: the species at the top, each bee's parents on the row
+    # below, halving the spacing each row; a foundation block under the
+    # bee that needs one.
+    parents = {species: p for species, _, p, *_ in BEES}
+    target = BEES[-1][0]
+    groups, slots, frontier = [], [slot("o", 0, 73, 0)], [(target, 73)]
+    groups.append({"alts": [[_recipe_key("Block of Diamond"), 1]]})
+    slots.append(slot("groups", 0, 73, 23))
+    for row, spread in enumerate((40, 20, 10)):
+        below = []
+        for species, x in frontier:
+            for parent, dx in zip(parents[species] or (), (-spread, spread), strict=False):
+                slots.append(slot("groups", len(groups), x + dx, 49 + 50 * row))
+                groups.append({"alts": [bee(parent, "Drone")]})
+                below.append((parent, x + dx))
+        frontier = below
+    tree = {"type": "nei", "groups": groups, "o": [bee(target, "Princess")], "approximate": ["nei_display"],
+            "preview": {"family": "positioned", "width": 166, "height": 194, "layers": [], "graphics": "slots_only",
+                        "slots": slots}}
+    return {
+        "nei.net.bdew.neiaddons.forestry.bees.BeeBreedingHandler::": {"machines": ["Bee Breeding"], "recipes": breeding},
+        "nei.hellfirepvp.beebetteratbees.client.gui.BBABGuiRecipeTreeHandler::": {
+            "machines": ["Bee Breeding Tree"], "recipes": [tree]},
+    }
 
 
 def write_recipes(path, maps):
@@ -703,6 +819,12 @@ def write_recipes(path, maps):
     def index(table, key):
         return tables[table].setdefault(key, len(tables[table]))
 
+    def stack(table, alt):
+        # (key, size) or, for a stack the game shows as one NBT variant
+        # (a bee's species), (key, size, display stack id).
+        key, size, *display = alt
+        return [index(table, key), size, None, display] if display else [index(table, key), size]
+
     out = {}
     for map_name, entry in maps.items():
         recipes = []
@@ -712,20 +834,21 @@ def write_recipes(path, maps):
             if "slots" in r:
                 recipe["slots"] = [None if slot is None else {**slot, "alts": [[index("items", key), size] for key, size in slot["alts"]]} for slot in r["slots"]]
             if "groups" in r:
-                recipe["groups"] = [{**group, "alts": [[index("fluids" if group.get("kind") == "fluid" else "items", key), size]
-                                                      for key, size in group["alts"]]} for group in r["groups"]]
+                recipe["groups"] = [{**group, "alts": [stack("fluids" if group.get("kind") == "fluid" else "items", alt)
+                                                      for alt in group["alts"]]} for group in r["groups"]]
             if "research" in r:
                 key, size = r["research"]["item"]
                 recipe["research"] = {**r["research"], "item": [index("items", key), size]}
             for side, table in (("i", "items"), ("o", "items"), ("f", "fluids"), ("g", "fluids")):
                 if side in r:
-                    recipe[side] = [[index(table, key), size] for key, size in r[side]]
+                    recipe[side] = [stack(table, alt) for alt in r[side]]
             recipes.append(recipe)
         out[map_name] = {"machines": [m if isinstance(m, dict) else {"name": m, "key": None} for m in entry["machines"]], "recipes": recipes}
     names = {_recipe_key(it["name"]): it["name"] for it in CATALOG if it["kind"] != "essentia"}
+    names.update({bee_key(kind): kind for kind in BEE_KINDS})
     data = {
         "format": 4,
-        "display_stacks": {}, "ui_assets": {},
+        "display_stacks": bee_display_stacks(), "ui_assets": {},
         "research_info": {"DEV_INFUSION": {"name": "Infusion", "category_name": "Dev research"}},
         "aspects": {"ordo": {"name": "Ordo", "icon": "aspect/ordo.webp"}},
         "coverage": {"handlers": ["gregtech", "crafting", "furnace", "assembly_line", "nei"], "identity": "item_id_damage",
@@ -1225,6 +1348,9 @@ class FakeGame:
             entry = self._scanned(it)
             if entry:
                 items.append(entry)
+        for species, kind, size in NETWORK_BEES:
+            items.append({"name": f"{species} {kind}", "mod": "Forestry", "internal": BEE_KINDS[kind], "damage": 0,
+                          "kind": "item", "size": size, "isCraftable": False, "hasTag": True, "tag": bee_tag(species)})
         token = self.call("POST", "/api/network/scan/start",
                           {"scan_interval_seconds": SCAN_EVERY_TICKS * TICK_SECONDS}).get("scan_token")
         self.call("POST", "/api/network/scan/batch", {"scan_token": token, "items": items})

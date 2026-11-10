@@ -19,12 +19,19 @@ mB], ...], "e": EU/t, "d": ticks, "s": special value}. Crafting has typed
 slots with full alternatives and null holes; furnace has item input/output
 and optional duration. Coverage and the source fingerprint are in meta. Item keys are
 "mod:internal:damage" (damage "*" for any), fluids their registry
-name."""
+name.
+
+Forestry genome items (bees, saplings, butterflies, pollen...) share one
+item id across every species; the recipe keeps the bare key, and the index
+also files it under "mod:internal:damage#<species>" (species_key()), from
+the species in its display stacks' NBT, with that stack's name. A species
+key matches only that species; the bare key still matches all of them."""
 
 import gzip
 import hashlib
 import json
 import os
+import re
 import sqlite3
 import sys
 import threading
@@ -33,7 +40,7 @@ from urllib.parse import quote
 
 # Bumped when the schema or what goes in it changes: an index of another
 # format is built again.
-FORMAT = 6
+FORMAT = 7
 # An index built beside a bundle's recipes.json.gz is called this.
 FILE = "recipes.sqlite"
 ITEM, FLUID = 0, 1
@@ -62,6 +69,37 @@ CREATE TABLE input (kind INTEGER NOT NULL, k TEXT NOT NULL, recipe INTEGER NOT N
 -- Display names, where the export had them.
 CREATE TABLE name (kind INTEGER NOT NULL, k TEXT NOT NULL, v TEXT NOT NULL, PRIMARY KEY (kind, k)) WITHOUT ROWID;
 """
+
+
+# The active allele of a Forestry genome's species chromosome (chromosome 0),
+# as the export writes NBT (NBTTagCompound.toString()).
+_SPECIES_SNBT = re.compile(r'Genome:\{Chromosomes:\[0:\{Slot:0b,UID0:"([^"\\]{1,128})"')
+SPECIES_RE = re.compile(r"[A-Za-z0-9._-]{1,128}")
+
+
+def species_id(uid):
+    """A species allele UID as the species part of a key: a few GT++ UIDs
+    have spaces ("gtpp.bee.speciesDragon Blood"), which keys can't."""
+    if not isinstance(uid, str):
+        return None
+    value = re.sub(r"\s", "_", uid.strip())
+    return value if SPECIES_RE.fullmatch(value) else None
+
+
+def species_from_snbt(text):
+    """The species id of an exported stack's NBT string, or None."""
+    match = _SPECIES_SNBT.search(text) if isinstance(text, str) else None
+    return species_id(match[1]) if match else None
+
+
+def species_key(key, species):
+    return f"{key}#{species}"
+
+
+def split_species(key):
+    """(bare key, species or None)."""
+    base, sep, species = key.partition("#")
+    return (base, species) if sep else (key, None)
 
 
 def fingerprint(source):
@@ -351,10 +389,15 @@ def build(source, out_path):
     with open(source, "rb") as f:
         signature = _fingerprint_file(f)
         f.seek(0)
-        raw, map_names = {}, set()
+        raw, map_names, species = {}, set(), {}
         for event, key, value in _source_events(f):
             if event == "meta":
                 raw[key] = value
+            elif event == "variant":
+                # Small: only genome stacks (a few thousand of 100k+).
+                found = species_from_snbt(value.get("nbt")) if isinstance(value, dict) else None
+                if found:
+                    species[key] = (found, value.get("name"))
             elif event == "map":
                 if key in map_names:
                     raise ValueError("duplicate recipe map")
@@ -365,10 +408,12 @@ def build(source, out_path):
                                    or not isinstance(raw["coverage"].get("handlers"), list)):
             raise ValueError("typed recipes need coverage metadata")
         f.seek(0)
-        _build(f, out_path, raw, {name: i for i, name in enumerate(sorted(map_names))}, signature)
+        _build(f, out_path, raw, {name: i for i, name in enumerate(sorted(map_names))}, signature, species)
 
 
-def _build(source_file, out_path, raw, map_ids, signature):
+def _build(source_file, out_path, raw, map_ids, signature, species=None):
+    species = species or {}
+    species_names = {}
     items = [str(k) for k in raw.get("items") or []]
     fluids = [str(k) for k in raw.get("fluids") or []]
     tmp = out_path + ".tmp"
@@ -423,11 +468,18 @@ def _build(source_file, out_path, raw, map_ids, signature):
             conn.execute("INSERT INTO recipe VALUES (?, ?, ?, ?, ?, ?)",
                          (recipe_id, map_id, priority, abs(body.get("e", 0)), body.get("d", 0), json.dumps(body)))
             outputs = {(ITEM, o[0]) for o in body["o"]} | {(FLUID, g[0]) for g in body["g"]}
+            outputs.update(_species_keys(body["o"], species, species_names))
             conn.executemany("INSERT INTO output VALUES (?, ?, ?)", ((kind, k, recipe_id) for kind, k in outputs))
             inputs = {(ITEM, i[0]) for i in body["i"]} | {(FLUID, f[0]) for f in body["f"]}
-            inputs.update((ITEM, alt[0]) for slot in body.get("slots", []) if slot for alt in slot["alts"])
-            inputs.update((FLUID if group["kind"] == "fluid" else ITEM, alt[0])
-                          for group in body.get("groups", []) for alt in group["alts"])
+            inputs.update(_species_keys(body["i"], species, species_names))
+            for slot in body.get("slots", []):
+                if slot:
+                    inputs.update((ITEM, alt[0]) for alt in slot["alts"])
+                    inputs.update(_species_keys(slot["alts"], species, species_names))
+            for group in body.get("groups", []):
+                inputs.update((FLUID if group["kind"] == "fluid" else ITEM, alt[0]) for alt in group["alts"])
+                if group["kind"] != "fluid":
+                    inputs.update(_species_keys(group["alts"], species, species_names))
             if body.get("research"):
                 inputs.add((ITEM, body["research"]["item"][0]))
             conn.executemany("INSERT INTO input VALUES (?, ?, ?)", ((kind, k, recipe_id) for kind, k in inputs))
@@ -440,6 +492,8 @@ def _build(source_file, out_path, raw, map_ids, signature):
                     "INSERT OR IGNORE INTO name VALUES (?, ?, ?)",
                     ((kind, k, str(v)) for k, v in zip(keys, names, strict=False) if v),
                 )
+        conn.executemany("INSERT OR IGNORE INTO name VALUES (?, ?, ?)",
+                         ((ITEM, k, v) for k, v in species_names.items()))
         conn.execute("INSERT INTO meta VALUES ('fingerprint', ?)", (signature,))
         conn.execute("INSERT INTO meta VALUES ('recipes', ?)", (str(recipe_id),))
         conn.execute("INSERT INTO meta VALUES ('source_format', ?)", (str(raw["format"]),))
@@ -459,6 +513,23 @@ def _build(source_file, out_path, raw, map_ids, signature):
     os.replace(tmp, out_path)
 
 
+def _species_keys(stacks, species, names):
+    """(ITEM, species key) for each genome species among stacks' display
+    variants, noting each one's name."""
+    out = set()
+    for stack in stacks:
+        if len(stack) < 4 or "#" in stack[0]:
+            continue
+        for ref in stack[3]:
+            found = species.get(ref)
+            if found:
+                key = species_key(stack[0], found[0])
+                out.add((ITEM, key))
+                if found[1] and key not in names:
+                    names[key] = str(found[1])
+    return out
+
+
 class RecipeIndex:
     """A built index, read-only, shared by every thread. Page queries decode
     only the requested recipes, including for high-cardinality ingredients."""
@@ -475,6 +546,7 @@ class RecipeIndex:
         self.coverage = json.loads(meta["coverage"])
         self.presentation = {k: json.loads(meta.get(k, "{}")) for k in ("ui_assets", "research_info", "aspects")}
         self._layouts = {self._maps[m]: json.loads(body) for m, body in self._conn.execute("SELECT map, body FROM preview_layout")}
+        self._memo = {}
         self._machines = {}
         for map_id, v in self._conn.execute("SELECT map, v FROM machine ORDER BY map, seq"):
             self._machines.setdefault(self._maps[map_id], []).append(json.loads(v))
@@ -494,6 +566,23 @@ class RecipeIndex:
 
     def maps(self):
         return list(self._maps.values())
+
+    def memo(self, name, build):
+        """build(), once per index: a table derived from its recipes."""
+        with self._lock:
+            if name in self._memo:
+                return self._memo[name]
+        value = build()
+        with self._lock:
+            return self._memo.setdefault(name, value)
+
+    def map_recipes(self, map_name):
+        """[(id, body), ...]: every recipe of one map, in index order."""
+        map_id = self._map_ids.get(map_name)
+        if map_id is None:
+            return []
+        return [(rid, json.loads(body)) for rid, body in
+                self._all("SELECT id, body FROM recipe WHERE map = ? ORDER BY id", (map_id,))]
 
     def machines(self, map_name):
         """[{"name", "key"}, ...]: what NEI lists as the map's machines."""
@@ -517,7 +606,7 @@ class RecipeIndex:
         # A concrete damage matches a wildcard ingredient/output as well. A
         # wildcard query means the wildcard identity itself, not every variant.
         keys = [key]
-        if kind == ITEM and not key.endswith(":*"):
+        if kind == ITEM and not key.endswith(":*") and "#" not in key:
             keys.append(key.rpartition(":")[0] + ":*")
         where = f"x.kind = ? AND x.k IN ({','.join('?' for _ in keys)})"
         args = [kind, *keys]

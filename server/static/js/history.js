@@ -99,6 +99,13 @@ function itemHistoryQueryParams(it) {
   return params;
 }
 
+// A Forestry genome item of one species (recipe-book entries know only that).
+export function findNetworkSpecies(mod, internal, damage, species) {
+  const items = (lastNetworkData && lastNetworkData.items) || [];
+  return items.find(it => it.species === species && it.mod === mod && it.internal === internal
+    && it.damage === damage) || null;
+}
+
 export function findNetworkItem(mod, internal, damage, kind, variant) {
   const items = (lastNetworkData && lastNetworkData.items) || [];
   return items.find(it =>

@@ -13,6 +13,7 @@ of several items called alike."""
 
 import datetime
 import difflib
+import functools
 import json
 import logging
 import math
@@ -21,7 +22,7 @@ import time
 
 from gcm import (
     auth, bottlenecks, commands, config, craft_stats, gamedata, inventory, item_info, job_links, patterns, planner, rates,
-    mctext, multiblocks, recipe_index, recipes, search, state, stock, store, tracking,
+    mctext, multiblocks, recipe_index, recipe_viewer, recipes, search, state, stock, store, tracking,
 )
 
 log = logging.getLogger(__name__)
@@ -693,27 +694,42 @@ def _recipe_index(required=True):
         raise ToolError(str(e)) from None
 
 
+# A Forestry genome item (bee, sapling...) of one species, in game data:
+# its item key's variant is "species:<species>". Network keys of such items
+# carry an NBT hash instead, and the network item knows its species.
+SPECIES_VARIANT = "species:"
+
+
 def _recipe_key(key):
     """An item key as the recipe index keys it: (kind, key)."""
-    mod, internal, damage, kind, _ = _parse_key(key)
+    mod, internal, damage, kind, variant = _parse_key(key)
     if kind == "fluid":
         return recipe_index.FLUID, internal
     if kind != "item":
         raise ToolError("Only items and fluids have recipes.")
-    return recipe_index.ITEM, f"{mod}:{internal}:{'*' if damage is None else damage}"
+    rkey = f"{mod}:{internal}:{'*' if damage is None else damage}"
+    species = None
+    if variant and variant.startswith(SPECIES_VARIANT):
+        species = variant[len(SPECIES_VARIANT):]
+        if not recipe_index.SPECIES_RE.fullmatch(species):
+            raise ToolError(f"{key!r} names an invalid species.")
+    elif variant:
+        species = (_network_item(key) or {}).get("species")
+    return recipe_index.ITEM, recipe_index.species_key(rkey, species) if species and damage is not None else rkey
 
 
 def _key_from_recipe(kind, rkey):
     """The recipe index's key as an item key (the other tools' form)."""
     if kind == recipe_index.FLUID:
         return store.items.item_key(None, rkey, None, "fluid")
+    rkey, species = recipe_index.split_species(rkey)
     mod, _, rest = rkey.partition(":")
     internal, _, damage = rest.rpartition(":")
     try:
         damage = None if damage == "*" else int(damage)
     except ValueError:
         return None
-    return store.items.item_key(mod, internal, damage, "item")
+    return store.items.item_key(mod, internal, damage, "item", SPECIES_VARIANT + species if species else None)
 
 
 def _game_matches(query, idx):
@@ -755,10 +771,17 @@ def _pick(query, idx):
     }
 
 
-def _stacks(stacks, kind, names, chances=False):
+def _stacks(stacks, kind, names, chances=False, displays=None):
     rows = []
     for s in stacks:
-        row = {"name": mctext.plain(names.get(s[0]) or s[0]), "amount": s[1], "unit": "mB" if kind == "fluid" else "items"}
+        # NEI's own stack where the export kept it: a bee's species name
+        # rather than its item id's ("Scanned Drone").
+        display = (displays or {}).get(s[3][0]) if kind != "fluid" and len(s) > 3 and s[3] else None
+        name = (display or {}).get("name") or names.get(s[0]) or s[0]
+        row = {"name": mctext.plain(name), "amount": s[1], "unit": "mB" if kind == "fluid" else "items"}
+        species = recipe_index.species_from_snbt(display.get("nbt")) if display else None
+        if species and not s[0].endswith(":*"):
+            row["item"] = _key_from_recipe(recipe_index.ITEM, recipe_index.species_key(s[0], species))
         if chances and len(s) > 2 and s[2] is not None and s[2] < 10000:
             row["chance_percent"] = s[2] / 100
         rows.append(row)
@@ -783,6 +806,8 @@ def find_recipes(user, args):
             (fluid_keys if group["kind"] == "fluid" else item_keys).update(s[0] for s in group["alts"][:RECIPE_ALTERNATIVES_MAX])
         if b.get("research"):
             item_keys.add(b["research"]["item"][0])
+    refs = {ref for _, _, b in found for stack in recipe_viewer.recipe_stacks(b) if len(stack) > 3 for ref in stack[3][:1]}
+    stacks = functools.partial(_stacks, displays=idx.display_stacks(refs))
     item_names = idx.names(recipe_index.ITEM, item_keys | ({rkey} if kind == recipe_index.ITEM else set()))
     fluid_names = idx.names(recipe_index.FLUID, fluid_keys | ({rkey} if kind == recipe_index.FLUID else set()))
     rows = []
@@ -791,7 +816,7 @@ def find_recipes(user, args):
         row = {
             "machine": machines[0] if machines else map_name,
             "type": b["type"],
-            "outputs": _stacks(b["o"], "item", item_names, chances=True) + _stacks(b["g"], "fluid", fluid_names, chances=True),
+            "outputs": stacks(b["o"], "item", item_names, chances=True) + stacks(b["g"], "fluid", fluid_names, chances=True),
         }
         if b["type"] in ("shaped", "shapeless"):
             row["slots"] = []
@@ -800,7 +825,7 @@ def find_recipes(user, args):
                     row["slots"].append(None)
                     continue
                 sample = slot["alts"][:RECIPE_ALTERNATIVES_MAX]
-                alternatives = _stacks(sample, "item", item_names)
+                alternatives = stacks(sample, "item", item_names)
                 for entry, stack in zip(alternatives, sample, strict=True):
                     entry["item"] = _key_from_recipe(recipe_index.ITEM, stack[0])
                 presented = {"alternatives": alternatives, "alternatives_total": len(slot["alts"])}
@@ -810,14 +835,14 @@ def find_recipes(user, args):
             if b["type"] == "shaped":
                 row.update(width=b["w"], height=b["h"], mirrored=b["mirrored"])
         else:
-            row["inputs"] = _stacks(b["i"], "item", item_names) + _stacks(b["f"], "fluid", fluid_names)
+            row["inputs"] = stacks(b["i"], "item", item_names) + stacks(b["f"], "fluid", fluid_names)
         if "groups" in b:
-            row["ingredient_groups"] = [{"alternatives": _stacks(group["alts"][:RECIPE_ALTERNATIVES_MAX], group["kind"],
+            row["ingredient_groups"] = [{"alternatives": stacks(group["alts"][:RECIPE_ALTERNATIVES_MAX], group["kind"],
                                                                  fluid_names if group["kind"] == "fluid" else item_names),
                                           "alternatives_total": len(group["alts"])} for group in b["groups"]]
         if b.get("research"):
             research = b["research"]
-            row["research"] = {**research, "item": _stacks([research["item"]], "item", item_names)[0]}
+            row["research"] = {**research, "item": stacks([research["item"]], "item", item_names)[0]}
         if b.get("requirements"):
             row["requirements"] = b["requirements"]
         if b["type"] in ("gt", "assembly_line"):
@@ -1456,7 +1481,9 @@ TOOLS = [
             "older bundles contain only GregTech. Crafting slots give sampled alternatives and their totals; "
             "NBT/custom matching may be approximate. Crafting first, then furnace, then GT by absolute EU/t. "
             "Use this instead of remembering recipes. Takes an "
-            "item key or a name; it can be any item in the game, not just ones in the network."
+            "item key or a name; it can be any item in the game, not just ones in the network. Bees, saplings "
+            "and other Forestry genome items are looked up by species (\"Diligent Princess\"): their keys end "
+            "in a species variant, and a bee's breeding recipes give the mutation chance and conditions."
         ),
         "inputSchema": _schema({
             "item": {"type": "string", "description": "An item key (from search_items or game_item), or a name."},

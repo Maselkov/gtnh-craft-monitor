@@ -12,7 +12,7 @@ export function parseRecipeRecents(raw) {
     if (typeof value?.version !== 'string' || !Array.isArray(value.keys)) throw new Error();
     return {version:value.version.slice(0,64), keys:[...new Set(value.keys.filter(key =>
       typeof key === 'string' && key.length <= 1024 && !/\s/.test(key)
-      && /^(?:fluid:.+|[^:]+:.+:(?:\d+|\*))$/.test(key)))].slice(0,8)};
+      && /^(?:fluid:.+|[^:]+:.+:(?:\d+|\*)|[^:]+:.+:\d+#[A-Za-z0-9._-]{1,128})$/.test(key)))].slice(0,8)};
   } catch { return {version:'', keys:[]}; }
 }
 
@@ -33,7 +33,9 @@ export function recipeItemKey(item) {
   }
   if (!item.internal) return null;
   if (item.kind === 'fluid' || !item.mod) return `fluid:${item.internal}`;
-  return `${item.mod}:${item.internal}:${item.damage == null ? '*' : item.damage}`;
+  const key = `${item.mod}:${item.internal}:${item.damage == null ? '*' : item.damage}`;
+  // A bee, sapling... of one species: its own recipes (breeding), not every species'.
+  return item.species && item.damage != null ? `${key}#${item.species}` : key;
 }
 
 export function recipeUrl(frame) {
