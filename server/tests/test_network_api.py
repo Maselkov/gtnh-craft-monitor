@@ -867,6 +867,17 @@ class TestItemInfo:
         info = client.get("/api/network/history", query_string=query).get_json()["info"]
         assert info == {"mod_name": "Minecraft"}
 
+    def test_one_item_by_key_in_the_network_or_not(self, client, api_headers, game_info):
+        game_info(self.INFO, self.ORE)
+        run_scan(client, api_headers, [[ITEM]])
+        info = client.get("/api/network/item-info?key=minecraft|iron_ingot|0|item").get_json()["info"]
+        assert info == {"description": "§7Fe", "shift_description": "§7Fe, in detail", "rarity": "e",
+                        "ore": ["ingotIron", "ingotAnyIron"], "mod_name": "Minecraft"}
+        info = client.get("/api/network/item-info?key=|molten.silicone||fluid").get_json()["info"]
+        assert info["description"].startswith("§7Temperature")
+        assert client.get("/api/network/item-info?key=nope").status_code == 400
+        assert client.get("/api/network/item-info?key=a|b|x|item").status_code == 400
+
     def test_none_without_game_data(self, client, api_headers):
         run_scan(client, api_headers, [[ITEM]])
         assert client.get("/api/network/info").get_json() == {"items": {}, "mods": {}}

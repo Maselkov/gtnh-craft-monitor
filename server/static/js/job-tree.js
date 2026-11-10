@@ -11,6 +11,8 @@
 import { nameText } from './description.js';
 import { itemMatchesSearch, parseSearchQuery } from './search.js';
 import { ensureLoaded, flashRow, graft, matchingEntries, matchTree, nodeAt, openAbove, searchNoteText } from './tree-nav.js';
+import { itemOfKey, lookupItemTooltipHtml, onShiftChange } from './item-tooltip.js';
+import { bindCellTooltip, showTooltip, tooltipVisible } from './tooltip.js';
 import { delegateActions, escapeHtml, formatDuration, formatQty, iconClass, iconUrl, machinePlace, TERMINAL_DOCS_URL } from './util.js';
 
 let cpu = null;            // the CPU shown, null when the tree isn't
@@ -130,7 +132,7 @@ function nodeHtml(node, parentPath, depth, positions, filtering) {
     ? `<button class="plan-caret" data-action="job-tree-toggle" data-path="${escapeHtml(path)}"${leading ? ' data-filter' : ''} aria-expanded="${open}" title="${open ? 'Collapse' : 'Expand'}">${open ? '▾' : '▸'}</button>`
     : '<span class="plan-caret"></span>';
   const icon = node.icon
-    ? `<img class="${iconClass('plan-icon', node.icon)}" src="${iconUrl(node.icon)}" alt="" loading="lazy" data-remove-on-error>`
+    ? `<img class="${iconClass('plan-icon', node.icon)}" src="${iconUrl(node.icon)}" alt="" loading="lazy" data-remove-on-error data-key="${escapeHtml(node.key)}" data-name="${escapeHtml(node.name || '')}">`
     : '';
   const storage = node.status === 'stock';
   const details = [];
@@ -411,7 +413,23 @@ export function hideJobTree() {
   revealTimer = null;
 }
 
+// A step's icon has the item's tooltip; the step's counts are its text.
+let tooltipIcon = null;
+
+function iconTooltipHtml(icon) {
+  tooltipIcon = icon;
+  return lookupItemTooltipHtml(itemOfKey(icon.dataset.key, { key: icon.dataset.key, name: icon.dataset.name }), {}, refreshIconTooltip);
+}
+
+function refreshIconTooltip() {
+  const tree = document.getElementById('ingredientsTree');
+  if (tooltipVisible(tree) && tooltipIcon?.isConnected) showTooltip(iconTooltipHtml(tooltipIcon), undefined, undefined, tree);
+}
+
 export function setupJobTreeActions() {
+  bindCellTooltip(document.getElementById('ingredientsTree'), '.plan-icon[data-key]', iconTooltipHtml,
+    icon => itemOfKey(icon.dataset.key, { key: icon.dataset.key, name: icon.dataset.name }));
+  onShiftChange(refreshIconTooltip);
   delegateActions(document.getElementById('ingredientsTreeWrap'), {
     'job-tree-toggle': (el) => {
       (el.hasAttribute('data-filter') ? filterOpen : openState).set(el.dataset.path, el.getAttribute('aria-expanded') !== 'true');

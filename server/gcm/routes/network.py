@@ -228,6 +228,29 @@ def network_info_get():
     return response
 
 
+@bp.route("/api/network/item-info", methods=["GET"])
+@auth.viewer_required
+def network_item_info_get():
+    """One item's game data, by its item key (mod|internal|damage|kind,
+    and |variant for an NBT variant), for the tooltips of items that
+    needn't be in the network (a craft's ingredients, a plan's rows):
+    {info: {description, shift_description, rarity, formula, ore,
+    mod_name}}, as the item dialog gets it with its history."""
+    parts = (request.args.get("key") or "").split("|")
+    if len(parts) not in (4, 5) or not parts[1]:
+        return jsonify({"error": "bad key"}), 400
+    mod, internal, damage, kind = parts[0] or None, parts[1], parts[2], parts[3] or "item"
+    variant = parts[4] if len(parts) == 5 and parts[4] else None
+    try:
+        damage = int(damage) if damage != "" else None
+    except ValueError:
+        return jsonify({"error": "bad key"}), 400
+    item = inventory.describe(store.items.item_key(mod, internal, damage, kind, variant)) or {
+        "mod": mod, "internal": internal, "damage": damage, "kind": kind,
+    }
+    return jsonify({"info": {**item_info.describe(item), "mod_name": item_info.mod_name(mod)}})
+
+
 @bp.route("/api/network/history/chart.png", methods=["GET"])
 @auth.viewer_required
 def network_history_chart_png():

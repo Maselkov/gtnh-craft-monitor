@@ -8,8 +8,8 @@
 
 import { hideJobTree, refreshJobTree, setJobTreeFilter, setupJobTreeActions, showJobTree } from './job-tree.js';
 import { bindCellTooltip, hideTooltip, showTooltip, tooltipVisible } from './tooltip.js';
-import { nameHtml, nameText } from './description.js';
-import { systemStockHtml } from './item-tooltip.js';
+import { nameText } from './description.js';
+import { lookupItemTooltipHtml, onShiftChange } from './item-tooltip.js';
 import { itemMatchesSearch, parseSearchQuery } from './search.js';
 import { showToast } from './craft-actions.js';
 import { craftView, setPageView } from './page-title.js';
@@ -116,14 +116,7 @@ function tooltipHtml(m) {
   const stats = countLines(m)
     .map(([label, n]) => `<div class="network-tooltip-stat">${label}: ${n.toLocaleString()}</div>`)
     .join('');
-  // A bare name with no mod is how a fluid comes through here (see
-  // openItemHistoryFromCraft in history.js).
-  return `
-    <div class="network-tooltip-name">${nameHtml(m.name || '?')}</div>
-    ${stats}
-    ${systemStockHtml(m, {aggregateVariants:true})}
-    ${m.mod ? `<div class="network-tooltip-mod">${escapeHtml(m.mod)}</div>` : `<div class="network-tooltip-fluid">Fluid</div>`}
-  `;
+  return lookupItemTooltipHtml(m, { details: stats }, refreshIngredientTooltip);
 }
 
 function renderHead(job) {
@@ -294,6 +287,7 @@ export function refreshIngredientsModal(data) {
 
 export function setupIngredientsActions() {
   window.addEventListener('gcm-networkchange', refreshIngredientTooltip);
+  onShiftChange(refreshIngredientTooltip);
   const modal = document.getElementById('ingredientsModal');
   view = readView();
   delegateActions(modal, {

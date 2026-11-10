@@ -20,6 +20,7 @@ VIEWER_ENDPOINTS = {
     "network.network_get",
     "network.network_changes_get",
     "network.network_info_get",  # game data about the item list's items
+    "network.network_item_info_get",  # game data about one item, for craft and plan tooltips
     "network.network_history_get",
     "network.network_history_chart_png",
     "network.multiblocks_get",  # game data: the multiblocks with kits
