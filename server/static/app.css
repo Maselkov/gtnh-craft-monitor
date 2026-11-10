@@ -10,6 +10,13 @@
   --stale: #ff6b6b;
   --essentia: #b48cff;
   /* Exported Minecraft glyphs assume NEI's neutral paper in either theme. */
+  /* The logo (static/icons/favicon.svg) looks the same in either theme. */
+  --logo-bg: #0f1115;
+  --logo-frame: #4a4f59;
+  --logo-face: #1a1d24;
+  --logo-lines: #5fb3ff;
+  --logo-lines-dim: #23476a;
+  --logo-lines-lit: #b8e0ff;
   --recipe-canvas: #c6c6c6;
   --recipe-canvas-ink: #000;
   --recipe-frame-light: #fff;
@@ -3354,9 +3361,17 @@ body.oauth-page {
 .recipe-book-heading > span { flex:1; min-width:0; text-align:center; font:24px "GCM Recipe", monospace; color:var(--recipe-count-text); text-shadow:2px 2px var(--recipe-frame-shadow); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .recipe-viewer-list { overflow:auto; min-height:0; flex:1; padding:4px 0; scrollbar-width:thin; }
 .recipe-loading { display:flex; min-height:220px; align-items:center; justify-content:center; gap:12px; color:var(--recipe-canvas-ink); font-size:14px; }
-.recipe-loading-spinner { width:22px; height:22px; border:3px solid var(--recipe-frame-mid); border-top-color:var(--recipe-canvas-ink); border-radius:50%; animation:recipe-loading-spin .8s linear infinite; }
-@keyframes recipe-loading-spin { to { transform:rotate(360deg); } }
-@media (prefers-reduced-motion:reduce) { .recipe-loading-spinner { animation:none; } }
+.recipe-loading-logo { width:40px; height:40px; flex:none; }
+.recipe-loading-logo .logo-bg { fill:var(--logo-bg); }
+.recipe-loading-logo .logo-frame { fill:var(--logo-frame); }
+.recipe-loading-logo .logo-face { fill:var(--logo-face); }
+/* A powered ME Controller's lines fade between dim and lit. */
+.recipe-loading-logo .logo-lines { fill:var(--logo-lines); animation:recipe-loading-pulse 1.6s ease-in-out infinite alternate; }
+@keyframes recipe-loading-pulse {
+  from { fill:var(--logo-lines-dim); filter:none; }
+  to { fill:var(--logo-lines-lit); filter:drop-shadow(0 0 1.5px var(--logo-lines)); }
+}
+@media (prefers-reduced-motion:reduce) { .recipe-loading-logo .logo-lines { animation:none; } }
 .recipe-viewer-row { padding:0; }
 .recipe-viewer-row .recipe-step-sides { gap:12px; justify-content:center; }
 .recipe-viewer-row .recipe-step-machine { display:none; }

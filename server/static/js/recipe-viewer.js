@@ -23,6 +23,14 @@ let categoryTimer = null, preloadTimer = null;
 let cycleTimer = null;
 let categoryTabs = null, touch = null;
 let rendered = null;
+// The project's logo (static/icons/favicon.svg) with its lines pulsing
+// like a powered ME Controller's, while a page of recipes loads.
+const LOADING_LOGO = '<svg class="recipe-loading-logo" viewBox="0 0 64 64" shape-rendering="crispEdges" aria-hidden="true">'
+  + '<rect width="64" height="64" rx="6" class="logo-bg"/>'
+  + '<path class="logo-frame" fill-rule="evenodd" d="M4 4h56v56H4zM8 8v48h48V8z"/>'
+  + '<rect x="8" y="8" width="48" height="48" class="logo-face"/>'
+  + '<path class="logo-lines" d="M32 4h4v4h-4zM32 8h4v4h-4zM12 12h16v4h-16zM32 12h20v4h-20zM12 16h4v4h-4zM24 16h4v4h-4zM48 16h4v4h-4zM12 20h4v4h-4zM20 20h8v4h-8zM32 20h4v4h-4zM40 20h4v4h-4zM48 20h4v4h-4zM12 24h4v4h-4zM32 24h4v4h-4zM40 24h12v4h-12zM4 28h12v4h-12zM20 28h16v4h-16zM28 32h16v4h-16zM48 32h12v4h-12zM12 36h12v4h-12zM28 36h4v4h-4zM48 36h4v4h-4zM12 40h4v4h-4zM20 40h4v4h-4zM28 40h4v4h-4zM36 40h8v4h-8zM48 40h4v4h-4zM12 44h4v4h-4zM36 44h4v4h-4zM48 44h4v4h-4zM12 48h20v4h-20zM36 48h16v4h-16zM28 52h4v4h-4zM28 56h4v4h-4z"/></svg>';
+
 const cache = new Map();
 const dataCache = createRecipeData(get);
 const choices = new Map();
@@ -407,7 +415,7 @@ function render(model) {
     });
   }
   updateHtml(list(), model?.loaded ? rows.map(row => `<article class="recipe-viewer-row" data-id="recipe-${row.id}">${stepHtml(row, {interactive:true, tooltipKey, machineSidebar:true})}</article>`).join('')
-    : '<div class="recipe-loading" role="status"><span class="recipe-loading-spinner" aria-hidden="true"></span><span>Loading recipes…</span></div>');
+    : `<div class="recipe-loading" role="status">${LOADING_LOGO}<span>Loading recipes…</span></div>`);
   layoutRecipePreviews(list());
   if (model) list().scrollTop = model.scroll;
   updatePageButtons(model);

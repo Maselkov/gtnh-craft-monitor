@@ -3118,7 +3118,7 @@ async function main() {
     await click(`$('#recipeViewerMaps [data-map="furnace"]')`);
     await waitFor('category recipes delayed', `window.switchHeld.length === 1`);
     await sleep(150);
-    assert(await evaluate(`!$('#recipeViewerList .recipe-viewer-row') && !!$('#recipeViewerList .recipe-loading-spinner')
+    assert(await evaluate(`!$('#recipeViewerList .recipe-viewer-row') && !!$('#recipeViewerList .recipe-loading-logo')
       && $('#recipeViewerMaps [aria-selected=true]').dataset.map === 'furnace'
       && $('#recipeCategoryName').textContent === 'Furnace' && $('#recipeViewerPage').textContent === 'Page 1/1'`));
     await evaluate(`window.switchHeld.shift().release();true`);
