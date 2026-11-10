@@ -200,10 +200,17 @@ keeps its last kit name until reused. You don't need to reset it to a
 Command Block pattern. Slots are protected while their kit is being
 planned or crafted.
 
+Two kits of the same multiblock get different names, so AE2 can't mix
+up their patterns. While one "Electric Blast Furnace kit" is planned or
+crafted, the next one is "Electric Blast Furnace kit #2". A kit reuses a
+free slot that already has its name. Any other free slot with that name
+goes back to making a Command Block.
+
 `craft_monitor.lua` looks for kit slots when it starts and every
 [`KIT_SCAN_SECONDS`](#craft_monitorlua) (10 minutes by default). It only
 rewrites a processing pattern that makes a Command Block, or one it
-already rewrote (named "... kit"). Ordinary patterns are left alone.
+already rewrote (named "... kit" or "... kit #2"). Ordinary patterns are
+left alone.
 
 The job's final output never arrives, and the Fake Crafting Card ends the
 job once the blocks are pushed. A job stuck on its last step instead

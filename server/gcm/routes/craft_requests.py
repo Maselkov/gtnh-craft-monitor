@@ -140,6 +140,7 @@ def craft_requests_get():
     for r in mine:
         r.pop("tag", None)  # only for the game
         r.pop("kit_inputs", None)
+        r.pop("kit_names", None)
     return jsonify({"requests": mine})
 
 
@@ -157,6 +158,16 @@ def craft_requests_pending():
     return jsonify({"requests": commands.craft_requests.claim_pending()})
 
 
+def kit_label_used(req_id, label):
+    """The kit name the game says it used for a kit request, if it's one
+    of the names the request offered (commands.queue_kit); else None."""
+    if not isinstance(label, str):
+        return None
+    found = commands.craft_requests.select(lambda r: r["id"] == req_id)
+    names = found[0].get("kit_names") if found else None
+    return label if names and any(n["label"] == label for n in names) else None
+
+
 @bp.route("/api/craft/requests/<int:req_id>/result", methods=["POST"])
 @auth.api_key_required
 def craft_request_result(req_id):
@@ -167,16 +178,18 @@ def craft_request_result(req_id):
 
     cpu_name = payload.get("cpu_name")
     reason = None if status == "accepted" else payload.get("reason") or "request failed"
+    label = kit_label_used(req_id, payload.get("label"))
 
     # The audit row first: if writing it fails, the request stays pending
     # in memory and its expiry still gets to close the row.
-    store.requests.resolve_request(req_id, status, reason, cpu_name)
+    store.requests.resolve_request(req_id, status, reason, cpu_name, label=label)
 
+    named = {"label": label} if label else {}
     if status == "accepted":
         # Accepted requests leave the queue: the CPU pin takes over.
-        req = commands.craft_requests.resolve(req_id, status, remove=True, cpu_name=cpu_name)
+        req = commands.craft_requests.resolve(req_id, status, remove=True, cpu_name=cpu_name, **named)
     else:
-        req = commands.craft_requests.resolve(req_id, status, reason=reason)
+        req = commands.craft_requests.resolve(req_id, status, reason=reason, **named)
     if req is None:
         return jsonify({"error": "unknown request id"}), 404
 

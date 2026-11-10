@@ -973,6 +973,14 @@ requests that. What it found on the way:
   rewritten while a job written into it is planned or runs (held in
   memory, and checked against what busy CPUs are making, for after a
   restart).
+- Two patterns with the same output are two ways to make one item, and
+  AE2 plans with either. Kits of the same multiblock almost always have
+  different inputs, because the inputs include what's in stock. So the
+  server offers numbered names ("… kit", "… kit #2", …, one per kit
+  slot), and the script takes the first one no held or busy slot has. It
+  writes it into a free slot that already has that name when there is
+  one, resets the other free slots with that name to a Command Block, and
+  reports the name with the result, which becomes the pin's label.
 - AE2 takes a pattern's inputs from storage first, so each input is the
   stock (up to the need) plus the amount to craft, and the server works
   that out from the last scan. The kit's shared plan is then what AE2

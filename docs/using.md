@@ -358,7 +358,8 @@ mB), and its essentia with Thaumic Energistics installed. It refreshes every
 minute, but its data changes only when a scan finishes.
 
 Kit-slot outputs are hidden from this list: both the initial Command
-Block and the tagged "… kit" outputs generated as those slots are reused.
+Block and the tagged "… kit" (or "… kit #2") outputs generated as those
+slots are reused.
 The scan data is still available to the planner and item history.
 
 - Click an item to open its stock history chart. The full item name wraps
@@ -761,7 +762,9 @@ is needed for the preview, not for submitting a craft request.
 [kit interface](in-game.md#kit-interface): AE2 plans every block together,
 so what they share (the plates two casings both need) is made once, runs
 it on one CPU, and puts the blocks in the network when they're all done.
-The job shows on the Crafts tab as making "*multiblock* kit". AE2 uses
+The job shows on the Crafts tab as making "*multiblock* kit", or
+"*multiblock* kit #2" while another kit of that multiblock is running.
+AE2 uses
 what's in storage first, so the kit asks for what's in stock of each block
 (up to what it needs) plus the Request amount, and crafts the Request
 amount.

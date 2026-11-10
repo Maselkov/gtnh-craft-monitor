@@ -1172,6 +1172,13 @@ class FakeGame:
                 self.call("POST", f"/api/craft/requests/{req['id']}/result",
                           {"status": "failed", "reason": FAILS[req["label"]]})
                 continue
+            named = {}
+            if req.get("kit_names"):
+                # As craft_monitor.lua does: the first name no running kit has.
+                running = {c.job["output"] for c in self.cpus if c.job}
+                req["label"] = next((n["label"] for n in req["kit_names"] if n["label"] not in running),
+                                    req["label"])
+                named = {"label": req["label"]}
             label = req["label"] if req["label"] in BY_NAME else "Iron Ingot"
             if req.get("kit_inputs"):
                 # A multiblock kit: its blocks, all on the one CPU.
@@ -1182,7 +1189,7 @@ class FakeGame:
             cpu.request_id = req["id"]
             cpu.delivers = (req["label"], int(req["amount"])) if req["label"] in BY_NAME else None
             self.call("POST", f"/api/craft/requests/{req['id']}/result",
-                      {"status": "accepted", "cpu_name": cpu.name, "watching": True})
+                      {"status": "accepted", "cpu_name": cpu.name, "watching": True, **named})
         for req in self.call("GET", "/api/craft/cancel/pending").get("requests", []):
             cpu = next((c for c in self.cpus if c.name == req["cpu_name"]), None)
             ok = bool(cpu and cpu.job)

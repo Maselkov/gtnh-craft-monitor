@@ -505,11 +505,12 @@ export async function fetchNetwork() {
 }
 
 // Same markers as craft_monitor.lua's is_kit_output(): fresh Command
-// Block outputs, or tagged outputs whose displayed name ends in " kit".
+// Block outputs, or tagged outputs whose displayed name ends in " kit"
+// or " kit #2" (a numbered one, used while another has the plain name).
 export function isKitOutput(it) {
   if ((it.kind || 'item') !== 'item') return false;
   if (it.mod === 'minecraft' && it.internal === 'command_block') return true;
-  return !!it.variant && nameText(it.name || '').endsWith(' kit');
+  return !!it.variant && / kit( #\d+)?$/.test(nameText(it.name || ''));
 }
 
 async function fetchNetworkChanges() {
