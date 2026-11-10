@@ -485,16 +485,20 @@ an update message pointing administrators to **Settings → Game data**, rather
 than reporting no matches. Older data that supports search continues to work;
 its recipe coverage may be smaller than a newer export's.
 
-Open an item's stock page and choose **Recipes** or **Uses** in the compact row
-below the item header. The footer keeps the crafting and multiblock-kit actions.
+Open an item's stock page and choose the book icon beside its pin and link
+buttons to open its recipes; **Uses** is one switch away inside the book. The
+footer keeps the crafting and multiblock-kit actions.
 The separate recipe dialog works for items and fluids, including ingredients that are not
 in the ME network. It reads the GTNH version selected in
 [Game data](server.md#game-data).
 
 **Recipes** shows ways to make the item; **Uses** shows recipes that take it.
 The recipe book uses the game's grey window: category tabs protrude from the
-top and machine icons from the left. There is no item header or Recipes/Uses
-bar inside the window. It opens the first available category, or the category
+top and machine icons from the left. The toolbar at the bottom shows the item
+the page is for, in a slot with its name beside it (on a phone, just the slot),
+and a **Recipes | Uses** switch for it. The switch works like **R**/**U**: the
+browser's Back returns to the other side. A side with nothing on it, such as
+Uses for an item no recipe takes, is greyed out. It opens the first available category, or the category
 in a shared link. Hover or focus a tab for its category name, recipe count and
 mod where known. The selected tab joins the frame, with its name in the first
 navigation row. That row's arrows select the previous or next category.
@@ -533,7 +537,7 @@ count and machine navigation remain available.
 The mouse wheel over the window also changes recipe pages: down for next, up
 for previous. Over the top tabs, their empty reserved space or the category
 title, it changes machine categories instead. The machine sidebar and open
-information panel keep their normal scrolling. Horizontal gestures and
+help keep their normal scrolling. Horizontal gestures and
 modified wheel gestures keep the browser's usual behavior.
 Rapid wheel turns advance through multiple pages or categories; they are not
 limited to one step per turn. Wheel paging wraps from the last page to the first, and from the first to the last.
@@ -620,14 +624,17 @@ The **Back arrow** at the bottom and browser Back/Forward move through visited
 items. The selected category, recipe page and scroll are kept when returning
 to a recent selection.
 Closing the dialog with **×**, Escape or its backdrop returns to where it was
-opened. A **Stock** button at the bottom of the frame
-appears when the current item is in the latest network snapshot. It opens
-that item's stock page, and browser Back returns to the recipes. To check an
-ingredient's stock, first click it to open its recipe page.
+opened. Hover the item in the toolbar for its game tooltip, with its
+description, ore dictionary names and amount in the system; click it for its
+stock page, and browser Back returns to the recipes. On touch devices, tapping
+it opens the same details sheet as a recipe's icons. The magnifier opens the
+item search.
 The `/recipes?key=...`
 address can be copied or bookmarked; a fresh link opens over the Network tab.
 
-The **i** control at the bottom opens item details, coverage and shortcut help. New bundles include supported GregTech,
+The hint line above the toolbar (**Hover icons for details · Help**, or
+**Tap icons for details** on touch devices) opens the shortcut help. When an
+item has no recipes, the book says what the installed bundle covers. New bundles include supported GregTech,
 crafting-table and furnace recipes; older bundles have GregTech only. Custom
 NBT-dependent conversions and handlers that need a live world or player may be
 missing. Format-3 bundles add Assembly Line recipes with Scanner or Research Station
@@ -635,8 +642,9 @@ requirements. They also include **NEI display recipes**, such as AE2
 inscriber, Avaritia, Botania and supported magic recipes. These displays can omit
 extra costs, catalysts or dynamic behavior; check NEI in game. Captured costs
 and conditions are printed inside the recipe card. Research requirements are
-shown separately from production inputs. Approximation notes flag recipes whose
-NBT or custom matching rules are not fully represented. No results means
+shown separately from production inputs. An approximation note above the
+toolbar flags a recipe whose NBT or custom matching rules are not fully
+represented. No results means
 there is no supported recipe for that selection in this bundle, rather than
 proof the item cannot be made. With no recipe data installed, the dialog says
 so; an admin can pick game data and then **Retry**.

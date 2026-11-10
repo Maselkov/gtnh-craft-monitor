@@ -253,7 +253,6 @@ export function openItemHistory(it, pushUrl) {
   document.getElementById('itemHistoryCraftBtn').style.display = (it.isCraftable && isOperator()) ? '' : 'none';
   document.getElementById('itemHistoryKitBtn').hidden = true;
   document.getElementById('itemHistoryRecipesBtn').hidden = !recipeItemKey(it);
-  document.getElementById('itemHistoryUsesBtn').hidden = !recipeItemKey(it);
   showStockPanel(it);
   document.getElementById('itemHistoryModal').style.display = 'flex';
 
@@ -639,7 +638,7 @@ export function setupHistoryActions() {
     redrawItemHistoryChart();
   });
   delegateActions(document, {
-    'history-recipes': el => { if (itemHistoryTarget) openRecipeViewer(recipeItemKey(itemHistoryTarget), el.dataset.dir); },
+    'history-recipes': () => { if (itemHistoryTarget) openRecipeViewer(recipeItemKey(itemHistoryTarget)); },
     'history-range': (el) => setItemHistoryRange(el.dataset.range),
     'history-pin': () => toggleNetworkItemPin(itemHistoryTarget),
     'close-history': () => closeItemHistory(),

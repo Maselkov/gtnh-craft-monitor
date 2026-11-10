@@ -2995,16 +2995,12 @@ async function main() {
     await evaluate(`openItem('Iron Ingot'), true`);
     for (const width of [1280,420]) {
       await cdp.send('Emulation.setDeviceMetricsOverride', {width,height:1000,deviceScaleFactor:1,mobile:false});
-      await waitFor('reference actions fit below stock header at '+width, `(() => {
-        const modal=$('#itemHistoryModal'), header=modal.querySelector('.modal-header').getBoundingClientRect();
-        const actions=modal.querySelector('.stock-reference-actions').getBoundingClientRect();
-        const info=($('#itemHistoryInfo').hidden ? $('#itemHistoryRangeButtons') : $('#itemHistoryInfo')).getBoundingClientRect();
-        const recipes=$('#itemHistoryRecipesBtn'), uses=$('#itemHistoryUsesBtn');
-        return actions.top>=header.bottom && actions.bottom<=info.top && visible(recipes) && visible(uses)
-          && recipes.parentElement===uses.parentElement && !recipes.closest('.history-buttons')
-          && recipes.getBoundingClientRect().top===uses.getBoundingClientRect().top
-          && recipes.getBoundingClientRect().width<actions.width/2
-          && actions.left>=0 && actions.right<=innerWidth
+      await waitFor('recipe book button sits with the header buttons at '+width, `(() => {
+        const modal=$('#itemHistoryModal'), header=modal.querySelector('.modal-header');
+        const book=$('#itemHistoryRecipesBtn'), close=header.querySelector('.history-close-btn');
+        const r=book.getBoundingClientRect(), c=close.getBoundingClientRect();
+        return visible(book) && book.parentElement===header && !$('#itemHistoryUsesBtn') && !modal.querySelector('.stock-reference-actions')
+          && r.width===c.width && r.top===c.top && r.right<=c.left && r.left>=0 && c.right<=innerWidth
           && $('#itemHistoryCraftBtn').closest('.history-buttons') && $('#itemHistoryKitBtn').closest('.history-buttons');
       })()`);
     }
@@ -3020,7 +3016,15 @@ async function main() {
         && getComputedStyle(image.closest('button')).borderRadius==='0px'
         && !$('#recipeViewerList .recipe-grid-note');
     })()`);
-    assert(await evaluate(`!$('#recipeViewerTitle') && !$('#recipeViewerMaking') && !$('#recipeViewerUsing') && !$('#recipeViewerTrail')`));
+    assert(await evaluate(`!$('#recipeViewerTitle') && !$('#recipeViewerTrail') && !$('.recipe-book-details')`));
+    await waitFor('toolbar names the item and shows Recipes', `$('.recipe-book-tools .recipe-current-name')?.textContent === 'Iron Ingot'
+      && $('.recipe-book-tools .recipe-current-slot img') && $('#recipeViewerMaking').getAttribute('aria-pressed') === 'true'
+      && $('#recipeViewerUsing').getAttribute('aria-pressed') === 'false' && !$('#recipeViewerUsing').disabled`);
+    await click(`$('#recipeViewerUsing')`);
+    await waitFor('Uses switch adds a step for the same item', `$('.recipe-viewer-box').dataset.direction === 'using' && $('.recipe-viewer-box').dataset.itemName === 'Iron Ingot'
+      && history.state.recipe.stack.length === 2 && $('#recipeViewerUsing').getAttribute('aria-pressed') === 'true' && !$('#recipeViewerBack').disabled`);
+    await click(`$('#recipeViewerBack')`);
+    await waitFor('Back returns to Recipes', `$('.recipe-viewer-box').dataset.direction === 'making' && history.state.recipe.stack.length === 1 && $('#recipeViewerList .recipe-grid')`);
     await click(`$('#recipeViewerList [data-action="recipe-open"][data-key="gregtech:gt.metaitem.01:11028"]')`);
     await waitFor('ingredient opened', `$('.recipe-viewer-box').dataset.itemName === 'Neutronium Ingot' && history.state.recipe.stack.length === 2`);
     await click(`$('#recipeViewerBack')`);
@@ -3258,7 +3262,7 @@ async function main() {
     await waitFor('outside-network item opens directly', `visible($('#recipeViewerModal')) && $('.recipe-viewer-box').dataset.itemName === 'Iron Dust' && $('#recipeViewerPage').textContent === 'Page 1/1'`);
     assert(await evaluate(`!$('#recipeViewerList .recipe-card-requirement') && !$('#recipeViewerList .recipe-requirements')`));
     await waitFor('network arrived for stock links', `$('#networkList .network-cell')`);
-    assert(await evaluate(`!visible($('#recipeViewerStock')) && !$('#recipeViewerList .recipe-stack-links')`));
+    assert(await evaluate(`!$('#recipeViewerStock') && !$('#recipeViewerList .recipe-stack-links') && $('.recipe-current-name').textContent === 'Iron Dust'`));
     await evaluate(`$('#recipeViewerList .recipe-stack-control[data-recipe-tooltip]').dispatchEvent(new MouseEvent('mouseover', {bubbles:true,clientX:80,clientY:120})), true`);
     await waitFor('recipe tooltip matches network formatting', `visible($('.network-tooltip')) && $('.network-tooltip .network-tooltip-description .mc-b')?.textContent === 'DTPF' && $('.network-tooltip .network-tooltip-name').classList.contains('mc-d') && $('.network-tooltip .network-tooltip-mod').textContent === 'GregTech' && !!$('.network-tooltip .network-tooltip-stock .mc-6') && !$('.network-tooltip').textContent.includes('Amount:')`);
     assert(await evaluate(`!$('#recipeViewerList .recipe-stack-control[data-recipe-tooltip]').hasAttribute('title')`));
@@ -3281,14 +3285,16 @@ async function main() {
     await waitFor('absent recipe item shows a real zero stock count', `$('.network-tooltip .network-tooltip-stock .mc-6')?.textContent === '0'
       && !$('.network-tooltip').textContent.includes('Amount:')`);
     await click(`$('#recipeViewerList .recipe-stack-control[data-key="gregtech:gt.metaitem.01:11028"]')`);
-    await waitFor('current item Stock button', `$('.recipe-viewer-box').dataset.itemName === 'Neutronium Ingot' && visible($('#recipeViewerStock')) && $('#recipeViewerStock').getAttribute('aria-label') === 'Open stock page for Neutronium Ingot'`);
-    await click(`$('#recipeViewerStock')`);
+    await waitFor('current item opens its stock', `$('.recipe-viewer-box').dataset.itemName === 'Neutronium Ingot' && visible($('.recipe-current-slot')) && $('.recipe-current-slot').getAttribute('aria-label') === 'Open stock page for Neutronium Ingot'`);
+    await evaluate(`$('.recipe-current-slot').dispatchEvent(new MouseEvent('mouseover', {bubbles:true,clientX:80,clientY:700})), true`);
+    await waitFor('current item has the game tooltip', `visible($('.network-tooltip')) && $('.network-tooltip .network-tooltip-name').textContent === 'Neutronium Ingot'`);
+    await click(`$('.recipe-current-slot')`);
     await waitFor('tooltip hidden on navigation', `!visible($('.network-tooltip'))`);
     await waitFor('stock page', `!visible($('#recipeViewerModal')) && visible($('#itemHistoryModal')) && $('#itemHistoryName').textContent === 'Neutronium Ingot'`);
     await evaluate(`history.back(), true`);
-    await waitFor('Back to current item recipes', `visible($('#recipeViewerModal')) && $('.recipe-viewer-box').dataset.itemName === 'Neutronium Ingot' && visible($('#recipeViewerStock'))`);
+    await waitFor('Back to current item recipes', `visible($('#recipeViewerModal')) && $('.recipe-viewer-box').dataset.itemName === 'Neutronium Ingot' && $('.recipe-current-name').textContent === 'Neutronium Ingot'`);
     await click(`$('#recipeViewerBack')`);
-    await waitFor('Back to ingredient origin', `$('.recipe-viewer-box').dataset.itemName === 'Iron Dust' && !visible($('#recipeViewerStock'))`);
+    await waitFor('Back to ingredient origin', `$('.recipe-viewer-box').dataset.itemName === 'Iron Dust' && $('.recipe-current-name').textContent === 'Iron Dust'`);
     await evaluate(`(() => { const b = $('#recipeViewerList [data-action="recipe-open"]'); b.focus(); b.dispatchEvent(new KeyboardEvent('keydown', {key:'u', bubbles:true})); return true; })()`);
     await waitFor('keyboard Uses', `$('.recipe-viewer-box').dataset.itemName === 'Neutronium Ingot' && $('.recipe-viewer-box').dataset.direction === 'using' && history.state.recipe.stack.length === 2`);
     await evaluate(`pressKey('Escape'), true`);
