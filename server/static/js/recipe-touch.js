@@ -1,5 +1,5 @@
 // Touch inspection and local recipe zoom. Desktop keeps its direct mouse actions.
-import { delegateActions, escapeHtml, iconUrl, updateHtml } from './util.js';
+import { delegateActions, escapeHtml, iconClass, iconUrl, updateHtml } from './util.js';
 import { hideTooltip } from './tooltip.js';
 
 export const recipeTouchQuery = '(pointer: coarse)';
@@ -34,7 +34,7 @@ export function setupRecipeTouch(book, {entryForCell, htmlForCell, openRecipes, 
     document.getElementById('recipeInspectMore').hidden = !entry.info?.shift_description;
     const amount = entry.size == null ? '' : entry.size === 0 ? 'Not consumed' :
       `Recipe amount: ${Number(entry.size).toLocaleString('en-US')}${entry.kind === 'fluid' ? ' mB' : ''}`;
-    updateHtml(content, `${entry.icon ? `<img class="recipe-inspect-icon" src="${iconUrl(entry.icon)}" alt="">` : ''}<div>${details}${amount ? `<div class="network-tooltip-stat">${escapeHtml(amount)}</div>` : ''}</div>`);
+    updateHtml(content, `${entry.icon ? `<img class="${iconClass('recipe-inspect-icon', entry.icon)}" src="${iconUrl(entry.icon)}" alt="">` : ''}<div>${details}${amount ? `<div class="network-tooltip-stat">${escapeHtml(amount)}</div>` : ''}</div>`);
     updateHtml(actions, `${entry.key ? '<button data-action="recipe-inspect-recipes">Recipes</button><button data-action="recipe-inspect-uses">Uses</button>' : ''}${entry.internal && !entry.wildcard && !entry.vis ? '<button data-action="recipe-inspect-stock">Stock</button>' : ''}`);
   }
   function inspect(cell) {

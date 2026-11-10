@@ -581,6 +581,28 @@ def _webp(shape, colour):
     return out.getvalue()
 
 
+# Drawn with a halo past its box, as Avaritia's cosmic items are: the
+# image is (16 + 2 * HALO_BLEED) / 16 times the box, the item in its
+# middle, and the lookup's "bleed" table says so (gcm/icons.py).
+HALOED = {"Neutronium Plate"}
+HALO_BLEED = 12
+
+
+def _haloed_webp(shape, colour):
+    from PIL import Image
+
+    size = 16 + 2 * HALO_BLEED
+    centre = (size - 1) / 2
+    image = Image.new("RGBA", (size, size))
+    image.putdata([(255, 200, 255, int(160 * max(0.0, 1 - ((x - centre) ** 2 + (y - centre) ** 2) ** 0.5 / centre)))
+                   for y in range(size) for x in range(size)])
+    item = _frame(shape, colour)
+    image.alpha_composite(item, (HALO_BLEED, HALO_BLEED))
+    out = io.BytesIO()
+    image.save(out, format="WEBP", lossless=True)
+    return out.getvalue()
+
+
 def _write_catalog(bundle, newer):
     with open(os.path.join(bundle, "item_catalog.txt"), "w", encoding="utf-8") as f:
         f.write("".join(sorted({f"{it['mod']}:{it['internal']}\n" for it in CATALOG
@@ -595,7 +617,7 @@ def install_icons(data_dir, prerelease=False):
     version, next_version = (PRERELEASE_VERSION, GTNH_VERSION) if prerelease else (GTNH_VERSION, NEXT_VERSION)
     bundle = os.path.join(data_dir, "gamedata", version)
     os.makedirs(bundle, exist_ok=True)
-    by_key, fluids_by_key = {}, {}
+    by_key, fluids_by_key, bleed = {}, {}, {}
     with zipfile.ZipFile(os.path.join(bundle, "images.zip"), "w") as zf:
         # Recipe glyph only; network essentia still exercises its missing-icon fallback.
         zf.writestr("aspect/ordo.webp", _webp("ring", (180, 180, 210)))
@@ -608,7 +630,11 @@ def install_icons(data_dir, prerelease=False):
             else:
                 path = f"item/{it['mod']}/{it['internal']}~{it['damage']}.webp"
                 by_key[f"{it['mod']}:{it['internal']}:{it['damage']}"] = path
-            zf.writestr(path, _webp(it["shape"], it["colour"]))
+            if it["name"] in HALOED:
+                bleed[path] = HALO_BLEED
+                zf.writestr(path, _haloed_webp(it["shape"], it["colour"]))
+            else:
+                zf.writestr(path, _webp(it["shape"], it["colour"]))
         by_key_label = {}
         for species, (_, colour) in BEE_SPECIES.items():
             for kind in BEE_KINDS:
@@ -617,7 +643,7 @@ def install_icons(data_dir, prerelease=False):
                 by_key_label[f"{bee_key(kind)}|{species} {kind}"] = path
                 by_key.setdefault(bee_key(kind), path)
     with open(os.path.join(bundle, "icons_lookup.json"), "w", encoding="utf-8") as f:
-        json.dump({"by_key": by_key, "by_key_label": by_key_label, "fluids_by_key": fluids_by_key, "by_label": {}}, f)
+        json.dump({"by_key": by_key, "by_key_label": by_key_label, "fluids_by_key": fluids_by_key, "by_label": {}, "bleed": bleed}, f)
     with open(os.path.join(bundle, "ore_dict.json"), "w", encoding="utf-8") as f:
         json.dump(ore_dict(), f)
     with open(os.path.join(bundle, "item_info.json"), "w", encoding="utf-8") as f:
