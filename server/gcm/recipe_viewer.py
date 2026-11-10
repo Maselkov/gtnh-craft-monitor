@@ -414,7 +414,7 @@ def requirement_notes(value, *, handled_metadata=()):
               "mInputChances": "Input consumption chances (out of 10,000)",
               "mFluidInputChances": "Fluid consumption chances (out of 10,000)",
               "mFluidOutputChances": "Fluid output chances (out of 10,000)",
-              "nbt_sensitive": "NBT-sensitive inputs", "lp": "Life points", "lp_amount": "Life points", "manaUsage": "Mana",
+              "lp": "Life points", "lp_amount": "Life points", "manaUsage": "Mana",
               "prereqs": "Research", "eut": "EU/t", "max_nanite_tier": "Max Nanite Tier"}
     def readable(v):
         if v is None:
@@ -429,7 +429,9 @@ def requirement_notes(value, *, handled_metadata=()):
         return f"{v:,}" if isinstance(v, (int, float)) else str(v)
     out = []
     for key, val in value.items():
-        if key in ("nbt_inputs", "nbt_outputs") or val is False or val is None:
+        # GT's isNBTSensitive only changes how a machine matches its inputs;
+        # NEI doesn't show it, and the "approximate" note covers NBT matching.
+        if key in ("nbt_sensitive", "nbt_inputs", "nbt_outputs") or val is False or val is None:
             continue
         if key == "metadata" and isinstance(val, dict):
             out.extend(requirement_notes({k: v for k, v in val.items() if k not in handled_metadata}))
