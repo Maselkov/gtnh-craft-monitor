@@ -333,11 +333,20 @@ export function layoutRecipePreviews(root) {
   for (const scene of root.querySelectorAll('.recipe-preview')) {
     const width = Number(scene.dataset.width), height = Number(scene.dataset.height);
     scene.style.aspectRatio = `${width} / ${height}`;
+    // Slot edges land on whole device pixels: a pixelated frame image at a
+    // fractional offset is rounded differently each time its cycling icon
+    // repaints, and its one-texel rims flicker. Rounding both edges (not
+    // the size) keeps neighbouring slots on shared lines.
+    const box = scene.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    const unit = box.width / width;
+    const snap = (origin, at) => Math.round((origin + at * unit) * dpr) / dpr - origin;
     for (const slot of scene.querySelectorAll('.recipe-preview-slot')) {
-      slot.style.left = `${Number(slot.dataset.x) / width * 100}%`;
-      slot.style.top = `${Number(slot.dataset.y) / height * 100}%`;
-      slot.style.width = `${Number(slot.dataset.w) / width * 100}%`;
-      slot.style.height = `${Number(slot.dataset.h) / height * 100}%`;
+      const x = Number(slot.dataset.x), y = Number(slot.dataset.y);
+      const left = snap(box.left, x), top = snap(box.top, y);
+      slot.style.left = `${left}px`;
+      slot.style.top = `${top}px`;
+      slot.style.width = `${snap(box.left, x + Number(slot.dataset.w)) - left}px`;
+      slot.style.height = `${snap(box.top, y + Number(slot.dataset.h)) - top}px`;
       // Use the same pixel scale as the artwork; only unusually long
       // quantities need smaller lettering to fit their own slot.
       for (const count of slot.querySelectorAll('.recipe-stack-control .recipe-stack-amount')) {
