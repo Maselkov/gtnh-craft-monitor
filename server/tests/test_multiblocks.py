@@ -287,6 +287,17 @@ def test_a_kit_is_queued_as_one_request(client, structures, kit_slots, api_heade
     assert "kit_inputs" not in mine and "tag" not in mine
 
 
+def test_a_block_with_more_in_stock_than_the_kit_needs_is_still_crafted(client, structures, kit_slots):
+    # 40 Heat Proof Casings in stock, 16 needed, 4 more asked for: the kit
+    # asks for all 40 and 4, so AE2 takes the 40 and crafts the 4.
+    with state.network_lock:
+        state.network["items"][1]["size"] = 40
+    login_as(client, "usr_operator", role="operator")
+    assert client.post("/api/craft/request-kit", json=kit_payload(**{HEATPROOF: 4})).status_code == 200
+    [req] = commands.craft_requests.select(lambda r: True)
+    assert req["kit_inputs"] == [{"name": "gregtech:gt.blockcasings", "damage": 11, "size": 44}]
+
+
 def test_a_kit_offers_a_name_per_kit_slot_and_takes_the_one_the_game_used(client, structures, api_headers):
     with state.crafts_lock:
         state.crafts["kit_slots"] = 3

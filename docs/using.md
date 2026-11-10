@@ -766,8 +766,8 @@ The job shows on the Crafts tab as making "*multiblock* kit", or
 "*multiblock* kit #2" while another kit of that multiblock is running.
 AE2 uses
 what's in storage first, so the kit asks for what's in stock of each block
-(up to what it needs) plus the Request amount, and crafts the Request
-amount.
+plus the Request amount, and crafts the Request amount. That stock goes
+through the kit with the crafted blocks and comes back with them.
 
 Tick **Craft each material separately** to queue each block as its own
 craft instead, as if you'd requested them one by one: each lands in the

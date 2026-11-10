@@ -83,8 +83,11 @@ def craft_request_kit_post():
     craft}}, the kit's rows as /api/multiblocks/kit gives them.
 
     AE2 takes a pattern's inputs from storage first and crafts only the
-    rest, so each input is what's in stock of the block, up to what the
-    kit needs, plus how many to craft."""
+    rest, so each input is what's in stock of the block plus how many to
+    craft. All of the stock, not just what the kit needs: otherwise a
+    block with more in stock than the kit needs would be taken from
+    storage instead of crafted. The blocks come straight back into the
+    network when the job ends."""
     payload = request.get_json(silent=True) or {}
     key = payload.get("key")
     tiers = payload.get("tiers") or {}
@@ -111,7 +114,7 @@ def craft_request_kit_post():
             continue
         if not row["craftable"]:
             return jsonify({"error": f"{row['name']}: the network has no pattern for it"}), 400
-        inputs.append({**row, "amount": min(row["have"], row["need"]) + n})
+        inputs.append({**row, "amount": row["have"] + n})
     if not inputs:
         return jsonify({"error": "nothing to request"}), 400
     controller = result["controller"]
