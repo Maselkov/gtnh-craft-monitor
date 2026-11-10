@@ -119,6 +119,9 @@ export function networkItemKey(mod, internal, damage, kind, variant) {
   return variant ? key + '|' + variant : key;
 }
 
+let pinEpoch = 0;
+let pinsInFlight = 0;
+
 export async function fetchNetworkPins() {
   const user = AUTH_USER;
   if (!user) {
@@ -126,12 +129,16 @@ export async function fetchNetworkPins() {
     renderNetworkList();
     return;
   }
+  const epoch = pinEpoch;
   try {
     const res = await fetch('/api/network/pins');
     if (res.status === 401) { expireAuthentication(user); return; }
     if (!res.ok) return;
     const data = await res.json();
     if (AUTH_USER !== user) return;
+    // A pin toggled since this was asked, or still on its way to the
+    // server, makes the answer stale: it would undo the toggle on screen.
+    if (epoch !== pinEpoch || pinsInFlight > 0) return;
     pinnedItemKeys = new Set((data.pins || []).map(p => networkItemKey(p.mod, p.internal, p.damage, p.kind, p.variant)));
     // Whichever of fetchNetwork()/fetchNetworkPins() resolves second
     // is what actually needs to trigger the correctly-pinned render -
@@ -159,6 +166,8 @@ export function toggleNetworkItemPin(it) {
   // Flipped before the request, so pressing P again straight away
   // undoes this one rather than pinning a second time.
   setItemPinned(it, key, pinning);
+  pinEpoch++;
+  pinsInFlight++;
   const body = JSON.stringify({
     mod: it.mod, internal: it.internal, damage: it.damage, kind: it.kind || 'item', variant: it.variant || null,
   });
@@ -173,6 +182,8 @@ export function toggleNetworkItemPin(it) {
     } catch (e) {
       // Put it back, unless a later toggle already has.
       if (pinnedItemKeys.has(key) === pinning) setItemPinned(it, key, !pinning);
+    } finally {
+      pinsInFlight--;
     }
   });
   return pinRequests;
