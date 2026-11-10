@@ -661,6 +661,11 @@ see the mutation's conditions. Base species, which come from hives, have no
 parents. Click any bee in the tree to open that species, including the ones on
 the bottom row, to follow its ancestry further.
 
+A queen's **Uses** include **Bee Produce**: every comb and other product the
+species makes, each with its chance per work cycle, as NEI Addons lists them.
+That includes its specialty products, which a bee only makes while its
+conditions for them are met. Game data built before this change lists only the first product.
+
 A bee from your ME network opens its own species' recipes, as long as
 OpenComputers sends item NBT (on by default in GTNH; see
 [In-game setup](in-game.md)). Its **Amount in system** counts only that

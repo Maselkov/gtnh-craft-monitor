@@ -10,8 +10,6 @@ ARCANE_MAPS = ("::thaumcraft.arcane.shaped", "::thaumcraft.arcane.shapeless")
 # NEI Addons' Forestry breeding (bees, trees, butterflies): a mutation's
 # chance and the conditions it needs (climate, foundation block...).
 BREEDING_PREFIX = "nei.net.bdew.neiaddons.forestry."
-
-
 BEE_BREEDING_MAP = BREEDING_PREFIX + "bees.BeeBreedingHandler::"
 # Bee Better At Bees' breeding tree: a species' ancestry, four generations
 # up. The export has its bees and foundation blocks; the lines and chances

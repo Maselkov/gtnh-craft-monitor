@@ -105,7 +105,21 @@ final class NeiRecipes {
             owner.presentation.slot(preview,"groups",slotIndex++,Math.max(0,input.relx-1),Math.max(0,input.rely-1));
             maxY=Math.max(maxY,input.rely+20);maxX=Math.max(maxX,input.relx+20);
         }
-        owner.presentation.slot(preview,"o",0,Math.max(0,result.relx-1),Math.max(0,result.rely-1));
+        // NEI Addons' produce pages draw every product, each with its chance
+        // as a label, but give NEI only the first as the result.
+        List<PositionedStack> products=labeledProducts(h,index);
+        List<Object> productOutputs=new ArrayList<>();
+        if(products!=null) {
+            for(PositionedStack product:products) {
+                if(product.items==null || product.items.length==0 || StackInfo.getFluid(product.items[0])!=null) continue;
+                List<Object> one=owner.stacks(new ItemStack[]{product.items[0]},new int[]{chance(product)});
+                if(one.isEmpty()) continue;
+                owner.presentation.slot(preview,"o",productOutputs.size(),Math.max(0,product.relx-1),Math.max(0,product.rely-1));
+                productOutputs.add(one.get(0));
+                maxX=Math.max(maxX,product.relx+20);maxY=Math.max(maxY,product.rely+20);
+            }
+        }
+        if(productOutputs.isEmpty()) owner.presentation.slot(preview,"o",0,Math.max(0,result.relx-1),Math.max(0,result.rely-1));
         List<Object> extras=new ArrayList<>();
         for(PositionedStack extra:h.getOtherStacks(index)) {
             if(extra==null || extra.items==null || extra.items.length==0)continue;
@@ -122,8 +136,9 @@ final class NeiRecipes {
         preview.put("height",Math.max(80,Math.max(maxY,result.rely+20)));
         preview.put("graphics","slots_only");body.put("preview",preview);
         ItemStack output=result.items[0];
-        FluidStack fluid=StackInfo.getFluid(output);
-        if(fluid!=null) {
+        FluidStack fluid=productOutputs.isEmpty() ? StackInfo.getFluid(output) : null;
+        if(!productOutputs.isEmpty()) body.put("o",productOutputs);
+        else if(fluid!=null) {
             body.put("g",owner.fluidStacks(new FluidStack[]{fluid}));
             @SuppressWarnings("unchecked") List<Map<String,Object>> slots=(List<Map<String,Object>>)preview.get("slots");
             for(Map<String,Object> slot:slots)if("o".equals(slot.get("role")))slot.put("role","g");
@@ -169,6 +184,42 @@ final class NeiRecipes {
             snapshot.put("details",details);
         }
         return snapshot;
+    }
+
+    /** A cached recipe's "products" list (NEI Addons' bee and tree produce), or null. */
+    private static List<PositionedStack> labeledProducts(IRecipeHandler h,int index) {
+        if(!(h instanceof TemplateRecipeHandler)) return null;
+        try {
+            Field f=TemplateRecipeHandler.class.getDeclaredField("arecipes");f.setAccessible(true);
+            Object cached=((List<?>)f.get(h)).get(index);
+            for(Class<?> c=cached.getClass();c!=null && c!=TemplateRecipeHandler.CachedRecipe.class;c=c.getSuperclass()) {
+                Field products;
+                try { products=c.getDeclaredField("products"); } catch(NoSuchFieldException absent) { continue; }
+                products.setAccessible(true);
+                Object value=products.get(cached);
+                if(!(value instanceof List)) return null;
+                List<PositionedStack> out=new ArrayList<>();
+                for(Object o:(List<?>)value) if(o instanceof PositionedStack) out.add((PositionedStack)o);
+                return out;
+            }
+        } catch(ReflectiveOperationException | RuntimeException unreadable) { /* The single result stays. */ }
+        return null;
+    }
+
+    /** A labelled stack's chance ("12.5%", or "12,5%" in some locales) out of 10,000; 0 when it has none. */
+    private static int chance(PositionedStack stack) {
+        for(Class<?> c=stack.getClass();c!=null && c!=PositionedStack.class;c=c.getSuperclass()) {
+            try {
+                Field f=c.getDeclaredField("label");f.setAccessible(true);
+                Object label=f.get(stack);
+                if(label==null) return 0;
+                String text=label.toString().replaceAll("\u00a7.","").replace(',','.').replaceAll("[^0-9.]","");
+                if(text.isEmpty()) return 0;
+                return (int)Math.round(Math.min(100,Double.parseDouble(text))*100);
+            } catch(NoSuchFieldException absent) { /* Try the superclass. */ }
+            catch(ReflectiveOperationException | NumberFormatException unreadable) { return 0; }
+        }
+        return 0;
     }
 
     private Object snapshot(PositionedStack stack) {

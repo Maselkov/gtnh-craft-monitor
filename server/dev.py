@@ -804,7 +804,14 @@ def bee_maps():
     tree = {"type": "nei", "groups": groups, "o": [bee(target, "Princess")], "approximate": ["nei_display"],
             "preview": {"family": "positioned", "width": 166, "height": 194, "layers": [], "graphics": "slots_only",
                         "slots": slots}}
+    # What the last species makes, each product with its chance, as NEI
+    # Addons draws it (out of 10,000, as GregTech's chances are).
+    produce = {"type": "nei", "groups": [{"alts": [bee(target, "Queen")]}], "approximate": ["nei_display"],
+               "o": [[_recipe_key("Glass Dust"), 1, 3000], [_recipe_key("Diamond Dust"), 1, 1250], [_recipe_key("Diamond"), 1, 500]],
+               "preview": {"family": "positioned", "width": 166, "height": 80, "layers": [], "graphics": "slots_only",
+                           "slots": [slot("groups", 0, 21, 18)] + [slot("o", n, 95 + 18 * n, 7) for n in range(3)]}}
     return {
+        "nei.net.bdew.neiaddons.forestry.bees.BeeProduceHandler::": {"machines": ["Bee Produce"], "recipes": [produce]},
         "nei.net.bdew.neiaddons.forestry.bees.BeeBreedingHandler::": {"machines": ["Bee Breeding"], "recipes": breeding},
         "nei.hellfirepvp.beebetteratbees.client.gui.BBABGuiRecipeTreeHandler::": {
             "machines": ["Bee Breeding Tree"], "recipes": [tree]},
@@ -820,10 +827,13 @@ def write_recipes(path, maps):
         return tables[table].setdefault(key, len(tables[table]))
 
     def stack(table, alt):
-        # (key, size) or, for a stack the game shows as one NBT variant
-        # (a bee's species), (key, size, display stack id).
-        key, size, *display = alt
-        return [index(table, key), size, None, display] if display else [index(table, key), size]
+        # (key, size), (key, size, chance out of 10,000) or, for a stack the
+        # game shows as one NBT variant (a bee's species), (key, size,
+        # display stack id).
+        key, size, *rest = alt
+        if rest and isinstance(rest[0], str):
+            return [index(table, key), size, None, rest]
+        return [index(table, key), size, *rest]
 
     out = {}
     for map_name, entry in maps.items():
