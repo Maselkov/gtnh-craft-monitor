@@ -45,6 +45,11 @@ final class StructureBuilder {
     private static final int MAX_TIERS = 64;
     /** The most combinations of channels built for a multiblock whose channels interact. */
     private static final int MAX_COMBOS = 4096;
+    /**
+     * The channel that is the hologram projector's stack size: the tier a Nano Forge or PCB Factory
+     * builds. It's no StructureLib channel, so no GregTech one has this name.
+     */
+    static final String STACK_CHANNEL = "tier";
 
     private final TrackedDummyWorld world = new TrackedDummyWorld();
     private final Map<String, String> names = new TreeMap<>();
@@ -57,6 +62,8 @@ final class StructureBuilder {
     /** Captures what the game draws for each kind of block; null if it can't. */
     private BlockMeshes meshes;
     private int builds;
+    /** The multiblock being built's StructureLib channels, pinned when the stack size goes up. */
+    private List<Channel> named = Collections.emptyList();
     private final Class<?> hatchClass;
     private final Class<?> previewModifier;
     private final Class<?> gtTile;
@@ -170,17 +177,25 @@ final class StructureBuilder {
      */
     private Map<String, Object> multiblock(IConstructable multi, ItemStack form, Map<String, Object> layout)
             throws ReflectiveOperationException {
+        named = channels(multi);
         Build baseBuild = build(form, Collections.emptyMap());
         Map<String, Integer> base = baseBuild.counts;
-        List<Channel> channels = channels(multi);
+        List<Build> stacked = stackTiers(form, baseBuild);
+        List<Channel> channels = new ArrayList<>();
+        if (stacked.size() > 1) {
+            channels.add(new Channel(STACK_CHANNEL, 1, stacked.size()));
+        }
+        channels.addAll(named);
         List<Object> channelList = new ArrayList<>();
         Map<String, Object> tiers = new TreeMap<>();
         Map<String, Object> layoutTiers = new TreeMap<>();
         for (Channel channel : channels) {
+            boolean stack = STACK_CHANNEL.equals(channel.name);
             Map<String, Object> byTier = new LinkedHashMap<>();
             Map<String, Object> layoutByTier = new LinkedHashMap<>();
             for (int tier = channel.min; tier <= channel.max; tier++) {
-                Build built = build(form, Collections.singletonMap(channel.name, tier));
+                Build built = stack ? stacked.get(tier - 1)
+                        : build(form, Collections.singletonMap(channel.name, tier));
                 byTier.put(String.valueOf(tier), difference(base, built.counts));
                 layoutByTier.put(String.valueOf(tier), Layouts.change(baseBuild.layout, built.layout));
             }
@@ -188,6 +203,9 @@ final class StructureBuilder {
             c.put("name", channel.name);
             c.put("min", channel.min);
             c.put("max", channel.max);
+            if (stack) {
+                c.put("stack", true);
+            }
             channelList.add(c);
             tiers.put(channel.name, byTier);
             layoutTiers.put(channel.name, layoutByTier);
@@ -221,6 +239,34 @@ final class StructureBuilder {
             }
         }
         return entry;
+    }
+
+    /**
+     * The multiblock built at each stack size of the hologram projector from 1 ({@code base}) up,
+     * with its StructureLib channels pinned where they are in {@code base}, until a stack size builds
+     * what the one before did: the tiers of a multiblock that reads the stack size itself (a Nano
+     * Forge's 1 to 4). One build, base's, for those that don't. A stack size that builds nothing new
+     * ends it, so one that only changes things further up isn't seen.
+     */
+    private List<Build> stackTiers(ItemStack form, Build base) throws ReflectiveOperationException {
+        List<Build> builds = new ArrayList<>();
+        builds.add(base);
+        for (int size = 2; size <= MAX_TIERS; size++) {
+            Build built;
+            try {
+                built = build(form, Collections.singletonMap(STACK_CHANNEL, size));
+            } catch (Throwable t) {
+                // A multiblock that can't take this stack size keeps the tiers it built.
+                IconExportMod.LOG.debug("Stopped stack sizes at {}: {}", size, t.toString());
+                break;
+            }
+            Build last = builds.get(builds.size() - 1);
+            if (built.counts.equals(last.counts) && built.layout.equals(last.layout)) {
+                break;
+            }
+            builds.add(built);
+        }
+        return builds;
     }
 
     /**
@@ -300,10 +346,25 @@ final class StructureBuilder {
         return channels;
     }
 
-    private static ItemStack trigger(Map<String, Integer> channels) {
+    /**
+     * The hologram projector set to channels; STACK_CHANNEL is its stack size. A StructureLib channel
+     * left unset reads the stack size, so above 1 each one is pinned at 1, where base has it.
+     */
+    private ItemStack trigger(Map<String, Integer> channels) {
         ItemStack trigger = new ItemStack(StructureLibAPI.getDefaultHologramItem());
+        Integer size = channels.get(STACK_CHANNEL);
+        trigger.stackSize = size == null ? 1 : size;
         for (Map.Entry<String, Integer> e : channels.entrySet()) {
-            ChannelDataAccessor.setChannelData(trigger, e.getKey(), e.getValue());
+            if (!STACK_CHANNEL.equals(e.getKey())) {
+                ChannelDataAccessor.setChannelData(trigger, e.getKey(), e.getValue());
+            }
+        }
+        if (trigger.stackSize > 1) {
+            for (Channel channel : named) {
+                if (!channels.containsKey(channel.name)) {
+                    ChannelDataAccessor.setChannelData(trigger, channel.name, 1);
+                }
+            }
         }
         return trigger;
     }
