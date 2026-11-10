@@ -2241,8 +2241,8 @@ pre-viewer entry. A fresh shared URL creates a Network origin. Entries retain th
 original tab/item/ingredients state. A 100-frame cache retains recent pages and
 scroll; evicted frames refetch. Aborted/stale generations never replace another
 selection. Cycle timers clear on navigation/close, pause for hover/focus and stop
-under reduced motion. Network snapshot events update the current item's Stock
-button at the bottom of the frame without resetting loaded pages. Recipe slots have no
+under reduced motion. Network snapshot events refresh a visible tooltip
+(the toolbar item's included) without resetting loaded pages. Recipe slots have no
 secondary action buttons over their tooltips. `dev.py` supplies typed crafting/furnace/GT demo chains and
 34 circuit uses for paging. Its recipes are illustrative, not pack knowledge.
 
@@ -2285,14 +2285,14 @@ preserving shaped holes and original alternative-slot identities. Recessed slot
 frames and the crafting arrow are painted on the card canvas, with full-size
 interactive icons above it and an enlarged output slot. The selected category's
 heading reflects the current recipe: Shaped Crafting or Shapeless Crafting.
-Matching-approximation notes live in the information panel rather than below
-the diagram. Existing bundles already contain the required grid data.
+Matching-approximation notes go in the status line above the toolbar rather
+than below the diagram. Existing bundles already contain the required grid data.
 Captured requirements use the same painted statistics block. Empty values and
 false top-level flags are omitted, while valid zero tiers and consumption chances
 remain. Cleanroom and low-gravity flags become direct requirement lines; long
 labels wrap at the statistics' pixel scale. Infusion's research, instability and
 aspects are not repeated in the costs. The repeated NEI display notice is removed;
-coverage remains available in the information control.
+coverage is part of the no-recipes message, the only time it explains anything.
 
 Recipe pages return rich machine summaries once per category, alongside the
 simple catalyst identities on each row. The viewer chooses the first available
@@ -2320,8 +2320,22 @@ multiple steps, with category and wheel-page wrapping. Wheel travel received
 while a recipe batch loads updates the requested page; sequential fetches satisfy
 the latest target without dropping notches or committing an empty page.
 The item header, direction bar, breadcrumbs and All-categories tab are removed; item
-clicks and R/U still choose Recipes/Uses. Back, Stock, information and Close live
-at the bottom of the frame. Coverage and item details are inside information.
+clicks and R/U still choose Recipes/Uses. The bottom toolbar came back to the
+other two in game form: nothing in the frame said which item a page was for,
+and the stock page needed separate Recipes and Uses buttons because only a
+right-click in the book could switch. The toolbar is Back, the current item (a
+recessed slot with its name, dropped below 460px of toolbar by a container
+query), a Recipes | Uses switch, the search magnifier and Close. The slot is an
+ordinary `data-recipe-tooltip` cell, so it gets the game tooltip (description
+and ore dictionary, which used to sit behind an **i** control), R/U on hover
+and the touch sheet for free; a click opens its stock, absent from the network
+or not, like Shift-click on a stack. The switch pushes a frame, as R/U on the
+same item would, so Back undoes it; a side with no recipes is disabled. The
+pressed side is painted sunken in the headings' grey. Back and the magnifier
+are 8x8 pixel-art SVGs that `recipe-shell.js` paints rect by rect at a whole
+scale (text glyphs sat off-centre in the pixel font, and **Find** overflowed a
+phone's button). The shortcut help moved behind the hint line above the
+toolbar, which desktop now shows too.
 Concrete catalysts replace generic name-only NEI category labels when available.
 GT category names use the exported Machine Type line where present; machine
 variant names stay intact. Sidebars reuse item tooltips and Recipes/Uses

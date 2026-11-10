@@ -343,14 +343,11 @@
           <div id="itemHistoryCurrent" class="history-current"></div>
           <div id="itemHistoryTrend" class="history-trend"></div>
         </div>
+        <button class="history-recipes-btn" id="itemHistoryRecipesBtn" data-action="history-recipes" title="Recipes and uses" aria-label="Recipes and uses"><svg class="ui-icon" viewBox="0 0 20 20" width="1em" height="1em" aria-hidden="true"><path d="M10 4C7 2 4 2 2 3v13c3-1 5-1 8 1 3-2 5-2 8-1V3c-2-1-5-1-8 1zm0 0v13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
         <button class="history-pin-btn" id="itemHistoryPinBtn" data-action="history-pin" title="Pin this item"><svg class="ui-icon" viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true"><g transform="rotate(45 8 8)" fill="currentColor"><rect x="5" y="1" width="6" height="2" rx="0.6"/><path d="M6.2 3h3.6l1 5H5.2z"/><rect x="3.5" y="7.6" width="9" height="1.8" rx="0.9"/><rect x="7.35" y="9" width="1.3" height="6" rx="0.65"/></g></svg></button>
         <button class="history-link-btn" data-action="copy-item-link" title="Copy a link to this item"><svg class="ui-icon" viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6.8 9.2a3 3 0 0 0 4.2 0l2.2-2.2a3 3 0 0 0-4.2-4.2l-1 1"/><path d="M9.2 6.8a3 3 0 0 0-4.2 0L2.8 9a3 3 0 0 0 4.2 4.2l1-1"/></g></svg></button>
         <button class="history-close-btn" data-action="close-history" title="Close">&times;</button>
       </div>
-      <nav class="stock-reference-actions" aria-label="Item reference">
-        <button class="modal-btn secondary" id="itemHistoryRecipesBtn" data-action="history-recipes" data-dir="making">Recipes</button>
-        <button class="modal-btn secondary" id="itemHistoryUsesBtn" data-action="history-recipes" data-dir="using">Uses</button>
-      </nav>
       <div id="itemHistoryInfo" class="history-info" hidden>
         <div id="itemHistoryShort" class="history-short" hidden></div>
         <details id="itemHistoryDetails" class="history-details" hidden>
@@ -421,23 +418,28 @@
         </div>
         <div id="recipeViewerList" class="recipe-viewer-list" role="tabpanel" tabindex="0" aria-label="Recipes"></div>
         <div class="recipe-mobile-zoom" aria-label="Recipe zoom">
-          <span class="recipe-touch-hint">Tap icons for details · Pinch to zoom</span>
-          <span class="recipe-pointer-hint">Hover icons for details</span>
+          <details class="recipe-book-help">
+            <summary><span class="recipe-touch-hint">Tap icons for details · Pinch to zoom</span><span class="recipe-pointer-hint">Hover icons for details · Help</span></summary>
+            <div class="recipe-book-information">
+              <p class="recipe-desktop-help">Left-click or R: recipes. Right-click or U: uses. Shift-left-click: stock. Hover or focus an item; hold Shift for more detail. The item at the bottom is the one this page is for: click it for its stock. Wheel: recipe pages. Wheel over the top tabs or category title: machine categories.</p>
+              <p class="recipe-mobile-help">Tap an icon for details, then choose Recipes, Uses or Stock; the item at the bottom is the one this page is for. More details shows extended item information. Swipe the category tabs or machine strip to see more. Use the arrows to change categories and pages. Pinch to zoom; tap the percentage to fit the recipe.</p>
+            </div>
+          </details>
           <button id="recipeZoomOut" data-action="recipe-zoom-out" aria-label="Zoom out" disabled>−</button>
           <button id="recipeZoomFit" data-action="recipe-zoom-fit" aria-label="Fit recipe to window">100%</button>
           <button id="recipeZoomIn" data-action="recipe-zoom-in" aria-label="Zoom in">+</button>
         </div>
         <div class="recipe-book-status"><span id="recipeViewerStatus" role="status" aria-live="polite"></span><button class="recipe-game-button" id="recipeViewerRetry" data-action="recipe-retry" hidden>Retry</button></div>
+        <!-- Glyphs are pixel art on an 8x8 grid: recipe-shell.js paints each
+             <rect> on the canvas, and compact layouts show the SVG itself. -->
         <div class="recipe-book-tools">
-          <button class="recipe-game-button" id="recipeViewerBack" data-action="recipe-back" aria-label="Back to previous item" title="Back to previous item" disabled>&larr;</button>
-          <button class="recipe-game-button recipe-stock-button" id="recipeViewerStock" data-action="recipe-stock" hidden>Stock</button>
-          <button class="recipe-game-button" id="recipeViewerFind" data-action="recipe-search-open" aria-controls="recipeSearchModal" aria-expanded="false" title="Search all items and recipes">Find</button>
-          <details class="recipe-book-details"><summary class="recipe-game-button" aria-label="Recipe information" title="Recipe information">i</summary><div class="recipe-book-information">
-            <div id="recipeViewerInfo" class="game-text recipe-item-info"></div>
-            <div id="recipeViewerCoverage" class="recipe-coverage"></div>
-            <p class="recipe-desktop-help">Left-click or R: recipes. Right-click or U: uses. Shift-left-click: stock. Hover or focus an item; hold Shift for more detail. Find: search any item. Wheel: recipe pages. Wheel over the top tabs or category title: machine categories.</p>
-            <p class="recipe-mobile-help">Tap an icon for details, then choose Recipes, Uses or Stock. More details shows extended item information. Swipe the category tabs or machine strip to see more. Use the arrows to change categories and pages. Pinch to zoom; tap the percentage to fit the recipe.</p>
-          </div></details>
+          <button class="recipe-game-button" id="recipeViewerBack" data-action="recipe-back" aria-label="Back to previous item" title="Back to previous item" disabled><svg class="recipe-glyph" viewBox="0 0 8 8" aria-hidden="true"><rect x="0" y="3" width="8" height="2"/><rect x="1" y="2" width="2" height="4"/><rect x="2" y="1" width="1" height="6"/><rect x="3" y="0" width="1" height="2"/><rect x="3" y="6" width="1" height="2"/></svg></button>
+          <span id="recipeViewerItem" class="recipe-current-item"></span>
+          <div class="recipe-directions" role="group" aria-label="Show">
+            <button class="recipe-game-button recipe-direction" id="recipeViewerMaking" data-action="recipe-direction" data-dir="making" aria-pressed="true">Recipes</button>
+            <button class="recipe-game-button recipe-direction" id="recipeViewerUsing" data-action="recipe-direction" data-dir="using" aria-pressed="false">Uses</button>
+          </div>
+          <button class="recipe-game-button recipe-book-find" id="recipeViewerFind" data-action="recipe-search-open" aria-controls="recipeSearchModal" aria-expanded="false" aria-label="Find an item" title="Search all items and recipes"><svg class="recipe-glyph" viewBox="0 0 8 8" aria-hidden="true"><rect x="1" y="0" width="3" height="1"/><rect x="0" y="1" width="1" height="3"/><rect x="4" y="1" width="1" height="3"/><rect x="1" y="4" width="3" height="1"/><rect x="4" y="4" width="1" height="1"/><rect x="5" y="5" width="1" height="1"/><rect x="6" y="6" width="2" height="2"/></svg></button>
           <button class="recipe-game-button recipe-book-close" data-action="recipe-close" title="Close recipe viewer" aria-label="Close recipe viewer">&times;</button>
         </div>
       </div>

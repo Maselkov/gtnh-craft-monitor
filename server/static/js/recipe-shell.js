@@ -105,11 +105,30 @@ export function setupRecipeShell(book) {
       if (right > left) fill({x:left, y:paper.y, w:right-left, h:8}, colour('canvas'));
     }
 
+    // Index.html's pixel glyphs: each <rect> of an 8x8 grid, at a whole
+    // number of pixels per cell so the strokes stay crisp.
+    function glyph(button, ink) {
+      const svg = button.querySelector('.recipe-glyph');
+      if (!svg) return false;
+      const r = rect(button), unit = Math.max(1, Math.floor(Math.min(r.w, r.h) / 16));
+      const x = r.x + Math.round((r.w - 8*unit) / 2), y = r.y + Math.round((r.h - 8*unit) / 2);
+      ctx.fillStyle = ink;
+      for (const part of svg.querySelectorAll('rect')) {
+        const n = name => Number(part.getAttribute(name));
+        ctx.fillRect(x + n('x')*unit, y + n('y')*unit, n('width')*unit, n('height')*unit);
+      }
+      return true;
+    }
     for (const button of book.querySelectorAll('.recipe-game-button')) {
       if (!button.offsetWidth) continue;
-      const r = rect(button);
-      bevel(r, 4, colour('control'), true, false);
-      label(button, colour(button.disabled ? 'control-disabled' : 'count-text'));
+      const r = rect(button), pressed = button.getAttribute('aria-pressed') === 'true';
+      // A pressed switch sinks into the heading strips' grey.
+      bevel(r, 4, colour(pressed ? 'heading' : 'control'), !pressed, false);
+      const ink = colour(button.disabled ? 'control-disabled' : 'count-text');
+      if (!glyph(button, ink)) label(button, ink, pressed);
+    }
+    for (const slot of book.querySelectorAll('.recipe-current-slot')) {
+      if (slot.offsetWidth) bevel(rect(slot), 2, colour('slot'), false, false);
     }
     for (const heading of book.querySelectorAll('.recipe-book-heading > span')) label(heading, colour('count-text'), true);
     book.classList.add('recipe-shell-painted');
@@ -124,7 +143,7 @@ export function setupRecipeShell(book) {
   resize.observe(book);
   const changes = new MutationObserver(schedule);
   changes.observe(book, {subtree:true, childList:true, characterData:true, attributes:true,
-    attributeFilter:['disabled', 'hidden', 'aria-selected']});
+    attributeFilter:['disabled', 'hidden', 'aria-selected', 'aria-pressed']});
   book.addEventListener('scroll', schedule, {capture:true, passive:true});
   document.fonts.addEventListener('loadingdone', schedule);
   return schedule;

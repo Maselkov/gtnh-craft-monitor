@@ -1,6 +1,6 @@
 // One recipe dialog, with browser history as its navigation authority.
 // Fetched pages/scroll live here, not in the crafts tab's redrawn markup.
-import { descriptionHtml, nameText } from './description.js';
+import { nameText } from './description.js';
 import { itemTooltipHtml } from './item-tooltip.js';
 import { bindCellTooltip, hideTooltip, showTooltip, tooltipVisible } from './tooltip.js';
 import { findNetworkItem, findNetworkSpecies, openItemHistory } from './history.js';
@@ -13,7 +13,7 @@ import { setupRecipeShell } from './recipe-shell.js';
 import { setupRecipeWheel } from './recipe-wheel.js';
 import { createRecipeData } from './recipe-data.js';
 import { moveRecipePage, recipeFromUrl, recipeUrl, sameRecipeDataset } from './recipe-state.js';
-import { delegateActions, escapeHtml, onBackdropClick, updateHtml } from './util.js';
+import { delegateActions, escapeHtml, iconClass, iconUrl, onBackdropClick, updateHtml } from './util.js';
 
 let state = null;
 let closing = false;
@@ -60,11 +60,12 @@ function recipeTooltipHtml(cell) {
   tooltipCell = cell;
   const notes = [entry.wildcard ? 'Any damage' : '', cell.dataset.tooltipNote,
     entry.chance ? `${entry.chance}% chance` : ''].filter(Boolean).join(' · ');
+  const ore = entry.ore?.length ? `<div class="network-tooltip-stat">Ore dictionary: ${escapeHtml(entry.ore.join(', '))}</div>` : '';
   const stock = stockItem(entry);
   return itemTooltipHtml({...entry, isCraftable:stock?.isCraftable}, entry.info, { shiftHeld:shiftHeld || touch?.expanded(),
     aggregateStockVariants:true, hideShiftHint:touch?.isMobile(),
     ...(entry.vis ? {stockAmount:null,stat:'Vis'} : {}),
-    details: notes ? `<div class="network-tooltip-stat">${escapeHtml(notes)}</div>` : '' });
+    details: (notes ? `<div class="network-tooltip-stat">${escapeHtml(notes)}</div>` : '') + ore });
 }
 
 function refreshTooltip() {
@@ -347,10 +348,6 @@ function stockItem(entry) {
   return findNetworkItem(entry.mod, entry.internal, entry.damage, entry.kind);
 }
 
-function currentStockItem() {
-  return stockItem(rendered?.model?.metadata.item);
-}
-
 function openStackStock(el) {
   return openEntryStock(tooltipEntries.get(el.dataset.recipeTooltip));
 }
@@ -363,12 +360,34 @@ function openEntryStock(entry) {
   return true;
 }
 
-function updateStockButton() {
-  const item = currentStockItem();
-  const button = document.getElementById('recipeViewerStock');
-  button.hidden = !item;
-  if (item) button.setAttribute('aria-label', `Open stock page for ${nameText(item.name)}`);
-  else button.removeAttribute('aria-label');
+const recipeCount = counts => Object.values(counts || {}).reduce((sum, n) => sum + n, 0);
+
+// The toolbar's item: the one this page is for, in a slot with its game
+// tooltip (description and ore dictionary included) and its stock on click.
+function currentItemHtml(meta, name) {
+  const item = meta?.item;
+  if (!item) return `<span class="recipe-current-name">${escapeHtml(name)}</span>`;
+  const entry = {...item, size:null, info:{...item.info, ...meta.info}, ore:meta.info?.ore || []};
+  const icon = item.icon
+    ? `<img class="${iconClass('recipe-current-icon', item.icon)}" src="${iconUrl(item.icon)}" alt="" data-remove-on-error>`
+    : `<span aria-hidden="true">${escapeHtml(name.charAt(0))}</span>`;
+  return `<button class="recipe-current-slot" data-action="recipe-current-stock" data-recipe-tooltip="${escapeHtml(tooltipKey(entry))}" aria-label="Open stock page for ${escapeHtml(name)}">${icon}</button>`
+    + `<span class="recipe-current-name">${escapeHtml(name)}</span>`;
+}
+
+function updateDirections(meta, frame) {
+  for (const dir of ['making', 'using']) {
+    const button = document.getElementById(dir === 'making' ? 'recipeViewerMaking' : 'recipeViewerUsing');
+    button.setAttribute('aria-pressed', String(frame.dir === dir));
+    // An item nothing makes (or nothing uses) has an empty side to switch to.
+    button.disabled = frame.dir !== dir && !!meta && !recipeCount(meta[dir]);
+  }
+}
+
+function emptyText(meta) {
+  return meta?.coverage.handlers?.includes('crafting')
+    ? 'No supported recipes for this item. The book has GregTech, crafting-table and furnace recipes, and Assembly Line and NEI displays where the bundle supplies them; custom recipes may be missing.'
+    : 'No supported recipes for this item. This older bundle has GregTech recipes only, not crafting-table, furnace or other handlers.';
 }
 
 function render(model) {
@@ -383,23 +402,16 @@ function render(model) {
   book().setAttribute('aria-label', `${frame.dir === 'using' ? 'Uses' : 'Recipes'} for ${name}`);
   setPageView('recipes', `${frame.dir === 'using' ? 'Uses' : 'Recipes'} · ${name}`);
   document.getElementById('recipeViewerBack').disabled = state.recipe.stack.length < 2;
-  updateStockButton();
+  updateDirections(meta, frame);
   const counts = meta?.[frame.dir] || {};
   const maps = (meta?.maps || []).filter(m => counts[m.id]).map(map =>
     row?.grid && row.map === map.id ? {...map,name:craftingTitle(row)} : map);
   categoryTabs.render(meta ? maps : null, counts, frame.map, frame.id);
   for (const id of ['recipeCategoryPrevious', 'recipeCategoryNext']) document.getElementById(id).disabled = maps.length < 2;
-  const full = meta?.coverage.handlers?.includes('crafting');
-  document.getElementById('recipeViewerCoverage').textContent = !meta ? '' : full
-    ? 'Supported GregTech, crafting-table and furnace recipes; Assembly Line and NEI displays when supplied by the bundle. Custom recipes may be missing or approximate.'
-    : 'This older bundle contains GregTech recipes only. Crafting-table, furnace and other handlers are not included.';
-  const info = document.getElementById('recipeViewerInfo');
-  const ore = meta?.info.ore || [];
-  updateHtml(info, (meta?.info.description ? descriptionHtml(meta.info.description) : '') + (ore.length ? `<div class="recipe-grid-note">Ore dictionary: ${escapeHtml(ore.join(', '))}</div>` : '')
-    + (row?.approximate?.some(flag => flag !== 'nei_display') ? '<div class="recipe-approximation">Approximate: NBT or custom matching rules may differ.</div>' : ''));
   clearTooltip();
   touch?.reset();
   choices.clear(); tooltipEntries.clear(); tooltipIds.clear();
+  updateHtml(document.getElementById('recipeViewerItem'), currentItemHtml(meta, name));
   const rows = model?.recipes.slice(model.page || 0, (model.page || 0) + 1) || [];
   updateHtml(document.getElementById('recipeViewerMachines'), machineSidebarHtml(model?.machines?.[frame.map] || [], {tooltipKey}));
   for (const row of rows) {
@@ -420,7 +432,10 @@ function render(model) {
   layoutRecipePreviews(list());
   if (model) list().scrollTop = model.scroll;
   updatePageButtons(model);
-  status(model?.loaded && !model.total ? 'No supported recipes in this bundle for this item.' : '');
+  // The approximation note is for the recipe on the page, so it sits
+  // with the page's status rather than on the diagram.
+  status(model?.loaded && !model.total ? emptyText(meta)
+    : row?.approximate?.some(flag => flag !== 'nei_display') ? 'Approximate: NBT or custom matching rules may differ.' : '');
 }
 
 function startCycling() {
@@ -474,9 +489,8 @@ export function setupRecipeViewer() {
   book().addEventListener('focusout', clearTooltip);
   window.addEventListener('gcm-networkchange', () => {
     if (!state) return;
-    // A snapshot may arrive after a direct recipe link opened. Update the
-    // page's Stock action without disturbing recipes, focus or scroll.
-    updateStockButton();
+    // A snapshot may arrive after a direct recipe link opened: a visible
+    // tooltip's stock follows it without disturbing recipes, focus or scroll.
     refreshTooltip();
   });
   delegateActions(document, {
@@ -484,7 +498,9 @@ export function setupRecipeViewer() {
       if (e.shiftKey && el.closest('#recipeViewerModal') && openStackStock(el)) return;
       openRecipeViewer(el.dataset.key, el.dataset.dir || 'making');
     },
-    'recipe-stock': () => { const it = currentStockItem(); if (it) { hideRecipeViewer(); openItemHistory(it); } },
+    'recipe-current-stock': el => openStackStock(el),
+    // A switch is a step like R/U on an item: Back returns to the other side.
+    'recipe-direction': el => { if (state && el.dataset.dir !== current().dir) openRecipeViewer(current().key, el.dataset.dir); },
     'recipe-filter': el => select(current().dir, el.dataset.map || ''),
     'recipe-tabs-previous': () => categoryTabs.scroll(-1),
     'recipe-tabs-next': () => categoryTabs.scroll(1),
