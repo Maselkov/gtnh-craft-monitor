@@ -9,7 +9,8 @@ const countText = n => `${n.toLocaleString('en-US')} ${n === 1 ? 'recipe' : 'rec
 export function categoryTabsHtml(maps, counts, selected) {
   return maps.map(map => {
     const count = counts[map.id];
-    const icon = map.machines.find(machine => machine.icon)?.icon;
+    // NEI's own tab icon where the export has it, else the first machine's.
+    const icon = map.icon || map.machines.find(machine => machine.icon)?.icon;
     const fallback = nameText(map.name).split(/\s+/).slice(0, 2).map(word => word[0]).join('').toUpperCase();
     const active = map.id === selected;
     return `<button id="${escapeHtml(tabId(map.id))}" class="recipe-map-tab" role="tab" data-id="map-${escapeHtml(map.id)}" data-action="recipe-filter" data-map="${escapeHtml(map.id)}" aria-controls="recipeViewerList" aria-selected="${active}" tabindex="${active ? 0 : -1}" aria-label="${escapeHtml(map.name)}, ${countText(count)}">

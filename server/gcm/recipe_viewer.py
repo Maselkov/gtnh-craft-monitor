@@ -2,11 +2,45 @@
 import re
 
 from gcm import icons, item_info, mctext, recipes, state
-from gcm.recipe_index import FLUID, ITEM
+from gcm.recipe_index import FLUID, ITEM, SPECIES_RE, species_from_snbt, species_key, split_species
 
 ALTERNATIVES = 16
 RESEARCH_MAPS = {"research.scanner": "scanner", "research.research_station": "research_station"}
 ARCANE_MAPS = ("::thaumcraft.arcane.shaped", "::thaumcraft.arcane.shapeless")
+# NEI Addons' Forestry breeding (bees, trees, butterflies): a mutation's
+# chance and the conditions it needs (climate, foundation block...).
+BREEDING_PREFIX = "nei.net.bdew.neiaddons.forestry."
+BEE_BREEDING_MAP = BREEDING_PREFIX + "bees.BeeBreedingHandler::"
+# Bee Better At Bees' breeding tree: a species' ancestry, four generations
+# up. The export has its bees and foundation blocks; the lines and chances
+# BBAB draws between them are added here (tree_overlay()).
+BBAB_TREE_MAP = "nei.hellfirepvp.beebetteratbees.client.gui.BBABGuiRecipeTreeHandler::"
+
+
+# NEI's tab icons (its handlers.csv) for categories bundles exported before
+# map icons existed show initials for: no catalyst names an item.
+FALLBACK_MAP_ICONS = {
+    BEE_BREEDING_MAP: "Forestry:beeQueenGE:0",
+    BREEDING_PREFIX + "bees.BeeProduceHandler::": "Forestry:beeQueenGE:0",
+    BREEDING_PREFIX + "trees.TreeBreedingHandler::": "Forestry:saplingGE:0",
+    BREEDING_PREFIX + "trees.TreeProduceHandler::": "Forestry:saplingGE:0",
+    BBAB_TREE_MAP: "Forestry:beeQueenGE:0",
+}
+
+
+def is_breeding_map(map_name):
+    return map_name.startswith(BREEDING_PREFIX) and map_name.endswith("BreedingHandler::")
+
+
+def breeding(requirements):
+    """{chance (percent), conditions: [text]} from a breeding display's
+    requirements, or None."""
+    chance = requirements.get("chance")
+    conditions = requirements.get("requirements")
+    if type(chance) not in (int, float) or not 0 < chance <= 100:
+        return None
+    conditions = [mctext.plain(c)[:200] for c in conditions[:16] if isinstance(c, str) and c] if isinstance(conditions, list) else []
+    return {"chance": chance, "conditions": conditions}
 
 
 def arcane_layout(layout, *, shaped=True):
@@ -92,7 +126,8 @@ def listing(idx, kind, key, direction, map_name=None, *, limit=20, offset=0):
 
 def parse_key(key):
     """HTTP form: mod:internal:damage (including *) or fluid:registry-name.
-    Item damage remains None for wildcard identity; icons may use a fallback."""
+    Item damage remains None for wildcard identity; icons may use a fallback.
+    A Forestry genome item may name its species: mod:internal:damage#species."""
     if not isinstance(key, str) or not key or len(key) > 1024 or re.search(r"[\x00-\x20\x7f]", key):
         raise ValueError("Choose a valid item or fluid key.")
     if key.startswith("fluid:"):
@@ -100,20 +135,35 @@ def parse_key(key):
         if not name:
             raise ValueError("A fluid key needs its registry name.")
         return FLUID, name
+    key, species = split_species(key)
+    if species is not None and not SPECIES_RE.fullmatch(species):
+        raise ValueError("Choose a valid species.")
     mod, sep, rest = key.partition(":")
     internal, sep2, damage = rest.rpartition(":")
     if not (mod and sep and internal and sep2 and (damage == "*" or re.fullmatch(r"[0-9]+", damage))):
         raise ValueError("An item key must be mod:internal:damage (or * for any damage).")
     if damage != "*" and int(damage) > 2147483647:
         raise ValueError("Item damage is too large.")
-    return ITEM, f"{mod}:{internal}:{damage if damage == '*' else int(damage)}"
+    if species is not None and damage == "*":
+        raise ValueError("A species needs a concrete item.")
+    key = f"{mod}:{internal}:{damage if damage == '*' else int(damage)}"
+    return ITEM, key if species is None else species_key(key, species)
 
 
 def entry(kind, key, size, names, chance=None):
-    out = recipes._entry(kind, key, size, chance, names)
+    base, species = split_species(key) if kind == ITEM else (key, None)
+    if species is not None:
+        names = {(kind, base): names.get((kind, key)) or names.get((kind, base))}
+    out = recipes._entry(kind, base, size, chance, names)
+    if species is not None:
+        # A species' own icon is filed by its label (icons.py by_key_label).
+        out["variant"] = species
     # Resolve an icon before restoring wildcard identity: a concrete display
     # fallback must never turn navigation into damage 0.
     icons.attach_item_icons([out])
+    if species is not None:
+        out.pop("variant")
+        out["species"] = species
     out["key"] = f"fluid:{key}" if kind == FLUID else key
     out["name"] = mctext.plain(out["name"])
     if kind == ITEM and key.endswith(":*"):
@@ -127,9 +177,13 @@ def map_info(idx, name):
     # Older exports omitted the native infusion catalyst entirely.
     if name == "nei.thaumcraft.infusion" and not any(m.get("key") for m in catalysts):
         catalysts = [{"name": "Arcane Infusion", "key": "Thaumcraft:blockStoneDevice:2"}]
-    machines = [{**m, "name": mctext.plain(m["name"]), "icon": icons.icon_for_key(m.get("key"))} for m in catalysts]
+    # NEI's tab icon; a name-only category label (no catalyst item) shows it too.
+    icon_key = idx.map_icon(name) or FALLBACK_MAP_ICONS.get(name)
+    icon = icons.icon_for_key(icon_key)
+    machines = [{**m, "name": mctext.plain(m["name"]),
+                 "icon": icons.icon_for_key(m["key"]) if m.get("key") else icon} for m in catalysts]
     key = next((m["key"] for m in machines if m.get("key")), None)
-    mod = key.partition(":")[0] if key else None
+    mod = (key or icon_key).partition(":")[0] if key or icon_key else None
     title = mctext.plain(machines[0]["name"]) if machines else name
     if name.startswith("gt.") and key:
         machine = machine_entry(next(m for m in machines if m.get("key")))
@@ -138,7 +192,7 @@ def map_info(idx, name):
         if match:
             title = match[1].strip()
     title = (idx.layout(name) or {}).get("title") or title
-    return {"id": name, "name": mctext.plain(title), "machines": machines,
+    return {"id": name, "name": mctext.plain(title), "machines": machines, "icon": icon,
             "mod_name": (item_info.mod_name(mod) or mod) if mod else None}
 
 
@@ -216,13 +270,20 @@ def present_recipes(rows, idx):
             display = variants.get(ref)
             if not display:
                 continue
+            species = species_from_snbt(display.get("nbt")) if kind == ITEM and "#" not in value["key"] else None
+            if not isinstance(display.get("key"), str) or display["key"].endswith(":*"):
+                species = None
             choice = {**value, "display_id": ref,
+                      **({"key": species_key(display["key"], species), "species": species} if species else {}),
                       "name": mctext.plain(display.get("name") or value["name"]),
                       "icon": icons.recipe_image(display.get("icon")) or value.get("icon"),
                       "info": tooltip_info(value, display)}
             choices.append(choice)
         if choices:
             value.update(name=choices[0]["name"], icon=choices[0]["icon"], info=choices[0]["info"], display_variants=choices)
+            if len(choices) == 1 and choices[0].get("species"):
+                # One species shown: the stack is that species, not any of the item.
+                value.update(key=choices[0]["key"], species=choices[0]["species"])
         return value
 
     out = []
@@ -270,7 +331,10 @@ def present_recipes(rows, idx):
                     scan["max_eu"] = str(seconds * 20 * scan["usage"])
                 elif not station and research.get("ticks") is not None:
                     scan["total_eu"] = str(research["ticks"] * scan["usage"])
-        if body.get("requirements"):
+        mutation = breeding(body["requirements"]) if body.get("requirements") and is_breeding_map(map_name) else None
+        if mutation:
+            row["breeding"] = mutation
+        elif body.get("requirements"):
             row["requirements"] = body["requirements"]
             handled = {"condensate_input"} if "f" in body.get("preview_stacks", {}) and map_name == "gt.recipe.assemble-condensate" else set()
             if body["requirements"].get("max_nanite_tier"):
@@ -287,6 +351,9 @@ def present_recipes(rows, idx):
         if layout:
             if map_name.endswith(ARCANE_MAPS):
                 layout = arcane_layout(layout, shaped=map_name.endswith(".shaped"))
+            if map_name == BBAB_TREE_MAP:
+                # BBAB draws its bees and blocks on the bare page, no slots.
+                layout = {**layout, "family": "breeding_tree", "item_frames": False}
             sources = {side: [[stack_entry(kind, s)] for s in body[side]]
                        for side, kind in (("i", ITEM), ("o", ITEM), ("f", FLUID), ("g", FLUID))}
             for side, stacks in body.get("preview_stacks", {}).items():
@@ -295,6 +362,8 @@ def present_recipes(rows, idx):
             sources["aux"] = [[e] for e in row["auxiliary"]]
             sources["groups"] = [group["alternatives"] for group in row.get("groups", [])]
             row["preview"] = present_layout(layout, sources, body, idx)
+            if map_name == BBAB_TREE_MAP:
+                row["preview"].update(tree_overlay(row["preview"], idx))
         out.append(row)
     return out
 
@@ -312,14 +381,20 @@ def item_summary(idx, kind, key):
                     names[(kind, key)] = known["name"]
                     break
     it = entry(kind, key, 1, names)
+    it["info"] = _info(it)
     making, using = idx.counts_making(kind, key), idx.counts_using(kind, key)
     for direction, counts in (("making", making), ("using", using)):
         counts.update({f"research.{method}": n for method, n in idx.research_counts(kind, key, direction).items()})
     maps = [research_map_info(idx, RESEARCH_MAPS[name]) if name in RESEARCH_MAPS else map_info(idx, name)
             for name in making.keys() | using.keys()]
     maps.sort(key=lambda m: (0 if m["id"] == "crafting" else 1 if m["id"] == "furnace" else 2, m["name"]))
-    return {"item": it, "info": item_info.describe(it), "making": making, "using": using, "maps": maps,
+    return {"item": it, "info": it["info"], "making": making, "using": using, "maps": maps,
             "coverage": recipes.coverage_summary(idx)}
+
+
+def _info(value):
+    # A species' tooltip is filed under its label, like an NBT variant's.
+    return item_info.describe({**value, "variant": True} if value.get("species") else value)
 
 
 def catalog_items(rows):
@@ -328,7 +403,7 @@ def catalog_items(rows):
     out = []
     for kind, key, _ in rows:
         value = entry(kind, key, 1, names)
-        value["info"] = {**item_info.describe(value), "mod_name": item_info.mod_name(value.get("mod"))}
+        value["info"] = {**_info(value), "mod_name": item_info.mod_name(value.get("mod"))}
         out.append(value)
     return out
 
@@ -370,6 +445,68 @@ def requirement_notes(value, *, handled_metadata=()):
             else:
                 out.append(f"{label}: {text}"[:512])
     return out[:32]
+
+
+def _stack_species(stack, displays):
+    refs = stack[3] if len(stack) > 3 else []
+    display = displays.get(refs[0]) if len(refs) == 1 else None
+    return species_from_snbt(display.get("nbt")) if display else None
+
+
+def bee_mutations(idx):
+    """{(parent species, parent species) sorted, child species): {chance,
+    conditions}} from NEI Addons' bee breeding."""
+    def build():
+        rows = idx.map_recipes(BEE_BREEDING_MAP)
+        displays = idx.display_stacks(ref for _, body in rows for stack in recipe_stacks(body)
+                                      if len(stack) > 3 for ref in stack[3][:1])
+        table = {}
+        for _, body in rows:
+            groups = body.get("groups", [])
+            mutation = breeding(body.get("requirements") or {})
+            if len(groups) < 2 or not body["o"] or not mutation:
+                continue
+            parents = [_stack_species(g["alts"][0], displays) if g["alts"] else None for g in groups[:2]]
+            child = _stack_species(body["o"][0], displays)
+            if not (all(parents) and child):
+                continue
+            key = (tuple(sorted(parents)), child)
+            if key not in table or table[key]["chance"] < mutation["chance"]:
+                table[key] = mutation
+        return table
+    return idx.memo("bee_mutations", build)
+
+
+def tree_overlay(preview, idx):
+    """BBAB's lines from each bee to its two parents (the nearest bees left
+    and right of it on the row below) and each mutation's chance."""
+    nodes = []
+    for slot in preview["slots"]:
+        e = slot["alternatives"][0] if slot["alternatives"] else None
+        species = e.get("species") if e else None
+        if species:
+            nodes.append({**{k: slot[k] for k in ("x", "y", "w", "h")}, "species": species,
+                          "cx": slot["x"] + slot["w"] / 2, "cy": slot["y"] + slot["h"] / 2})
+    rows = sorted({n["y"] for n in nodes})
+    mutations = bee_mutations(idx)
+    lines, labels = [], []
+    for row, below in zip(rows, rows[1:], strict=False):
+        candidates = [n for n in nodes if n["y"] == below]
+        for node in (n for n in nodes if n["y"] == row):
+            left = max((n for n in candidates if n["cx"] < node["cx"]), key=lambda n: n["cx"], default=None)
+            right = min((n for n in candidates if n["cx"] > node["cx"]), key=lambda n: n["cx"], default=None)
+            if not (left and right):
+                continue
+            mutation = mutations.get((tuple(sorted((left["species"], right["species"]))), node["species"]))
+            if not mutation and abs((node["cx"] - left["cx"]) - (right["cx"] - node["cx"])) > 2:
+                continue
+            lines.extend({"x1": node["cx"], "y1": node["cy"], "x2": parent["cx"], "y2": parent["cy"]}
+                         for parent in (left, right))
+            if mutation:
+                chance = mutation["chance"]
+                labels.append({"x": node["x"], "y": node["y"] + node["h"] - 1, "w": node["w"], "h": 8,
+                               "text": f"{chance:g}%", "conditions": mutation["conditions"]})
+    return {"lines": lines[:128], "labels": labels[:64]}
 
 
 def recipe_stacks(body):

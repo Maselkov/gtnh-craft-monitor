@@ -218,6 +218,10 @@ Format 4 adds presentation without changing recipe-search identity:
   IO fields. Their `preview_indices` describe the substituted arrays. Production
   IO and pattern checks stay separate. Condensate Assembling also exports the
   localized maximum nanite description rather than printing its whole tier array.
+- An NEI map's `icon` is the item key NEI draws on its tab (`GuiRecipeTab`'s
+  handler info: `handlers.csv` or a mod's IMC). Maps whose tab is an image, or
+  has nothing, leave it out. NEI Addons' produce pages export every product in
+  `products` as an output, with the chance from its label.
 - `ui_assets` maps resource locations to resolved image paths and dimensions.
   Frames, GT backgrounds/pipes/logo and the infusion rune crop are copied through
   Minecraft's resource manager. The `ui_assets` and `by_variant` icon lookup

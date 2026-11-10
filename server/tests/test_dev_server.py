@@ -84,9 +84,12 @@ def test_icon_bundle_covers_every_item_but_essentia(tmp_path):
     with zipfile.ZipFile(bundle / "images.zip") as zf:
         names = set(zf.namelist())
     paths = list(lookup["by_key"].values()) + list(lookup["fluids_by_key"].values())
-    # Essentia has none, to show the page's stand-in.
-    assert len(paths) == sum(1 for it in dev.CATALOG if it["kind"] != "essentia")
+    # Essentia has none, to show the page's stand-in. Each bee kind has a
+    # generic icon, and each species its own (by_key_label).
+    assert len(paths) == sum(1 for it in dev.CATALOG if it["kind"] != "essentia") + len(dev.BEE_KINDS)
     assert set(paths) <= names
+    assert len(lookup["by_key_label"]) == len(dev.BEE_SPECIES) * len(dev.BEE_KINDS)
+    assert set(lookup["by_key_label"].values()) <= names
     assert "aspect/ordo.webp" in names  # Recipe glyph; deliberately absent from network lookup.
     assert json.loads((tmp_path / "gamedata" / "selected.json").read_text())["version"] == dev.GTNH_VERSION
 

@@ -184,17 +184,32 @@ def _describe_crop_stats(tree):
     return f"Gr {stats['growth']:g} · Ga {stats['gain']:g} · Re {stats['resistance']:g}"
 
 
+def _species_chromosome(tree):
+    # Forestry writes the species as chromosome 0 (Slot 0) of its genome.
+    genome = tree.get("Genome") if isinstance(tree, dict) else None
+    chromosomes = genome.get("Chromosomes") if isinstance(genome, dict) else None
+    if isinstance(chromosomes, list) and chromosomes and isinstance(chromosomes[0], dict):
+        return chromosomes[0]
+    return None
+
+
+def genome_species(root):
+    """A Forestry genome's (bee, sapling, butterfly...) active species
+    allele UID ("forestry.speciesForest"), or None."""
+    species = _species_chromosome(plain(COMPOUND, root))
+    uid = species.get("UID0") if species else None
+    return uid if isinstance(uid, str) and uid else None
+
+
 def _describe_bee(tree):
     # Forestry genomes (bees, saplings, butterflies): the species is
     # already in the label, so what's left to tell them apart is whether
     # they've been analyzed and whether they're pure-bred.
-    genome = tree.get("Genome")
-    if not isinstance(genome, dict):
+    if not isinstance(tree.get("Genome"), dict):
         return None
     parts = []
-    chromosomes = genome.get("Chromosomes")
-    if isinstance(chromosomes, list) and chromosomes and isinstance(chromosomes[0], dict):
-        species = chromosomes[0]
+    species = _species_chromosome(tree)
+    if species:
         active, inactive = species.get("UID0"), species.get("UID1")
         if active and inactive and active != inactive:
             parts.append("Hybrid " + str(inactive).rsplit(".", 1)[-1].removeprefix("species"))

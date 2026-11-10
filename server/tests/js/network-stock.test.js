@@ -58,3 +58,13 @@ test('tooltips can request stock lazily without duplicating in-flight or fresh r
     await ensureNetworkStock(); assert.equal(calls,1);
   } finally { setupNetworkStock(null); setNetworkStock(null); }
 });
+
+test('a species counts only its own bees', () => {
+  const drone = {mod:'Forestry',internal:'beeDroneGE',damage:0,kind:'item'};
+  setNetworkStock({updated_at:123,items:[
+    {...drone,variant:'a',species:'forestry.speciesForest',size:3}, {...drone,variant:'b',species:'forestry.speciesForest',size:2},
+    {...drone,variant:'c',species:'forestry.speciesMeadows',size:7},
+  ]});
+  assert.equal(amountInSystem({...drone,species:'forestry.speciesForest'},{aggregateVariants:true}), 5);
+  assert.equal(amountInSystem(drone,{aggregateVariants:true}), 12);
+});

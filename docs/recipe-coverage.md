@@ -55,6 +55,13 @@ brewing, NASA workbenches and additional categories listed below. GT display map
 now retain industrial chiselling, tree farming, cauldrons, scanners and other
 categories previously removed by the blanket fake-recipe filter.
 
+NEI Addons' produce pages (Bee Produce, Tree Produce) give NEI only their first
+product as the result and draw the rest with chance labels. The exporter reads
+the page's own `products` list instead: re-exported 2.9.0 Bee Produce has
+**896 products** on its 453 species pages (up from 453), 894 of them with a
+chance, from one to 18 per species. Every tree has one product. Older bundles
+keep the first product only.
+
 ## Captured data that is not yet a complete browsable recipe
 
 **15,747 raw archive records** are retained in map-level `archive` arrays, in

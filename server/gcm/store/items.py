@@ -71,6 +71,7 @@ def _snapshot_rows(items):
             now,
             it.get("variant"),
             it.get("variant_name"),
+            it.get("species"),
         )
         for it in items
     ]
@@ -81,8 +82,8 @@ def _insert_snapshot_rows(conn, rows):
         conn.executemany(
             "INSERT OR REPLACE INTO network_snapshot "
             "(item_key, mod, internal, damage, kind, name, size, is_craftable, updated_at, "
-            "variant, variant_name) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "variant, variant_name, species) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             rows,
         )
 
@@ -94,7 +95,7 @@ def load_snapshot():
     with db.transaction(db.item_history_db) as conn:
         rows = conn.execute(
             "SELECT mod, internal, damage, kind, name, size, is_craftable, updated_at, "
-            "variant, variant_name FROM network_snapshot"
+            "variant, variant_name, species FROM network_snapshot"
         ).fetchall()
     items = []
     for r in rows:
@@ -111,6 +112,8 @@ def load_snapshot():
             item["variant"] = r[8]
         if r[9]:
             item["variant_name"] = r[9]
+        if r[10]:
+            item["species"] = r[10]
         items.append(item)
     return items, max((r[7] for r in rows), default=None)
 

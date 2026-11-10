@@ -249,3 +249,13 @@ test('infusion essentia and arcane vis use shared focusable tooltips without rec
     assert.equal(entries[0].vis, family === 'arcane');
   }
 });
+
+test('a bee of one species opens that species, in URLs and recent lookups', () => {
+  const bee = {mod:'Forestry',internal:'beeDroneGE',damage:0,kind:'item',variant:'abc123',species:'forestry.speciesForest'};
+  assert.equal(recipeItemKey(bee), 'Forestry:beeDroneGE:0#forestry.speciesForest');
+  assert.equal(recipeItemKey({...bee,species:undefined}), 'Forestry:beeDroneGE:0');
+  const frame = {key:'Forestry:beeDroneGE:0#forestry.speciesForest',dir:'making',map:''};
+  assert.deepEqual(recipeFromUrl(new URL(recipeUrl(frame), 'https://example.test')), frame);
+  const keys = ['Forestry:beeDroneGE:0#forestry.speciesForest','Forestry:beeDroneGE:*#forestry.speciesForest','mod:item:0#a b','mod:item:0#'];
+  assert.deepEqual(parseRecipeRecents(JSON.stringify({version:'2.9.0',keys})).keys, ['Forestry:beeDroneGE:0#forestry.speciesForest']);
+});
