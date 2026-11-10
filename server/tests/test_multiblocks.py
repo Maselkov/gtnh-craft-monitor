@@ -14,15 +14,22 @@ HEATPROOF = "gregtech:gt.blockcasings:11"
 BORO = "bartworks:BW_TieredGlass:0"
 TITANIUM_GLASS = "bartworks:BW_TieredGlass:1"
 CASING = "gregtech:gt.blockcasings2:0"
+NANO_FORGE = "gregtech:gt.blockmachines:357"
+NANO_CASING = "gregtech:gt.blockcasings8:10"
+LSC = "gregtech:gt.blockmachines:13106"
+LAPOTRONIC = "kekztech:kekztech_lapotronicenergyunit_block:6"
 
 # As Structures.java writes it: the EBF's coil channel swaps blocks; the
-# assembly line's glass comes with its length, so it has every combo.
+# assembly line's glass comes with its length, so it has every combo; the
+# Nano Forge's tier is the projector's stack size, and adds a part.
 STRUCTURES = {
     "format": 1,
     "names": {
         EBF: "Electric Blast Furnace", ASSLINE: "Assembly Line", CUPRONICKEL: "Cupronickel Coil Block",
         KANTHAL: "Kanthal Coil Block", HEATPROOF: "Heat Proof Machine Casing", BORO: "Borosilicate Glass Block",
         TITANIUM_GLASS: "Titanium Reinforced Borosilicate Glass Block", CASING: "Solid Steel Machine Casing",
+        NANO_FORGE: "Nano Forge", NANO_CASING: "Radiation Proof Machine Casing",
+        LSC: "Lapotronic Supercapacitor", LAPOTRONIC: "Empty Capacitor",
     },
     "multiblocks": {
         EBF: {
@@ -43,6 +50,22 @@ STRUCTURES = {
                 "glass=2,length=5": {TITANIUM_GLASS: 9, CASING: 15},
                 "glass=2,length=6": {TITANIUM_GLASS: 11, CASING: 18},
             },
+        },
+        NANO_FORGE: {
+            "channels": [{"name": "tier", "min": 1, "max": 2, "stack": True}],
+            "base": {NANO_CASING: 100},
+            "tiers": {"tier": {"1": {}, "2": {NANO_CASING: 40, CASING: 12}}},
+        },
+        # Too many combinations to build: its height adds glass, which the
+        # glass channel's swap has to cover too.
+        LSC: {
+            "channels": [{"name": "tier", "min": 1, "max": 2, "stack": True}, {"name": "glass", "min": 1, "max": 2}],
+            "base": {BORO: 4, LAPOTRONIC: 2},
+            "tiers": {
+                "tier": {"1": {}, "2": {BORO: 4, LAPOTRONIC: 2}},
+                "glass": {"1": {}, "2": {BORO: -4, TITANIUM_GLASS: 4}},
+            },
+            "approximate": True,
         },
     },
 }
@@ -104,6 +127,23 @@ def test_interacting_channels_come_from_combos(structures):
     assert [o["label"] for o in length["options"]] == ["5", "6"]
 
 
+def test_a_stack_size_tier_is_numbered_not_named_after_what_it_adds(structures):
+    kit = multiblocks.kit(NANO_FORGE, {"tier": 2})
+    assert rows(kit) == {NANO_FORGE: 1, NANO_CASING: 140, CASING: 12}
+    [tier] = kit["channels"]
+    assert tier["kind"] == "size" and tier["tier"] == 2
+    assert [o["label"] for o in tier["options"]] == ["1", "2"]
+    saved = {"tiers": {"tier": 2}}
+    assert multiblocks.preferred_tiers(NANO_FORGE, saved) == {"tier": 2}
+
+
+def test_without_combos_a_swap_covers_what_the_other_channels_add(structures):
+    kit = multiblocks.kit(LSC, {"tier": 2, "glass": 2})
+    assert rows(kit) == {LSC: 1, TITANIUM_GLASS: 8, LAPOTRONIC: 4}
+    assert kit["approximate"]
+    assert rows(multiblocks.kit(LSC, {"tier": 2})) == {LSC: 1, BORO: 8, LAPOTRONIC: 4}
+
+
 def test_no_kit_without_the_game_data(structures, monkeypatch):
     assert multiblocks.kit("gregtech:gt.blockmachines:1") is None
     monkeypatch.setattr(gamedata, "bundle_file", lambda version, name: None)
@@ -118,7 +158,7 @@ def test_kit_route(client, structures):
     assert client.get("/api/multiblocks/kit?key=nope").status_code == 404
     assert client.get(f"/api/multiblocks/kit?key={EBF}&count=x").status_code == 400
     listed = client.get("/api/multiblocks").get_json()["multiblocks"]
-    assert [m["name"] for m in listed] == ["Assembly Line", "Electric Blast Furnace"]
+    assert [m["name"] for m in listed] == ["Assembly Line", "Electric Blast Furnace", "Lapotronic Supercapacitor", "Nano Forge"]
 
 
 def test_item_history_says_which_items_have_a_kit(client, structures):
@@ -165,7 +205,7 @@ def test_picker_lists_only_stored_or_craftable_controllers(client, structures):
                                   dict(ebf, kind="fluid"), dict(ebf, variant="named")]
     assert listed() == []
     # The full catalog and direct kit links still work without a controller in stock.
-    assert len(client.get("/api/multiblocks").get_json()["multiblocks"]) == 2
+    assert len(client.get("/api/multiblocks").get_json()["multiblocks"]) == 4
     assert client.get(f"/api/multiblocks/kit?key={EBF}").status_code == 200
 
 

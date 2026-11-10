@@ -8,18 +8,23 @@ import java.util.Map;
  * only checks the mods it needs are there, so the export still runs without them.
  *
  * <p>{@code {"format": 1, "names": {key: name}, "multiblocks": {controller key: {"channels":
- * [{"name", "min", "max"}], "base": {key: n}, "tiers": {channel: {tier: {key: change}}},
+ * [{"name", "min", "max", "stack"?}], "base": {key: n}, "tiers": {channel: {tier: {key: change}}},
  * "combos": {"a=1,b=2": {key: n}}, "approximate": true}}}}. Keys are ExportJob's
  * ({@code mod:internal:damage}).
  *
  * <p>{@code base} is the structure built with no channel set, as the hologram projector builds it
  * at its lowest tier. A channel's {@code tiers} say what changes from {@code base} when only that
  * channel is set to the tier: a coil or glass channel swaps one block for another (its "tiers" are
- * the blocks it takes, in order), a length or height channel adds blocks. A kit adds up the
- * changes of the tiers it picks. Where that doesn't work, because a channel changes what another
- * adds (an assembly line's glass comes with its length), {@code combos} holds every combination
- * built, keyed by the channels in order; {@code approximate} marks one with too many combinations
- * to build, where the sum is all there is.
+ * the blocks it takes, in order), a length or height channel adds blocks. A channel with
+ * {@code "stack": true}, named {@code tier}, is the projector's stack size, which some multiblocks
+ * read as their tier (a Nano Forge's or PCB Factory's) and build other parts at; the other channels
+ * stay where base has them as it goes up. A kit adds up the changes of the tiers it picks. Where
+ * that doesn't work, because a channel changes what another adds (an assembly line's glass comes
+ * with its length), {@code combos} holds every combination built, keyed by the channels in order;
+ * {@code approximate} marks one with too many combinations to build, where the sum is all there
+ * is: the server applies a tier that turns every one of a block into another (a glass tier) to what
+ * the other channels add as well, as Layouts' swaps do (a Lapotronic Supercapacitor's height adds
+ * glass).
  *
  * <p>Hatches, buses, mufflers and maintenance hatches aren't built: players pick their own, and
  * the places that take either a hatch or a casing get the casing, so casing counts are the most a

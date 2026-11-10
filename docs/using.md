@@ -731,7 +731,10 @@ they take directly in the material row, beside its counts. The block icon
 is centered in its row, including the amount slider, and stays in the same
 column as the other materials, with the channel's name below the selector.
 **Length**, **Height** and the like stay above the
-preview. A block setting without a corresponding material row appears
+preview, as does **Tier**: the projector's stack size, for multiblocks
+that read it, such as the Nano Forge's tier (1–4), the PCB Factory's
+(1–3), a Cleanroom's width or a YOTTank's height. It needs game data
+exported since it was added. A block setting without a corresponding material row appears
 there too. The themed menus show each block's icon and mark the current
 selection with a check. Type in
 the multiblock picker to search; use the arrow keys and Enter to select,

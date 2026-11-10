@@ -5,7 +5,8 @@ structures.json.gz (tools/icon-export's Structures.java describes it).
 
 A multiblock's channels are what the hologram projector's tier settings
 pick: a coil or glass channel's tiers are the blocks it takes, in order;
-a length or height channel's are its sizes. Hatches, buses, mufflers and
+a length or height channel's are its sizes; a "tier" channel is the
+projector's stack size, the tier of a Nano Forge or PCB Factory. Hatches, buses, mufflers and
 maintenance hatches aren't in a kit: the spots that take either a hatch
 or a casing count as casings, so a kit's casings are the most it can
 need, and players take off what their hatches and shared walls save.
@@ -112,8 +113,12 @@ def _channel_options(channel, changes, names):
     """A channel's tiers as [{tier, label, key?}]: a block channel's are
     named after the block each tier puts in (key: that block), a size
     channel's are numbers. What every tier adds alike (the glass around
-    each capacitor) doesn't name one."""
+    each capacitor) doesn't name one. The projector's stack size (a
+    "stack" channel: a Nano Forge's tier) builds whole parts, so its
+    tiers are numbers too."""
     tiers = [str(t) for t in range(channel["min"], channel["max"] + 1)]
+    if channel.get("stack"):
+        return [{"tier": int(t), "label": t} for t in tiers]
     added = {t: {k for k, n in (changes.get(t) or {}).items() if n > 0} for t in tiers}
     non_empty = [s for s in added.values() if s]
     common = set.intersection(*non_empty) if len(non_empty) > 1 else set()
@@ -141,12 +146,34 @@ def _counts(entry, tiers):
         name = ",".join(f"{c['name']}={tiers[c['name']]}" for c in channels)
         if name in combos:
             return dict(combos[name])
-    counts = dict(entry.get("base") or {})
+    base = entry.get("base") or {}
+    counts = dict(base)
+    swaps = []
     for c in channels:
         change = ((entry.get("tiers") or {}).get(c["name"]) or {}).get(str(tiers[c["name"]])) or {}
+        swap = _swap(change, base)
+        if swap:
+            swaps.append(swap)
+            continue
         for k, n in change.items():
             counts[k] = counts.get(k, 0) + n
+    # After the sizes: a longer structure's extra glass is the glass chosen
+    # too, as the 3D view draws it.
+    for old, new in swaps:
+        if old in counts:
+            counts[new] = counts.get(new, 0) + counts.pop(old)
     return {k: n for k, n in counts.items() if n > 0}
+
+
+def _swap(change, base):
+    """(old, new) if change turns every one of a block in base into
+    another block (a glass or coil tier), else None."""
+    if len(change) != 2:
+        return None
+    (old, gone), (new, added) = sorted(change.items(), key=lambda kn: kn[1])
+    if gone < 0 and added == -gone and base.get(old) == added:
+        return old, new
+    return None
 
 
 def preferred_tiers(key, preferences):

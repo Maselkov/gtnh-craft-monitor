@@ -1485,8 +1485,9 @@ TOOLS = [
         "description": (
             "Every block a GregTech multiblock is built from, with the amount the network has and whether "
             "it's craftable: its controller, casings, coils, glass and so on, for the tiers chosen (a coil or glass "
-            "channel's tiers are the blocks it takes; a length or height channel's are sizes). Without "
-            "tiers, each channel is at its lowest; the result lists each channel's options."
+            "channel's tiers are the blocks it takes; a length or height channel's are sizes; a \"tier\" "
+            "channel is the tier of a multiblock such as the Nano Forge or PCB Factory). Without tiers, "
+            "each channel is at its lowest; the result lists each channel's options."
         ),
         "inputSchema": _schema({
             "multiblock": {"type": "string",
