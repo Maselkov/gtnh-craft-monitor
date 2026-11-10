@@ -3803,6 +3803,13 @@ async function main() {
     const inspectKey = await evaluate(`$('#recipeViewerList .recipe-inspected').dataset.key`);
     await click(`$('#recipeInspectActions [data-action="recipe-inspect-uses"]')`);
     await waitFor('explicit Uses', `!visible($('#recipeInspect')) && $('.recipe-viewer-box').dataset.direction==='using' && new URL(location.href).searchParams.get('key')===${JSON.stringify(inspectKey)}`);
+    await visit('minecraft:iron_ingot:0');
+    // An icon with a halo (.icon-bleed): the item fills the icon's box,
+    // the halo drawn past it rather than shrinking the item.
+    await tap('#recipeViewerList [data-recipe-tooltip]:has(img[src*=bleed12])');
+    await waitFor('haloed icon inspected', `visible($('#recipeInspect')) && $('#recipeInspectContent img')?.src.includes('bleed12')`);
+    assert(await evaluate(`(()=>{const i=$('#recipeInspectContent img'); return i.classList.contains('icon-bleed')
+      && i.offsetWidth===44 && Math.round(i.getBoundingClientRect().width)===110;})()`), 'haloed icon scaled past its box');
     await visit('gregtech:gt.metaitem.01:2032');
     await tap('#recipeViewerList [data-recipe-tooltip]');
     await waitFor('stock sheet', `visible($('#recipeInspect'))`);

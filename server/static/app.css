@@ -3623,13 +3623,16 @@ button.recipe-search-open .ui-icon { width:18px; height:18px; }
 .recipe-inspect button { min-width:44px; min-height:44px; border:1px solid var(--border-strong); border-radius:6px; background:var(--recipe-control); color:var(--recipe-count-text); font:inherit; font-size:14px; padding:8px 12px; }
 .recipe-inspect button:focus-visible { outline:2px solid var(--accent); }
 .recipe-inspect #recipeInspectClose { font-size:24px; border:0; padding:4px; }
-.recipe-inspect-content { display:flex; gap:12px; overflow-y:auto; overflow-wrap:anywhere; min-height:0; padding:8px 0 16px; line-height:1.45; overscroll-behavior:contain; }
-.recipe-inspect-content > div { min-width:0; flex:1; }
+/* The text scrolls rather than the row, so a haloed icon's halo isn't cut off. */
+.recipe-inspect-content { display:flex; gap:12px; overflow-wrap:anywhere; min-height:0; padding:8px 0 16px; line-height:1.45; }
+.recipe-inspect-content > div { min-width:0; flex:1; overflow-y:auto; overscroll-behavior:contain; }
 .recipe-inspect-content .network-tooltip-stat,
 .recipe-inspect-content .network-tooltip-mod,
 .recipe-inspect-content .network-tooltip-fluid { font-size:14px; }
 .recipe-inspect-content .network-tooltip-name { font-size:17px; }
 .recipe-inspect-icon { width:44px; height:44px; object-fit:contain; image-rendering:pixelated; flex:none; }
+/* Under the text beside it, not over it. */
+.recipe-inspect-icon.icon-bleed { z-index:-1; }
 .recipe-inspect-actions { display:flex; gap:8px; flex:none; }
 .recipe-inspect-actions:empty { display:none; }
 .recipe-inspect-actions button { flex:1; }
