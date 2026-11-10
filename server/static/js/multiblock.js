@@ -17,7 +17,9 @@ import { closeCraftPlan, kitPlanOpen, openKitPlan } from './craft-plan.js';
 import { hideLayout, setupLayoutView, showLayout } from './multiblock-view.js';
 import { fetchCraftRequests, showToast } from './craft-actions.js';
 import { nameText } from './description.js';
+import { lookupItemTooltipHtml, onShiftChange } from './item-tooltip.js';
 import { kitPickerHtml, setupKitPickers } from './kit-picker.js';
+import { bindCellTooltip, hideTooltip, showTooltip, tooltipVisible } from './tooltip.js';
 import { delegateActions, docsUrl, escapeHtml, formatQty, iconClass, iconUrl, onBackdropClick, TERMINAL_DOCS_URL, updateHtml } from './util.js';
 
 let controllers = null;   // [{key, name, label}] once fetched, for the picker
@@ -26,6 +28,7 @@ let controllerPicker = null;
 let controllerSeq = 0;
 let openKey = null;       // the controller shown, null when closed
 let kit = null;           // its last fetched kit
+let tooltipIcon = null;   // the row icon the tooltip was last shown for
 let tiers = {};           // channel -> tier picked
 let count = 1;
 let edits = new Map();    // row key -> request amount typed in
@@ -168,6 +171,8 @@ export function closeKit() {
   ++controllerSeq;
   ++fetchSeq;
   document.getElementById('kitModal').style.display = 'none';
+  if (tooltipVisible(document.getElementById('kitRows'))) hideTooltip();
+  tooltipIcon = null;
   hideLayout();
   viewDrawn = null;
   reviewing = false;
@@ -281,8 +286,8 @@ function renderKit() {
   const rows = kit.rows.map(r => {
     const channels = kit.channels.filter(ch => inlineRows.get(ch.name) === r.key);
     const icon = r.icon
-      ? `<img class="${iconClass('kit-icon', r.icon)}" src="${escapeHtml(iconUrl(r.icon))}" alt="">`
-      : '<span class="kit-icon"></span>';
+      ? `<img class="${iconClass('kit-icon', r.icon)}" src="${escapeHtml(iconUrl(r.icon))}" alt="" data-item="${escapeHtml(r.item)}">`
+      : `<span class="kit-icon" data-item="${escapeHtml(r.item)}"></span>`;
     const short = r.have < r.need;
     const request = operator
       ? (r.craftable
@@ -521,7 +526,33 @@ async function submitKit() {
   }
 }
 
+// A row's icon has the game's tooltip, as items do elsewhere; its counts
+// are the row's columns, so it leaves them out. Only the icon: over the
+// whole row it would cover the slider.
+function kitRowOf(el) {
+  return kit?.rows.find(r => r.item === el.dataset.item) || null;
+}
+
+function kitIconTooltipHtml(el) {
+  const row = kitRowOf(el);
+  if (!row) return null;
+  tooltipIcon = el;
+  return lookupItemTooltipHtml({ ...row, kind: 'item' }, { stockAmount: null }, refreshKitTooltip);
+}
+
+function refreshKitTooltip() {
+  const rowsEl = document.getElementById('kitRows');
+  if (!tooltipVisible(rowsEl) || !tooltipIcon?.isConnected) return;
+  const html = kitIconTooltipHtml(tooltipIcon);
+  if (html) showTooltip(html, undefined, undefined, rowsEl);
+}
+
 export function setupKitActions() {
+  bindCellTooltip(document.getElementById('kitRows'), '.kit-icon[data-item]', kitIconTooltipHtml, (el) => {
+    const row = kitRowOf(el);
+    return row && { ...row, kind: 'item' };
+  });
+  onShiftChange(refreshKitTooltip);
   stackedLayout = window.matchMedia('(max-width: 1080px)');
   stackedLayout.addEventListener('change', () => {
     if (kit) {

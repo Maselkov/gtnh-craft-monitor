@@ -397,7 +397,11 @@ The scan data is still available to the planner and item history.
 
 Hovering an item shows its description, with the name in its rarity's
 colour and its mod's name below; hold **Shift** to see what the game shows
-with Shift held, such as a multiblock's structure. The item's dialog shows
+with Shift held, such as a multiblock's structure. A craft's ingredients
+and a crafting plan's items show the same tooltip, with their counts in it.
+So do the icons of the steps in their Tree views and of the blocks in a
+multiblock kit, without counts, which their rows already show.
+The item's dialog shows
 the same, with a **Shift** button, and its ore-dictionary names: click one
 to search for it. Descriptions are the items' in-game tooltips below their
 name (a GregTech machine's type and info lines, a material's formula, a

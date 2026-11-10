@@ -2515,6 +2515,47 @@ async function main() {
     await evaluate(`window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Shift' })), true`);
     await waitFor('back without Shift', `$('.network-tooltip .network-tooltip-description').textContent.includes('DTPF')`);
     await evaluate(`$('#networkList .network-cell').dispatchEvent(new MouseEvent('mouseout', { bubbles: true })), true`);
+    // A craft's ingredients get the same tooltip, the counts in it. On
+    // W02, so W01's job, which later steps link to, stays as it is.
+    const w01 = { name: 'W01', busy: true, final_output: 'Iron Ingot', final_output_mod: 'minecraft',
+      final_output_internal: 'iron_ingot', final_output_damage: 0,
+      active: [{ name: 'Iron Ingot', size: 3 }], pending: [{ name: 'Iron Ore', size: 6 }], stored: [] };
+    await game(base, '/api/crafts', { source: 'me_controller', jobs: [w01,
+      { name: 'W02', busy: true, final_output: 'Iron Ingot', final_output_mod: 'minecraft',
+        final_output_internal: 'iron_ingot', final_output_damage: 0, active: [],
+        pending: [{ name: 'Neutronium Ingot', mod: 'gregtech', internal: 'gt.metaitem.01', damage: 11028, size: 2 }], stored: [] },
+    ] });
+    await click(`$('#tabBtnCrafts')`);
+    await waitFor('ingredients button', `card('W02')?.querySelector('.ingredients-btn')`);
+    await click(`card('W02').querySelector('.ingredients-btn')`);
+    await waitFor('ingredient cell', `$('#ingredientsGrid .ingredient-cell[data-internal="gt.metaitem.01"]')`);
+    await evaluate(`$('#ingredientsGrid .ingredient-cell').dispatchEvent(new MouseEvent('mouseover', { bubbles: true, clientX: 50, clientY: 50 })), true`);
+    await waitFor('ingredient tooltip like the network one', `visible($('.network-tooltip'))
+      && $('.network-tooltip .network-tooltip-description .mc-b')?.textContent === 'DTPF'
+      && $('.network-tooltip .network-tooltip-name').classList.contains('mc-d')
+      && $('.network-tooltip .network-tooltip-hint')?.textContent === '[shift]'
+      && $('.network-tooltip').textContent.includes('Scheduled: 2')
+      && $('.network-tooltip .network-tooltip-mod').textContent === 'GregTech'`);
+    await evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift' })), true`);
+    await waitFor('ingredient Shift text', `$('.network-tooltip .network-tooltip-description').textContent === 'Structure: 33x24x33'`);
+    await evaluate(`window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Shift' })), true`);
+    await evaluate(`$('#ingredientsGrid .ingredient-cell').dispatchEvent(new MouseEvent('mouseout', { bubbles: true })), true`);
+    // The tree's step icons too, without the step's counts. (Its root,
+    // Iron Ingot: the bundle has no Neutronium icon.)
+    await click(`$('#ingredientsModal [data-view="tree"]')`);
+    await waitFor('tree step icon', `$('#ingredientsTree .plan-icon[data-key]')`);
+    await evaluate(`$('#ingredientsTree .plan-icon[data-key]').dispatchEvent(new MouseEvent('mouseover', { bubbles: true, clientX: 50, clientY: 50 })), true`);
+    await waitFor('tree icon tooltip', `visible($('.network-tooltip'))
+      && $('.network-tooltip .network-tooltip-name').textContent === 'Iron Ingot'
+      && $('.network-tooltip .network-tooltip-mod').textContent === 'Minecraft'
+      && !$('.network-tooltip').textContent.includes('Scheduled')`);
+    await evaluate(`$('#ingredientsTree .plan-icon[data-key]').dispatchEvent(new MouseEvent('mouseout', { bubbles: true })), true`);
+    await click(`$('#ingredientsModal [data-view="grid"]')`);
+    await evaluate(`pressKey('Escape'), true`);
+    await waitFor('ingredients closed', `!visible($('#ingredientsModal'))`);
+    await game(base, '/api/crafts', { source: 'me_controller', jobs: [w01, { name: 'W02', busy: false }] });
+    await click(`$('#tabBtnNetwork')`);
+    await waitFor('network again', `$$('#networkList .network-cell').length === 1`);
     // The dialog: the description collapsed to its first line; opened,
     // it ends in the mod's name and has a Shift button. Then the ore
     // names, each a $ search.
@@ -2560,6 +2601,15 @@ async function main() {
       && $('#kitRows .kit-row-configurable > img.kit-icon') && !$('#kitRows .kit-choice-field img')
       && $('#kitRows .kit-choice-caption').textContent === 'Coil'
       && $('#kitChannel-coil').closest('.kit-row').querySelector('.kit-num').textContent === '1,000'`);
+    // A row's icon has the item's game tooltip; the counts are the row's.
+    await evaluate(`$('#kitRows .kit-row:not(.kit-head) .kit-icon').dispatchEvent(new MouseEvent('mouseover', { bubbles: true, clientX: 50, clientY: 50 })), true`);
+    await waitFor('kit icon tooltip like the network one', `visible($('.network-tooltip'))
+      && $('.network-tooltip .network-tooltip-description .mc-b')?.textContent === 'DTPF'
+      && $('.network-tooltip .network-tooltip-name').classList.contains('mc-d')
+      && $('.network-tooltip .network-tooltip-mod').textContent === 'GregTech'
+      && !$('.network-tooltip .network-tooltip-stock')`);
+    await evaluate(`$('#kitRows .kit-row:not(.kit-head) .kit-icon').dispatchEvent(new MouseEvent('mouseout', { bubbles: true })), true`);
+    await waitFor('kit icon tooltip gone', `!visible($('.network-tooltip'))`);
     await waitFor('material icons are larger and centered across each full row', `$$('#kitRows .kit-row:not(.kit-head)').every(row => {
       const element = row.querySelector('.kit-icon');
       const icon = element.getBoundingClientRect();
@@ -2730,6 +2780,17 @@ async function main() {
     await click(`$('#kitRetryBtn')`);
     await waitFor('kit review ready', `visible($('#kitReview #craftPlan')) && $('#craftPlanSummary').textContent.includes('steps')
       && !$('#kitRequestBtn').disabled && !visible($('#kitRetryBtn')) && window.kitSends.length === 0`);
+    // In the plan's tree, a step's icon has the item's tooltip, without
+    // the step's counts.
+    await click(`$('#craftPlan [data-view="tree"]')`);
+    await waitFor('plan tree icon', `$('#craftPlanBody img.plan-icon[data-key]')`);
+    await evaluate(`$('#craftPlanBody img.plan-icon[data-key]').dispatchEvent(new MouseEvent('mouseover', { bubbles: true, clientX: 50, clientY: 50 })), true`);
+    await waitFor('plan tree icon tooltip', `visible($('.network-tooltip'))
+      && $('.network-tooltip .network-tooltip-name').textContent !== ''
+      && $('.network-tooltip .network-tooltip-mod') && $('.network-tooltip .network-tooltip-stock')
+      && !$('.network-tooltip').textContent.includes('Needed')`);
+    await evaluate(`$('#craftPlanBody img.plan-icon[data-key]').dispatchEvent(new MouseEvent('mouseout', { bubbles: true })), true`);
+    await click(`$('#craftPlan [data-view="list"]')`);
     await click(`$('#kitBackBtn')`);
     await waitFor('back keeps configuration', `visible($('#kitConfiguration')) && !visible($('#kitReview'))
       && visible($('#kitCount')) && !visible($('#kitReviewCount')) && visible($('#kitMode'))

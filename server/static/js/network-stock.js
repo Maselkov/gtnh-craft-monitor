@@ -31,3 +31,12 @@ export function amountInSystem(item, {aggregateVariants = false} = {}) {
   }
   return amount;
 }
+
+// Whether AE2 has a pattern for the item (any of its NBT variants), as
+// the latest network report says; false before there is one.
+export function craftableInSystem(item) {
+  const kind = item.kind || (item.mod ? 'item' : 'fluid');
+  return !!item.internal && (snapshot?.items || []).some(stock => stock.isCraftable
+    && (stock.kind || 'item') === kind && (stock.mod || null) === (item.mod || null)
+    && stock.internal === item.internal && (kind !== 'item' || (stock.damage ?? 0) === (item.damage ?? 0)));
+}

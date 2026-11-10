@@ -11,12 +11,12 @@
 // around; here it's an outline, readable without hovering and usable on
 // a phone, keeping the game's "Hide all available".
 
-import { nameHtml, nameText } from './description.js';
+import { nameText } from './description.js';
 import { itemMatchesSearch, parseSearchQuery } from './search.js';
 import { bindCellTooltip, showTooltip, tooltipVisible } from './tooltip.js';
-import { systemStockHtml } from './item-tooltip.js';
+import { itemOfKey, lookupItemTooltipHtml, onShiftChange } from './item-tooltip.js';
 import { ensureLoaded, flashRow, graft, matchingEntries, matchTree, nodeAt, openAbove, searchNoteText } from './tree-nav.js';
-import { bindFilterInput, delegateActions, escapeHtml, essentiaBadgeHtml, formatQty, formatRelativeTime, iconClass, iconUrl, kindTooltipHtml, TERMINAL_DOCS_URL } from './util.js';
+import { bindFilterInput, delegateActions, escapeHtml, essentiaBadgeHtml, formatQty, formatRelativeTime, iconClass, iconUrl, TERMINAL_DOCS_URL } from './util.js';
 
 const VIEW_KEY = 'gtnhCraftMonitor.planView';
 const HIDE_KEY = 'gtnhCraftMonitor.planHideAvailable';
@@ -24,6 +24,7 @@ const FETCH_DELAY_MS = 300;
 
 let target = null;      // the item the dialog is for, or a kit: {kit, count, targets}
 let tooltipKey = null;
+let tooltipOnIcon = false;  // a tree step's icon, not a grid cell
 let amount = null;      // the last valid amount asked for
 let choices = {};       // item key -> pattern id picked in the tree
 let openState = new Map();  // tree path -> open, where the user toggled it
@@ -128,10 +129,10 @@ export function sortListItems(items) {
     || nameText(a.name || '').localeCompare(nameText(b.name || '')));
 }
 
-function iconHtml(it, cls) {
+function iconHtml(it, cls, attrs = '') {
   return it.icon
-    ? `<img class="${iconClass(cls, it.icon)}" src="${iconUrl(it.icon)}" alt="" loading="lazy" data-remove-on-error>`
-    : essentiaBadgeHtml(it, cls);
+    ? `<img class="${iconClass(cls, it.icon)}" src="${iconUrl(it.icon)}" alt="" loading="lazy" data-remove-on-error${attrs}>`
+    : essentiaBadgeHtml(it, cls).replace('<span ', `<span${attrs} `);
 }
 
 // "2/5" on a Missing chip being cycled through, "2/200+" past the list.
@@ -198,19 +199,36 @@ function cellHtml(it) {
   </div>`;
 }
 
+function refreshPlanTooltip() {
+  const body = document.getElementById('craftPlanBody');
+  if (!tooltipVisible(body)) return;
+  if (tooltipOnIcon) {
+    const icon = [...body.querySelectorAll('.plan-icon[data-key]')].find(el => el.dataset.key === tooltipKey);
+    const item = itemsByKey.get(tooltipKey) || (icon && { key: tooltipKey, name: icon.dataset.name });
+    if (item) showTooltip(iconTooltipHtml(item), undefined, undefined, body);
+    return;
+  }
+  const item = itemsByKey.get(tooltipKey);
+  if (item) showTooltip(cellTooltipHtml(item), undefined, undefined, body);
+}
+
+// A tree step's icon: the item's tooltip without the counts, which are
+// the step's own text.
+function iconTooltipHtml(it) {
+  return lookupItemTooltipHtml(itemOfKey(it.key, it), {}, refreshPlanTooltip);
+}
+
 function cellTooltipHtml(it) {
   const stat = (label, n) => `<div class="network-tooltip-stat">${label}: ${qty(n, it.kind)}</div>`;
-  return `
-    <div class="network-tooltip-name">${nameHtml(it.name || '?')}${escapeHtml(variantText(it))}</div>
-    ${stat('Needed', it.need)}
-    ${it.from_leftovers > 0 ? stat('Left over from other steps', it.from_leftovers) : ''}
-    ${it.from_stock > 0 ? stat('From stock', it.from_stock) + stat('Available to plan', it.available) : ''}
-    ${it.craft > 0 ? stat('Crafted', it.craft) : ''}
-    ${it.missing > 0 ? stat('Missing', it.missing) : ''}
-    ${(it.warnings || []).map(w => `<div class="network-tooltip-stat plan-warning-line">${qty(it.left, it.kind)} left: ${escapeHtml(warningText(w, it.kind))}</div>`).join('')}
-    ${kindTooltipHtml(it.kind)}
-    ${systemStockHtml(it)}
-  `;
+  const details = [
+    stat('Needed', it.need),
+    it.from_leftovers > 0 ? stat('Left over from other steps', it.from_leftovers) : '',
+    it.from_stock > 0 ? stat('From stock', it.from_stock) + stat('Available to plan', it.available) : '',
+    it.craft > 0 ? stat('Crafted', it.craft) : '',
+    it.missing > 0 ? stat('Missing', it.missing) : '',
+    ...(it.warnings || []).map(w => `<div class="network-tooltip-stat plan-warning-line">${qty(it.left, it.kind)} left: ${escapeHtml(warningText(w, it.kind))}</div>`),
+  ].join('');
+  return lookupItemTooltipHtml(itemOfKey(it.key, it), { details }, refreshPlanTooltip);
 }
 
 function renderList(plan) {
@@ -292,7 +310,7 @@ function nodeHtml(node, parentPath, depth, positions, filtering) {
   const matched = hit && hit.self ? ' filter-match' : '';
   return `<li class="plan-node status-${escapeHtml(node.status)}${matched}" data-pos="${escapeHtml(positions)}">
     <div class="plan-row">
-      ${caret}${iconHtml(node, 'plan-icon')}
+      ${caret}${iconHtml(node, 'plan-icon', ` data-key="${escapeHtml(node.key)}" data-name="${escapeHtml(node.name || '')}"`)}
       <div class="plan-text">
         <div><span class="plan-name">${escapeHtml(via
           ? (node.substitute ? displayName(node) + ' ' : '') + 'via ' + nameText(node.pattern.provider || '?')
@@ -660,10 +678,8 @@ export function closeCraftPlan() {
 }
 
 export function setupCraftPlanActions() {
-  window.addEventListener('gcm-networkchange', () => {
-    const body = document.getElementById('craftPlanBody'), item = itemsByKey.get(tooltipKey);
-    if (item && tooltipVisible(body)) showTooltip(cellTooltipHtml(item), undefined, undefined, body);
-  });
+  window.addEventListener('gcm-networkchange', refreshPlanTooltip);
+  onShiftChange(refreshPlanTooltip);
   view = readSetting(VIEW_KEY, 'list') === 'tree' ? 'tree' : 'list';
   hideAvailable = readSetting(HIDE_KEY, '0') === '1';
   const panel = document.getElementById('craftPlan');
@@ -714,7 +730,16 @@ export function setupCraftPlanActions() {
   });
   bindCellTooltip(document.getElementById('craftPlanBody'), '.plan-cell', (cell) => {
     tooltipKey = cell.dataset.key;
+    tooltipOnIcon = false;
     const it = itemsByKey.get(cell.dataset.key);
     return it ? cellTooltipHtml(it) : null;
   }, cell => itemsByKey.get(cell.dataset.key));
+  // A kit's root step isn't one of the plan's items: its own key and
+  // name do.
+  const iconItem = icon => itemsByKey.get(icon.dataset.key) || { key: icon.dataset.key, name: icon.dataset.name };
+  bindCellTooltip(document.getElementById('craftPlanBody'), '.plan-icon[data-key]', (icon) => {
+    tooltipKey = icon.dataset.key;
+    tooltipOnIcon = true;
+    return iconTooltipHtml(iconItem(icon));
+  }, iconItem);
 }
