@@ -287,6 +287,47 @@ def test_a_kit_is_queued_as_one_request(client, structures, kit_slots, api_heade
     assert "kit_inputs" not in mine and "tag" not in mine
 
 
+def test_a_block_with_more_in_stock_than_the_kit_needs_is_still_crafted(client, structures, kit_slots):
+    # 40 Heat Proof Casings in stock, 16 needed, 4 more asked for: the kit
+    # asks for all 40 and 4, so AE2 takes the 40 and crafts the 4.
+    with state.network_lock:
+        state.network["items"][1]["size"] = 40
+    login_as(client, "usr_operator", role="operator")
+    assert client.post("/api/craft/request-kit", json=kit_payload(**{HEATPROOF: 4})).status_code == 200
+    [req] = commands.craft_requests.select(lambda r: True)
+    assert req["kit_inputs"] == [{"name": "gregtech:gt.blockcasings", "damage": 11, "size": 44}]
+
+
+def test_a_kit_offers_a_name_per_kit_slot_and_takes_the_one_the_game_used(client, structures, api_headers):
+    with state.crafts_lock:
+        state.crafts["kit_slots"] = 3
+    login_as(client, "usr_operator", role="operator")
+    assert client.post("/api/craft/request-kit", json=kit_payload(**{HEATPROOF: 16})).status_code == 200
+    [req] = commands.craft_requests.select(lambda r: True)
+    labels = ["Electric Blast Furnace kit", "Electric Blast Furnace kit #2", "Electric Blast Furnace kit #3"]
+    assert [n["label"] for n in req["kit_names"]] == labels
+    assert [nbt.parse_hex(n["tag"])["display"][1]["Name"][1] for n in req["kit_names"]] == labels
+    assert req["tag"] == req["kit_names"][0]["tag"]
+
+    [pending] = client.get("/api/craft/requests/pending", headers=api_headers).get_json()["requests"]
+    client.post(f"/api/craft/requests/{pending['id']}/result", headers=api_headers,
+                json={"status": "failed", "reason": "missing blocks", "label": "Electric Blast Furnace kit #2"})
+    [mine] = client.get("/api/craft/requests").get_json()["requests"]
+    assert mine["label"] == "Electric Blast Furnace kit #2" and "kit_names" not in mine
+    assert store.requests.find("craft", pending["id"], "usr_operator")["label"] == "Electric Blast Furnace kit #2"
+
+
+def test_a_label_the_kit_didnt_offer_is_ignored(client, structures, kit_slots, api_headers):
+    login_as(client, "usr_operator", role="operator")
+    client.post("/api/craft/request-kit", json=kit_payload(**{HEATPROOF: 16}))
+    [pending] = client.get("/api/craft/requests/pending", headers=api_headers).get_json()["requests"]
+    client.post(f"/api/craft/requests/{pending['id']}/result", headers=api_headers,
+                json={"status": "failed", "reason": "no", "label": "Something else"})
+    [mine] = client.get("/api/craft/requests").get_json()["requests"]
+    assert mine["label"] == "Electric Blast Furnace kit"
+    assert store.requests.find("craft", pending["id"], "usr_operator")["label"] == "Electric Blast Furnace kit"
+
+
 def test_a_block_left_at_zero_stays_out_of_the_kit(client, structures, kit_slots):
     login_as(client, "usr_operator", role="operator")
     assert client.post("/api/craft/request-kit", json=kit_payload(**{HEATPROOF: 16})).status_code == 200

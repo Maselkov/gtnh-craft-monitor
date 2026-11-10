@@ -34,13 +34,15 @@ def record_request(
 # only_if_open: an expiry only closes a row nothing has resolved yet,
 # while the game's own result always wins - it can arrive after the
 # request expired, and it's what actually happened in-game.
-def resolve_request(request_id, status, reason, cpu_name, only_if_open=False):
+# label: what the game named the job, when that isn't the requested
+# label (a kit's numbered name); None keeps it.
+def resolve_request(request_id, status, reason, cpu_name, only_if_open=False, label=None):
     with db.transaction(db.app_db) as conn:
         conn.execute(
             "UPDATE craft_request_history "
-            "SET status = ?, reason = ?, cpu_name = ?, resolved_at = ? "
+            "SET status = ?, reason = ?, cpu_name = ?, resolved_at = ?, label = COALESCE(?, label) "
             "WHERE request_id = ?" + (" AND resolved_at IS NULL" if only_if_open else ""),
-            (status, reason, cpu_name, time.time(), request_id),
+            (status, reason, cpu_name, time.time(), label, request_id),
         )
 
 

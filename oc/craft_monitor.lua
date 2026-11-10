@@ -578,13 +578,21 @@ end
 --
 -- A slot is a kit slot when its pattern makes a Command Block (one the
 -- player set up and that was never used) or something named "... kit"
--- (one this script rewrote): it never touches another pattern. It
+-- or "... kit #2" (one this script rewrote): it never touches another
+-- pattern. It
 -- never leaves a pattern without inputs or outputs either, even between
 -- two calls: AE2 marks a pattern item it can't read invalid for good.
 -- A slot isn't rewritten while a request it was written for is being
 -- planned or its job runs (AE2 finds where to push a step by its
 -- pattern, so a job whose pattern changed would wait forever), nor
 -- while any CPU is making what the slot makes.
+--
+-- Two kit patterns making the same name are two patterns for one
+-- output, and AE2 may plan either. So the server offers a kit several
+-- names (kit_names: "EBF kit", "EBF kit #2", ...) and the kit takes the
+-- first one no slot in use has; a free slot that already has it is the
+-- one rewritten, and any other free slot with it goes back to making a
+-- Command Block.
 
 local KIT_FRESH = "minecraft:command_block"
 local KIT_SUFFIX = " kit"
@@ -600,7 +608,7 @@ local function is_kit_output(out)
   if type(out) ~= "table" then return false end
   if out.name == KIT_FRESH then return true end
   return out.hasTag == true and type(out.label) == "string"
-    and out.label:sub(-#KIT_SUFFIX) == KIT_SUFFIX
+    and (out.label:sub(-#KIT_SUFFIX) == KIT_SUFFIX or out.label:find(" kit #%d+$") ~= nil)
 end
 
 -- The kit slot's pattern, or nil and why it isn't one (any more).
@@ -663,23 +671,55 @@ local function kit_output_busy(cpus, out)
   return false
 end
 
--- A free kit slot and its pattern, or nil and why there's none.
-local function free_kit_slot(me)
+-- The label a held slot was last written with; a slot's pattern isn't
+-- read while it's held (it can't change then anyway).
+local function held_label(ks)
+  local hold = kitHolds[kit_key(ks)]
+  return hold and hold.label
+end
+
+-- A kit slot for one of names ({ {label, tag}, ... }, the first
+-- preferred): returns the slot, its pattern, the name, and the other
+-- free slots with that name (to reset), or nil and why there's none.
+local function choose_kit_slot(me, names)
   local cpusOk, cpus = get_cpus(me)
   if not cpusOk then cpus = {} end
   for attempt = 1, 2 do
     if attempt == 2 or not kitSlotsLookedAt then find_kit_slots() end
-    local busy = 0
+    local free, taken, busy = {}, {}, 0
     for _, ks in ipairs(kitSlots) do
       if kitHolds[kit_key(ks)] then
         busy = busy + 1
+        if held_label(ks) then taken[held_label(ks)] = true end
       else
         local pattern = kit_pattern(ks)
         if pattern then
-          if not kit_output_busy(cpus, pattern.outputs[1]) then return ks, pattern end
-          busy = busy + 1
+          local out = pattern.outputs[1]
+          if kit_output_busy(cpus, out) then
+            busy = busy + 1
+            if out.label then taken[out.label] = true end
+          else
+            free[#free + 1] = { ks = ks, pattern = pattern, label = out.name ~= KIT_FRESH and out.label or nil }
+          end
         end
       end
+    end
+    if #free > 0 then
+      local name
+      for _, n in ipairs(names) do
+        if not taken[n.label] then name = n; break end
+      end
+      if not name then
+        return nil, "every name for this kit is in use by another kit - try again when one finishes"
+      end
+      local chosen, stale = nil, {}
+      for _, f in ipairs(free) do
+        if f.label == name.label then
+          if chosen then stale[#stale + 1] = f.ks else chosen = f end
+        end
+      end
+      chosen = chosen or free[1]
+      return chosen.ks, chosen.pattern, name, stale
     end
     if attempt == 2 and busy > 0 then
       return nil, "every kit slot is in use by another kit - try again when one finishes"
@@ -707,36 +747,48 @@ local function write_kit(ks, pattern, output, inputs)
 end
 
 -- Puts a kit request into a kit slot and finds it as a craftable.
--- Returns the craftable and the slot's key (held until the job ends),
--- or nil and why not.
+-- Returns the craftable, the slot's key (held until the job ends) and
+-- the kit's name, or nil and why not.
 local function prepare_kit(me, reqData)
   if type(reqData.kit_inputs) ~= "table" or #reqData.kit_inputs == 0 then
     return nil, "a kit request without blocks"
   end
   if not reqData.tag then return nil, "a kit request without its name" end
-  local ks, pattern = free_kit_slot(me)
+  -- A server without kit_names offers just the one.
+  local names = type(reqData.kit_names) == "table" and #reqData.kit_names > 0 and reqData.kit_names
+    or { { label = reqData.label, tag = reqData.tag } }
+  local ks, pattern, kitName, stale = choose_kit_slot(me, names)
   if not ks then return nil, pattern end
   local key = kit_key(ks)
-  kitHolds[key] = { since = computer.uptime() }
+  kitHolds[key] = { since = computer.uptime(), label = kitName.label }
+  -- The other free slots with this name make a Command Block again, so
+  -- AE2 has one pattern for it. Their inputs stay: never empty.
+  for _, other in ipairs(stale) do
+    pcall(other.me.setInterfacePatternOutput, other.slot, 1,
+      { name = KIT_FRESH, damage = 0, size = 1 }, "item")
+  end
   local name = reqData.internal
   if reqData.mod and reqData.mod ~= "" then name = reqData.mod .. ":" .. name end
-  local output = { name = name, damage = reqData.damage or 0, size = 1, tag = unhex(reqData.tag) }
+  local output = { name = name, damage = reqData.damage or 0, size = 1, tag = unhex(kitName.tag) }
   local ok, err = pcall(write_kit, ks, pattern, output, reqData.kit_inputs)
   if not ok then
     kitHolds[key] = nil
     return nil, "rewriting the kit pattern: " .. tostring(err)
   end
+  local find = {}
+  for k, v in pairs(reqData) do find[k] = v end
+  find.tag = kitName.tag
   local deadline = computer.uptime() + KIT_CRAFTABLE_WAIT_SECONDS
   local craftable, findErr
   repeat
     os.sleep(0.25)
-    craftable, findErr = find_craftable(me, reqData)
+    craftable, findErr = find_craftable(me, find)
   until craftable or computer.uptime() > deadline
   if not craftable then
     kitHolds[key] = nil
     return nil, "AE2 didn't take the rewritten kit pattern: " .. tostring(findErr)
   end
-  return craftable, key
+  return craftable, key, kitName.label
 end
 
 local function busy_map(cpus)
@@ -871,9 +923,9 @@ local function run_craft_request_loop(me)
       if pendingResp and pendingResp.requests then
         for _, reqData in ipairs(pendingResp.requests) do
           if not tracked[reqData.id] then
-            local craftable, findErr, kitKey
+            local craftable, findErr, kitKey, kitLabel
             if reqData.kit_inputs then
-              craftable, kitKey = prepare_kit(me, reqData)
+              craftable, kitKey, kitLabel = prepare_kit(me, reqData)
               if not craftable then findErr, kitKey = kitKey, nil end
             else
               craftable, findErr = find_craftable(me, reqData)
@@ -891,6 +943,7 @@ local function run_craft_request_loop(me)
                 craft_post_json("/requests/" .. reqData.id .. "/result", {
                   status = "failed",
                   reason = tostring(status),
+                  label = kitLabel,
                 })
               else
                 tracked[reqData.id] = {
@@ -904,6 +957,7 @@ local function run_craft_request_loop(me)
                   -- OC compresses the CPU's output tag its own way.
                   tag = not kitKey and reqData.tag or nil,
                   kitKey = kitKey,
+                  kitLabel = kitLabel,
                 }
               end
             end
@@ -990,6 +1044,7 @@ local function run_craft_request_loop(me)
         craft_post_json("/requests/" .. reqId .. "/result", {
           status = "failed",
           reason = tostring(failReason or "request failed"),
+          label = entry.kitLabel,
         })
       else
         local cpuName = cpusOk and find_request_cpu(cpus, entry, claimed) or nil
@@ -999,6 +1054,7 @@ local function run_craft_request_loop(me)
         local posted = craft_post_json("/requests/" .. reqId .. "/result", {
           status = "accepted",
           cpu_name = cpuName,
+          label = entry.kitLabel,
           -- Tells the server to wait briefly for the outcome when the
           -- job ends, rather than judge it from its last samples.
           watching = watch and true or nil,

@@ -385,6 +385,8 @@ local COMMAND_BLOCK = { name = "minecraft:command_block", damage = 0, size = 1 }
 local KIT_TAG = "\31\139nbt-ebf-kit"
 local CONTROLLER = { name = "gregtech:gt.blockmachines", damage = 1000 }
 
+local KIT_TAG_2 = "\31\139nbt-ebf-kit-2"
+
 local function kit_request(id, inputs)
   return { id = id, kind = "item", mod = "gregtech", internal = "gt.blockmachines", damage = 1000,
     label = "Electric Blast Furnace kit", amount = 1, tag = hex(KIT_TAG),
@@ -394,10 +396,27 @@ local function kit_request(id, inputs)
     } }
 end
 
+-- A kit request from a server that offers numbered names too.
+local function named_kit_request(id, inputs)
+  local req = kit_request(id, inputs)
+  req.kit_names = { { label = "Electric Blast Furnace kit", tag = hex(KIT_TAG) },
+    { label = "Electric Blast Furnace kit #2", tag = hex(KIT_TAG_2) } }
+  return req
+end
+
+-- A pattern a kit request wrote earlier: these inputs, and the kit named
+-- by tag.
+local function old_kit(inputs, tag)
+  return { inputs = inputs, outputs = { { name = CONTROLLER.name, damage = CONTROLLER.damage, size = 1, tag = tag,
+    hasTag = true, label = tag == KIT_TAG and "Electric Blast Furnace kit" or "Electric Blast Furnace kit #2" } } }
+end
+
+local GLASS = { { name = "minecraft:glass", damage = 0, size = 4 } }
+
 local function kit_setup(routes, opts)
   opts = opts or {}
   local env, me = setup(routes)
-  me.tag_labels = { [KIT_TAG] = "Electric Blast Furnace kit" }
+  me.tag_labels = { [KIT_TAG] = "Electric Blast Furnace kit", [KIT_TAG_2] = "Electric Blast Furnace kit #2" }
   me.kit = opts.kit
   local iface = me:add_interface(9)
   me:set_pattern(1, { inputs = { { name = "gregtech:ingot", damage = 0, size = 1 } },
@@ -425,7 +444,8 @@ test("a kit is written into a kit slot and requested as one job", function()
     label = "Electric Blast Furnace kit" } })
   t.eq(iface.patterns[1].outputs, { { name = "gregtech:plate", damage = 0, size = 1 } })
 
-  t.eq(results_for(env, 20)[1], { status = "accepted", cpu_name = "CPU 1", watching = true })
+  t.eq(results_for(env, 20)[1], { status = "accepted", cpu_name = "CPU 1", watching = true,
+    label = "Electric Blast Furnace kit" })
   local outcomes = env:requests_to("^/api/craft/requests/20/outcome$", "POST")
   t.eq(outcomes[1].json, { outcome = "finished", cpu_name = "CPU 1" })
   local posts = crafts_posts(env)
@@ -482,6 +502,63 @@ test("without a kit slot a kit fails and no pattern is touched", function()
   t.eq(posts[#posts].kit_slots, 0)
 end)
 
+test("a second kit of the same multiblock takes the next name while the first is crafting", function()
+  local env, me, iface = kit_setup({
+    ["GET /api/craft/requests/pending"] = queue({ named_kit_request(40) }, {}, {}, {},
+      { named_kit_request(41, GLASS) }),
+  }, { kit = { duration = 100 } })
+  me:set_pattern(3, { inputs = { { name = "minecraft:dirt", damage = 0, size = 1 } },
+    outputs = { COMMAND_BLOCK } }, iface)
+  env:start_service("craft_monitor")
+  env:run({ seconds = 15 })
+  t.eq(results_for(env, 40)[1].label, "Electric Blast Furnace kit")
+  t.eq(results_for(env, 41)[1], { status = "accepted", cpu_name = "CPU 2", watching = true,
+    label = "Electric Blast Furnace kit #2" })
+  t.eq(iface.patterns[2].outputs[1].tag, KIT_TAG)
+  t.eq(iface.patterns[3].outputs[1].tag, KIT_TAG_2)
+  t.eq(iface.patterns[3].inputs, GLASS)
+end)
+
+test("a free slot that already has the kit's name is the one rewritten", function()
+  local env, _, iface = kit_setup({ ["GET /api/craft/requests/pending"] = queue({ named_kit_request(42) }) })
+  -- Slot 2 is a fresh Command Block; slot 3 kept an earlier EBF kit.
+  iface.patterns[3] = old_kit(GLASS, KIT_TAG)
+  env:start_service("craft_monitor")
+  env:run({ seconds = 10 })
+  t.eq(results_for(env, 42)[1].label, "Electric Blast Furnace kit")
+  t.eq(iface.patterns[2].outputs[1], COMMAND_BLOCK)
+  t.eq(iface.patterns[3].inputs, {
+    { name = "gregtech:gt.blockcasings", damage = 11, size = 34 },
+    { name = "gregtech:gt.blockcasings5", damage = 0, size = 16 },
+  })
+end)
+
+test("other free slots with the kit's name go back to making a Command Block", function()
+  local env, me, iface = kit_setup({ ["GET /api/craft/requests/pending"] = queue({ named_kit_request(43) }) },
+    { fresh = false })
+  iface.patterns[2] = old_kit(GLASS, KIT_TAG)
+  iface.patterns[3] = old_kit({ { name = "minecraft:sand", damage = 0, size = 1 } }, KIT_TAG)
+  env:start_service("craft_monitor")
+  env:run({ seconds = 10 })
+  t.eq(results_for(env, 43)[1].status, "accepted")
+  t.eq(iface.patterns[2].inputs[1].name, "gregtech:gt.blockcasings")
+  t.eq(iface.patterns[3].outputs[1].name, COMMAND_BLOCK.name)
+  t.eq(iface.patterns[3].outputs[1].tag, nil)
+  t.eq(iface.patterns[3].inputs, { { name = "minecraft:sand", damage = 0, size = 1 } })
+  t.eq(iface.patterns[3].invalid, nil)
+  t.eq(#me.statuses, 1)
+end)
+
+test("a slot named with a numbered kit name is still a kit slot", function()
+  local env, _, iface = kit_setup({ ["GET /api/craft/requests/pending"] = queue({ named_kit_request(44) }) },
+    { fresh = false })
+  iface.patterns[2] = old_kit(GLASS, KIT_TAG_2)
+  env:start_service("craft_monitor")
+  env:run({ seconds = 10 })
+  t.eq(results_for(env, 44)[1].label, "Electric Blast Furnace kit")
+  t.eq(iface.patterns[2].outputs[1].tag, KIT_TAG)
+end)
+
 test("a crafting pattern making a Command Block isn't a kit slot", function()
   local env, me, iface = kit_setup({ ["GET /api/craft/requests/pending"] = queue({ kit_request(27) }) },
     { fresh = false })
@@ -499,8 +576,10 @@ test("a kit AE2 refuses frees its slot for the next one", function()
   }, { kit = { fail = "missing 16x Cupronickel Coil Block" } })
   env:start_service("craft_monitor")
   env:run({ seconds = 10 })
-  t.eq(results_for(env, 28), { { status = "failed", reason = "missing 16x Cupronickel Coil Block" } })
-  t.eq(results_for(env, 29), { { status = "failed", reason = "missing 16x Cupronickel Coil Block" } })
+  t.eq(results_for(env, 28), { { status = "failed", reason = "missing 16x Cupronickel Coil Block",
+    label = "Electric Blast Furnace kit" } })
+  t.eq(results_for(env, 29), { { status = "failed", reason = "missing 16x Cupronickel Coil Block",
+    label = "Electric Blast Furnace kit" } })
   t.eq(#me.statuses, 2)
 end)
 

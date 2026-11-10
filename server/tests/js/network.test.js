@@ -5,7 +5,9 @@ import { changeFraction, compareByChange, formatChangePercent, isKitOutput } fro
 test('kit transport outputs are hidden without hiding controllers or ordinary items', () => {
   assert.equal(isKitOutput({ mod: 'minecraft', internal: 'command_block' }), true);
   assert.equal(isKitOutput({ name: '§bFusion Reactor kit', variant: 'nbt-hash' }), true);
+  assert.equal(isKitOutput({ name: 'Fusion Reactor kit #2', variant: 'nbt-hash' }), true);
   assert.equal(isKitOutput({ name: 'Fusion Reactor', variant: 'nbt-hash' }), false);
+  assert.equal(isKitOutput({ name: 'Fusion Reactor kit #', variant: 'nbt-hash' }), false);
   assert.equal(isKitOutput({ name: 'Tool kit' }), false);
   assert.equal(isKitOutput({ kind: 'fluid', mod: 'minecraft', internal: 'command_block' }), false);
 });

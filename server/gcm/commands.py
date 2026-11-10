@@ -247,9 +247,15 @@ def queue_craft(user_id, label, mod, internal, damage, amount, kind, variant=Non
     )
 
 
-def kit_label(name):
-    """What a multiblock kit's job makes, as the game will name it."""
-    return f"{name} kit"
+# The most names a kit request offers the game (kit_names below).
+KIT_NAMES_MAX = 64
+
+
+def kit_label(name, n=1):
+    """What a multiblock kit's job makes, as the game will name it: "<name>
+    kit", or "<name> kit #n" for the nth name, used when a busy kit slot
+    already has the plain one."""
+    return f"{name} kit" if n == 1 else f"{name} kit #{n}"
 
 
 def queue_kit(user_id, name, mod, internal, damage, inputs, source="manual"):
@@ -259,8 +265,18 @@ def queue_kit(user_id, name, mod, internal, damage, inputs, source="manual"):
     controller, named "<name> kit", then requests that. AE2 plans it as
     one job, sharing what the blocks have in common, and the interface
     pushes the blocks back into the network (docs/in-game.md has the
-    setup). Returns its id."""
+    setup). Returns its id.
+
+    Two kit patterns that make the same name are two patterns for one
+    output, and AE2 may plan either, so the request offers kit_names:
+    the plain name, then numbered ones, one per kit slot. The script
+    takes the first one no busy slot has and reports it with the result
+    (routes/craft_requests.py). label and tag are the plain name's."""
     label = kit_label(name)
+    names = [
+        {"label": kit_label(name, n), "tag": nbt.display_name_hex(kit_label(name, n))}
+        for n in range(1, min(max(1, state.kit_slots()), KIT_NAMES_MAX) + 1)
+    ]
     created_at = time.time()
     return craft_requests.add(
         {
@@ -276,7 +292,8 @@ def queue_kit(user_id, name, mod, internal, damage, inputs, source="manual"):
             "variant_name": None,
             # The name, as NBT: getCraftable() then finds the kit pattern's
             # output and not the controller's own pattern.
-            "tag": nbt.display_name_hex(label),
+            "tag": names[0]["tag"],
+            "kit_names": names,
             "kit_inputs": [
                 {"name": f"{i['mod']}:{i['internal']}", "damage": int(i["damage"] or 0), "size": int(i["amount"])}
                 for i in inputs
