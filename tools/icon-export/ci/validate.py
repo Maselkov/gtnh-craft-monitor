@@ -124,6 +124,19 @@ def validate_recipes(data):
                 f"invalid {key} intern table")
         names = data.get("item_names" if key == "items" else "fluid_names")
         require(isinstance(names, list) and len(names) == len(data[key]), f"missing {key} display names")
+    # NEI's order and item groups for the recipe book (CatalogOrder.java): optional, but whole.
+    count = len(data["items"])
+    if "item_rank" in data:
+        ranks = data["item_rank"]
+        require(isinstance(ranks, list) and len(ranks) == count and all(type(r) is int for r in ranks)
+                and sorted(ranks) == list(range(count)), "item_rank isn't a position for each item")
+    if "item_group" in data or "item_groups" in data:
+        groups, of = data.get("item_groups"), data.get("item_group")
+        require(isinstance(groups, list) and all(isinstance(g, dict) and isinstance(g.get("name"), str)
+                                                 and isinstance(g.get("expanded"), bool) for g in groups),
+                "invalid item_groups")
+        require(isinstance(of, list) and len(of) == count and all(type(g) is int and -1 <= g < len(groups) for g in of),
+                "item_group isn't a group (or -1) for each item")
 
     def stacks(raw, table, positive=False):
         require(isinstance(raw, list), "stacks must be a list")

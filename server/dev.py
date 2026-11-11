@@ -898,8 +898,26 @@ def write_recipes(path, maps):
         "fluids": list(tables["fluids"]), "fluid_names": [names[k] for k in tables["fluids"]],
         "maps": out,
     }
+    data.update(catalog_order(data["items"], data["item_names"]))
     with gzip.open(path, "wt", encoding="utf-8") as f:
         json.dump(data, f)
+
+
+def catalog_order(keys, names):
+    """NEI's order and item groups as CatalogOrder.java exports them: vanilla
+    first, then by mod, item and damage; a group for each kind of part
+    (ingots, dusts...) that several items are."""
+    def sort_key(i):
+        mod, internal, damage = keys[i].rsplit(":", 2)
+        return mod != "minecraft", mod, internal, int(damage) if damage.isdigit() else -1
+    rank = [0] * len(keys)
+    for position, i in enumerate(sorted(range(len(keys)), key=sort_key)):
+        rank[i] = position
+    kinds = [name.split()[-1] if name else None for name in names]
+    counts = {kind: kinds.count(kind) for kind in kinds if kind}
+    grouped = sorted(kind for kind, n in counts.items() if n > 1)
+    return {"item_rank": rank, "item_group": [grouped.index(k) if k in grouped else -1 for k in kinds],
+            "item_groups": [{"name": f"{kind}s", "expanded": False} for kind in grouped]}
 
 
 # ---------------------------------------------------------------- power and history

@@ -35,12 +35,13 @@ import re
 import sqlite3
 import sys
 import threading
+from collections import OrderedDict
 from contextlib import closing
 from urllib.parse import quote
 
 # Bumped when the schema or what goes in it changes: an index of another
 # format is built again.
-FORMAT = 7
+FORMAT = 8
 # An index built beside a bundle's recipes.json.gz is called this.
 FILE = "recipes.sqlite"
 ITEM, FLUID = 0, 1
@@ -50,6 +51,10 @@ NON_GT_MAPS = frozenset({"crafting", "furnace", "assembly_line"})
 REFERENCE_ONLY_MAPS = frozenset({"nei.gt.gt.recipe.fakeAssemblylineProcess",
                                 "nei.gt.gt.recipe.researchStation", "nei.gt.gt.recipe.scanner"})
 PAGE_MAX = 100
+# How many collapsed catalogs (one per item kind filter and set of open
+# groups) an index keeps for browsing without a search: about 6 MB each
+# for GTNH 2.9.0's, with its groups shut.
+BROWSE_CACHE = 3
 
 SCHEMA = """
 CREATE TABLE meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
@@ -68,8 +73,13 @@ CREATE TABLE output (kind INTEGER NOT NULL, k TEXT NOT NULL, recipe INTEGER NOT 
 -- What each recipe takes, the same way.
 CREATE TABLE input (kind INTEGER NOT NULL, k TEXT NOT NULL, recipe INTEGER NOT NULL,
     PRIMARY KEY (kind, k, recipe)) WITHOUT ROWID;
--- Display names, where the export had them.
-CREATE TABLE name (kind INTEGER NOT NULL, k TEXT NOT NULL, v TEXT NOT NULL, PRIMARY KEY (kind, k)) WITHOUT ROWID;
+-- Display names, where the export had them; for items, where NEI's sort
+-- puts them (rank, 0 first) and their NEI collapsible group (grp), where
+-- the export said (CatalogOrder.java).
+CREATE TABLE name (kind INTEGER NOT NULL, k TEXT NOT NULL, v TEXT NOT NULL, rank INTEGER, grp INTEGER,
+    PRIMARY KEY (kind, k)) WITHOUT ROWID;
+-- NEI's collapsible item groups: a name ("" for none), and whether NEI opens it by default.
+CREATE TABLE item_group (id INTEGER PRIMARY KEY, name TEXT NOT NULL, expanded INTEGER NOT NULL);
 """
 
 
@@ -498,11 +508,12 @@ def _build(source_file, out_path, raw, map_ids, signature, species=None):
         for kind, keys, names in ((ITEM, items, raw.get("item_names")), (FLUID, fluids, raw.get("fluid_names"))):
             if isinstance(names, list):
                 conn.executemany(
-                    "INSERT OR IGNORE INTO name VALUES (?, ?, ?)",
+                    "INSERT OR IGNORE INTO name VALUES (?, ?, ?, NULL, NULL)",
                     ((kind, k, str(v)) for k, v in zip(keys, names, strict=False) if v),
                 )
-        conn.executemany("INSERT OR IGNORE INTO name VALUES (?, ?, ?)",
+        conn.executemany("INSERT OR IGNORE INTO name VALUES (?, ?, ?, NULL, NULL)",
                          ((ITEM, k, v) for k, v in species_names.items()))
+        _catalog_order(conn, raw, items)
         conn.execute("INSERT INTO meta VALUES ('fingerprint', ?)", (signature,))
         conn.execute("INSERT INTO meta VALUES ('recipes', ?)", (str(recipe_id),))
         conn.execute("INSERT INTO meta VALUES ('source_format', ?)", (str(raw["format"]),))
@@ -520,6 +531,29 @@ def _build(source_file, out_path, raw, map_ids, signature, species=None):
         if not complete:
             os.remove(tmp)
     os.replace(tmp, out_path)
+
+
+def _catalog_order(conn, raw, items):
+    """Each named item's NEI sort position and collapsible group, where
+    the export has them (item_rank, item_group and item_groups, aligned
+    with items). A species takes its item's."""
+    def ints(value, low, high):
+        ok = isinstance(value, list) and len(value) == len(items)
+        return ok and all(type(x) is int and low <= x < high for x in value)
+    ranks = raw.get("item_rank")
+    if ints(ranks, 0, 1 << 31):
+        conn.executemany("UPDATE name SET rank = ? WHERE kind = ? AND k = ?",
+                         ((r, ITEM, k) for k, r in zip(items, ranks, strict=True)))
+    groups, described = raw.get("item_group"), raw.get("item_groups")
+    if isinstance(described, list) and described and ints(groups, -1, len(described)):
+        conn.executemany("INSERT INTO item_group VALUES (?, ?, ?)", (
+            (i, str(g.get("name") or "") if isinstance(g, dict) else "",
+             int(isinstance(g, dict) and g.get("expanded") is True)) for i, g in enumerate(described)))
+        conn.executemany("UPDATE name SET grp = ? WHERE kind = ? AND k = ?",
+                         ((g, ITEM, k) for k, g in zip(items, groups, strict=True) if g >= 0))
+    conn.execute("""UPDATE name SET (rank, grp) = (SELECT b.rank, b.grp FROM name b
+        WHERE b.kind = name.kind AND b.k = substr(name.k, 1, instr(name.k, '#') - 1))
+        WHERE kind = ? AND instr(k, '#') > 0""", (ITEM,))
 
 
 def _species_keys(stacks, species, names):
@@ -718,8 +752,20 @@ class RecipeIndex:
     def has_names(self):
         return bool(self._all("SELECT 1 FROM name LIMIT 1"))
 
-    def search_names(self, query, kind=None, *, limit=40, offset=0):
-        """Paged catalog lookup, independent of network stock. Words are ANDed."""
+    def search_names(self, query, kind=None, *, limit=40, offset=0, groups=None):
+        """Paged catalog lookup, independent of network stock. Words are
+        ANDed. Items come in NEI's order where the export gave it (after
+        exact and prefix name matches), fluids after them, by name.
+
+        Returns (rows, total, shown): rows (kind, key, name). As NEI does,
+        an item group's matches collapse into its first match, unless the
+        group is open, or every match is in that one group (NEI opens it
+        then). shown has, for each row in a group, {"id", "name", "size"
+        (its matches), "open", "forced" (open for being the only group
+        matched), "back" (its last match's key, collapsed)}, else None.
+        groups: {"all": True/False/None (every group open/shut,
+        or NEI's defaults), "open": ids, "shut": ids}, those last two
+        overriding the first."""
         if kind not in (None, ITEM, FLUID) or not 1 <= limit <= 1024 or not 0 <= offset <= 1000000:
             raise ValueError("Invalid catalog page.")
         terms = query.strip().split()
@@ -739,14 +785,84 @@ class RecipeIndex:
                 clauses.append("(v LIKE ? ESCAPE '\\' OR k LIKE ? ESCAPE '\\')")
                 args.extend(["%" + escaped(term) + "%"] * 2)
         where = " AND ".join(clauses) or "1"
-        total = self._all(f"SELECT COUNT(*) FROM name WHERE {where}", args)[0][0]
-        order = "v COLLATE NOCASE, kind, k"
+        order, order_args = "rank IS NULL, rank, v COLLATE NOCASE, kind, k", []
         if terms:
             order = "CASE WHEN v = ? COLLATE NOCASE THEN 0 WHEN v LIKE ? ESCAPE '\\' THEN 1 ELSE 2 END, " + order
-            args.extend([query.strip(), escaped(query.strip()) + "%"])
-        rows = self._all(f"SELECT kind, k, v FROM name WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?",
-                         [*args, limit, offset])
-        return rows, total
+            order_args = [query.strip(), escaped(query.strip()) + "%"]
+        info = self._item_groups()
+        if not info:
+            total = self._all(f"SELECT COUNT(*) FROM name WHERE {where}", args)[0][0]
+            rows = self._all(f"SELECT kind, k, v FROM name WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?",
+                             [*args, *order_args, limit, offset])
+            return rows, total, [None] * len(rows)
+        count, loose, distinct, only = self._all(
+            f"SELECT COUNT(*), COUNT(*) - COUNT(grp), COUNT(DISTINCT grp), MIN(grp) FROM name WHERE {where}", args)[0]
+        groups = groups or {}
+        forced = bool(count and not loose and distinct == 1)
+        if forced:
+            opened = {only}
+        else:
+            base = groups.get("all")
+            opened = set(info) if base is True else set() if base is False else {i for i, g in info.items() if g[1]}
+            opened = (opened | {int(i) for i in groups.get("open", ()) if int(i) in info}) - {int(i) for i in groups.get("shut", ())}
+        if opened >= set(info):
+            # Nothing collapses: the plain query, and the page's groups counted.
+            total = self._all(f"SELECT COUNT(*) FROM name WHERE {where}", args)[0][0]
+            page = self._all(f"SELECT kind, k, v, grp FROM name WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?",
+                             [*args, *order_args, limit, offset])
+            ids = sorted({g for *_, g in page if g is not None})
+            sizes = dict(self._all(f"""SELECT grp, COUNT(*) FROM name WHERE {where} AND grp IN
+                (SELECT value FROM json_each(?)) GROUP BY grp""", [*args, json.dumps(ids)])) if ids else {}
+            return [r[:3] for r in page], total, [None if g is None else {
+                "id": g, "name": info[g][0], "size": sizes[g], "open": True, "forced": forced, "back": None}
+                for *_, g in page]
+        sql = f"""WITH f AS (SELECT kind, k, v, grp, ROW_NUMBER() OVER (ORDER BY {order}) AS pos
+                FROM name WHERE {where}),
+            g AS (SELECT *, COUNT(*) OVER w AS size, ROW_NUMBER() OVER (w ORDER BY pos) AS nth,
+                LAST_VALUE(k) OVER (w ORDER BY pos ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS back
+                FROM f WINDOW w AS (PARTITION BY grp))
+            SELECT kind, k, v, grp, size, back, COUNT(*) OVER () FROM g
+            WHERE grp IS NULL OR nth = 1 OR grp IN (SELECT value FROM json_each(?))
+            ORDER BY pos"""
+        query_args = [*order_args, *args, json.dumps(sorted(opened))]
+        if terms:
+            found = self._all(sql + " LIMIT ? OFFSET ?", [*query_args, limit, offset])
+            total = found[0][6] if found else self._all(
+                f"""SELECT COUNT(*) FROM (SELECT grp, ROW_NUMBER() OVER (PARTITION BY grp) AS nth
+                FROM name WHERE {where}) WHERE grp IS NULL OR nth = 1 OR grp IN (SELECT value FROM json_each(?))""",
+                [*args, json.dumps(sorted(opened))])[0][0]
+        else:
+            # Browsing without a search reads the whole list a page at a
+            # time (and the book prefetches pages on either side): the
+            # collapsed list is kept for the last few kinds and open groups.
+            everything = self._browse(kind, sql, query_args)
+            found, total = everything[offset:offset + limit], len(everything)
+        rows, shown = [], []
+        for kind_, k, v, grp, size, back, _ in found:
+            rows.append((kind_, k, v))
+            open_ = grp in opened
+            shown.append(None if grp is None else {"id": grp, "name": info[grp][0], "size": size, "open": open_,
+                                                   "forced": forced, "back": None if open_ or size < 2 else back})
+        return rows, total, shown
+
+    def _browse(self, kind, sql, args):
+        cache_key = (kind, args[-1])
+        with self._lock:
+            cache = self._memo.setdefault("browse", OrderedDict())
+            if cache_key in cache:
+                cache.move_to_end(cache_key)
+                return cache[cache_key]
+        rows = self._all(sql, args)
+        with self._lock:
+            cache[cache_key] = rows
+            while len(cache) > BROWSE_CACHE:
+                cache.popitem(last=False)
+        return rows
+
+    def _item_groups(self):
+        """{id: (name, open by default)}; empty for exports without NEI's groups."""
+        return self.memo("item_groups", lambda: {
+            i: (n, bool(e)) for i, n, e in self._all("SELECT id, name, expanded FROM item_group")})
 
     def names(self, kind, keys):
         """{key: display name} for those of keys the export named."""

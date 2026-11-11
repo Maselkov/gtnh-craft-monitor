@@ -34,6 +34,9 @@ import cpw.mods.fml.common.registry.GameRegistry;
  * programmed circuit, a mold); a chance, in 1/10000, only where it's under 100%. The special value
  * is what the map makes of it: an EBF recipe's coil heat, for one.
  *
+ * <p>{@code item_rank}, {@code item_group} and {@code item_groups}, parallel to items, are where
+ * NEI's item list puts each one and how it groups them, for the recipe book ({@link CatalogOrder}).
+ *
  * <p>A map's machines are what NEI lists as catalysts for its recipe categories: their names are
  * what the ME Interface Terminal calls a machine, which tells the server which map a pattern is
  * for. NEI-only displays are separate from production; disabled and outputless records stay in archives.
@@ -45,6 +48,8 @@ final class Recipes {
 
     private final Map<String, Integer> items = new LinkedHashMap<>();
     private final List<String> itemNames = new ArrayList<>();
+    /** The first stack seen for each of items, for CatalogOrder. */
+    private final List<ItemStack> itemStacks = new ArrayList<>();
     private final Map<String, Integer> fluids = new LinkedHashMap<>();
     private final List<String> fluidNames = new ArrayList<>();
     final RecipePresentation presentation = new RecipePresentation();
@@ -54,8 +59,8 @@ final class Recipes {
     int craftingCount;
     int furnaceCount;
 
-    /** The whole file's contents, or null without GregTech. */
-    Map<String, Object> collect() {
+    /** The whole file's contents, or null without GregTech; nei is NEI's item list, for CatalogOrder. */
+    Map<String, Object> collect(List<ItemStack> nei) {
         Map<?, ?> all;
         try {
             Field field = Class.forName("gregtech.api.recipe.RecipeMap").getField("ALL_RECIPE_MAPS");
@@ -160,6 +165,7 @@ final class Recipes {
         file.put("fluids", new ArrayList<>(fluids.keySet()));
         file.put("fluid_names", fluidNames);
         file.put("maps", maps);
+        CatalogOrder.addTo(file, new ArrayList<>(items.keySet()), itemStacks, nei);
         return file;
     }
 
@@ -351,6 +357,7 @@ final class Recipes {
             index = items.size();
             items.put(key, index);
             itemNames.add(nameOf(stack::getDisplayName));
+            itemStacks.add(stack);
         }
         return index;
     }

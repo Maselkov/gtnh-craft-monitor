@@ -210,7 +210,7 @@ public final class ExportDriver {
         IconExportMod.LOG.info("NEI item list: {} stacks.", stacks.size());
         capturedRecipes = new Recipes();
         capturedRecipes.presentation.registerDisplays(stacks);
-        capturedRecipeFile = capturedRecipes.collect();
+        capturedRecipeFile = capturedRecipes.collect(stacks);
         jobs = new ArrayList<>();
         Set<String> paths = new HashSet<>();
         List<ItemStack> fromRecipes = RecipeItems.collect();

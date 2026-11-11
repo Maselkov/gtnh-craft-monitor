@@ -461,6 +461,18 @@ item results by mod ID (for example, `@gregtech circuit`). Use **All**, **Items*
 or **Fluids** and the page arrows to browse more results. Some named items have
 no supported recipe; selecting one says so.
 
+Results come in NEI's order: Minecraft's own items first, then by mod, as
+in game, with fluids after the items. A search puts exact name matches
+first, then names that start with it. Items NEI groups together (every
+1x wire, every fine wire, a mod's colours of one block...) collapse into
+one result, shown as two stacked icons on a tinted background, as NEI's
+item list does. A search that only matches one group opens it. Alt-click
+a group, or Alt+Enter on it, to open or collapse it, and **Expand
+groups** / **Collapse groups** above the results to do it to all of them;
+the book remembers which you opened. On touch screens a group's row has a
+**+N** button instead. Game data exported before the recipe book knew NEI's
+order and groups is sorted by name, without groups.
+
 On a wide window the recipe book stays in a right-hand drawer alongside the
 recipe; on a narrower one it opens over the page and closes when you choose a
 result. With a mouse, results use a dense icon grid at any width: hover or

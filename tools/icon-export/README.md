@@ -118,7 +118,12 @@ Formats 1 (GT only), 2 (GT/crafting/furnace) and 3 (extended displays) remain re
 
 `items` and `fluids` intern keys (`modid:internalname:damage`, damage `*` for
 any; fluid registry names), with parallel `item_names` and `fluid_names` lists
-(null where unavailable). Each map has `machines` (NEI catalyst objects with
+(null where unavailable). For the recipe book, `item_rank` (each item's
+position in NEI's sorted item list, 0 first), `item_group` (its NEI
+collapsible group, or -1) and `item_groups` (`[{"name", "expanded"}]`) are
+parallel to `items` too; NEI computes them itself (`CatalogOrder.java`),
+from the pack's sort settings and `config/NEI/collapsibleitems.cfg`. The
+server sorts by name and groups nothing without them. Each map has `machines` (NEI catalyst objects with
 `name` and `key`) and `recipes`. Bodies have an explicit `type`:
 
 - `gt`: `{"type":"gt", "i":[[item,n]], "f":[[fluid,mB]], "o":[[item,n,chance?]],

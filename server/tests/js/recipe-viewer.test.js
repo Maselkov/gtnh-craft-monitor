@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { amountText, craftingHtml, craftingTitle, energyHtml, gridHtml, machineSidebarHtml, stackHtml, stepHtml, voltageHtml } from '../../static/js/recipe-render.js';
-import { RECIPE_RECENT_LIMIT, moveRecipePage, parseRecipeRecents, recipeCatalogCapacity, recipeCatalogGrid, recipeFromUrl, recipeItemKey, recipeUrl, sameRecipeDataset, trailDistance } from '../../static/js/recipe-state.js';
+import { RECIPE_RECENT_LIMIT, moveRecipePage, parseRecipeGroups, parseRecipeRecents, recipeGroupQuery, setAllRecipeGroups, setRecipeGroup, recipeCatalogCapacity, recipeCatalogGrid, recipeFromUrl, recipeItemKey, recipeUrl, sameRecipeDataset, trailDistance } from '../../static/js/recipe-state.js';
 
 const item = { key: 'mod:item:*', name: 'Any Item', mod: 'mod', internal: 'item', damage: null, kind: 'item', size: 1, wildcard: true };
 
@@ -259,4 +259,23 @@ test('a bee of one species opens that species, in URLs and recent lookups', () =
   assert.deepEqual(recipeFromUrl(new URL(recipeUrl(frame), 'https://example.test')), frame);
   const keys = ['Forestry:beeDroneGE:0#forestry.speciesForest','Forestry:beeDroneGE:*#forestry.speciesForest','mod:item:0#a b','mod:item:0#'];
   assert.deepEqual(parseRecipeRecents(JSON.stringify({version:'2.9.0',keys})).keys, ['Forestry:beeDroneGE:0#forestry.speciesForest']);
+});
+
+test('item group state is validated, bounded and turned into the search query', () => {
+  for (const value of [null, 'bad', '{}', '[]']) assert.deepEqual(parseRecipeGroups(value), {version:'',all:null,open:[],shut:[]});
+  const parsed = parseRecipeGroups(JSON.stringify({version:'2.9.0', all:'yes', open:[3, 3, -1, 1.5, 'x', 7], shut:[2]}));
+  assert.deepEqual(parsed, {version:'2.9.0', all:null, open:[3, 7], shut:[2]});
+  assert.deepEqual(recipeGroupQuery(parsed), [['open','3'], ['open','7'], ['shut','2']]);
+  // Opening a shut group moves it, and the latest choice wins.
+  const opened = setRecipeGroup(parsed, 2, true);
+  assert.deepEqual([opened.open, opened.shut], [[3, 7, 2], []]);
+  assert.deepEqual(setRecipeGroup(opened, 3, false).shut, [3]);
+  // Opening or shutting every group starts afresh.
+  const all = setAllRecipeGroups(opened, false);
+  assert.deepEqual(recipeGroupQuery(all), [['groups','shut']]);
+  assert.equal(all.version, '2.9.0');
+  let many = all;
+  for (let id = 0; id < 300; id++) many = setRecipeGroup(many, id, true);
+  assert.equal(many.open.length, 128);
+  assert.equal(many.open.at(-1), 299);
 });

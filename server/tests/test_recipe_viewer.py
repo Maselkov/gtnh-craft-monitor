@@ -5,7 +5,7 @@ import pytest
 from conftest import login_as
 from gcm import auth, gamedata, recipe_viewer, recipes, state
 from test_mcp_game import game_recipes  # noqa: F401
-from test_recipe_index import typed_index  # noqa: F401
+from test_recipe_index import build_index, ordered, typed_index  # noqa: F401
 
 
 @pytest.fixture()
@@ -44,6 +44,24 @@ def test_catalog_search_is_paged_and_independent_of_network_stock(client, data):
     assert request(client, '/api/recipes/search', q='@minecraft log', kind='item').get_json()['total'] == 2
     assert request(client, '/api/recipes/search', q='@mine log', kind='item').get_json()['total'] == 2
     assert request(client, '/api/recipes/search', q='not a real material').get_json()['total'] == 0
+
+
+def test_catalog_search_collapses_neis_item_groups_as_the_book_asks(client, tmp_path, monkeypatch):
+    idx = build_index(tmp_path, ordered())
+    monkeypatch.setattr(gamedata, "selected_version", lambda: "2.9.0")
+    monkeypatch.setattr(recipes, "index", lambda version: idx)
+    body = request(client, '/api/recipes/search', kind='item').get_json()
+    assert body['total'] == 4
+    first = body['items'][0]
+    assert first['key'] == 'example:part:19' and first['group']['size'] == 20 and not first['group']['open']
+    assert 'group' not in body['items'][1]
+    opened = client.get('/api/recipes/search?kind=item&open=0&shut=1').get_json()
+    assert opened['total'] == 22 and opened['items'][0]['group'] == {'id': 0, 'name': 'Parts', 'size': 20, 'open': True, 'forced': False}
+    assert request(client, '/api/recipes/search', kind='item', groups='shut').get_json()['total'] == 3
+    for bad in ({'groups': 'sideways'}, {'open': 'x'}):
+        response = request(client, '/api/recipes/search', **bad)
+        assert response.status_code == 400
+    idx.close()
 
 
 def test_catalog_recents_follow_current_dataset_and_drop_unknown_keys(client, data):
