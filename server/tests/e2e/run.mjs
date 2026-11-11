@@ -247,13 +247,16 @@ open(out + "/item_info.json", "w").write(json.dumps({
     "fluids": {"water": {"temperature": 295, "gaseous": False, "formula": "H\\u2082O"}},
     "mods": {"gregtech": "GregTech", "minecraft": "Minecraft"}}))
 # Neutronium Ingot stands in for a multiblock controller: its kit takes
-# 1000 Iron Ingots, or Gold Ingots at its second coil tier.
+# 1000 Iron Ingots, or Gold Ingots at its second coil tier, and 10 more
+# irons for each length past the first.
 iron, gold = "minecraft:iron_ingot:0", "minecraft:gold_ingot:0"
 with gzip.open(out + "/structures.json.gz", "wt") as f:
     json.dump({"format": 1, "names": {nt: "Neutronium Ingot", iron: "Iron Ingot", gold: "Gold Ingot"},
                "multiblocks": {"minecraft:diamond:0": {"base": {iron: 1}},
-                              nt: {"channels": [{"name": "coil", "min": 1, "max": 2}], "base": {iron: 1000},
-                                    "tiers": {"coil": {"1": {}, "2": {iron: -1000, gold: 1000}}}}}}, f)
+                              nt: {"channels": [{"name": "coil", "min": 1, "max": 2}, {"name": "length", "min": 1, "max": 3}],
+                                   "base": {iron: 1000},
+                                   "tiers": {"coil": {"1": {}, "2": {iron: -1000, gold: 1000}},
+                                             "length": {"1": {}, "2": {iron: 10}, "3": {iron: 20}}}}}}, f)
 # Where its blocks go, for the 3D view: the controller and two iron blocks
 # above it, gold at the second coil tier.
 def pack(x, y, z):
@@ -2636,6 +2639,18 @@ async function main() {
       && $('#kitRows .kit-row-configurable > img.kit-icon') && !$('#kitRows .kit-choice-field img')
       && $('#kitRows .kit-choice-caption').textContent === 'Coil'
       && $('#kitChannel-coil').closest('.kit-row').querySelector('.kit-num').textContent === '1,000'`);
+    // A channel of plain numbers is a slider above the preview.
+    await waitFor('length slider', `$('#kitChannel-length').type === 'range' && $('#kitChannel-length').closest('#kitControls')
+      && $('#kitChannel-length').min === '1' && $('#kitChannel-length').max === '3' && $('#kitChannel-length').value === '1'
+      && $('#kitControls .kit-size-value').textContent === '1'`);
+    const setLength = n => evaluate(`(() => { const s = $('#kitChannel-length'); s.value = '${n}';
+      s.dispatchEvent(new Event('input', { bubbles: true })); s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+    await setLength(3);
+    await waitFor('longer kit', `$('#kitControls .kit-size-value').textContent === '3' && $('#kitChannel-length').value === '3'
+      && coilRow().querySelector('.kit-num').textContent === '1,020'`);
+    await setLength(1);
+    await waitFor('length back to one', `coilRow().querySelector('.kit-num').textContent === '1,000'
+      && $('#kitControls .kit-size-value').textContent === '1'`);
     // A row's icon has the item's game tooltip; the counts are the row's.
     await evaluate(`$('#kitRows .kit-row:not(.kit-head) .kit-icon').dispatchEvent(new MouseEvent('mouseover', { bubbles: true, clientX: 50, clientY: 50 })), true`);
     await waitFor('kit icon tooltip like the network one', `visible($('.network-tooltip'))
@@ -2932,8 +2947,9 @@ async function main() {
     await waitFor('network kit selected', `$('#kitTitle').textContent === 'Neutronium Ingot' && $('#kitChannel-coil')`);
     await waitFor('searchable picker stays compact above the kit', `(() => {
       const picker = $('#kitPickerControl .kit-choice-field').getBoundingClientRect();
-      const body = $('#kitConfiguration .kit-body').getBoundingClientRect();
-      return body.top >= picker.bottom && body.top - picker.bottom <= 16;
+      // The length slider comes between them.
+      const next = $('#kitControls').getBoundingClientRect();
+      return next.height > 0 && next.top >= picker.bottom && next.top - picker.bottom <= 16;
     })()`);
     await evaluate(`window.kitViewportChanged = new Promise(resolve => window.addEventListener('resize', () => resolve(true), { once: true })), true`);
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 600, deviceScaleFactor: 1, mobile: false });

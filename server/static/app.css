@@ -3260,6 +3260,26 @@ body.oauth-page {
   font-size: 13px;
   pointer-events: none;
 }
+.kit-size {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  margin-bottom: 12px;
+}
+.kit-size input {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.kit-size-value {
+  min-width: 2ch;
+  text-align: right;
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
 .kit-layer {
   display: flex;
   align-items: center;
