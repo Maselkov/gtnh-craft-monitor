@@ -51,6 +51,18 @@ def test_describes_crop_seed_stats():
     assert nbt.describe(nbt.parse_hex(seed_tag("sugarbeet", 12, 8, 1))) == "Gr 12 · Ga 8 · Re 1"
 
 
+def test_describes_ic2_crop_stats():
+    root = nbt.parse_hex(tag_hex([("owner", nbt.BYTE, 0), ("id", nbt.SHORT, 3),
+                                  ("growth", nbt.BYTE, 12), ("gain", nbt.BYTE, 8), ("resistance", nbt.BYTE, 1)]))
+    assert nbt.describe(root) == "Gr 12 · Ga 8 · Re 1"
+
+
+def test_short_stat_names_count_only_beside_a_crop_at_the_root():
+    stats = [("gr", nbt.BYTE, 3), ("ga", nbt.BYTE, 2), ("re", nbt.BYTE, 1)]
+    assert nbt.describe(nbt.parse_hex(tag_hex(stats))) is None
+    assert nbt.describe(nbt.parse_hex(tag_hex([("crop", nbt.STRING, "x"), ("inner", nbt.COMPOUND, stats)]))) is None
+
+
 def test_describes_crop_stats_nested_and_capitalized():
     root = nbt.parse_hex(tag_hex([("genes", nbt.COMPOUND, [
         ("Growth", nbt.INT, 3), ("Gain", nbt.INT, 2), ("Resistance", nbt.INT, 1)])]))

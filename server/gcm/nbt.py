@@ -175,13 +175,27 @@ def _find(tree, wanted):
     return found
 
 
-def _describe_crop_stats(tree):
-    # Seed stats as IC2 and CropsNH store them. Found anywhere in the tag
-    # rather than at one fixed path, so a layout change doesn't lose them.
+def crop_stats(tree):
+    """A seed's (growth, gain, resistance) from its plain() tree, or None.
+    IC2 names them in full, found anywhere in the tag rather than at one
+    fixed path, so a layout change doesn't lose them. CropsNH (GTNH 2.8+)
+    writes bytes "gr", "ga", "re" at the root next to its "crop" id; those
+    names are too short to trust anywhere else."""
     stats = _find(tree, {"growth", "gain", "resistance"})
-    if len(stats) < 3:
+    if len(stats) == 3:
+        return stats["growth"], stats["gain"], stats["resistance"]
+    if isinstance(tree.get("crop"), str):
+        short = tuple(tree.get(k) for k in ("gr", "ga", "re"))
+        if all(isinstance(v, (int, float)) for v in short):
+            return short
+    return None
+
+
+def _describe_crop_stats(tree):
+    stats = crop_stats(tree)
+    if stats is None:
         return None
-    return f"Gr {stats['growth']:g} · Ga {stats['gain']:g} · Re {stats['resistance']:g}"
+    return "Gr {:g} · Ga {:g} · Re {:g}".format(*stats)
 
 
 def _species_chromosome(tree):

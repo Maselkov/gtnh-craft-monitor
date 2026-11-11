@@ -822,6 +822,17 @@ class TestItemInfo:
         assert got[f"cropsnh|genericSeed|0|item|{variants['Wheat Seeds']}"] == {"description": "§eWheat"}
         assert got[f"cropsnh|genericSeed|0|item|{variants['Sugar Beet Seeds']}"] == {"description": "Some seeds"}
 
+    def test_a_seeds_own_stats_replace_the_exported_ones(self, client, api_headers, game_info):
+        # The export read each crop's tooltip off a seed with the default stats.
+        exported = "The queen of crops\n§a- Growth: 1§r\n§a- Gain: 1§r\n§a- Resistance: 1§r\nTier: 9"
+        game_info({"tooltips": {"by_key_label": {"cropsnh:genericSeed:0|Wheat Seeds": exported}}})
+        run_scan(client, api_headers, [[dict(SEED, name="Wheat Seeds", tag=seed_tag("wheat", 12, 8, 31))]])
+        (item,) = client.get("/api/network").get_json()["items"]
+        assert item["variant_name"] == "Gr 12 · Ga 8 · Re 31"
+        got = client.get("/api/network/info").get_json()["items"]
+        assert got[f"cropsnh|genericSeed|0|item|{item['variant']}"] == {"description": (
+            "The queen of crops\n§a- Growth: 12§r\n§a- Gain: 8§r\n§a- Resistance: 31§r\nTier: 9")}
+
     def test_a_gregtech_tools_material(self, game_info):
         game_info({"tooltips": {"by_key_material": {"gregtech:gt.metatool.01:170|Neutronium": "Neutronium turbine"},
                                 "by_key": {"gregtech:gt.metatool.01:170": "A turbine"}}})
