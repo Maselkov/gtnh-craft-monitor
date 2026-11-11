@@ -2800,9 +2800,16 @@ details.stock-rules {
   .network-search-wrap {
     flex-basis: 100%;
   }
+  /* Wraps when every button shows (Day/Week, Multiblocks), rather than
+     widening the page; grid/list stays at the right end. */
   .network-controls {
     width: 100%;
     justify-content: space-between;
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  .network-controls > .view-toggle {
+    margin-left: auto;
   }
   /* Each stock rule's label on its own line, its inputs sharing the
      next one - rather than "refill to"'s box wrapping alone. */
@@ -3632,19 +3639,25 @@ button.recipe-search-open .ui-icon { width:18px; height:18px; }
   .recipe-search-overlay > .recipe-search-box { padding-left:16px; padding-right:16px; }
 }
 
-/* Touch recipe inspection uses the shared game-tooltip content in a stable sheet.
-   The zoom row is the hint line on desktop, without its buttons. */
-.recipe-mobile-zoom { display:flex; align-items:center; gap:4px; flex:none; }
-.recipe-mobile-zoom > button, .recipe-mobile-help, .recipe-touch-hint { display:none; }
+/* Touch recipe inspection uses the shared game-tooltip content in a stable sheet. */
+.recipe-book-hints { display:flex; align-items:center; gap:4px; flex:none; }
+.recipe-mobile-help, .recipe-touch-hint { display:none; }
 .recipe-inspect[hidden] { display:none; }
+/* recipe-touch.js slides it in and out (SHEET_MS) and drags it; tall shows
+   more of a long tooltip. */
 .recipe-inspect {
   position:absolute; bottom:0; left:0; right:0; z-index:5;
   display:flex; flex-direction:column; max-height:55dvh; box-sizing:border-box;
-  padding:0 16px max(12px, env(safe-area-inset-bottom));
+  padding:0 16px max(20px, env(safe-area-inset-bottom));
+  transition:transform .2s ease-out, max-height .2s ease-out;
   border:1px solid var(--border-strong); border-radius:16px 16px 0 0;
   background:var(--recipe-control); color:var(--recipe-count-text);
   box-shadow:0 -8px 24px var(--recipe-frame-outline); color-scheme:dark;
 }
+.recipe-inspect.recipe-inspect-tall { max-height:calc(100dvh - 48px - env(safe-area-inset-top)); }
+.recipe-inspect.recipe-inspect-away { transform:translateY(100%); transition-timing-function:ease-in; }
+.recipe-inspect.recipe-inspect-dragging { transition:none; }
+@media (prefers-reduced-motion:reduce) { .recipe-inspect { transition:none; } }
 .recipe-inspect-handle { display:flex; align-items:center; justify-content:flex-end; gap:8px; min-height:48px; flex:none; touch-action:none; }
 .recipe-inspect-handle > span { position:absolute; top:8px; left:calc(50% - 20px); width:40px; height:4px; border-radius:4px; background:var(--recipe-frame-mid); }
 .recipe-inspect button { min-width:44px; min-height:44px; border:1px solid var(--border-strong); border-radius:6px; background:var(--recipe-control); color:var(--recipe-count-text); font:inherit; font-size:14px; padding:8px 12px; }
@@ -3653,6 +3666,9 @@ button.recipe-search-open .ui-icon { width:18px; height:18px; }
 /* The text scrolls rather than the row, so a haloed icon's halo isn't cut off. */
 .recipe-inspect-content { display:flex; gap:12px; overflow-wrap:anywhere; min-height:0; padding:8px 0 16px; line-height:1.45; }
 .recipe-inspect-content > div { min-width:0; flex:1; overflow-y:auto; overscroll-behavior:contain; }
+/* More text below: fade the bottom edge (a mask, so it follows any theme). */
+.recipe-inspect-text.recipe-inspect-fade { mask-image:linear-gradient(to bottom, #000 calc(100% - 40px), transparent); }
+.recipe-inspect .recipe-inspect-more { display:block; min-width:0; margin:4px 0 0; padding:8px 0; border:0; background:none; font-size:14px; text-decoration:underline; text-underline-offset:3px; }
 .recipe-inspect-content .network-tooltip-stat,
 .recipe-inspect-content .network-tooltip-mod,
 .recipe-inspect-content .network-tooltip-fluid { font-size:14px; }
@@ -3682,7 +3698,7 @@ button.recipe-search-open .ui-icon { width:18px; height:18px; }
   .recipe-machine-grid { display:flex; gap:4px; overflow-x:auto; overflow-y:hidden; max-height:none; touch-action:pan-x; }
   .recipe-machine-control { width:44px; height:44px; padding:4px; }
   .recipe-machine-icon { width:36px; height:36px; }
-  .recipe-book-paper { grid-column:1; grid-row:3; padding:4px 6px max(4px,env(safe-area-inset-bottom)); border:0; border-radius:0; gap:6px; }
+  .recipe-book-paper { grid-column:1; grid-row:3; padding:4px 6px max(16px,env(safe-area-inset-bottom)); border:0; border-radius:0; gap:6px; }
   .recipe-game-button { min-width:44px; width:44px; height:44px; font-size:24px; border-width:2px; }
   .recipe-glyph { width:24px; height:24px; }
   .recipe-current-slot { width:44px; height:44px; }
@@ -3692,8 +3708,10 @@ button.recipe-search-open .ui-icon { width:18px; height:18px; }
   .recipe-viewer-row { box-sizing:border-box; min-width:100%; }
   .recipe-inspecting .recipe-viewer-list { padding-bottom:55dvh; }
   .recipe-book-information { width:min(360px,90vw); }
-  .recipe-mobile-zoom > button { display:block; min-width:44px; min-height:44px; border:1px solid var(--recipe-frame-mid); border-radius:4px; background:var(--recipe-canvas); color:var(--recipe-canvas-ink); font-size:16px; }
-  .recipe-mobile-zoom > button:disabled { opacity:.4; }
+  /* recipe-touch.js reads sideways swipes here; vertical ones scroll. */
+  .recipe-book-heading { touch-action:pan-y; }
+  /* The diagram uses the full width; its text lines keep off the edge. */
+  .recipe-card .recipe-energy { margin-left:10px; margin-right:10px; }
   .recipe-book-tools { gap:6px; }
 }
 @media (pointer:coarse) {
