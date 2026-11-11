@@ -45,9 +45,11 @@ def tag_hex(entries):
 
 
 def seed_tag(crop, growth, gain, resistance):
+    """A CropsNH seed's tag, as its SeedData and SeedStats write it."""
     return tag_hex([
         ("crop", nbt.STRING, crop),
-        ("growth", nbt.BYTE, growth),
-        ("gain", nbt.BYTE, gain),
-        ("resistance", nbt.BYTE, resistance),
+        ("gr", nbt.BYTE, growth),
+        ("ga", nbt.BYTE, gain),
+        ("re", nbt.BYTE, resistance),
+        ("scan", nbt.BYTE, 1),
     ])
