@@ -3717,6 +3717,20 @@ async function main() {
     assert(await evaluate(`getComputedStyle($('#recipeSearchResults ul')).display === 'grid'
       && !visible($('#recipeSearchResults .recipe-search-actions')) && !$('#recipeSearchResults .recipe-search-stock')
       && $('#recipeSearchResults .recipe-search-item').getBoundingClientRect().width < 50`));
+    // A haloed icon (drawn 2.5x its box, see .icon-bleed) in the rightmost
+    // cell mustn't give the results a sideways scrollbar. The example items
+    // have no icons, so one stands in for the rightmost cell's letter.
+    await evaluate(`(() => {
+      const letter = $$('#recipeSearchResults .recipe-search-icon > *').sort((a, b) =>
+        b.getBoundingClientRect().right - a.getBoundingClientRect().right)[0];
+      const icon = document.createElement('img');
+      icon.className = 'icon-bleed';
+      letter.replaceWith(icon);
+      window.haloTest = [icon, letter];
+      return true;
+    })()`);
+    assert(await evaluate(`$('#recipeSearchResults').offsetHeight === $('#recipeSearchResults').clientHeight`), 'halo scrolls the recipe book sideways');
+    await evaluate(`window.haloTest[0].replaceWith(window.haloTest[1]), delete window.haloTest, true`);
     await evaluate(`$('#recipeSearchResults .recipe-search-item').focus();true`);
     await waitFor('grid item standard tooltip', `visible($('.network-tooltip')) && !!$('.network-tooltip-name') && !!$('.network-tooltip-stock')`);
     await evaluate(`pressKey('ArrowRight','#recipeSearchResults .recipe-search-item');true`);
