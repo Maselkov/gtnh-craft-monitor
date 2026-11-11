@@ -3649,6 +3649,10 @@ button.recipe-search-open .ui-icon { width:18px; height:18px; }
   body.recipe-search-open main { margin-right:var(--recipe-search-width); }
   body.recipe-search-open #recipeViewerModal { width:calc(100vw - var(--recipe-search-width)); }
   body.recipe-search-open #itemHistoryModal { right:auto; width:calc(100vw - var(--recipe-search-width)); }
+}
+/* Icons, as NEI's item list, wherever there's a pointer to hover and
+   right-click with; touch gets named rows with Recipes/Uses buttons. */
+@media not all and (pointer:coarse) {
   .recipe-search-results { overflow-y:hidden; }
   .recipe-search-results ul, .recipe-search-recent ul { display:grid; grid-template-columns:repeat(auto-fill,minmax(36px,1fr)); gap:4px; }
   /* Under the items, two rows, as NEI keeps its history in game. */

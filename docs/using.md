@@ -461,16 +461,18 @@ item results by mod ID (for example, `@gregtech circuit`). Use **All**, **Items*
 or **Fluids** and the page arrows to browse more results. Some named items have
 no supported recipe; selecting one says so.
 
-On desktop the recipe book stays in a right-hand drawer alongside the recipe.
-Results use a dense icon grid: hover or focus an icon for its name, details and
-amount in the system. Each page fills the available rows and columns, adapting
-when you resize the window. Scroll the wheel over the drawer to turn pages;
-scrolling past either end wraps around. On mobile, named rows have **← Recipes** and **Uses →**
-buttons. Tapping the icon or name also opens recipes. Counts stay in tooltips.
-On mobile the book opens as a sheet and closes when you choose a result. You can also
-swipe left on the small handle at the right edge of the Network page to open it,
-or swipe right across the sheet's heading to close it. **Find** inside a recipe
-opens the same search without losing your current recipe.
+On a wide window the recipe book stays in a right-hand drawer alongside the
+recipe; on a narrower one it opens over the page and closes when you choose a
+result. With a mouse, results use a dense icon grid at any width: hover or
+focus an icon for its name, details and amount in the system. Each page fills
+the available rows and columns, adapting when you resize the window. Scroll the
+wheel over the results to turn pages; scrolling past either end wraps around.
+On touch screens, named rows have **← Recipes** and **Uses →** buttons instead.
+Tapping the icon or name also opens recipes. Counts stay in tooltips. On a
+phone you can also swipe left on the small handle at the right edge of the
+Network page to open the book, or swipe right across its heading to close it.
+**Find** inside a recipe opens the same search without losing your current
+recipe.
 
 Click a result for recipes, right-click or choose **Uses** for its uses, or
 Shift-left-click for its stock page. On desktop the book stays open beside the

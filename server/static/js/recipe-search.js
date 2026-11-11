@@ -12,7 +12,10 @@ import { delegateActions, escapeHtml, iconClass, iconUrl, updateHtml } from './u
 
 const RECENTS_KEY = 'gcm-recipe-lookups-v1';
 const CACHED_PAGES = 24, SLOW_LOAD_MS = 200, PREFETCH_DELAY_MS = 250;
-let overlay, results, recentStrip, recentList, input, desktop, recent, last = null;
+// desktop: wide enough to dock beside the page; icons: a pointer that can
+// hover and right-click, so the items are icons, as in NEI, rather than
+// named rows with buttons.
+let overlay, results, recentStrip, recentList, input, desktop, icons, recent, last = null;
 let opened = false, loading = false, error = '', offset = 0, serial = 0, controller, timer;
 let pageSize = 40, fitTimer, slowTimer, queryPending = false;
 let entries = new Map(), shiftHeld = false, focusedTooltip = null;
@@ -51,12 +54,12 @@ function layout() {
   scheduleFit();
 }
 
-// The recent strip keeps two rows of cells on desktop, whether or not its
+// The recent strip keeps two rows of cells in the icon grid, whether or not its
 // items have arrived yet, so the catalog's page size is right from the
 // first fetch and doesn't change as lookups are added.
 function sizeRecentStrip() {
   recentStrip.hidden = !(recentItems ?? recent.keys).length;
-  if (recentStrip.hidden || !desktop.matches) { recentList.style.height = ''; return null; }
+  if (recentStrip.hidden || !icons.matches) { recentList.style.height = ''; return null; }
   const gap = parseFloat(getComputedStyle(recentList).columnGap) || 4;
   const grid = recipeCatalogGrid(recentList.clientWidth, gap);
   recentList.style.height = `${2*grid.cell + gap}px`;
@@ -64,7 +67,7 @@ function sizeRecentStrip() {
 }
 
 function capacity() {
-  if (!desktop.matches) return 40;
+  if (!icons.matches) return 40;
   sizeRecentStrip();
   const grid = results.querySelector('[data-id="catalog"] ul');
   if (!grid) return 40;
@@ -341,8 +344,8 @@ export function setupRecipeSearch() {
   overlay = document.getElementById('recipeSearchModal');
   results = document.getElementById('recipeSearchResults'); input = document.getElementById('recipeSearchInput');
   recentStrip = document.getElementById('recipeSearchRecent'); recentList = document.getElementById('recipeSearchRecentList');
-  desktop = window.matchMedia('(min-width:1000px)'); recent = readRecent();
-  layout(); desktop.addEventListener('change', layout);
+  desktop = window.matchMedia('(min-width:1000px)'); icons = window.matchMedia('not all and (pointer: coarse)'); recent = readRecent();
+  layout(); desktop.addEventListener('change', layout); icons.addEventListener('change', layout);
   delegateActions(document, {
     'recipe-search-open':open, 'recipe-search-close':close,
     'recipe-search-retry':() => load(offset),
@@ -353,7 +356,7 @@ export function setupRecipeSearch() {
   });
   input.addEventListener('input', searchChanged);
   new ResizeObserver(scheduleFit).observe(results);
-  setupPageWheel(overlay, {isOpen:() => opened && desktop.matches, page:steps => turnPages(steps,true)});
+  setupPageWheel(overlay, {isOpen:() => opened && icons.matches, page:steps => turnPages(steps,true)});
   overlay.addEventListener('click', e => { if (e.target === overlay && !desktop.matches) close(); });
   overlay.addEventListener('contextmenu', e => {
     const cell = e.target.closest('[data-recipe-search-key]');
@@ -386,15 +389,15 @@ export function setupRecipeSearch() {
         load(0).then(data => { if (data && opened && !loading) selectFirst(); });
       } else selectFirst();
     }
-    const arrows = desktop.matches && e.target !== input ? ['ArrowDown','ArrowUp','ArrowLeft','ArrowRight'] : ['ArrowDown','ArrowUp'];
+    const arrows = icons.matches && e.target !== input ? ['ArrowDown','ArrowUp','ArrowLeft','ArrowRight'] : ['ArrowDown','ArrowUp'];
     if (arrows.includes(e.key) && (cell || e.target === input)) {
-      // In the order they're shown: recents under the items on desktop, above them on phones.
+      // In the order they're shown: recents under the icon grid, above the list.
       const lists = [results, recentList];
-      if (!desktop.matches) lists.reverse();
+      if (!icons.matches) lists.reverse();
       const cells = lists.flatMap(list => [...list.querySelectorAll('[data-recipe-search-key]')]);
       if (!cells.length) return;
       const anchor = document.activeElement?.closest('[data-recipe-search-key]') || cell;
-      const columns = desktop.matches && anchor ? getComputedStyle(anchor.parentElement).gridTemplateColumns.split(' ').length : 1;
+      const columns = icons.matches && anchor ? getComputedStyle(anchor.parentElement).gridTemplateColumns.split(' ').length : 1;
       const step = e.key === 'ArrowDown' ? columns : e.key === 'ArrowUp' ? -columns : e.key === 'ArrowRight' ? 1 : -1;
       const n = e.target === input ? 0 : Math.max(0,Math.min(cells.length-1,cells.indexOf(anchor)+step));
       e.preventDefault(); cells[n].querySelector('button').focus();
