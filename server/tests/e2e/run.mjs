@@ -524,7 +524,11 @@ function pageHelpers(cdp) {
   });
 
   async function evaluate(expression) {
-    const result = await cdp.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
+    let timer;
+    const result = await Promise.race([
+      cdp.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`no answer from the page in ${TIMEOUT_MS} ms:\n  ${expression}`)), TIMEOUT_MS); }),
+    ]).finally(() => clearTimeout(timer));
     if (result.exceptionDetails) {
       throw new Error(`${expression}\n  -> ${result.exceptionDetails.exception?.description || result.exceptionDetails.text}`);
     }
@@ -1696,6 +1700,15 @@ async function main() {
     await click(`$('#networkTab [data-range="week"]')`);
     await waitFor('week active', `$('#networkTab [data-range="week"]').classList.contains('active')
       && $('#networkList .network-cell-change.falling')`);
+    // On a phone, with every control showing, the row wraps rather than
+    // widening the page.
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
+    const kitHidden = await evaluate(`$('#networkKitButton').hidden`);
+    await evaluate(`$('#networkKitButton').hidden = false; true`);
+    await waitFor('network controls fit a phone', `document.documentElement.scrollWidth <= innerWidth
+      && $('.network-controls').getBoundingClientRect().right <= innerWidth`);
+    await evaluate(`$('#networkKitButton').hidden = ${kitHidden}; true`);
+    await cdp.send('Emulation.clearDeviceMetricsOverride');
     await rescan({});
     await click(`$('#networkTab [data-sort="name"]')`);
     await waitFor('range hidden', `!visible($('#networkChangeRange')) && !$('#networkList .network-cell-change')`);
@@ -3821,7 +3834,7 @@ async function main() {
     await evaluate(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))`);
   });
 
-  step('recipes: touch inspection, explicit navigation, zoom and dismissal', async () => {
+  step('recipes: touch inspection, swipes, zoom and dismissal', async () => {
     await cdp.send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
     await cdp.send('Emulation.setTouchEmulationEnabled',{enabled:true});
     const visit = async key => {
@@ -3835,6 +3848,27 @@ async function main() {
       await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[p]});
       await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
     };
+    // A sideways swipe across an element.
+    const swipe = async (selector, dx) => {
+      const p = await evaluate(`(()=>{const r=$('${selector}').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`);
+      await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[p]});
+      for (let i = 1; i <= 4; i++) await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:p.x+dx*i/4,y:p.y}]});
+      await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+    };
+    // The page bar turns pages, wrapping as the wheel does.
+    await visit('minecraft:iron_ingot:0');
+    await click(`$('#recipeViewerUsing')`);
+    await waitFor('iron uses', `$('.recipe-viewer-box').dataset.direction==='using' && $('#recipeViewerMaps [data-map="gt.recipe.viewer_assembler"]')`);
+    await click(`$('#recipeViewerMaps [data-map="gt.recipe.viewer_assembler"]')`);
+    await waitFor('assembler pages', `$('#recipeViewerPage').textContent==='Page 1/30' && $('.recipe-viewer-box').getAttribute('aria-busy')==='false'`);
+    await swipe('#recipeViewerPage', -120);
+    await waitFor('swipe left: next page', `$('#recipeViewerPage').textContent==='Page 2/30'`);
+    await sleep(450);
+    await swipe('#recipeViewerPage', 120);
+    await waitFor('swipe right: previous page', `$('#recipeViewerPage').textContent==='Page 1/30'`);
+    await sleep(450);
+    await swipe('#recipeViewerPage', 120);
+    await waitFor('swipe right from the first page wraps', `$('#recipeViewerPage').textContent==='Page 30/30'`);
     await visit('gregtech:gt.metaitem.01:2032');
     assert(await evaluate(`$('.recipe-viewer-box').getBoundingClientRect().bottom<=visualViewport.height+1
       && $('#recipePageNext').getBoundingClientRect().height>=44
@@ -3846,12 +3880,16 @@ async function main() {
     assert.equal(await evaluate(`location.href`), original);
     assert(await evaluate(`matchMedia('(pointer: coarse)').matches`));
     assert(await evaluate(`!visible($('.network-tooltip')) && visible($('#recipeInspectActions [data-action="recipe-inspect-recipes"]'))
-      && visible($('#recipeInspectActions [data-action="recipe-inspect-uses"]')) && visible($('#recipeInspectActions [data-action="recipe-inspect-stock"]'))
-      && $('#recipeInspect').getBoundingClientRect().bottom<=visualViewport.height+1`));
-    assert(await evaluate(`visible($('#recipeInspectMore'))`));
+      && visible($('#recipeInspectActions [data-action="recipe-inspect-uses"]')) && visible($('#recipeInspectActions [data-action="recipe-inspect-stock"]'))`));
+    // It slides in, and ends on the screen.
+    await waitFor('sheet settled on screen', `$('#recipeInspect').getBoundingClientRect().bottom<=visualViewport.height+1`);
+    // More details sits under the text, not in the handle row.
+    assert(await evaluate(`visible($('#recipeInspectMore')) && !!$('#recipeInspectContent #recipeInspectMore') && $('#recipeInspectMore').textContent.includes('More details')`));
     await click(`$('#recipeInspectMore')`);
-    await waitFor('touch More details', `$('#recipeInspectContent').textContent.includes('33x24x33') && !$('#recipeInspectContent').textContent.includes('[shift]')`);
+    await waitFor('touch More details', `$('#recipeInspectContent').textContent.includes('33x24x33') && !$('#recipeInspectContent').textContent.includes('[shift]')
+      && $('#recipeInspectMore').getAttribute('aria-pressed')==='true' && $('#recipeInspectMore').textContent.includes('Less details')`);
     await click(`$('#recipeInspectMore')`);
+    await waitFor('fewer details', `$('#recipeInspectMore').getAttribute('aria-pressed')==='false' && !$('#recipeInspectContent').textContent.includes('33x24x33')`);
     const inspectKey = await evaluate(`$('#recipeViewerList .recipe-inspected').dataset.key`);
     await click(`$('#recipeInspectActions [data-action="recipe-inspect-uses"]')`);
     await waitFor('explicit Uses', `!visible($('#recipeInspect')) && $('.recipe-viewer-box').dataset.direction==='using' && new URL(location.href).searchParams.get('key')===${JSON.stringify(inspectKey)}`);
@@ -3873,25 +3911,84 @@ async function main() {
     assert(await evaluate(`!$('#recipeInspectActions [data-action="recipe-inspect-recipes"]') && !$('#recipeInspectActions [data-action="recipe-inspect-uses"]') && !!$('#recipeInspectActions [data-action="recipe-inspect-stock"]')`));
     await evaluate(`pressKey('Escape');true`);
     await waitFor('Escape closes inspection first', `!visible($('#recipeInspect')) && visible($('#recipeViewerModal'))`);
+    // The sheet follows a finger on its handle.
+    // pause: between the four moves, so a slow drag isn't read as a flick.
+    const drag = async (dy, check, pause = 30) => {
+      const handle = await evaluate(`(()=>{const r=$('#recipeInspectHandle').getBoundingClientRect();return {x:r.x+30,y:r.y+12};})()`);
+      await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[handle]});
+      for (let i = 1; i <= 4; i++) {
+        await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:handle.x,y:handle.y+dy*i/4}]});
+        await sleep(pause);
+      }
+      if (check) await check();
+      await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+    };
     await tap('#recipeViewerList .recipe-preview-aspect');
-    const handle = await evaluate(`(()=>{const r=$('#recipeInspectHandle').getBoundingClientRect();return {x:r.x+30,y:r.y+12};})()`);
-    await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[handle]});
-    await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:handle.x,y:handle.y+65}]});
-    await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
-    await waitFor('swipe dismisses inspection', `!visible($('#recipeInspect'))`);
+    // Settled after sliding in, so the handle stays where it was measured.
+    const settled = `visible($('#recipeInspect')) && Math.abs($('#recipeInspect').getBoundingClientRect().bottom-$('.recipe-viewer-box').getBoundingClientRect().bottom)<1`;
+    await waitFor('sheet open', settled);
+    // A short drag springs back.
+    await drag(30, async () => assert(await evaluate(`$('#recipeInspect').style.transform.startsWith('translateY(')`), 'sheet follows the finger'));
+    await sleep(300);
+    assert(await evaluate(`visible($('#recipeInspect')) && !$('#recipeInspect').style.transform`), 'short drag springs back');
+    await drag(160);
+    await waitFor('drag down dismisses inspection', `!visible($('#recipeInspect'))`);
+    // A tooltip longer than the sheet (on a short screen): drag up for
+    // more of it, down for the normal height.
+    await cdp.send('Emulation.setDeviceMetricsOverride',{width:390,height:460,deviceScaleFactor:1,mobile:true});
+    await visit('gregtech:gt.metaitem.01:2032');
+    await tap('#recipeViewerList [data-recipe-tooltip]');
+    await click(`$('#recipeInspectMore')`);
+    await waitFor('long tooltip', `$('#recipeInspectContent').textContent.includes('33x24x33') && ${settled}
+      && $('.recipe-inspect-text').classList.contains('recipe-inspect-fade')`);
+    const normal = await evaluate(`$('#recipeInspect').offsetHeight`);
+    await drag(-150);
+    await waitFor('drag up shows more', `$('#recipeInspect').classList.contains('recipe-inspect-tall') && $('#recipeInspect').offsetHeight>${normal}+30`);
+    await drag(60, null, 120);
+    await waitFor('a slow drag down returns to normal', `!$('#recipeInspect').classList.contains('recipe-inspect-tall') && visible($('#recipeInspect'))
+      && Math.abs($('#recipeInspect').offsetHeight-${normal})<2`);
+    await evaluate(`pressKey('Escape');true`);
+    await waitFor('long tooltip closed', `!visible($('#recipeInspect'))`);
+    await cdp.send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
+    // Last: after a two-finger pinch, Chromium's emulated touches don't
+    // reach the next page loaded.
+    // Text on a recipe card keeps off the screen's edges.
     await visit('example:tabs_result:0');
-    await click(`$('#recipeZoomIn')`);
-    await waitFor('recipe zoom and pan', `$('#recipeZoomFit').textContent==='150%' && $('#recipeViewerList').scrollWidth>$('#recipeViewerList').clientWidth`);
-    await click(`$('#recipeZoomFit')`);
-    assert.equal(await evaluate(`$('#recipeZoomFit').textContent`),'100%');
+    assert(await evaluate(`(()=>{const e=$('#recipeViewerList .recipe-card .recipe-energy'); if (!e) return false;
+      const r=e.getBoundingClientRect(), v=$('#recipeViewerList').getBoundingClientRect(); return r.left-v.left>=8 && v.right-r.right>=8;})()`), 'recipe text margin');
+    // No zoom buttons: pinch to zoom, double-tap to fit again.
+    assert(await evaluate(`!$('#recipeZoomIn') && !$('#recipeZoomFit') && $('#recipeViewerList').dataset.zoom!=='150'`));
     const center = await evaluate(`(()=>{const r=$('#recipeViewerList').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+60};})()`);
     await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:center.x-30,y:center.y},{x:center.x+30,y:center.y}]});
     await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:center.x-60,y:center.y},{x:center.x+60,y:center.y}]});
     await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
-    assert(await evaluate(`parseInt($('#recipeZoomFit').textContent)>150 && !visible($('#recipeInspect'))`));
+    assert(await evaluate(`Number($('#recipeViewerList').dataset.zoom)>150 && !visible($('#recipeInspect'))
+      && $('#recipeViewerList').scrollWidth>$('#recipeViewerList').clientWidth`));
     await sleep(450);
+    const blank = await evaluate(`(()=>{const r=$('#recipeViewerList').getBoundingClientRect();return {x:r.x+8,y:r.bottom-8};})()`);
+    for (let i = 0; i < 2; i++) {
+      await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[blank]});
+      await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+      await sleep(60);
+    }
+    await waitFor('double-tap fits the recipe', `$('#recipeViewerList').dataset.zoom==='100' && !visible($('#recipeInspect'))`);
+    // Swipe the category bar: left for the next category, right back.
+    const category = await evaluate(`$('#recipeCategoryName').textContent`);
+    await swipe('#recipeCategoryName', 20);
+    await sleep(200);
+    assert.equal(await evaluate(`$('#recipeCategoryName').textContent`), category, 'a short swipe is not a turn');
+    await swipe('#recipeCategoryName', -120);
+    await waitFor('swipe left: next category', `$('#recipeCategoryName').textContent!==${JSON.stringify(category)}`);
+    const next = await evaluate(`$('#recipeCategoryName').textContent`);
+    await swipe('#recipeCategoryName', 120);
+    await waitFor('swipe right: previous category', `$('#recipeCategoryName').textContent===${JSON.stringify(category)}`);
+    // A swipe starting on an arrow turns once, not twice.
+    await swipe('#recipeCategoryNext', -120);
+    await waitFor('swipe from an arrow', `$('#recipeCategoryName').textContent===${JSON.stringify(next)}`);
+    await sleep(450);
+    assert.equal(await evaluate(`$('#recipeCategoryName').textContent`), next, 'an arrow swiped across turns once');
     await click(`$('#recipeCategoryNext')`);
-    await waitFor('category resets zoom', `$('#recipeZoomFit').textContent==='100%' && !visible($('#recipeInspect'))`);
+    await waitFor('category resets zoom', `$('#recipeViewerList').dataset.zoom==='100' && !visible($('#recipeInspect'))`);
     await evaluate(`pressKey('Escape');true`);
     await cdp.send('Emulation.setTouchEmulationEnabled',{enabled:false});
     await cdp.send('Emulation.setDeviceMetricsOverride',{width:1366,height:768,deviceScaleFactor:1,mobile:false});

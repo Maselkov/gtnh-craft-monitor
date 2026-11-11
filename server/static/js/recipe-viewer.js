@@ -463,6 +463,7 @@ export function setupRecipeViewer() {
     entryForCell:cell => tooltipEntries.get(cell.dataset.recipeTooltip),
     htmlForCell:recipeTooltipHtml, openRecipes:openRecipeViewer, openStock:openEntryStock,
     layout:() => layoutRecipePreviews(list()),
+    turnPage, turnCategory,
   });
   setupRecipeWheel(book(), {isOpen:recipeViewerOpen, page:steps => turnPage(steps,true), category:turnCategory});
   let previewWidth = 0;

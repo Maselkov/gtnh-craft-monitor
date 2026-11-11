@@ -417,17 +417,14 @@
           <button class="recipe-game-button" id="recipePageNext" data-action="recipe-page-next" aria-label="Next recipe page" disabled>&gt;</button>
         </div>
         <div id="recipeViewerList" class="recipe-viewer-list" role="tabpanel" tabindex="0" aria-label="Recipes"></div>
-        <div class="recipe-mobile-zoom" aria-label="Recipe zoom">
+        <div class="recipe-book-hints">
           <details class="recipe-book-help">
             <summary><span class="recipe-touch-hint">Tap icons for details · Pinch to zoom</span><span class="recipe-pointer-hint">Hover icons for details · Help</span></summary>
             <div class="recipe-book-information">
               <p class="recipe-desktop-help">Left-click or R: recipes. Right-click or U: uses. Shift-left-click: stock. Hover or focus an item; hold Shift for more detail. The item at the bottom is the one this page is for: click it for its stock. Wheel: recipe pages. Wheel over the top tabs or category title: machine categories.</p>
-              <p class="recipe-mobile-help">Tap an icon for details, then choose Recipes, Uses or Stock; the item at the bottom is the one this page is for. More details shows extended item information. Swipe the category tabs or machine strip to see more. Use the arrows to change categories and pages. Pinch to zoom; tap the percentage to fit the recipe.</p>
+              <p class="recipe-mobile-help">Tap an icon for details, then choose Recipes, Uses or Stock; the item at the bottom is the one this page is for. More details shows extended item information. Swipe the category tabs or machine strip to see more. Use the arrows, or swipe across the category or page bar, to change categories and pages. Pinch to zoom; double-tap to fit the recipe again.</p>
             </div>
           </details>
-          <button id="recipeZoomOut" data-action="recipe-zoom-out" aria-label="Zoom out" disabled>−</button>
-          <button id="recipeZoomFit" data-action="recipe-zoom-fit" aria-label="Fit recipe to window">100%</button>
-          <button id="recipeZoomIn" data-action="recipe-zoom-in" aria-label="Zoom in">+</button>
         </div>
         <div class="recipe-book-status"><span id="recipeViewerStatus" role="status" aria-live="polite"></span><button class="recipe-game-button" id="recipeViewerRetry" data-action="recipe-retry" hidden>Retry</button></div>
         <!-- Glyphs are pixel art on an 8x8 grid: recipe-shell.js paints each
@@ -446,7 +443,6 @@
       <section id="recipeInspect" class="recipe-inspect" role="dialog" aria-label="Item details" hidden>
         <div id="recipeInspectHandle" class="recipe-inspect-handle">
           <span aria-hidden="true"></span>
-          <button id="recipeInspectMore" data-action="recipe-inspect-more" aria-pressed="false" hidden>More details</button>
           <button id="recipeInspectClose" data-action="recipe-inspect-close" aria-label="Close item details">×</button>
         </div>
         <div id="recipeInspectContent" class="recipe-inspect-content"></div>

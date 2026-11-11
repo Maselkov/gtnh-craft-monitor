@@ -509,7 +509,9 @@ one. The second navigation row shows **Page X/Y**; its arrows move between
 recipes in the selected category, one recipe per page.
 On phones and touch devices, the book fills the screen. Machine icons sit in a
 horizontal strip below the swipeable category tabs, leaving the full width for
-the recipe. Page and category arrows have larger touch targets.
+the recipe. Page and category arrows have larger touch targets, and you can
+also swipe across the category or page bar: left for the next one, right for
+the previous one. Pages wrap around at either end.
 
 Touch interaction follows the device’s primary pointer, not the window width.
 A narrow desktop window keeps hover tooltips and direct click navigation.
@@ -518,13 +520,15 @@ On touch devices, tap an ingredient, output, machine or essentia icon to inspect
 bottom sheet. It uses the same tooltip content as desktop, including **Amount
 in system**, plus the recipe quantity. Choose **Recipes**, **Uses**, or **Stock**
 when available; tapping an icon itself stays on the current recipe. Essentia
-has details and Stock, while vis costs have details only. **More details** shows
-information that normally requires Shift. Tap another icon to update the sheet,
-close it with **×**, tap outside it, or swipe down from its handle.
+has details and Stock, while vis costs have details only. **More details**, under
+the text, shows information that normally requires Shift. A long tooltip fades
+out at the bottom while there's more to scroll; drag the sheet's handle up to
+make it taller. Tap another icon to update the sheet, close it with **×**, tap
+outside it, or drag its handle down.
 
-Pinch the recipe to zoom, then drag to see the enlarged card. The **− / +**
-controls also adjust zoom; tap the percentage to fit the recipe to the window.
-Changing the recipe page or category resets zoom and closes item details.
+Pinch the recipe to zoom, then drag to see the enlarged card; double-tap to fit
+it to the window again. Changing the recipe page or category resets zoom and
+closes item details.
 
 Loaded recipe batches are reused when you revisit an item or category. After
 the selected recipe appears, the book loads neighboring categories and the
