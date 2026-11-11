@@ -216,6 +216,11 @@ def recipes(path, ingots):
                      "slots": [slot("o", 0, 73, 0), slot("groups", 0, 33, 49), slot("groups", 1, 113, 49)]}}]}
     data["items"] += [f"example:catalog:{n}" for n in range(500)]
     data["item_names"] += [f"Catalog Material {n:02}" for n in range(500)]
+    # NEI's item groups (CatalogOrder.java): six plates in one, and a loose item beside them.
+    data["items"] += [f"example:grouped:{n}" for n in range(7)]
+    data["item_names"] += [f"Grouped Plate {n}" for n in range(6)] + ["Grouped Loose"]
+    data["item_group"] = [-1] * (len(data["items"]) - 7) + [0] * 6 + [-1]
+    data["item_groups"] = [{"name": "Plates", "expanded": False}]
     with gzip.open(path, "wt") as f:
         json.dump(data, f)
 recipes(out + "/recipes.json.gz", 1)
@@ -3853,6 +3858,48 @@ async function main() {
     await waitFor('narrow book closes on a result', `!visible($('#recipeSearchModal')) && visible($('#recipeViewerModal'))`);
     await evaluate(`pressKey('Escape');true`);
     await waitFor('narrow recipe closed', `!visible($('#recipeViewerModal'))`);
+    await cdp.send('Emulation.setDeviceMetricsOverride',{width:1366,height:768,deviceScaleFactor:1,mobile:false});
+  });
+
+  step('recipe search: NEI item groups collapse, open with Alt-click and all at once', async () => {
+    await cdp.send('Page.navigate',{url:base+'/network'});
+    await waitFor('groups network loaded', `document.readyState === 'complete' && !window.byText`);await evaluate(PAGE_LIB);
+    await evaluate(`localStorage.removeItem('gcm-recipe-groups-v1');true`);
+    await click(`$('#recipeBookButton')`);
+    await evaluate(`typeInto('#recipeSearchInput','grouped');true`);
+    const ready = n => `$('#recipeSearchResults').getAttribute('aria-busy') === 'false' && $$('#recipeSearchResults [data-id="catalog"] li').length === ${n}`;
+    await waitFor('group collapsed beside a loose item', ready(2));
+    // (These items have no icons here, so no stacked icon to look for.)
+    assert(await evaluate(`(() => {const cell = $('#recipeSearchResults li.recipe-search-group');
+      return cell && cell.dataset.group === '0' && $('#recipeSearchStatus').textContent === '2 matching entries'
+        && cell.querySelector('.recipe-search-item').getAttribute('aria-label') === 'Recipes for Grouped Plate 0, and 5 more in its group'
+        && !$('#recipeSearchGroups').hidden && $('#recipeSearchGroups').textContent === 'Expand groups';})()`), 'collapsed group cell and groups button');
+    await evaluate(`$('#recipeSearchResults li.recipe-search-group .recipe-search-item').focus();true`);
+    await waitFor('group hint in the tooltip', `visible($('.network-tooltip')) && $('.network-tooltip').textContent.includes('Plates · 6 items · Alt-click to expand')`);
+    await evaluate(`$('#recipeSearchResults li.recipe-search-group .recipe-search-item').dispatchEvent(new MouseEvent('click',{bubbles:true,altKey:true}));true`);
+    await waitFor('Alt-click opens the group', ready(7));
+    assert(await evaluate(`!visible($('#recipeViewerModal')) && $$('#recipeSearchResults li.recipe-search-group-open').length === 6
+      && !$('#recipeSearchResults .recipe-search-back') && JSON.parse(localStorage.getItem('gcm-recipe-groups-v1')).open[0] === 0
+      && $('#recipeSearchGroups').textContent === 'Collapse groups'`), 'opened group remembered');
+    await click(`$('#recipeSearchGroups')`);
+    await waitFor('groups button collapses every group', ready(2));
+    assert(await evaluate(`JSON.parse(localStorage.getItem('gcm-recipe-groups-v1')).all === false && $('#recipeSearchGroups').textContent === 'Expand groups'`), 'all groups shut and remembered');
+    // A plain click opens the shown item's recipes.
+    await click(`$('#recipeSearchResults li.recipe-search-group .recipe-search-item')`);
+    await waitFor('a collapsed group opens its shown item', `visible($('#recipeViewerModal')) && $('.recipe-viewer-box').dataset.itemName === 'Grouped Plate 0'`);
+    // Matching one group only, NEI opens it by itself, without an Alt-click hint;
+    // Alt-click there is a plain click, as in NEI.
+    await evaluate(`typeInto('#recipeSearchInput','grouped plate');true`);
+    await waitFor('a lone group opens', ready(6));
+    await evaluate(`$$('#recipeSearchResults li.recipe-search-group-open .recipe-search-item')[1].focus();true`);
+    await waitFor('lone group tooltip', `visible($('.network-tooltip')) && $('.network-tooltip').textContent.includes('Grouped Plate 1')`);
+    assert(await evaluate(`!$('.network-tooltip').textContent.includes('Alt-click')`), 'no Alt-click hint on a lone group');
+    await evaluate(`$$('#recipeSearchResults li.recipe-search-group-open .recipe-search-item')[1].dispatchEvent(new MouseEvent('click',{bubbles:true,altKey:true}));true`);
+    await waitFor('Alt-click on a lone group opens recipes', `$('.recipe-viewer-box').dataset.itemName === 'Grouped Plate 1'`);
+    assert(await evaluate(`$$('#recipeSearchResults [data-id="catalog"] li').length === 6`), 'a lone group stays open');
+    await evaluate(`pressKey('Escape');true`);
+    await evaluate(`pressKey('Escape');true`);
+    await waitFor('groups closed', `!visible($('#recipeViewerModal')) && !visible($('#recipeSearchModal'))`);
   });
 
   step('recipe search: mobile swipe sheet, explicit Uses and Find within a recipe', async () => {
@@ -3882,6 +3929,17 @@ async function main() {
     assert(await evaluate(`visible($('#recipeSearchResults .recipe-search-name')) && visible($('#recipeSearchResults .recipe-search-actions'))
       && $$('#recipeSearchResults .recipe-search-actions button').length === 2 && !$('#recipeSearchResults .recipe-search-stock')
       && $('#recipeSearchResults .recipe-search-actions').textContent.includes('←') && $('#recipeSearchResults .recipe-search-actions').textContent.includes('→')`));
+    await evaluate(`typeInto('#recipeSearchInput','grouped');true`);
+    await waitFor('mobile group row', `$('#recipeSearchResults').getAttribute('aria-busy')==='false' && $('#recipeSearchResults [data-action="recipe-search-group"]')`);
+    assert(await evaluate(`$('#recipeSearchResults [data-action="recipe-search-group"]').textContent === '+5'
+      && $('#recipeSearchResults li.recipe-search-group small').textContent.endsWith('6 items')`), 'phone group row');
+    await click(`$('#recipeSearchResults [data-action="recipe-search-group"]')`);
+    await waitFor('mobile group opens', `$$('#recipeSearchResults [data-id="catalog"] li').length === 7
+      && $$('#recipeSearchResults [data-action="recipe-search-group"]').length === 1 && $('#recipeSearchResults [data-action="recipe-search-group"]').getAttribute('aria-expanded') === 'true'`);
+    await click(`$('#recipeSearchResults [data-action="recipe-search-group"]')`);
+    await waitFor('mobile group shuts', `$$('#recipeSearchResults [data-id="catalog"] li').length === 2`);
+    await evaluate(`typeInto('#recipeSearchInput','Neutronium Ingot');true`);
+    await waitFor('mobile search result again', `$('#recipeSearchResults').getAttribute('aria-busy')==='false' && $('#recipeSearchResults [data-dir="using"][data-key="gregtech:gt.metaitem.01:11028"]')`);
     await click(`$('#recipeSearchResults [data-dir="using"][data-key="gregtech:gt.metaitem.01:11028"]')`);
     await waitFor('mobile Uses opens and sheet closes', `!visible($('#recipeSearchModal')) && visible($('#recipeViewerModal')) && $('.recipe-viewer-box').dataset.direction==='using'`);
     await click(`$('#recipeViewerFind')`);

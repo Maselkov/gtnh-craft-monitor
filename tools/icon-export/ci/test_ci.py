@@ -540,8 +540,19 @@ def test_recipe_contract_accepts_full_alternatives():
     validate.validate_recipes(data)
 
 
+def test_recipe_contract_accepts_neis_order_and_groups():
+    data = recipe_fixture()
+    data.update(item_rank=[1, 0], item_group=[0, -1], item_groups=[{"name": "", "expanded": False}])
+    validate.validate_recipes(data)
+
+
 @pytest.mark.parametrize("change", [
     lambda d: d.update(format=1),
+    lambda d: d.update(item_rank=[0, 0]),
+    lambda d: d.update(item_rank=[0]),
+    lambda d: d.update(item_group=[0, -1], item_groups=[]),
+    lambda d: d.update(item_group=[True, -1], item_groups=[{"name": "", "expanded": False}]),
+    lambda d: d.update(item_groups=[{"name": "", "expanded": False}]),
     lambda d: d["maps"]["crafting"]["recipes"][0].update(w=3),
     lambda d: d["maps"]["crafting"]["recipes"][0]["slots"][0].update(alts=[]),
     lambda d: d["maps"]["crafting"]["recipes"][0]["slots"][0].update(alts=[[999, 1]]),

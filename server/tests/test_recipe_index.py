@@ -368,3 +368,82 @@ def test_nei_stack_overrides_keep_production_inputs_and_validate_display_refs(tm
     raw['maps'][EBF]['recipes'][0]['preview_stacks']['i'][0][3] = ['missing']
     with pytest.raises(ValueError, match='unknown display stack reference'):
         build_index(tmp_path, raw)
+
+
+def ordered():
+    """format2, with NEI's order (parts first, highest number first, then
+    planks and the logs) and groups: the parts, and the logs, open by default."""
+    data = format2()
+    parts = [f"example:part:{n}" for n in range(20)]
+    rank = {k: i for i, k in enumerate([*reversed(parts), PLANKS, LOG, ANY_LOG])}
+    data["item_rank"] = [rank[k] for k in data["items"]]
+    data["item_group"] = [1, 1, -1, *[0] * 20]
+    data["item_groups"] = [{"name": "Parts", "expanded": False}, {"name": "", "expanded": True}]
+    return data
+
+
+def keys(rows):
+    return [k for _, k, _ in rows]
+
+
+def test_catalog_follows_neis_order_with_fluids_after_items(tmp_path):
+    data = ordered()
+    data.pop("item_group")
+    idx = build_index(tmp_path, data)
+    rows, total, shown = idx.search_names("", limit=100)
+    assert keys(rows) == [*(f"example:part:{n}" for n in range(19, -1, -1)), PLANKS, LOG, ANY_LOG, "mod:fluid", "water"]
+    assert total == 25 and shown == [None] * 25
+    # A name match still comes first.
+    assert keys(idx.search_names("planks", limit=3)[0])[0] == PLANKS
+    idx.close()
+
+
+def test_without_neis_order_the_catalog_is_alphabetical(tmp_path):
+    data = ordered()
+    data["item_rank"] = data["item_rank"][:-1]  # Not one per item: ignored.
+    idx = build_index(tmp_path, data)
+    assert keys(idx.search_names("", recipe_index.ITEM, limit=3)[0]) == [ANY_LOG, LOG, "example:part:0"]
+    idx.close()
+
+
+def test_a_group_collapses_into_its_first_match_unless_open(tmp_path):
+    idx = build_index(tmp_path, ordered())
+    rows, total, shown = idx.search_names("", recipe_index.ITEM, limit=100)
+    assert keys(rows) == ["example:part:19", PLANKS, LOG, ANY_LOG] and total == 4
+    assert shown[0] == {"id": 0, "name": "Parts", "size": 20, "open": False, "forced": False,
+                        "back": "example:part:0"}
+    assert shown[1] is None
+    assert shown[2] == {"id": 1, "name": "", "size": 2, "open": True, "forced": False, "back": None}
+    # A group counts its matches, not its members.
+    rows, total, shown = idx.search_names("o", recipe_index.ITEM, limit=100)
+    assert keys(rows) == [LOG, ANY_LOG] and shown[0]["size"] == 2
+    # Opened, it lists every match; shut, the default-open one collapses.
+    rows, total, _ = idx.search_names("", recipe_index.ITEM, limit=100, groups={"open": {0}, "shut": {1}})
+    assert total == 22 and keys(rows)[-1] == LOG
+    rows, total, _ = idx.search_names("", recipe_index.ITEM, limit=100, groups={"all": False})
+    assert total == 3
+    # Every group open: nothing collapses, and each row still counts its group's matches.
+    rows, total, shown = idx.search_names("", recipe_index.ITEM, limit=5, offset=19, groups={"all": True})
+    assert total == 23 and keys(rows) == ["example:part:0", PLANKS, LOG, ANY_LOG]
+    assert shown[0] == {"id": 0, "name": "Parts", "size": 20, "open": True, "forced": False, "back": None}
+    assert shown[1] is None and shown[2]["size"] == 2
+    # Browsing pages through one kept list, for each set of open groups.
+    whole = idx.search_names("", recipe_index.ITEM, limit=100)
+    assert idx.search_names("", recipe_index.ITEM, limit=2, offset=2)[0] == whole[0][2:4]
+    assert idx.search_names("", recipe_index.ITEM, limit=2, offset=2, groups={"open": {0}})[0][0][1] == "example:part:17"
+    rows, total, _ = idx.search_names("", recipe_index.ITEM, limit=100, groups={"all": True, "shut": {0}})
+    assert total == 4
+    # A page past the end still counts what's shown.
+    assert idx.search_names("", recipe_index.ITEM, limit=10, offset=50)[:2] == ([], 4)
+    idx.close()
+
+
+def test_a_search_that_only_matches_one_group_opens_it(tmp_path):
+    idx = build_index(tmp_path, ordered())
+    rows, total, shown = idx.search_names("part", limit=100, groups={"all": False})
+    assert total == 20 and len(rows) == 20
+    assert all(s["open"] and s["forced"] and s["back"] is None for s in shown)
+    # With a match outside it, it collapses again.
+    rows, total, shown = idx.search_names("l", recipe_index.ITEM, limit=100)
+    assert keys(rows) == ["example:part:19", PLANKS, LOG, ANY_LOG] and not shown[0]["open"]
+    idx.close()

@@ -39,6 +39,20 @@ def item():
         return _error(e)
 
 
+def _group_state(args):
+    """Which of NEI's item groups the book has open: groups=open|shut for
+    all of them, then open=<id> and shut=<id> for single groups."""
+    def ids(name):
+        values = args.getlist(name)
+        if len(values) > 256:
+            raise ValueError("Too many item groups.")
+        return {int(v) for v in values}
+    every = args.get("groups")
+    if every not in (None, "open", "shut"):
+        raise ValueError("Item groups are open or shut.")
+    return {"all": None if every is None else every == "open", "open": ids("open"), "shut": ids("shut")}
+
+
 @bp.route("/api/recipes/search", methods=["GET"])
 @auth.viewer_required
 def search():
@@ -56,7 +70,8 @@ def search():
             raise recipes.RecipeUnavailable(
                 "Recipe search needs newer game data. Ask an administrator to update it in Settings → Game data.",
                 "catalog_unavailable", 409)
-        rows, total = idx.search_names(query, {"all": None, "item": 0, "fluid": 1}[kind], limit=limit, offset=offset)
+        rows, total, grouping = idx.search_names(query, {"all": None, "item": 0, "fluid": 1}[kind], limit=limit,
+                                                 offset=offset, groups=_group_state(request.args))
         # The book's recent strip shows whatever the search, so recents
         # ignore the query and the item/fluid filter.
         recent = []
@@ -69,7 +84,7 @@ def search():
                 name = idx.names(k, [identity]).get(identity)
                 if name:
                     recent.append((k, identity, name))
-        return _response(version, idx, assets, items=recipe_viewer.catalog_items(rows),
+        return _response(version, idx, assets, items=recipe_viewer.catalog_items(rows, grouping),
                          recent=recipe_viewer.catalog_items(recent), total=total, offset=offset, limit=limit, query=query)
     except ValueError as e:
         if isinstance(e, recipes.RecipeUnavailable) and e.code in ("missing_recipes", "index_failed"):

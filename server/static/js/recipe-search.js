@@ -2,7 +2,8 @@
 import { itemTooltipHtml } from './item-tooltip.js';
 import { bindCellTooltip, hideTooltip, showTooltip, tooltipVisible } from './tooltip.js';
 import { recipeShortcutDirection } from './item-shortcuts.js';
-import { RECIPE_RECENT_LIMIT, moveRecipePage, parseRecipeRecents, recipeCatalogCapacity, recipeCatalogGrid } from './recipe-state.js';
+import { RECIPE_RECENT_LIMIT, moveRecipePage, parseRecipeGroups, parseRecipeRecents, recipeCatalogCapacity, recipeCatalogGrid,
+  recipeGroupQuery, setAllRecipeGroups, setRecipeGroup } from './recipe-state.js';
 import { setupPageWheel } from './recipe-wheel.js';
 import { topDialog } from './dialogs.js';
 import { findNetworkItem, findNetworkSpecies, hideItemHistory, openItemHistory } from './history.js';
@@ -10,7 +11,7 @@ import { hideRecipeViewer, openRecipeViewer, recipeViewerOpen } from './recipe-v
 import { ensureNetworkStock } from './network-stock.js';
 import { delegateActions, escapeHtml, iconClass, iconUrl, updateHtml } from './util.js';
 
-const RECENTS_KEY = 'gcm-recipe-lookups-v1';
+const RECENTS_KEY = 'gcm-recipe-lookups-v1', GROUPS_KEY = 'gcm-recipe-groups-v1';
 const CACHED_PAGES = 24, SLOW_LOAD_MS = 200, PREFETCH_DELAY_MS = 250;
 // desktop: wide enough to dock beside the page; icons: a pointer that can
 // hover and right-click, so the items are icons, as in NEI, rather than
@@ -19,6 +20,8 @@ let overlay, results, recentStrip, recentList, input, desktop, icons, recent, la
 let opened = false, loading = false, error = '', offset = 0, serial = 0, controller, timer;
 let pageSize = 40, fitTimer, slowTimer, queryPending = false;
 let entries = new Map(), shiftHeld = false, focusedTooltip = null;
+// NEI's item groups the book has opened or shut (recipe-state.js).
+let groups = parseRecipeGroups(null);
 // The recent strip's items, as the server named them; null until the
 // first search after the page loads asks for them.
 let recentItems = null;
@@ -31,6 +34,31 @@ const warming = new Set();
 function readRecent() {
   try { return parseRecipeRecents(localStorage.getItem(RECENTS_KEY)); }
   catch { return parseRecipeRecents(null); }
+}
+
+function readGroups() {
+  try { return parseRecipeGroups(localStorage.getItem(GROUPS_KEY)); }
+  catch { return parseRecipeGroups(null); }
+}
+
+function saveGroups() {
+  try { localStorage.setItem(GROUPS_KEY, JSON.stringify(groups)); } catch { /* Storage is optional. */ }
+}
+
+// Opens or shuts one group (open: true/false), or all of them (id null),
+// as NEI's Alt-click and its groups button do, staying on this page.
+function setGroups(id, open) {
+  groups = id === null ? setAllRecipeGroups(groups, open) : setRecipeGroup(groups, id, open);
+  saveGroups();
+  hideTooltip(); focusedTooltip = null;
+  load(offset);
+}
+
+function toggleGroupOf(key) {
+  const group = entries.get(key)?.group;
+  if (!group || group.forced) return false;
+  setGroups(group.id, !group.open);
+  return true;
 }
 
 function saveRecent() {
@@ -152,15 +180,29 @@ function activate(key, direction = 'making', stock = false) {
   }
 }
 
-function row(item, section) {
-  const key = escapeHtml(item.key);
+// A group's own button, in the named rows: on a collapsed group, and on
+// the first of an open one's items.
+function groupButton(group, first) {
+  if (!group || group.forced || group.size < 2 || (group.open && !first)) return '';
+  const name = group.name ? ` ${escapeHtml(group.name)}` : '';
+  return `<button class="recipe-search-action recipe-search-group-toggle" data-action="recipe-search-group" data-group="${group.id}" aria-expanded="${group.open}"
+    aria-label="${group.open ? 'Collapse' : 'Expand'} group${name} (${group.size} items)">${group.open ? '−' : `+${group.size - 1}`}</button>`;
+}
+
+function row(item, section, previous) {
+  const key = escapeHtml(item.key), group = item.group;
   const mod = item.info?.mod_name || item.mod || (item.kind === 'fluid' ? 'Fluid' : 'Item');
-  return `<li data-id="${section}:${key}" data-recipe-search-key="${key}" class="recipe-search-result">
-    <button class="recipe-search-item" data-action="recipe-search-select" data-key="${key}" aria-label="Recipes for ${escapeHtml(item.name)}">
-      <span class="recipe-search-icon">${item.icon ? `<img class="${iconClass('',item.icon)}" src="${iconUrl(item.icon)}" alt="" loading="lazy" data-remove-on-error>` : `<span aria-hidden="true">${escapeHtml(item.name.charAt(0))}</span>`}</span>
-      <span class="recipe-search-name"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(mod)}</small></span>
+  const icon = item.icon ? `<img class="${iconClass('',item.icon)}" src="${iconUrl(item.icon)}" alt="" loading="lazy" data-remove-on-error>` : `<span aria-hidden="true">${escapeHtml(item.name.charAt(0))}</span>`;
+  // NEI draws a collapsed group's last item behind its first.
+  const back = group?.back ? `<img class="recipe-search-back ${iconClass('',group.back)}" src="${iconUrl(group.back)}" alt="" loading="lazy" data-remove-on-error>` : '';
+  const state = !group ? '' : group.open ? ' recipe-search-group-open' : ' recipe-search-group';
+  const label = group && !group.open ? `, and ${group.size - 1} more in its group` : '';
+  return `<li data-id="${section}:${key}" data-recipe-search-key="${key}" class="recipe-search-result${state}"${group ? ` data-group="${group.id}"` : ''}>
+    <button class="recipe-search-item" data-action="recipe-search-select" data-key="${key}" aria-label="Recipes for ${escapeHtml(item.name)}${label}">
+      <span class="recipe-search-icon${back ? ' recipe-search-stacked' : ''}">${back}${icon}</span>
+      <span class="recipe-search-name"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(mod)}${group && !group.open ? ` · ${group.size} items` : ''}</small></span>
     </button>
-    <span class="recipe-search-actions">
+    <span class="recipe-search-actions">${groupButton(group, previous?.group?.id !== group?.id)}
       <button class="recipe-search-action" data-action="recipe-search-select" data-key="${key}" aria-label="Recipes for ${escapeHtml(item.name)}"><span aria-hidden="true">←</span> Recipes</button>
       <button class="recipe-search-action recipe-search-uses" data-action="recipe-search-select" data-key="${key}" data-dir="using" aria-label="Uses for ${escapeHtml(item.name)}">Uses <span aria-hidden="true">→</span></button>
     </span>
@@ -174,12 +216,18 @@ function render() {
   entries = new Map([...recents,...items].map(item => [item.key,item]));
   results.setAttribute('aria-busy', String(loading));
   updateHtml(recentList, recents.map(i => row(i,'recent')).join(''));
-  updateHtml(results, `<section data-id="catalog"><ul class="recipe-search-grid">${items.map(i => row(i,'catalog')).join('')}</ul>${!items.length && !loading && !error ? '<p class="recipe-search-empty">No matching items or fluids. Try a shorter name or another mod.</p>' : ''}</section>`);
+  updateHtml(results, `<section data-id="catalog"><ul class="recipe-search-grid">${items.map((i, n) => row(i,'catalog',items[n-1])).join('')}</ul>${!items.length && !loading && !error ? '<p class="recipe-search-empty">No matching items or fluids. Try a shorter name or another mod.</p>' : ''}</section>`);
   // A page turn shows where it's going at once; the page it replaces stays
   // up, and usable, until the new one is ready.
   const total = queryPending ? 0 : last?.total || 0;
   document.getElementById('recipeSearchStatus').textContent = error || (loading && (queryPending || !last) ? 'Searching…' : last ? `${last.total.toLocaleString()} matching ${last.total === 1 ? 'entry' : 'entries'}` : '');
   document.getElementById('recipeSearchRetry').hidden = !error;
+  // NEI's groups button: expands every group, or collapses them if any is open.
+  const toggle = document.getElementById('recipeSearchGroups');
+  const anyOpen = groups.all === true || groups.open.length > 0 || items.some(i => i.group?.open && !i.group.forced);
+  toggle.hidden = !(items.some(i => i.group && !i.group.forced) || groups.all !== null || groups.open.length || groups.shut.length);
+  toggle.textContent = anyOpen ? 'Collapse groups' : 'Expand groups';
+  toggle.dataset.open = String(!anyOpen);
   document.getElementById('recipeSearchPrevious').disabled = !total || offset === 0;
   document.getElementById('recipeSearchNext').disabled = !total || offset + pageSize >= total;
   document.getElementById('recipeSearchPage').textContent = total ? `${offset+1}–${Math.min(offset+pageSize,total)} of ${total.toLocaleString()}` : '';
@@ -193,7 +241,7 @@ function setLoading(value) {
 }
 
 function pageKey(params) {
-  return JSON.stringify([params.q, params.limit, params.offset]);
+  return JSON.stringify([params.q, params.limit, params.offset, params.groups]);
 }
 
 function cachedPage(params) {
@@ -210,7 +258,7 @@ function storePage(params, data) {
 }
 
 async function fetchPage(params, signal, withRecents) {
-  const query = new URLSearchParams({q:params.q, limit:String(params.limit), offset:String(params.offset)});
+  const query = new URLSearchParams([['q',params.q], ['limit',String(params.limit)], ['offset',String(params.offset)], ...params.groups]);
   if (withRecents) {
     query.set('recent_version', recent.version);
     for (const key of recent.keys) query.append('key',key);
@@ -229,7 +277,7 @@ async function load(page = 0) {
   offset = page; error = '';
   pageSize = capacity();
   page = offset = Math.floor(page/pageSize)*pageSize;
-  const params = {q:input.value.trim(), limit:pageSize, offset:page};
+  const params = {q:input.value.trim(), limit:pageSize, offset:page, groups:recipeGroupQuery(groups)};
   // Recents are named once per page load, then kept up here as they change.
   const withRecents = recentItems === null;
   let data = withRecents ? null : cachedPage(params);
@@ -254,6 +302,12 @@ async function load(page = 0) {
   if (page !== offset) return await load(offset);
   if (data.total && page >= data.total) return await load(0);
   if (recent.version !== data.version) { recent = {version:data.version,keys:[]}; recentItems = []; saveRecent(); }
+  // Group ids belong to one game data version: another's choices are dropped.
+  if (groups.version !== data.version) {
+    const stale = params.groups.length > 0;
+    groups = {...setAllRecipeGroups(groups, null), version:data.version}; saveGroups();
+    if (stale) return await load(0);
+  }
   last = data;
   setLoading(false);
   results.scrollTop = 0;
@@ -314,7 +368,12 @@ function searchChanged() {
 
 function tooltip(cell) {
   const item = entries.get(cell.dataset.recipeSearchKey);
-  return item && itemTooltipHtml(item, item.info, {shiftHeld,aggregateStockVariants:true});
+  if (!item) return null;
+  const group = item.group, html = itemTooltipHtml(item, item.info, {shiftHeld,aggregateStockVariants:true});
+  // As NEI hints on a group it hasn't opened by itself.
+  if (!group || group.forced || group.size < 2) return html;
+  const name = group.name ? `${escapeHtml(group.name)} · ` : '';
+  return html + `<div class="recipe-search-group-tip">${name}${group.size} items · Alt-click to ${group.open ? 'collapse' : 'expand'}</div>`;
 }
 
 function refreshTooltip() {
@@ -344,14 +403,16 @@ export function setupRecipeSearch() {
   overlay = document.getElementById('recipeSearchModal');
   results = document.getElementById('recipeSearchResults'); input = document.getElementById('recipeSearchInput');
   recentStrip = document.getElementById('recipeSearchRecent'); recentList = document.getElementById('recipeSearchRecentList');
-  desktop = window.matchMedia('(min-width:1000px)'); icons = window.matchMedia('not all and (pointer: coarse)'); recent = readRecent();
+  desktop = window.matchMedia('(min-width:1000px)'); icons = window.matchMedia('not all and (pointer: coarse)'); recent = readRecent(); groups = readGroups();
   layout(); desktop.addEventListener('change', layout); icons.addEventListener('change', layout);
   delegateActions(document, {
     'recipe-search-open':open, 'recipe-search-close':close,
     'recipe-search-retry':() => load(offset),
     'recipe-search-previous':() => turnPages(-1),
     'recipe-search-next':() => turnPages(1),
-    'recipe-search-select':(el,event) => activate(el.dataset.key,el.dataset.dir || 'making',event.shiftKey),
+    'recipe-search-select':(el,event) => { if (!(event.altKey && toggleGroupOf(el.dataset.key))) activate(el.dataset.key,el.dataset.dir || 'making',event.shiftKey); },
+    'recipe-search-group':el => setGroups(Number(el.dataset.group), el.getAttribute('aria-expanded') !== 'true'),
+    'recipe-search-groups':el => setGroups(null, el.dataset.open === 'true'),
     'recipe-search-clear-recent':() => { recent = {version:recent.version,keys:[]}; recentItems = []; saveRecent(); render(); scheduleFit(); },
   });
   input.addEventListener('input', searchChanged);
@@ -376,6 +437,7 @@ export function setupRecipeSearch() {
     if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); close(); return; }
     if (e.key === 'Shift') { shiftHeld = true; refreshTooltip(); }
     const cell = overlay.querySelector('[data-recipe-search-key]:hover') || document.activeElement?.closest('[data-recipe-search-key]');
+    if (e.key === 'Enter' && e.altKey && cell && toggleGroupOf(cell.dataset.recipeSearchKey)) { e.preventDefault(); return; }
     const direction = recipeShortcutDirection(e);
     if (cell && direction) { e.preventDefault(); activate(cell.dataset.recipeSearchKey,direction); return; }
     if (e.target === input && e.key === 'Enter') {

@@ -25,6 +25,44 @@ export function parseRecipeRecents(raw) {
   } catch { return {version:'', keys:[]}; }
 }
 
+// Which of NEI's item groups the book has open, for one game data version:
+// all (every group open or shut, null for NEI's defaults), then single
+// groups opened or shut since.
+const RECIPE_GROUP_LIMIT = 256;
+const EMPTY_GROUPS = {version:'', all:null, open:[], shut:[]};
+
+export function parseRecipeGroups(raw) {
+  try {
+    const value = JSON.parse(raw);
+    if (typeof value?.version !== 'string') throw new Error();
+    const ids = list => Array.isArray(list) ? [...new Set(list.filter(id => Number.isInteger(id) && id >= 0))].slice(0,RECIPE_GROUP_LIMIT) : [];
+    return {version:value.version.slice(0,64), all:typeof value.all === 'boolean' ? value.all : null,
+      open:ids(value.open), shut:ids(value.shut)};
+  } catch { return {...EMPTY_GROUPS}; }
+}
+
+export function setRecipeGroup(state, id, open) {
+  const without = list => list.filter(other => other !== id);
+  const next = {...state, open:without(state.open), shut:without(state.shut)};
+  (open ? next.open : next.shut).push(id);
+  // The oldest choices go first; a long session can't grow the request without end.
+  for (const list of [next.open, next.shut]) list.splice(0, Math.max(0, list.length - RECIPE_GROUP_LIMIT/2));
+  return next;
+}
+
+export function setAllRecipeGroups(state, open) {
+  return {version:state.version, all:open, open:[], shut:[]};
+}
+
+// The search request's part for this state: groups=open|shut, open=, shut=.
+export function recipeGroupQuery(state) {
+  const query = [];
+  if (state.all !== null) query.push(['groups', state.all ? 'open' : 'shut']);
+  for (const id of state.open) query.push(['open', String(id)]);
+  for (const id of state.shut) query.push(['shut', String(id)]);
+  return query;
+}
+
 export function moveRecipePage(index, delta, total, wrap = false) {
   if (!total) return 0;
   const target = index + delta;

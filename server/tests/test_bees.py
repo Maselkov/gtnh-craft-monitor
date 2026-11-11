@@ -102,7 +102,7 @@ def test_species_keys_find_only_that_species_and_bare_keys_all_of_them(idx):
     forest = recipe_index.species_key(DRONE, "forestry.speciesForest")
     assert idx.counts_using(recipe_index.ITEM, forest) == {BREEDING: 1, TREE: 1}
     assert idx.names(recipe_index.ITEM, [common]) == {common: "Common Queen"}
-    rows, total = idx.search_names("Common")
+    rows, total, _ = idx.search_names("Common")
     assert {k for _, k, _ in rows} == {recipe_index.species_key(k, "forestry.speciesCommon") for k in KINDS}
     assert total == 3
 

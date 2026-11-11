@@ -397,13 +397,23 @@ def _info(value):
     return item_info.describe({**value, "variant": True} if value.get("species") else value)
 
 
-def catalog_items(rows):
-    """Small named results with the same identities and tooltips as recipe slots."""
+def catalog_items(rows, grouping=None):
+    """Small named results with the same identities and tooltips as recipe
+    slots. grouping (search_names' third value) adds each one's NEI item
+    group: {"id", "name", "size", "open"}, and a collapsed group's "back",
+    the icon of its last match, which NEI draws behind the first."""
     names = {(kind, key): name for kind, key, name in rows}
     out = []
-    for kind, key, _ in rows:
+    for i, (kind, key, _) in enumerate(rows):
         value = entry(kind, key, 1, names)
         value["info"] = {**_info(value), "mod_name": item_info.mod_name(value.get("mod"))}
+        group = grouping[i] if grouping else None
+        if group:
+            group = dict(group)
+            back = group.pop("back")
+            if back:
+                group["back"] = entry(kind, back, 1, {}).get("icon")
+            value["group"] = group
         out.append(value)
     return out
 
