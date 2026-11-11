@@ -19,6 +19,7 @@ import logging
 import math
 import re
 import time
+import urllib.parse
 
 from gcm import (
     auth, bottlenecks, commands, config, craft_stats, gamedata, inventory, item_info, job_links, patterns, planner, rates,
@@ -680,6 +681,7 @@ def power(user, args):
 GAME_MATCHES_MAX = 10
 RECIPES_MAX = 10
 RECIPE_ALTERNATIVES_MAX = 16
+CATEGORIES_MAX = 30
 TOOLTIP_MAX = 3000
 
 
@@ -788,15 +790,52 @@ def _stacks(stacks, kind, names, chances=False, displays=None):
     return rows
 
 
+def _category_name(idx, map_name):
+    machines = idx.machines(map_name)
+    return mctext.plain(machines[0]["name"]) if machines else map_name
+
+
+def _pick_category(idx, counts, wanted):
+    """The recipe category (map name) of counts that wanted names: its
+    machine, one of its machines, or its id; exact before partial."""
+    q = wanted.strip().lower()
+    names = {m: [m, _category_name(idx, m)] + [mctext.plain(x["name"]) for x in idx.machines(m)] for m in counts}
+    for exact in (True, False):
+        hits = [m for m, ns in names.items() if any((n.lower() == q) if exact else (q in n.lower()) for n in ns)]
+        if len(hits) == 1:
+            return hits[0]
+        if len(hits) > 1:
+            listed = ", ".join(sorted({_category_name(idx, m) for m in hits}))
+            raise ToolError(f"Several machines match {wanted!r}: {listed}. Name one of them.")
+    listed = ", ".join(sorted({_category_name(idx, m) for m in counts})[:30]) or "none"
+    raise ToolError(f"No recipe for it in a machine called {wanted!r}. Its machines: {listed}.")
+
+
+def _recipe_book_link(kind, rkey, direction, map_name):
+    """The page's recipe book open on these recipes (recipeUrl() in
+    static/js/recipe-state.js), or None."""
+    query = {"key": f"fluid:{rkey}" if kind == recipe_index.FLUID else rkey}
+    if direction == "using":
+        query["dir"] = "using"
+    if map_name:
+        query["map"] = map_name
+    return job_links.absolute("/recipes?" + urllib.parse.urlencode(query))
+
+
 def find_recipes(user, args):
     query = _arg(args, "item", "string", required=True)
+    direction = _arg(args, "direction", "string", "making", choices=("making", "using"))
+    machine = _arg(args, "machine", "string")
     limit = _arg(args, "limit", "integer", 5, minimum=1, maximum=RECIPES_MAX)
+    offset = _arg(args, "offset", "integer", 0, minimum=0, maximum=2147483647)
     version, idx = _recipe_index()
     key, ask = _pick(query, idx)
     if ask:
         return ask
     kind, rkey = _recipe_key(key)
-    found, total = idx.made_by(kind, rkey, limit=limit)
+    counts = (idx.counts_making if direction == "making" else idx.counts_using)(kind, rkey)
+    category = _pick_category(idx, counts, machine) if machine and machine.strip() else None
+    found, total = (idx.made_by if direction == "making" else idx.used_by)(kind, rkey, category, limit=limit, offset=offset)
     item_keys = {s[0] for _, _, b in found for side in ("i", "o") for s in b[side]}
     item_keys.update(alt[0] for _, _, b in found for slot in b.get("slots", []) if slot
                      for alt in slot["alts"][:RECIPE_ALTERNATIVES_MAX])
@@ -856,10 +895,6 @@ def find_recipes(user, args):
         if b.get("s"):
             row["coil_heat" if map_name in recipes.HEAT_MAPS else "special_value"] = b["s"]
         rows.append(row)
-    used_in = []
-    for map_name in idx.using(kind, rkey):
-        machines = idx.machines(map_name)
-        used_in.append(machines[0]["name"] if machines else map_name)
     names = item_names if kind == recipe_index.ITEM else fluid_names
     has_crafting = "crafting" in idx.coverage.get("handlers", [])
     coverage = recipes.coverage_summary(idx)
@@ -869,18 +904,34 @@ def find_recipes(user, args):
             "NBT variants, custom matching and other handlers may be missing or approximate." if has_crafting else
             "GregTech machine recipes from this older bundle, cheapest first. Recipes for a crafting table, furnace and other "
             "mods' recipes aren't included.")
+    if direction == "using":
+        note = "Recipes that take it as an ingredient. " + note
     if not found:
-        note = "No supported recipe in this bundle makes it. " + note
-    return {
+        verb = "makes" if direction == "making" else "takes"
+        where = f" in the {_category_name(idx, category)}" if category else ""
+        note = f"No supported recipe{where} in this bundle {verb} it. " + note
+    categories = sorted(counts.items(), key=lambda kv: (-kv[1], _category_name(idx, kv[0])))
+    out = {
         "item": key,
         "name": mctext.plain(names.get(rkey) or query),
         "gtnh_version": version,
+        "direction": direction,
         "recipes": rows,
         "recipes_total": total,
-        "used_in_machines": sorted(set(used_in))[:20],
-        "coverage": coverage,
-        "note": note,
+        "offset": offset,
+        "machines": [{"machine": _category_name(idx, m), "recipes": n} for m, n in categories[:CATEGORIES_MAX]],
     }
+    if category:
+        out["machine"] = _category_name(idx, category)
+    if offset + len(rows) < total:
+        out["next_offset"] = offset + len(rows)
+    if direction == "making":
+        out["used_in_machines"] = sorted({_category_name(idx, m) for m in idx.using(kind, rkey)})[:20]
+    link = _recipe_book_link(kind, rkey, direction, category)
+    if link:
+        out["recipe_book"] = link
+    out.update(coverage=coverage, note=note)
+    return out
 
 
 def game_item(user, args):
@@ -1476,8 +1527,11 @@ TOOLS = [
         "name": "find_recipes",
         "title": "Look up game recipes",
         "description": (
-            "How the game makes an item or fluid in the base's GTNH version: supported crafting-table, furnace "
-            "and GregTech recipes, plus which machines use it. Coverage depends on the installed bundle; "
+            "How the game makes an item or fluid in the base's GTNH version (direction \"making\"), or what "
+            "it's used for (\"using\": the recipes that take it, like the recipe book's Uses): supported "
+            "crafting-table, furnace and GregTech recipes. \"machines\" counts its recipes per machine; pass "
+            "machine to see one machine's, and offset (next_offset) for more. recipe_book links to the same "
+            "recipes in the page's recipe book. Coverage depends on the installed bundle; "
             "older bundles contain only GregTech. Crafting slots give sampled alternatives and their totals; "
             "NBT/custom matching may be approximate. Crafting first, then furnace, then GT by absolute EU/t. "
             "Use this instead of remembering recipes. Takes an "
@@ -1487,7 +1541,13 @@ TOOLS = [
         ),
         "inputSchema": _schema({
             "item": {"type": "string", "description": "An item key (from search_items or game_item), or a name."},
+            "direction": {"type": "string", "enum": ["making", "using"], "default": "making",
+                          "description": "making: recipes that make it. using: recipes that take it."},
+            "machine": {"type": "string",
+                        "description": "Only this machine's recipes, by name, e.g. 'Electric Blast Furnace' or 'Crafting Table'."},
             "limit": {"type": "integer", "minimum": 1, "maximum": RECIPES_MAX, "default": 5},
+            "offset": {"type": "integer", "minimum": 0, "default": 0,
+                       "description": "Skip this many recipes: the last answer's next_offset."},
         }, ["item"]),
         "annotations": READ_ONLY,
         "handler": find_recipes,

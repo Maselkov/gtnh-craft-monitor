@@ -78,7 +78,7 @@ user asks about CPUs.
 - To craft: `plan_craft`, then `request_craft`, then `request_status`.
 - "Why is it slow?": `craft_job` for that job's held-up steps and the
   machines holding them; `base_patterns` for where the item is made.
-- "How do I make X?" / "What does X need?": `find_recipes`, and
+- "How do I make X?" / "What uses X?": `find_recipes`, and
   `game_item` for a machine's structure.
 - After a GTNH update: `pattern_check` for the patterns it broke.
 - Trends and "what's running out": `inventory_changes` and
