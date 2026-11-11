@@ -473,12 +473,19 @@ or swipe right across the sheet's heading to close it. **Find** inside a recipe
 opens the same search without losing your current recipe.
 
 Click a result for recipes, right-click or choose **Uses** for its uses, or
-Shift-left-click for its stock page. **R/U** work on hovered or focused results;
+Shift-left-click for its stock page. On desktop the book stays open beside the
+recipe or stock page. **R/U** work on hovered or focused results;
 typing in the search field keeps those letters as text. Enter selects the first
 result, and Down moves focus from the search field into the results. Escape
-closes search first, leaving an open recipe underneath. With an empty query,
-recent lookups appear above all items. The last eight are remembered in this
+closes search first, leaving an open recipe underneath. Recent lookups stay in
+view while you search: two rows under the items on desktop, as in the game, and
+a row you can scroll sideways above the results on mobile. Up to 24 are remembered in this
 browser for the selected GTNH version and can be cleared.
+
+Pages turn without waiting where they can: the pages either side of the one
+shown are loaded ahead, icons included, and pages already seen are kept while
+the book is open. A page that still has to load keeps the old one on screen
+until it arrives.
 
 If installed game data lacks recipes or searchable item names, the book shows
 an update message pointing administrators to **Settings → Game data**, rather

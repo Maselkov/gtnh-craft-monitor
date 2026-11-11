@@ -783,10 +783,13 @@
       </header>
       <div class="recipe-search-fields">
         <label class="sr-only" for="recipeSearchInput">Search items and fluids</label>
-        <input type="search" id="recipeSearchInput" placeholder="Search items and fluids…" maxlength="160" autocomplete="off" aria-controls="recipeSearchResults">
-        <select id="recipeSearchKind" aria-label="Search type"><option value="all">All</option><option value="item">Items</option><option value="fluid">Fluids</option></select>
+        <input type="search" id="recipeSearchInput" placeholder="Search…" maxlength="160" autocomplete="off" aria-controls="recipeSearchResults">
       </div>
       <div class="recipe-search-status"><span id="recipeSearchStatus" role="status" aria-live="polite"></span><button class="range-btn" data-action="recipe-search-retry" id="recipeSearchRetry" hidden>Retry</button></div>
+      <section id="recipeSearchRecent" class="recipe-search-recent" aria-labelledby="recipeSearchRecentTitle" hidden>
+        <div class="recipe-search-section"><h3 id="recipeSearchRecentTitle">Recent lookups</h3><button class="text-btn" data-action="recipe-search-clear-recent">Clear</button></div>
+        <ul id="recipeSearchRecentList" class="recipe-search-grid"></ul>
+      </section>
       <div id="recipeSearchResults" class="recipe-search-results" aria-busy="false"></div>
       <footer class="recipe-search-footer">
         <div class="recipe-search-pagination"><button class="range-btn" id="recipeSearchPrevious" data-action="recipe-search-previous" aria-label="Previous results page" disabled>&larr;</button><span id="recipeSearchPage"></span><button class="range-btn" id="recipeSearchNext" data-action="recipe-search-next" aria-label="Next results page" disabled>&rarr;</button></div>

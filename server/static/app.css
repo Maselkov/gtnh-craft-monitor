@@ -3579,7 +3579,7 @@ button.recipe-search-open .ui-icon { width:18px; height:18px; }
 .recipe-search-header > div { flex:1; min-width:0; }
 .recipe-search-header h2 { margin:0; font-size:20px; }
 .recipe-search-fields { display:flex; gap:8px; flex:none; }
-.recipe-search-fields input, .recipe-search-fields select {
+.recipe-search-fields input {
   background:var(--bg); color:var(--text); border:1px solid var(--border-strong); border-radius:8px;
   min-width:0; padding:10px; font:inherit; font-size:13px;
 }
@@ -3587,10 +3587,20 @@ button.recipe-search-open .ui-icon { width:18px; height:18px; }
 .recipe-search-fields input:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .recipe-search-status { display:flex; align-items:center; justify-content:space-between; gap:8px; min-height:40px; padding:8px 0; box-sizing:border-box; font-size:12px; color:var(--muted); flex:none; }
 .recipe-search-results { flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; }
-.recipe-search-results[aria-busy="true"] { opacity:.6; }
+/* Dimmed only once a load is slow; the page being replaced stays usable. */
+.recipe-search-results.recipe-search-slow { opacity:.6; transition:opacity .15s; }
 .recipe-search-results ul { padding:0; margin:0; list-style:none; }
 .recipe-search-section { display:flex; align-items:center; justify-content:space-between; }
-.recipe-search-results h3 { color:var(--muted); font-size:11px; letter-spacing:.05em; text-transform:uppercase; margin:14px 0 8px; }
+.recipe-search-recent { flex:none; }
+.recipe-search-recent .recipe-search-section h3 { margin:0; }
+.recipe-search-recent .recipe-search-section { margin-bottom:6px; }
+/* Phones: one row of icons above the results, scrolled sideways. */
+.recipe-search-recent ul { display:flex; gap:4px; overflow-x:auto; overscroll-behavior-x:contain; scrollbar-width:none; padding:0 0 8px; margin:0; list-style:none; }
+.recipe-search-recent .recipe-search-result { flex:none; border:0; border-radius:4px; }
+.recipe-search-recent .recipe-search-item { padding:4px; }
+.recipe-search-recent .recipe-search-name { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+.recipe-search-recent .recipe-search-actions { display:none; }
+.recipe-search-results h3, .recipe-search-recent h3 { color:var(--muted); font-size:11px; letter-spacing:.05em; text-transform:uppercase; margin:14px 0 8px; }
 .recipe-search-section .text-btn { background:none; border:0; color:var(--accent); cursor:pointer; font-size:12px; }
 .recipe-search-result { display:flex; align-items:center; gap:6px; border-bottom:1px solid var(--border-faint); }
 .recipe-search-result:has(button:hover), .recipe-search-result:focus-within { background:var(--border-faint); }
@@ -3616,8 +3626,13 @@ button.recipe-search-open .ui-icon { width:18px; height:18px; }
   .recipe-search-overlay > .recipe-search-box { width:100%; border-width:0 0 0 1px; box-shadow:none; }
   body.recipe-search-open main { margin-right:var(--recipe-search-width); }
   body.recipe-search-open #recipeViewerModal { width:calc(100vw - var(--recipe-search-width)); }
+  body.recipe-search-open #itemHistoryModal { right:auto; width:calc(100vw - var(--recipe-search-width)); }
   .recipe-search-results { overflow-y:hidden; }
-  .recipe-search-results ul { display:grid; grid-template-columns:repeat(auto-fill,minmax(36px,1fr)); gap:4px; }
+  .recipe-search-results ul, .recipe-search-recent ul { display:grid; grid-template-columns:repeat(auto-fill,minmax(36px,1fr)); gap:4px; }
+  /* Under the items, two rows, as NEI keeps its history in game. */
+  .recipe-search-recent { order:1; margin-top:8px; padding-top:8px; border-top:2px dashed var(--border-strong); }
+  .recipe-search-recent ul { overflow:hidden; padding:0; }
+  .recipe-search-footer { order:2; }
   .recipe-search-result { display:block; border:0; aspect-ratio:1; border-radius:4px; }
   .recipe-search-item { width:100%; height:100%; padding:2px; justify-content:center; border-radius:4px; }
   .recipe-search-icon { width:32px; height:32px; }

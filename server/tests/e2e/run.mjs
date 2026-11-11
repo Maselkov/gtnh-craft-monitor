@@ -3705,6 +3705,9 @@ async function main() {
     await waitFor('catalog network loaded', `document.readyState === 'complete' && !window.byText`);
     await evaluate(PAGE_LIB);
     await evaluate(`localStorage.removeItem('gcm-recipe-lookups-v1');true`);
+    await evaluate(`window.catalogBaseFetch=window.fetch;window.catalogOffsets=[];window.fetch=(...args)=>{
+      if(String(args[0]).includes('/api/recipes/search?'))window.catalogOffsets.push(Number(new URL(String(args[0]),location.origin).searchParams.get('offset')));
+      return window.catalogBaseFetch(...args);};true`);
     await click(`$('#recipeBookButton')`);
     await waitFor('catalog first page fills available height', `$('#recipeSearchResults').getAttribute('aria-busy') === 'false' && $$('#recipeSearchResults li').length > 40`);
     const catalogSize = await evaluate(`$$('#recipeSearchResults [data-id="catalog"] li').length`);
@@ -3718,15 +3721,19 @@ async function main() {
     await waitFor('grid item standard tooltip', `visible($('.network-tooltip')) && !!$('.network-tooltip-name') && !!$('.network-tooltip-stock')`);
     await evaluate(`pressKey('ArrowRight','#recipeSearchResults .recipe-search-item');true`);
     assert(await evaluate(`document.activeElement === $$('#recipeSearchResults .recipe-search-item')[1]`));
-    await click(`$('#recipeSearchNext')`);
-    await waitFor('catalog next page', `$('#recipeSearchResults').getAttribute('aria-busy') === 'false' && $('#recipeSearchPage').textContent.startsWith('${catalogSize+1}–')`);
+    // The next page, then the previous one (wrapping to the last), are fetched ahead.
+    await waitFor('neighbouring pages prefetched', `window.catalogOffsets.includes(${catalogSize}) && window.catalogOffsets.filter(o => o !== 0).length >= 2`);
+    assert(await evaluate(`(() => {const n = window.catalogOffsets.length; $('#recipeSearchNext').click();
+      return n === window.catalogOffsets.length && $('#recipeSearchResults').getAttribute('aria-busy') === 'false'
+        && $('#recipeSearchPage').textContent.startsWith('${catalogSize+1}–') && $$('#recipeSearchResults [data-id="catalog"] li').length === ${catalogSize};})()`), 'prefetched page shows without a request');
+    await evaluate(`window.fetch=window.catalogBaseFetch;true`);
     await click(`$('#recipeSearchPrevious')`);
     await waitFor('catalog previous page', `$('#recipeSearchResults').getAttribute('aria-busy') === 'false' && $('#recipeSearchPage').textContent.startsWith('1–')`);
-    await evaluate(`window.catalogWheelFetch=window.fetch;window.catalogWheelOffsets=[];window.catalogWheelRelease=null;
+    await evaluate(`window.catalogWheelFetch=window.fetch;window.catalogWheelOffsets=[];window.catalogWheelRelease=null;window.catalogWheelGate=null;
       window.fetch=async(...args)=>{if(!String(args[0]).includes('/api/recipes/search?'))return window.catalogWheelFetch(...args);
         window.catalogWheelOffsets.push(Number(new URL(String(args[0]),location.origin).searchParams.get('offset')));
         const response=await window.catalogWheelFetch(...args);const body=await response.text();
-        if(!window.catalogWheelRelease)await new Promise(resolve=>{window.catalogWheelRelease=resolve;});
+        window.catalogWheelGate||=new Promise(resolve=>{window.catalogWheelRelease=resolve;});await window.catalogWheelGate;
         return new Response(body,{status:response.status,headers:{'Content-Type':'application/json'}});};true`);
     const wheelPoint = await evaluate(`(()=>{const r=$('#recipeSearchResults').getBoundingClientRect();return {x:r.right-8,y:r.top+30};})()`);
     await cdp.send('Input.dispatchMouseEvent',{type:'mouseWheel',...wheelPoint,deltaX:0,deltaY:100});
@@ -3734,8 +3741,10 @@ async function main() {
     for(let i=0;i<3;i++)await cdp.send('Input.dispatchMouseEvent',{type:'mouseWheel',...wheelPoint,deltaX:0,deltaY:100});
     const destination = await evaluate(`(4%Math.ceil(Number($('#recipeSearchPage').textContent.split('of ')[1].replaceAll(',',''))/${catalogSize}))*${catalogSize}`);
     await evaluate(`window.catalogWheelRelease();true`);
-    await waitFor('rapid catalog wheel preserves all pages', `$('#recipeSearchResults').getAttribute('aria-busy')==='false' && $('#recipeSearchPage').textContent.startsWith('${destination+1}–')`);
-    assert(await evaluate(`window.catalogWheelOffsets.length===2 && window.catalogWheelOffsets.at(-1)===${destination}`));
+    // Requests made by the time the wheel lands: none for the pages it passed
+    // over while one was held (its neighbours are prefetched afterwards).
+    const landed = JSON.parse(await waitFor('rapid catalog wheel preserves all pages', `$('#recipeSearchResults').getAttribute('aria-busy')==='false' && $('#recipeSearchPage').textContent.startsWith('${destination+1}–') && JSON.stringify(window.catalogWheelOffsets)`));
+    assert(!landed.includes(3*catalogSize), `wheel fetched a page it passed over: ${landed}`);
     await evaluate(`window.fetch=window.catalogWheelFetch;true`);
     await cdp.send('Emulation.setDeviceMetricsOverride',{width:1366,height:1000,deviceScaleFactor:1,mobile:false});
     await waitFor('taller window adds catalog rows', `$('#recipeSearchResults').getAttribute('aria-busy')==='false' && $$('#recipeSearchResults [data-id="catalog"] li').length>${catalogSize}`);
@@ -3751,15 +3760,20 @@ async function main() {
     await evaluate(`$('#recipeSearchResults .recipe-search-item').focus();pressKey('u','#recipeSearchResults .recipe-search-item');true`);
     await waitFor('search result U opens Uses', `$('.recipe-viewer-box').dataset.itemName === 'Arcane Result' && $('.recipe-viewer-box').dataset.direction === 'using'`);
     await evaluate(`$('#recipeSearchResults .recipe-search-item').dispatchEvent(new MouseEvent('click',{bubbles:true,shiftKey:true}));true`);
-    await waitFor('search Shift-click opens absent stock and closes companion', `visible($('#itemHistoryModal')) && !visible($('#recipeSearchModal')) && !visible($('#recipeViewerModal')) && $('#itemHistoryName').textContent === 'Arcane Result'`);
+    await waitFor('search Shift-click opens absent stock beside the book', `visible($('#itemHistoryModal')) && visible($('#recipeSearchModal')) && !visible($('#recipeViewerModal')) && $('#itemHistoryName').textContent === 'Arcane Result'`);
+    assert(await evaluate(`$('#itemHistoryModal .modal-box').getBoundingClientRect().right <= $('#recipeSearchModal').getBoundingClientRect().left`));
     await evaluate(`history.back();true`);
     await waitFor('stock Back restores recipe', `visible($('#recipeViewerModal')) && $('.recipe-viewer-box').dataset.itemName === 'Arcane Result'`);
     await click(`$('#recipeViewerFind')`);
     await evaluate(`typeInto('#recipeSearchInput','');true`);
-    await waitFor('recent lookups', `$('#recipeSearchResults').getAttribute('aria-busy') === 'false' && $('#recipeSearchResults [data-id="recent"] li')`);
-    assert(await evaluate(`$('#recipeSearchResults [data-id="recent"] .recipe-search-name').textContent.includes('Arcane Result') && localStorage.getItem('gcm-recipe-lookups-v1').includes('example:catalog:57')`));
-    await click(`$('#recipeSearchResults [data-action="recipe-search-clear-recent"]')`);
-    assert(await evaluate(`!$('#recipeSearchResults [data-id="recent"]')`));
+    await waitFor('recent lookups', `$('#recipeSearchResults').getAttribute('aria-busy') === 'false' && $('#recipeSearchRecent li')`);
+    // Under the items, two rows high, newest first.
+    assert(await evaluate(`$('#recipeSearchRecent .recipe-search-name').textContent.includes('Arcane Result') && localStorage.getItem('gcm-recipe-lookups-v1').includes('example:catalog:57')
+      && $('#recipeSearchRecent').getBoundingClientRect().top >= $('#recipeSearchResults').getBoundingClientRect().bottom
+      && Math.abs($('#recipeSearchRecentList').getBoundingClientRect().height - (2*$('#recipeSearchResults li').getBoundingClientRect().height + 4)) < 2`));
+    assert(await evaluate(fits));
+    await click(`$('#recipeSearchRecent [data-action="recipe-search-clear-recent"]')`);
+    assert(await evaluate(`$('#recipeSearchRecent').hidden`));
     await evaluate(`pressKey('Escape');true`);
     await waitFor('Escape closes companion first', `!visible($('#recipeSearchModal')) && visible($('#recipeViewerModal'))`);
     await evaluate(`pressKey('Escape');true`);
@@ -3786,9 +3800,7 @@ async function main() {
     await evaluate(`window.fetch=window.catalogFetch;true`);
     await click(`$('#recipeSearchRetry')`);
     await waitFor('catalog retry results', `$('#recipeSearchResults').getAttribute('aria-busy') === 'false' && $('#recipeSearchResults button[data-key="fluid:water"]')`);
-    await evaluate(`$('#recipeSearchKind').value='fluid';$('#recipeSearchKind').dispatchEvent(new Event('change',{bubbles:true}));true`);
-    await waitFor('fluid catalog filter', `$('#recipeSearchResults').getAttribute('aria-busy') === 'false' && $$('#recipeSearchResults li').length===1`);
-    await evaluate(`$('#recipeSearchResults .recipe-search-item').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true}));true`);
+    await evaluate(`$('#recipeSearchResults button[data-key="fluid:water"]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true}));true`);
     await waitFor('fluid right-click opens Uses', `$('.recipe-viewer-box').dataset.itemName==='Water' && $('.recipe-viewer-box').dataset.direction==='using'`);
     await evaluate(`pressKey('Escape');true`);
     await waitFor('catalog closed after fluid', `!visible($('#recipeSearchModal'))`);
