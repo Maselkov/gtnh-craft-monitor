@@ -49,7 +49,7 @@ def search():
             raise ValueError("Choose items, fluids, or both.")
         limit, offset = int(request.args.get("limit", "40")), int(request.args.get("offset", "0"))
         keys = request.args.getlist("key")
-        if len(keys) > 12:
+        if len(keys) > 24:
             raise ValueError("Too many recent items.")
         version, idx, assets = _dataset()
         if not idx.has_names():
@@ -57,15 +57,17 @@ def search():
                 "Recipe search needs newer game data. Ask an administrator to update it in Settings → Game data.",
                 "catalog_unavailable", 409)
         rows, total = idx.search_names(query, {"all": None, "item": 0, "fluid": 1}[kind], limit=limit, offset=offset)
+        # The book's recent strip shows whatever the search, so recents
+        # ignore the query and the item/fluid filter.
         recent = []
-        if not query and request.args.get("recent_version") == version:
+        if request.args.get("recent_version") == version:
             for key in dict.fromkeys(keys):
                 try:
                     k, identity = recipe_viewer.parse_key(key)
                 except ValueError:
                     continue
                 name = idx.names(k, [identity]).get(identity)
-                if name and (kind == "all" or (k == 1) == (kind == "fluid")):
+                if name:
                     recent.append((k, identity, name))
         return _response(version, idx, assets, items=recipe_viewer.catalog_items(rows),
                          recent=recipe_viewer.catalog_items(recent), total=total, offset=offset, limit=limit, query=query)

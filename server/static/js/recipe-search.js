@@ -2,19 +2,28 @@
 import { itemTooltipHtml } from './item-tooltip.js';
 import { bindCellTooltip, hideTooltip, showTooltip, tooltipVisible } from './tooltip.js';
 import { recipeShortcutDirection } from './item-shortcuts.js';
-import { moveRecipePage, parseRecipeRecents, recipeCatalogCapacity } from './recipe-state.js';
+import { RECIPE_RECENT_LIMIT, moveRecipePage, parseRecipeRecents, recipeCatalogCapacity, recipeCatalogGrid } from './recipe-state.js';
 import { setupPageWheel } from './recipe-wheel.js';
 import { topDialog } from './dialogs.js';
-import { findNetworkItem, findNetworkSpecies, openItemHistory } from './history.js';
+import { findNetworkItem, findNetworkSpecies, hideItemHistory, openItemHistory } from './history.js';
 import { hideRecipeViewer, openRecipeViewer, recipeViewerOpen } from './recipe-viewer.js';
 import { ensureNetworkStock } from './network-stock.js';
 import { delegateActions, escapeHtml, iconClass, iconUrl, updateHtml } from './util.js';
 
 const RECENTS_KEY = 'gcm-recipe-lookups-v1';
-let overlay, results, input, desktop, recent, last = null;
+const CACHED_PAGES = 24, SLOW_LOAD_MS = 200, PREFETCH_DELAY_MS = 250;
+let overlay, results, recentStrip, recentList, input, desktop, recent, last = null;
 let opened = false, loading = false, error = '', offset = 0, serial = 0, controller, timer;
-let pageSize = 40, fitTimer, queryPending = false;
+let pageSize = 40, fitTimer, slowTimer, queryPending = false;
 let entries = new Map(), shiftHeld = false, focusedTooltip = null;
+// The recent strip's items, as the server named them; null until the
+// first search after the page loads asks for them.
+let recentItems = null;
+// Fetched pages, oldest first, for the game data they came from: turning
+// back to one, or onto a prefetched neighbour, draws it without waiting.
+const pages = new Map();
+let pagesVersion = null, prefetchTimer, prefetchController;
+const warming = new Set();
 
 function readRecent() {
   try { return parseRecipeRecents(localStorage.getItem(RECENTS_KEY)); }
@@ -26,8 +35,10 @@ function saveRecent() {
 }
 
 function remember(item) {
-  recent = {version:last.version, keys:[item.key, ...(recent.version === last.version ? recent.keys : [])
-    .filter(key => key !== item.key)].slice(0,8)};
+  const same = recent.version === last.version;
+  recent = {version:last.version, keys:[item.key, ...(same ? recent.keys : [])
+    .filter(key => key !== item.key)].slice(0,RECIPE_RECENT_LIMIT)};
+  recentItems = [item, ...(same && recentItems || []).filter(i => i.key !== item.key)].slice(0,RECIPE_RECENT_LIMIT);
   saveRecent();
 }
 
@@ -40,8 +51,21 @@ function layout() {
   scheduleFit();
 }
 
+// The recent strip keeps two rows of cells on desktop, whether or not its
+// items have arrived yet, so the catalog's page size is right from the
+// first fetch and doesn't change as lookups are added.
+function sizeRecentStrip() {
+  recentStrip.hidden = !(recentItems ?? recent.keys).length;
+  if (recentStrip.hidden || !desktop.matches) { recentList.style.height = ''; return null; }
+  const gap = parseFloat(getComputedStyle(recentList).columnGap) || 4;
+  const grid = recipeCatalogGrid(recentList.clientWidth, gap);
+  recentList.style.height = `${2*grid.cell + gap}px`;
+  return grid;
+}
+
 function capacity() {
   if (!desktop.matches) return 40;
+  sizeRecentStrip();
   const grid = results.querySelector('[data-id="catalog"] ul');
   if (!grid) return 40;
   const r = grid.getBoundingClientRect(), area = results.getBoundingClientRect();
@@ -64,12 +88,13 @@ function scheduleFit() {
 
 function turnPages(steps, wrap = false) {
   if (!last?.total || queryPending) return;
-  const pages = Math.ceil(last.total/pageSize);
-  const next = moveRecipePage(Math.floor(offset/pageSize), steps, pages, wrap)*pageSize;
+  const count = Math.ceil(last.total/pageSize);
+  const next = moveRecipePage(Math.floor(offset/pageSize), steps, count, wrap)*pageSize;
   if (next === offset) return;
   offset = next;
   // While a request is in flight, keep every wheel step and fetch its final destination.
   if (!loading) load(offset);
+  else render();
 }
 
 function close() {
@@ -79,7 +104,8 @@ function close() {
   controller?.abort();
   clearTimeout(timer);
   clearTimeout(fitTimer);
-  loading = false;
+  stopPrefetch();
+  setLoading(false);
   overlay.style.display = 'none';
   document.querySelectorAll('[aria-controls="recipeSearchModal"]').forEach(el => el.setAttribute('aria-expanded', 'false'));
   hideTooltip(); focusedTooltip = null;
@@ -104,17 +130,21 @@ function open() {
 
 function activate(key, direction = 'making', stock = false) {
   const item = entries.get(key);
-  if (!item || loading || !opened) return;
+  if (!item || !opened) return;
   remember(item);
   hideTooltip();
+  // On desktop the book stays open beside whatever the item opens, as
+  // the recipe book in game does.
+  if (!desktop.matches) close();
+  else render();
   if (stock && !item.wildcard) {
     const stored = item.species ? findNetworkSpecies(item.mod, item.internal, item.damage, item.species)
       : findNetworkItem(item.mod, item.internal, item.damage, item.kind);
-    close();
     if (recipeViewerOpen()) hideRecipeViewer();
     openItemHistory(stored || {...item, size:null, isCraftable:false});
   } else {
-    if (!desktop.matches) close();
+    // Recipes open over a stock page the book opened, as recipes do from it.
+    if (document.getElementById('itemHistoryModal').style.display !== 'none') hideItemHistory();
     openRecipeViewer(item.key, direction);
   }
 }
@@ -123,62 +153,150 @@ function row(item, section) {
   const key = escapeHtml(item.key);
   const mod = item.info?.mod_name || item.mod || (item.kind === 'fluid' ? 'Fluid' : 'Item');
   return `<li data-id="${section}:${key}" data-recipe-search-key="${key}" class="recipe-search-result">
-    <button class="recipe-search-item" data-action="recipe-search-select" data-key="${key}" aria-label="Recipes for ${escapeHtml(item.name)}"${loading ? ' disabled' : ''}>
+    <button class="recipe-search-item" data-action="recipe-search-select" data-key="${key}" aria-label="Recipes for ${escapeHtml(item.name)}">
       <span class="recipe-search-icon">${item.icon ? `<img class="${iconClass('',item.icon)}" src="${iconUrl(item.icon)}" alt="" loading="lazy" data-remove-on-error>` : `<span aria-hidden="true">${escapeHtml(item.name.charAt(0))}</span>`}</span>
       <span class="recipe-search-name"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(mod)}</small></span>
     </button>
     <span class="recipe-search-actions">
-      <button class="recipe-search-action" data-action="recipe-search-select" data-key="${key}" aria-label="Recipes for ${escapeHtml(item.name)}"${loading ? ' disabled' : ''}><span aria-hidden="true">←</span> Recipes</button>
-      <button class="recipe-search-action recipe-search-uses" data-action="recipe-search-select" data-key="${key}" data-dir="using" aria-label="Uses for ${escapeHtml(item.name)}"${loading ? ' disabled' : ''}>Uses <span aria-hidden="true">→</span></button>
+      <button class="recipe-search-action" data-action="recipe-search-select" data-key="${key}" aria-label="Recipes for ${escapeHtml(item.name)}"><span aria-hidden="true">←</span> Recipes</button>
+      <button class="recipe-search-action recipe-search-uses" data-action="recipe-search-select" data-key="${key}" data-dir="using" aria-label="Uses for ${escapeHtml(item.name)}">Uses <span aria-hidden="true">→</span></button>
     </span>
   </li>`;
 }
 
 function render() {
-  const items = last?.items || [], recents = last?.recent || [];
+  const items = last?.items || [];
+  const grid = sizeRecentStrip();
+  const recents = (recentItems || []).slice(0, grid ? 2*grid.columns : undefined);
   entries = new Map([...recents,...items].map(item => [item.key,item]));
   results.setAttribute('aria-busy', String(loading));
-  updateHtml(results, `${recents.length ? `<section data-id="recent"><div class="recipe-search-section"><h3>Recent lookups</h3><button class="text-btn" data-action="recipe-search-clear-recent"${loading ? ' disabled' : ''}>Clear</button></div><ul>${recents.map(i => row(i,'recent')).join('')}</ul></section>` : ''}
-    <section data-id="catalog">${recents.length ? '<h3>All items</h3>' : ''}<ul>${items.map(i => row(i,'catalog')).join('')}</ul>${!items.length && !loading && !error ? '<p class="recipe-search-empty">No matching items or fluids. Try a shorter name or another mod.</p>' : ''}</section>`);
-  const total = last?.total || 0;
-  const shownOffset = last?.offset ?? offset, shownSize = last?.limit ?? pageSize;
-  document.getElementById('recipeSearchStatus').textContent = error || (loading ? 'Searching…' : `${total.toLocaleString()} matching ${total === 1 ? 'entry' : 'entries'}`);
+  updateHtml(recentList, recents.map(i => row(i,'recent')).join(''));
+  updateHtml(results, `<section data-id="catalog"><ul class="recipe-search-grid">${items.map(i => row(i,'catalog')).join('')}</ul>${!items.length && !loading && !error ? '<p class="recipe-search-empty">No matching items or fluids. Try a shorter name or another mod.</p>' : ''}</section>`);
+  // A page turn shows where it's going at once; the page it replaces stays
+  // up, and usable, until the new one is ready.
+  const total = queryPending ? 0 : last?.total || 0;
+  document.getElementById('recipeSearchStatus').textContent = error || (loading && (queryPending || !last) ? 'Searching…' : last ? `${last.total.toLocaleString()} matching ${last.total === 1 ? 'entry' : 'entries'}` : '');
   document.getElementById('recipeSearchRetry').hidden = !error;
-  document.getElementById('recipeSearchPrevious').disabled = loading || shownOffset === 0;
-  document.getElementById('recipeSearchNext').disabled = loading || shownOffset + shownSize >= total;
-  document.getElementById('recipeSearchPage').textContent = total ? `${shownOffset+1}–${Math.min(shownOffset+shownSize,total)} of ${total.toLocaleString()}` : '';
+  document.getElementById('recipeSearchPrevious').disabled = !total || offset === 0;
+  document.getElementById('recipeSearchNext').disabled = !total || offset + pageSize >= total;
+  document.getElementById('recipeSearchPage').textContent = total ? `${offset+1}–${Math.min(offset+pageSize,total)} of ${total.toLocaleString()}` : '';
+}
+
+function setLoading(value) {
+  loading = value;
+  clearTimeout(slowTimer);
+  if (!value) results.classList.remove('recipe-search-slow');
+  else slowTimer = setTimeout(() => results.classList.add('recipe-search-slow'), SLOW_LOAD_MS);
+}
+
+function pageKey(params) {
+  return JSON.stringify([params.q, params.limit, params.offset]);
+}
+
+function cachedPage(params) {
+  const key = pageKey(params), data = pages.get(key);
+  if (data) { pages.delete(key); pages.set(key, data); }
+  return data;
+}
+
+function storePage(params, data) {
+  const version = `${data.version}|${data.fingerprint}|${data.assets}`;
+  if (version !== pagesVersion) { pages.clear(); pagesVersion = version; }
+  pages.set(pageKey(params), {items:data.items, total:data.total, offset:data.offset, limit:data.limit, version:data.version});
+  while (pages.size > CACHED_PAGES) pages.delete(pages.keys().next().value);
+}
+
+async function fetchPage(params, signal, withRecents) {
+  const query = new URLSearchParams({q:params.q, limit:String(params.limit), offset:String(params.offset)});
+  if (withRecents) {
+    query.set('recent_version', recent.version);
+    for (const key of recent.keys) query.append('key',key);
+  }
+  const response = await fetch('/api/recipes/search?'+query, {signal});
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || 'Could not search recipes.');
+  return data;
 }
 
 async function load(page = 0) {
   if (!opened) return;
   const token = ++serial;
   controller?.abort(); controller = new AbortController();
-  offset = page; loading = true; error = ''; render();
+  stopPrefetch();
+  offset = page; error = '';
   pageSize = capacity();
   page = offset = Math.floor(page/pageSize)*pageSize;
-  const requestSize = pageSize;
-  const query = new URLSearchParams({q:input.value.trim(),kind:document.getElementById('recipeSearchKind').value,limit:String(requestSize),offset:String(page),recent_version:recent.version});
-  for (const key of recent.keys) query.append('key',key);
-  try {
-    const response = await fetch('/api/recipes/search?'+query, {signal:controller.signal});
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Could not search recipes.');
+  const params = {q:input.value.trim(), limit:pageSize, offset:page};
+  // Recents are named once per page load, then kept up here as they change.
+  const withRecents = recentItems === null;
+  let data = withRecents ? null : cachedPage(params);
+  if (!data) {
+    setLoading(true); render();
+    try {
+      data = await fetchPage(params, controller.signal, withRecents);
+    } catch (e) {
+      if (!opened || token !== serial || e.name === 'AbortError') return;
+      last = null; queryPending = false; error = e.message || 'Could not search recipes.';
+      setLoading(false); render();
+      return;
+    }
     if (!opened || token !== serial) return;
-    if (page !== offset) return await load(offset);
-    if (data.total && page >= data.total) return await load(0);
-    if (recent.version !== data.version) { recent = {version:data.version,keys:[]}; saveRecent(); }
-    last = data;
-    results.scrollTop = 0;
-    render();
-    const fitted = capacity();
-    if (fitted !== requestSize) return await load(Math.floor(offset/fitted)*fitted);
-    queryPending = false;
-    return data;
-  } catch (e) {
-    if (!opened || token !== serial || e.name === 'AbortError') return;
-    last = null; queryPending = false; error = e.message || 'Could not search recipes.';
-  } finally {
-    if (opened && token === serial) { loading = false; render(); }
+    storePage(params, data);
+    if (withRecents) {
+      recentItems = recent.version === data.version ? data.recent : [];
+      // Keys the game data no longer knows drop out of the stored list.
+      if (recentItems.length !== recent.keys.length) { recent = {version:data.version, keys:recentItems.map(i => i.key)}; saveRecent(); }
+    }
+  }
+  if (page !== offset) return await load(offset);
+  if (data.total && page >= data.total) return await load(0);
+  if (recent.version !== data.version) { recent = {version:data.version,keys:[]}; recentItems = []; saveRecent(); }
+  last = data;
+  setLoading(false);
+  results.scrollTop = 0;
+  render();
+  const fitted = capacity();
+  if (fitted !== params.limit) return await load(Math.floor(offset/fitted)*fitted);
+  queryPending = false;
+  render();
+  prefetchTimer = setTimeout(() => prefetch(token, params), PREFETCH_DELAY_MS);
+  return data;
+}
+
+function stopPrefetch() {
+  clearTimeout(prefetchTimer);
+  prefetchController?.abort();
+}
+
+// Loads each item's icon into the browser's cache, quietly, so the page
+// shows complete when it's turned to.
+function warmIcons(items) {
+  return Promise.all(items.filter(item => item.icon).map(item => new Promise(resolve => {
+    const img = new Image();
+    img.fetchPriority = 'low';
+    warming.add(img);
+    img.onload = img.onerror = () => { warming.delete(img); resolve(); };
+    img.src = iconUrl(item.icon);
+  })));
+}
+
+// The next page, then the previous one (both wrap, as the wheel does):
+// their results and icons, so turning to them doesn't wait.
+async function prefetch(token, shown) {
+  prefetchController = new AbortController();
+  const signal = prefetchController.signal, count = Math.ceil((last?.total || 0)/shown.limit);
+  const at = shown.offset/shown.limit;
+  for (const step of [1, -1]) {
+    if (count < 2 || token !== serial || signal.aborted) return;
+    const params = {...shown, offset:moveRecipePage(at, step, count, true)*shown.limit};
+    let data = cachedPage(params);
+    if (!data) {
+      try { data = await fetchPage(params, signal, false); }
+      catch { return; }
+      if (token !== serial) return;
+      storePage(params, data);
+    }
+    await warmIcons(data.items);
   }
 }
 
@@ -186,7 +304,8 @@ function searchChanged() {
   controller?.abort(); serial++;
   clearTimeout(timer);
   queryPending = true;
-  offset = 0; loading = true; error = ''; render();
+  stopPrefetch();
+  offset = 0; setLoading(true); error = ''; render();
   timer = setTimeout(() => load(0), 180);
 }
 
@@ -221,6 +340,7 @@ function swipe(element, direction, action) {
 export function setupRecipeSearch() {
   overlay = document.getElementById('recipeSearchModal');
   results = document.getElementById('recipeSearchResults'); input = document.getElementById('recipeSearchInput');
+  recentStrip = document.getElementById('recipeSearchRecent'); recentList = document.getElementById('recipeSearchRecentList');
   desktop = window.matchMedia('(min-width:1000px)'); recent = readRecent();
   layout(); desktop.addEventListener('change', layout);
   delegateActions(document, {
@@ -229,14 +349,13 @@ export function setupRecipeSearch() {
     'recipe-search-previous':() => turnPages(-1),
     'recipe-search-next':() => turnPages(1),
     'recipe-search-select':(el,event) => activate(el.dataset.key,el.dataset.dir || 'making',event.shiftKey),
-    'recipe-search-clear-recent':() => { recent = {version:last.version,keys:[]}; saveRecent(); last.recent = []; render(); scheduleFit(); },
+    'recipe-search-clear-recent':() => { recent = {version:recent.version,keys:[]}; recentItems = []; saveRecent(); render(); scheduleFit(); },
   });
   input.addEventListener('input', searchChanged);
   new ResizeObserver(scheduleFit).observe(results);
   setupPageWheel(overlay, {isOpen:() => opened && desktop.matches, page:steps => turnPages(steps,true)});
-  document.getElementById('recipeSearchKind').addEventListener('change', searchChanged);
   overlay.addEventListener('click', e => { if (e.target === overlay && !desktop.matches) close(); });
-  results.addEventListener('contextmenu', e => {
+  overlay.addEventListener('contextmenu', e => {
     const cell = e.target.closest('[data-recipe-search-key]');
     if (cell) { e.preventDefault(); activate(cell.dataset.recipeSearchKey,'using'); }
   });
@@ -253,7 +372,7 @@ export function setupRecipeSearch() {
     if (!opened) return;
     if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); close(); return; }
     if (e.key === 'Shift') { shiftHeld = true; refreshTooltip(); }
-    const cell = results.querySelector('[data-recipe-search-key]:hover') || document.activeElement?.closest('[data-recipe-search-key]');
+    const cell = overlay.querySelector('[data-recipe-search-key]:hover') || document.activeElement?.closest('[data-recipe-search-key]');
     const direction = recipeShortcutDirection(e);
     if (cell && direction) { e.preventDefault(); activate(cell.dataset.recipeSearchKey,direction); return; }
     if (e.target === input && e.key === 'Enter') {
@@ -269,8 +388,11 @@ export function setupRecipeSearch() {
     }
     const arrows = desktop.matches && e.target !== input ? ['ArrowDown','ArrowUp','ArrowLeft','ArrowRight'] : ['ArrowDown','ArrowUp'];
     if (arrows.includes(e.key) && (cell || e.target === input)) {
-      const cells = [...results.querySelectorAll('[data-recipe-search-key]')];
-      if (!cells.length || loading) return;
+      // In the order they're shown: recents under the items on desktop, above them on phones.
+      const lists = [results, recentList];
+      if (!desktop.matches) lists.reverse();
+      const cells = lists.flatMap(list => [...list.querySelectorAll('[data-recipe-search-key]')]);
+      if (!cells.length) return;
       const anchor = document.activeElement?.closest('[data-recipe-search-key]') || cell;
       const columns = desktop.matches && anchor ? getComputedStyle(anchor.parentElement).gridTemplateColumns.split(' ').length : 1;
       const step = e.key === 'ArrowDown' ? columns : e.key === 'ArrowUp' ? -columns : e.key === 'ArrowRight' ? 1 : -1;
@@ -283,11 +405,14 @@ export function setupRecipeSearch() {
   window.addEventListener('gcm-networkchange', () => { if (opened) refreshTooltip(); });
   new MutationObserver(() => {
     if (document.body.classList.contains('private-locked')) {
-      close(); last = null; entries.clear(); results.replaceChildren();
+      close(); last = null; entries.clear(); pages.clear(); results.replaceChildren(); recentList.replaceChildren();
     }
   }).observe(document.body,{attributes:true,attributeFilter:['class']});
+  // Another dialog closes the book, except a stock page on desktop, which
+  // sits beside it as recipes do (Shift-click, here or in a recipe).
   const dialogs = new MutationObserver(records => {
-    if (opened && records.some(({target}) => target.style.display !== 'none')) close();
+    if (opened && records.some(({target}) => target.style.display !== 'none'
+      && !(desktop.matches && target.id === 'itemHistoryModal'))) close();
   });
   for (const modal of document.querySelectorAll('.modal-overlay:not(#recipeSearchModal):not(#recipeViewerModal)')) {
     dialogs.observe(modal,{attributes:true,attributeFilter:['style']});

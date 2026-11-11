@@ -51,7 +51,8 @@ def test_catalog_recents_follow_current_dataset_and_drop_unknown_keys(client, da
     body = client.get(path).get_json()
     assert [i['key'] for i in body['recent']] == ['minecraft:planks:0', 'fluid:mod:fluid']
     assert client.get(path.replace('2.9.0', 'old')).get_json()['recent'] == []
-    assert client.get(path+'&q=planks').get_json()['recent'] == []
+    searched = client.get(path+'&q=log&kind=item').get_json()
+    assert [i['key'] for i in searched['recent']] == ['minecraft:planks:0', 'fluid:mod:fluid']
 
 
 def test_catalog_reports_missing_legacy_names_instead_of_empty_search(client, data, monkeypatch):
