@@ -253,6 +253,16 @@ export function inlineChannelRows(channels, rows) {
 
 function channelHtml(ch, inline) {
   const label = channelLabel(ch.name), id = 'kitChannel-' + ch.name;
+  // A size channel's tiers are just numbers: a slider, not a list.
+  if (ch.kind === 'size') {
+    return `<div class="kit-control" data-key="control-${escapeHtml(ch.name)}">
+      <label class="kit-control-label" for="${escapeHtml(id)}">${escapeHtml(label)}</label>
+      <div class="kit-size">
+        <input type="range" id="${escapeHtml(id)}" data-size-channel="${escapeHtml(ch.name)}"
+          min="${ch.min}" max="${ch.max}" step="1" value="${ch.tier}"${ch.min === ch.max ? ' disabled' : ''}>
+        <output class="kit-size-value" for="${escapeHtml(id)}">${ch.tier}</output>
+      </div></div>`;
+  }
   const picker = `<div class="kit-choice${inline ? ' kit-choice-inline' : ''}"
     data-key="channel-${escapeHtml(ch.name)}" data-channel="${escapeHtml(ch.name)}">
     ${kitPickerHtml({ id, label, inline })}</div>`;
@@ -277,6 +287,11 @@ function renderKit() {
   const controlsRoot = document.getElementById('kitControls');
   pickers.close(controlsRoot);
   updateHtml(controlsRoot, kit.channels.filter(ch => !inlineRows.has(ch.name)).map(ch => channelHtml(ch, false)).join(''));
+  // A dragged slider's value no longer follows its attribute.
+  controlsRoot.querySelectorAll('[data-size-channel]').forEach(input => {
+    input.value = String(kit.channels.find(c => c.name === input.dataset.sizeChannel).tier);
+    input.nextElementSibling.textContent = input.value;
+  });
 
   const operator = isOperator();
   const head = `<div class="kit-row kit-head" data-key="head">
@@ -606,6 +621,16 @@ export function setupKitActions() {
       edits = new Map();
       fetchKit();
     }
+  });
+  const controls = document.getElementById('kitControls');
+  controls.addEventListener('input', (e) => {
+    if (e.target.dataset.sizeChannel) e.target.nextElementSibling.textContent = e.target.value;
+  });
+  controls.addEventListener('change', (e) => {
+    const name = e.target.dataset.sizeChannel;
+    if (!name || Number(e.target.value) === tiers[name]) return;
+    tiers[name] = Number(e.target.value);
+    fetchKit();
   });
   // The box and the slider below it follow each other.
   document.getElementById('kitRows').addEventListener('input', (e) => {
