@@ -971,7 +971,7 @@ What it can look at:
 | `plan_craft` | The [crafting plan](#requesting-and-cancelling-crafts) for an amount of an item |
 | `stock_rules` | Keep-in-stock targets and your alerts |
 | `power` | Stored EU over time and its trend |
-| `find_recipes` | How the game makes an item: supported crafting-table, furnace and GregTech recipes for your GTNH version |
+| `find_recipes` | How the game makes an item, or what it's used for (the recipe book's Uses): supported crafting-table, furnace and GregTech recipes for your GTNH version, one machine's at a time if asked, with a link that opens them in the recipe book |
 | `game_item` | Any item's tooltip, including a multiblock's structure (its shift tooltip) |
 | `multiblock_kit` | Every block a multiblock is built from, for the coils, glass or size asked for, with the network's stock |
 | `base_patterns` | How your base makes an item: its patterns and the machines they're in |

@@ -37,15 +37,20 @@ def path(cpu, first_seen):
 
 
 def url(cpu, first_seen):
-    """path() as an absolute URL: PUBLIC_URL's, else the address the
-    current request came in on; None outside a request without one."""
+    """path() as an absolute URL, or None (see absolute())."""
+    return absolute(path(cpu, first_seen))
+
+
+def absolute(page):
+    """A page's path as an absolute URL: PUBLIC_URL's, else the address
+    the current request came in on; None outside a request without one."""
     if config.PUBLIC_URL:
         base = config.PUBLIC_URL
     elif has_request_context():
         base = request.url_root.rstrip("/")
     else:
         return None
-    return base + path(cpu, first_seen)
+    return base + page
 
 
 def parse(args):

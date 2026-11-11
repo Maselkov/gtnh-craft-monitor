@@ -114,6 +114,37 @@ class TestFindRecipes:
         assert found["recipes"] == [] and "crafting table" in found["note"]
         assert found["used_in_machines"] == ["Electric Blast Furnace"]
 
+    def test_uses(self, client, token, game_recipes):
+        found = ok(client, token, "find_recipes", item=f"Name of {DUST}", direction="using")
+        assert found["direction"] == "using" and found["recipes_total"] == 2
+        assert all(r["machine"] == "Electric Blast Furnace" for r in found["recipes"])
+        assert {"name": f"Name of {DUST}", "amount": 2, "unit": "items"} in found["recipes"][0]["inputs"]
+        assert found["machines"] == [{"machine": "Electric Blast Furnace", "recipes": 2}]
+        assert "used_in_machines" not in found and found["note"].startswith("Recipes that take it")
+        assert found["recipe_book"].endswith("/recipes?key=gregtech%3Agt.metaitem.01%3A2028&dir=using")
+
+    def test_nothing_takes_it(self, client, token, game_recipes):
+        found = ok(client, token, "find_recipes", item=INGOT_KEY, direction="using")
+        assert found["recipes"] == [] and found["machines"] == []
+        assert "No supported recipe in this bundle takes it" in found["note"]
+
+    def test_one_machine_and_pages(self, client, token, typed_index, monkeypatch):
+        monkeypatch.setattr(gamedata, "selected_version", lambda: "2.9.0")
+        monkeypatch.setattr(recipes, "index", lambda version: typed_index)
+        found = ok(client, token, "find_recipes", item="minecraft|planks|0|item", limit=1)
+        assert found["next_offset"] == 1 and found["offset"] == 0
+        assert {"machine": "Crafting Table", "recipes": 2} in found["machines"]
+        page = ok(client, token, "find_recipes", item="minecraft|planks|0|item", limit=1, offset=found["next_offset"])
+        assert page["recipes"][0]["type"] == "shapeless" and page["next_offset"] == 2
+        crafting = ok(client, token, "find_recipes", item="minecraft|planks|0|item", machine="crafting table")
+        assert crafting["machine"] == "Crafting Table" and crafting["recipes_total"] == 2
+        assert {r["type"] for r in crafting["recipes"]} == {"shaped", "shapeless"} and "next_offset" not in crafting
+        assert crafting["recipe_book"].endswith("/recipes?key=minecraft%3Aplanks%3A0&map=crafting")
+        partial = ok(client, token, "find_recipes", item="minecraft|planks|0|item", machine="blast")
+        assert partial["machine"] == "Electric Blast Furnace" and partial["recipes_total"] == 2
+        answer, is_error = call(client, token, "find_recipes", item="minecraft|planks|0|item", machine="Centrifuge")
+        assert is_error and "Centrifuge" in answer and "Crafting Table" in answer
+
     def test_without_game_data(self, client, token, monkeypatch):
         monkeypatch.setattr(gamedata, "selected_version", lambda: None)
         answer, is_error = call(client, token, "find_recipes", item=HOT_KEY)
