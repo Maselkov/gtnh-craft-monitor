@@ -3838,8 +3838,27 @@ async function main() {
     await waitFor('fluid recipe closed', `!visible($('#recipeViewerModal'))`);
   });
 
+  step('recipe search: a narrow mouse window keeps the icon grid over the page', async () => {
+    await cdp.send('Emulation.setDeviceMetricsOverride',{width:800,height:768,deviceScaleFactor:1,mobile:false});
+    await cdp.send('Page.navigate',{url:base+'/network'});
+    await waitFor('narrow catalog network loaded', `document.readyState === 'complete' && !window.byText`);await evaluate(PAGE_LIB);
+    await click(`$('#recipeBookButton')`);
+    await waitFor('narrow catalog page', `$('#recipeSearchResults').getAttribute('aria-busy') === 'false' && $$('#recipeSearchResults [data-id="catalog"] li').length > 40`);
+    assert(await evaluate(`$('#recipeSearchModal').dataset.nonmodal === 'false' && !document.body.classList.contains('recipe-search-open')
+      && getComputedStyle($('#recipeSearchResults ul')).display === 'grid' && !visible($('#recipeSearchResults .recipe-search-actions'))
+      && $('#recipeSearchResults .recipe-search-item').getBoundingClientRect().width < 50`));
+    await evaluate(`$('#recipeSearchResults .recipe-search-item').focus();pressKey('ArrowRight','#recipeSearchResults .recipe-search-item');true`);
+    assert(await evaluate(`document.activeElement === $$('#recipeSearchResults .recipe-search-item')[1]`), 'arrows move across the narrow grid');
+    await evaluate(`$$('#recipeSearchResults .recipe-search-item')[1].click();true`);
+    await waitFor('narrow book closes on a result', `!visible($('#recipeSearchModal')) && visible($('#recipeViewerModal'))`);
+    await evaluate(`pressKey('Escape');true`);
+    await waitFor('narrow recipe closed', `!visible($('#recipeViewerModal'))`);
+  });
+
   step('recipe search: mobile swipe sheet, explicit Uses and Find within a recipe', async () => {
     await cdp.send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
+    // Touch, not width, turns the icon grid into named rows.
+    await cdp.send('Emulation.setTouchEmulationEnabled',{enabled:true});
     await cdp.send('Page.navigate',{url:base+'/network'});
     await waitFor('mobile catalog network loaded', `document.readyState === 'complete' && !window.byText`);await evaluate(PAGE_LIB);
     assert(await evaluate(`(() => {const book=$('#recipeBookButton').getBoundingClientRect(),cog=$('#settingsBtn').getBoundingClientRect();
@@ -3871,6 +3890,7 @@ async function main() {
     await waitFor('Escape leaves recipe visible', `!visible($('#recipeSearchModal')) && visible($('#recipeViewerModal'))`);
     await evaluate(`pressKey('Escape');true`);
     await waitFor('mobile recipe closed after search', `!visible($('#recipeViewerModal'))`);
+    await cdp.send('Emulation.setTouchEmulationEnabled',{enabled:false});
     await cdp.send('Emulation.setDeviceMetricsOverride',{width:1366,height:768,deviceScaleFactor:1,mobile:false});
     // Resize listeners close floating pickers; settle before the next step opens one.
     await evaluate(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))`);
