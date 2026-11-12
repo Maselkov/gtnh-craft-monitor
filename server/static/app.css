@@ -3591,7 +3591,8 @@ body.oauth-page {
 
 .recipe-preview-infusion { max-width:300px; }
 
-.recipe-preview-paper { max-width:330px; margin:8px auto; padding:4px 8px 12px; border-radius:6px; background:var(--recipe-canvas); color:var(--recipe-canvas-ink); color-scheme:only light; }
+/* 348px: its 8px padding either side and the infusion GUI (166 pixels) at 2x. */
+.recipe-preview-paper { max-width:348px; margin:8px auto; padding:4px 8px 12px; border-radius:6px; background:var(--recipe-canvas); color:var(--recipe-canvas-ink); color-scheme:only light; }
 .recipe-preview-paper .recipe-preview { margin:0 auto 8px; }
 .recipe-preview-paper .recipe-preview-instability { color:var(--recipe-canvas-ink); }
 .recipe-preview-paper .recipe-preview-aspects { margin-bottom:0; }

@@ -485,10 +485,12 @@ export function setupRecipeViewer() {
     turnPage, turnCategory,
   });
   setupRecipeWheel(book(), {isOpen:recipeViewerOpen, page:steps => turnPage(steps,true), category:turnCategory});
-  let previewWidth = 0;
+  let previewSize = '';
   const resize = new ResizeObserver(([entry]) => {
-    if (entry.contentRect.width === previewWidth) return;
-    previewWidth = entry.contentRect.width;
+    // Previews are sized to the list's width and height (layoutRecipePreviews).
+    const size = `${entry.contentRect.width}x${entry.contentRect.height}`;
+    if (size === previewSize) return;
+    previewSize = size;
     if (state) requestAnimationFrame(() => layoutRecipePreviews(list()));
   });
   resize.observe(list());

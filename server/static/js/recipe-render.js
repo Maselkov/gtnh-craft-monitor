@@ -349,7 +349,13 @@ export function layoutRecipePreviews(root) {
     const contentLeft = outer.left + parseFloat(css.borderLeftWidth) + parseFloat(css.paddingLeft);
     const max = parseFloat(getComputedStyle(scene).maxWidth);
     const content = parent.clientWidth - parseFloat(css.paddingLeft) - parseFloat(css.paddingRight);
-    const perPixel = Math.floor(Math.min(content, max || Infinity) * dpr / width) / dpr;
+    // Never taller than the list shows, or reaching a slot (focusing it,
+    // say) scrolls the recipe; but not below two pixels per GUI pixel on a
+    // short window, where scrolling is the lesser evil.
+    const list = scene.closest('.recipe-viewer-list');
+    const byWidth = Math.floor(Math.min(content, max || Infinity) * dpr / width);
+    const byHeight = list ? Math.floor((list.clientHeight - 24) * dpr / height) : Infinity;
+    const perPixel = Math.max(Math.min(byWidth, byHeight), Math.min(byWidth, Math.ceil(2 * dpr))) / dpr;
     if (perPixel > 0) {
       const sceneWidth = perPixel * width;
       scene.style.width = `${sceneWidth}px`;
