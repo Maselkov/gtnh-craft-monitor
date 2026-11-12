@@ -3336,8 +3336,11 @@ body.oauth-page {
 .recipe-viewer-box {
   position:relative; isolation:isolate;
   margin:auto;
-  display:grid; grid-template-columns:62px minmax(0, 620px); grid-template-rows:64px minmax(0, 1fr);
-  width:min(682px, 100%); height:min(820px, calc(100dvh - 32px)); min-width:0; box-sizing:border-box;
+  /* The paper fits a 170-pixel GUI at 4 screen pixels per pixel (680px,
+     layoutRecipePreviews()), with its padding, border and the list's
+     scrollbar. */
+  display:grid; grid-template-columns:62px minmax(0, 716px); grid-template-rows:64px minmax(0, 1fr);
+  width:min(778px, 100%); height:min(820px, calc(100dvh - 32px)); min-width:0; box-sizing:border-box;
   color:var(--recipe-canvas-ink); color-scheme:only light;
 }
 .recipe-book-canvas { display:none; position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:-1; image-rendering:pixelated; }
@@ -3558,6 +3561,13 @@ body.oauth-page {
 .recipe-preview .recipe-stack-control { width:100%; height:100%; min-height:0; padding:5.56%; border:0; border-radius:0; background:transparent; }
 .recipe-preview .recipe-stack-control:hover, .recipe-preview .recipe-stack-control:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
 .recipe-preview .recipe-stack-icon, .recipe-preview .recipe-stack-placeholder { width:100%; height:100%; object-fit:contain; }
+/* Icons and slot frames each get their own compositing layer. Stretched
+   by a fraction, pixel art has pixels that could round either way, and
+   Chrome (GPU raster) rounds them differently when it redraws only part
+   of them: every frame of an animated icon, or a cycled alternative,
+   redrew a patch of the frame below, and the slot rims and icon edges
+   shimmered. A layer of its own is only ever drawn whole. */
+.recipe-preview .recipe-stack-icon, .recipe-preview-frame { will-change:transform; }
 .recipe-preview .recipe-stack-amount { right:0; bottom:-2%; font-size:clamp(14px, 4.7cqw, 24px); }
 .recipe-preview .recipe-stack-fluid .recipe-stack-icon { object-fit:cover; }
 .recipe-preview .recipe-stack-fluid .recipe-stack-amount {

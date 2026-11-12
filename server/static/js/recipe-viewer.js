@@ -438,6 +438,22 @@ function render(model) {
     : row?.approximate?.some(flag => flag !== 'nei_display') ? 'Approximate: NBT or custom matching rules may differ.' : '');
 }
 
+// Icons the cycling has loaded and decoded, kept so they stay decoded. A
+// slot swaps to an alternative only once its icon is ready: an icon on a
+// layer of its own (app.css) is blank until it's decoded.
+const cycleIcons = new Map();
+function cycleIconReady(e) {
+  if (!e?.icon) return true;
+  const url = iconUrl(e.icon), known = cycleIcons.get(url);
+  if (known) return known.ready;
+  const entry = { ready: false, image: new Image() };
+  entry.image.src = url;
+  entry.image.decode().catch(() => {}).then(() => { entry.ready = true; });
+  cycleIcons.set(url, entry);
+  if (cycleIcons.size > 300) cycleIcons.delete(cycleIcons.keys().next().value);
+  return false;
+}
+
 function startCycling() {
   clearInterval(cycleTimer);
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -448,8 +464,11 @@ function startCycling() {
       const alternatives = choices.get(el.dataset.choice);
       if (!alternatives || alternatives.length < 2 || el.contains(document.activeElement) || el.matches(':hover') || touch?.isSelected(el)) continue;
       const next = (Number(el.dataset.frame || 0) + 1) % alternatives.length;
+      // Load the one after too, so it's ready by the next tick.
+      cycleIconReady(alternatives[(next + 1) % alternatives.length]);
+      if (!cycleIconReady(alternatives[next])) continue;
       el.dataset.frame = String(next);
-      updateHtml(el.querySelector('.recipe-preview-choice') || el, stackHtml(alternatives[next], { interactive: true, compact: true, preview: el.classList.contains('recipe-preview-slot'), tooltipKey }));
+      updateHtml(el.querySelector('.recipe-preview-choice') || el, stackHtml(alternatives[next], { interactive: true, compact: true, eager: true, preview: el.classList.contains('recipe-preview-slot'), tooltipKey }));
       changed = true;
     }
     if (changed) layoutRecipePreviews(list());

@@ -181,7 +181,7 @@ export function stackHtml(e, options = {}) {
   const name = e.name || '?';
   const chance = e.chance ? ` <span class="recipe-chance">${escapeHtml(String(e.chance))}%</span>` : '';
   const icon = e.icon
-    ? `<img class="${iconClass('recipe-stack-icon', e.icon)}" src="${iconUrl(e.icon)}" alt="" loading="lazy" data-remove-on-error>`
+    ? `<img class="${iconClass('recipe-stack-icon', e.icon)}" src="${iconUrl(e.icon)}" alt="" ${options.eager ? 'decoding="sync"' : 'loading="lazy"'} data-remove-on-error>`
     : options.interactive ? `<span class="recipe-stack-placeholder" aria-hidden="true">${escapeHtml(name.charAt(0))}</span>` : '';
   const nc = e.size === 0 && (options.preview || options.compact);
   const content = `${icon}<span class="recipe-stack-amount${nc ? ' recipe-stack-nc' : ''}">${escapeHtml(options.preview || options.compact ? previewAmountText(e) : amountText(e))}</span>`
@@ -340,11 +340,28 @@ export function layoutRecipePreviews(root) {
   for (const scene of root.querySelectorAll('.recipe-preview')) {
     const width = Number(scene.dataset.width), height = Number(scene.dataset.height);
     scene.style.aspectRatio = `${width} / ${height}`;
-    // Slot edges land on whole device pixels: a pixelated frame image at a
-    // fractional offset is rounded differently each time its cycling icon
-    // repaints, and its one-texel rims flicker. Rounding both edges (not
-    // the size) keeps neighbouring slots on shared lines.
-    const box = scene.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    // A whole number of device pixels per GUI pixel, the most that fits,
+    // starting on a whole pixel. Pixel art stretched by a fraction has
+    // pixels that could round either way, and Chrome rounds them
+    // differently as it redraws: slot rims and corners shimmered.
+    const dpr = window.devicePixelRatio || 1, parent = scene.parentElement;
+    const css = getComputedStyle(parent), outer = parent.getBoundingClientRect();
+    const contentLeft = outer.left + parseFloat(css.borderLeftWidth) + parseFloat(css.paddingLeft);
+    const max = parseFloat(getComputedStyle(scene).maxWidth);
+    const content = parent.clientWidth - parseFloat(css.paddingLeft) - parseFloat(css.paddingRight);
+    const perPixel = Math.floor(Math.min(content, max || Infinity) * dpr / width) / dpr;
+    if (perPixel > 0) {
+      const sceneWidth = perPixel * width;
+      scene.style.width = `${sceneWidth}px`;
+      scene.style.marginLeft = `${Math.round((contentLeft + (content - sceneWidth) / 2) * dpr) / dpr - contentLeft}px`;
+      scene.style.marginRight = 'auto';
+    } else {
+      scene.style.width = scene.style.marginLeft = scene.style.marginRight = '';
+    }
+    // Slot edges land on whole device pixels, so a slot's frame and icon
+    // layers (app.css) do too. Rounding both edges (not the size) keeps
+    // neighbouring slots on shared lines.
+    const box = scene.getBoundingClientRect();
     const unit = box.width / width;
     const snap = (origin, at) => Math.round((origin + at * unit) * dpr) / dpr - origin;
     for (const slot of scene.querySelectorAll('.recipe-preview-slot')) {
@@ -352,8 +369,15 @@ export function layoutRecipePreviews(root) {
       const left = snap(box.left, x), top = snap(box.top, y);
       slot.style.left = `${left}px`;
       slot.style.top = `${top}px`;
-      slot.style.width = `${snap(box.left, x + Number(slot.dataset.w)) - left}px`;
+      const slotWidth = snap(box.left, x + Number(slot.dataset.w)) - left;
+      slot.style.width = `${slotWidth}px`;
       slot.style.height = `${snap(box.top, y + Number(slot.dataset.h)) - top}px`;
+      // The icon's box (app.css's 5.56% inset, a frame texel) on whole
+      // device pixels, rounded inwards: the icon is a layer of its own, and
+      // one ending part way across a pixel by the rim makes the rim's
+      // corner pixels flicker as it redraws.
+      const inset = `${Math.ceil(slotWidth * dpr / 18) / dpr}px`;
+      for (const control of slot.querySelectorAll('.recipe-stack-control')) control.style.padding = inset;
       // Use the same pixel scale as the artwork; only unusually long
       // quantities need smaller lettering to fit their own slot.
       for (const count of slot.querySelectorAll('.recipe-stack-control .recipe-stack-amount')) {
