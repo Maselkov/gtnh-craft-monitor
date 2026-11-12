@@ -41,7 +41,7 @@ from urllib.parse import quote
 
 # Bumped when the schema or what goes in it changes: an index of another
 # format is built again.
-FORMAT = 8
+FORMAT = 9
 # An index built beside a bundle's recipes.json.gz is called this.
 FILE = "recipes.sqlite"
 ITEM, FLUID = 0, 1
@@ -536,7 +536,12 @@ def _build(source_file, out_path, raw, map_ids, signature, species=None):
 def _catalog_order(conn, raw, items):
     """Each named item's NEI sort position and collapsible group, where
     the export has them (item_rank, item_group and item_groups, aligned
-    with items). A species takes its item's."""
+    with items). A species takes its item's.
+
+    As NEI's item list does (ItemListLoader.updateOrdering), a group's
+    items all go where its first one sorts, keeping their own order
+    among themselves: Chisel's variants of a block group with the block
+    itself, and sort far from it on their own."""
     def ints(value, low, high):
         ok = isinstance(value, list) and len(value) == len(items)
         return ok and all(type(x) is int and low <= x < high for x in value)
@@ -551,6 +556,14 @@ def _catalog_order(conn, raw, items):
              int(isinstance(g, dict) and g.get("expanded") is True)) for i, g in enumerate(described)))
         conn.executemany("UPDATE name SET grp = ? WHERE kind = ? AND k = ?",
                          ((g, ITEM, k) for k, g in zip(items, groups, strict=True) if g >= 0))
+        placed = conn.execute("SELECT k, rank, grp FROM name WHERE kind = ? AND rank IS NOT NULL", (ITEM,)).fetchall()
+        first = {}
+        for _, rank, grp in placed:
+            if grp is not None:
+                first[grp] = min(rank, first.get(grp, rank))
+        placed.sort(key=lambda row: (row[1] if row[2] is None else first[row[2]], row[1]))
+        conn.executemany("UPDATE name SET rank = ? WHERE kind = ? AND k = ?",
+                         ((n, ITEM, k) for n, (k, _, _) in enumerate(placed)))
     conn.execute("""UPDATE name SET (rank, grp) = (SELECT b.rank, b.grp FROM name b
         WHERE b.kind = name.kind AND b.k = substr(name.k, 1, instr(name.k, '#') - 1))
         WHERE kind = ? AND instr(k, '#') > 0""", (ITEM,))

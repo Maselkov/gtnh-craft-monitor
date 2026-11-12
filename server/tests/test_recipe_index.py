@@ -438,6 +438,17 @@ def test_a_group_collapses_into_its_first_match_unless_open(tmp_path):
     idx.close()
 
 
+def test_a_groups_items_sort_together_where_its_first_one_does(tmp_path):
+    # Planks sorts between the logs, but their group keeps them together,
+    # where the first log sorts (as Chisel's variants stay with the block).
+    data = ordered()
+    data["item_rank"][:3] = [20, 22, 21]  # Log, any log, planks.
+    idx = build_index(tmp_path, data)
+    rows, _, _ = idx.search_names("", recipe_index.ITEM, limit=100, groups={"all": True})
+    assert keys(rows)[20:] == [LOG, ANY_LOG, PLANKS]
+    idx.close()
+
+
 def test_a_search_that_only_matches_one_group_opens_it(tmp_path):
     idx = build_index(tmp_path, ordered())
     rows, total, shown = idx.search_names("part", limit=100, groups={"all": False})
