@@ -94,19 +94,19 @@ def _with_formula(description, formula):
     return f"§e{formula}" + (f"\n{description}" if description else "")
 
 
-_CROP_STATS_NAME = re.compile(r"^Gr (\S+) · Ga (\S+) · Re (\S+)")
-_CROP_STAT_LINE = re.compile(r"\b(Growth|Gain|Resistance)(: *(?:§.)*)\d+")
+_CROP_STATS_NAME = re.compile(r"^Gr \S+ · Ga \S+ · Re \S+")
+_CROP_STAT_LINE = re.compile(r"^\W*(Growth|Gain|Resistance): *\d+\W*$")
 
 
-def _with_crop_stats(text, variant_name):
-    """The exported tooltip with its seed stats replaced by this stack's
-    (from nbt.describe()'s variant_name): the export read them off one
-    stack per crop, with the default 1/1/1."""
-    m = _CROP_STATS_NAME.match(variant_name or "")
-    if not m or not text:
+def _without_crop_stats(text, variant_name):
+    """The exported tooltip without its seed stat lines when the stack's
+    own stats are its variant_name (nbt.describe()), which the page shows
+    under the name: the export read them off one stack per crop, with the
+    default 1/1/1. None if nothing else is left."""
+    if not text or not _CROP_STATS_NAME.match(variant_name or ""):
         return text
-    stats = dict(zip(("Growth", "Gain", "Resistance"), m.groups(), strict=True))
-    return _CROP_STAT_LINE.sub(lambda s: s.group(1) + s.group(2) + stats[s.group(1)], text)
+    lines = [line for line in text.split("\n") if not _CROP_STAT_LINE.match(re.sub("§.", "", line))]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip("\n") or None
 
 
 def describe(item):
@@ -141,7 +141,11 @@ def describe(item):
             info[field] = texts[section]
     for field in ("description", "shift_description"):
         if info.get(field):
-            info[field] = _with_crop_stats(info[field], item.get("variant_name"))
+            text = _without_crop_stats(info[field], item.get("variant_name"))
+            if text:
+                info[field] = text
+            else:
+                del info[field]
     if info.get("formula"):
         info["description"] = _with_formula(info.get("description"), info["formula"])
     ore = oredict.names(mod, internal, item.get("damage"))
