@@ -3553,9 +3553,10 @@ async function main() {
     await evaluate(PAGE_LIB);
     await waitFor('one species, its breeding card', `$('.recipe-viewer-box').dataset.itemName === 'Common Queen'
       && $('#recipeCategoryName').textContent === 'Bee Breeding' && $('#recipeViewerPage').textContent === 'Page 1/1'`);
-    assert(await evaluate(`$$('#recipeViewerList .recipe-card-line').some(l => l.textContent === 'Chance: 15%')
-      && $('#recipeViewerList .recipe-card-requirement').textContent === 'Requires Warm temperature.'
-      && !/requirements:|chance: 15\.0/i.test($('#recipeViewerList').textContent)`), 'bee breeding card');
+    // The header is set before the list has loaded: wait for the card.
+    await waitFor('bee breeding card', `$$('#recipeViewerList .recipe-card-line').some(l => l.textContent === 'Chance: 15%')
+      && $('#recipeViewerList .recipe-card-requirement')?.textContent === 'Requires Warm temperature.'
+      && !/requirements:|chance: 15\.0/i.test($('#recipeViewerList').textContent)`);
     await click(`$('#recipeViewerList .recipe-stack-control[data-key="Forestry:beePrincessGE:0#forestry.speciesForest"]')`);
     await waitFor('a parent opens its own species', `$('.recipe-viewer-box').dataset.itemName === 'Forest Princess'`);
     await cdp.send('Page.navigate', {url: base + '/recipes?key=' + encodeURIComponent('Forestry:beePrincessGE:0#forestry.speciesCommon')});
