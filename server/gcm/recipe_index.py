@@ -35,13 +35,15 @@ import re
 import sqlite3
 import sys
 import threading
+from array import array
 from collections import OrderedDict
 from contextlib import closing
+from typing import NamedTuple
 from urllib.parse import quote
 
 # Bumped when the schema or what goes in it changes: an index of another
 # format is built again.
-FORMAT = 8
+FORMAT = 9
 # An index built beside a bundle's recipes.json.gz is called this.
 FILE = "recipes.sqlite"
 ITEM, FLUID = 0, 1
@@ -51,10 +53,23 @@ NON_GT_MAPS = frozenset({"crafting", "furnace", "assembly_line"})
 REFERENCE_ONLY_MAPS = frozenset({"nei.gt.gt.recipe.fakeAssemblylineProcess",
                                 "nei.gt.gt.recipe.researchStation", "nei.gt.gt.recipe.scanner"})
 PAGE_MAX = 100
-# How many collapsed catalogs (one per item kind filter and set of open
-# groups) an index keeps for browsing without a search: about 6 MB each
-# for GTNH 2.9.0's, with its groups shut.
-BROWSE_CACHE = 3
+# How many sets of open groups an index keeps the shown rows of, for
+# browsing without a search: an array of positions, ~64 KB for GTNH 2.9.0
+# with its groups shut.
+BROWSE_CACHE = 16
+
+
+class _Catalog(NamedTuple):
+    """The whole catalog in order, for browsing (RecipeIndex._catalog):
+    each row's kind, key and group (-1 for none); each group's first row,
+    size and last row; and (count, loose rows, groups, lowest group)."""
+    kinds: bytearray
+    keys: list
+    grps: array
+    first: dict
+    size: dict
+    last: dict
+    stats: tuple
 
 SCHEMA = """
 CREATE TABLE meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
@@ -536,7 +551,12 @@ def _build(source_file, out_path, raw, map_ids, signature, species=None):
 def _catalog_order(conn, raw, items):
     """Each named item's NEI sort position and collapsible group, where
     the export has them (item_rank, item_group and item_groups, aligned
-    with items). A species takes its item's."""
+    with items). A species takes its item's.
+
+    As NEI's item list does (ItemListLoader.updateOrdering), a group's
+    items all go where its first one sorts, keeping their own order
+    among themselves: Chisel's variants of a block group with the block
+    itself, and sort far from it on their own."""
     def ints(value, low, high):
         ok = isinstance(value, list) and len(value) == len(items)
         return ok and all(type(x) is int and low <= x < high for x in value)
@@ -551,6 +571,14 @@ def _catalog_order(conn, raw, items):
              int(isinstance(g, dict) and g.get("expanded") is True)) for i, g in enumerate(described)))
         conn.executemany("UPDATE name SET grp = ? WHERE kind = ? AND k = ?",
                          ((g, ITEM, k) for k, g in zip(items, groups, strict=True) if g >= 0))
+        placed = conn.execute("SELECT k, rank, grp FROM name WHERE kind = ? AND rank IS NOT NULL", (ITEM,)).fetchall()
+        first = {}
+        for _, rank, grp in placed:
+            if grp is not None:
+                first[grp] = min(rank, first.get(grp, rank))
+        placed.sort(key=lambda row: (row[1] if row[2] is None else first[row[2]], row[1]))
+        conn.executemany("UPDATE name SET rank = ? WHERE kind = ? AND k = ?",
+                         ((n, ITEM, k) for n, (k, _, _) in enumerate(placed)))
     conn.execute("""UPDATE name SET (rank, grp) = (SELECT b.rank, b.grp FROM name b
         WHERE b.kind = name.kind AND b.k = substr(name.k, 1, instr(name.k, '#') - 1))
         WHERE kind = ? AND instr(k, '#') > 0""", (ITEM,))
@@ -795,8 +823,12 @@ class RecipeIndex:
             rows = self._all(f"SELECT kind, k, v FROM name WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?",
                              [*args, *order_args, limit, offset])
             return rows, total, [None] * len(rows)
-        count, loose, distinct, only = self._all(
-            f"SELECT COUNT(*), COUNT(*) - COUNT(grp), COUNT(DISTINCT grp), MIN(grp) FROM name WHERE {where}", args)[0]
+        catalog = None if terms else self._catalog(kind, where, args, order)
+        if catalog:
+            count, loose, distinct, only = catalog.stats
+        else:
+            count, loose, distinct, only = self._all(
+                f"SELECT COUNT(*), COUNT(*) - COUNT(grp), COUNT(DISTINCT grp), MIN(grp) FROM name WHERE {where}", args)[0]
         groups = groups or {}
         forced = bool(count and not loose and distinct == 1)
         if forced:
@@ -805,6 +837,8 @@ class RecipeIndex:
             base = groups.get("all")
             opened = set(info) if base is True else set() if base is False else {i for i, g in info.items() if g[1]}
             opened = (opened | {int(i) for i in groups.get("open", ()) if int(i) in info}) - {int(i) for i in groups.get("shut", ())}
+        if catalog:
+            return self._browse(catalog, info, opened, forced, limit, offset)
         if opened >= set(info):
             # Nothing collapses: the plain query, and the page's groups counted.
             total = self._all(f"SELECT COUNT(*) FROM name WHERE {where}", args)[0][0]
@@ -816,27 +850,18 @@ class RecipeIndex:
             return [r[:3] for r in page], total, [None if g is None else {
                 "id": g, "name": info[g][0], "size": sizes[g], "open": True, "forced": forced, "back": None}
                 for *_, g in page]
-        sql = f"""WITH f AS (SELECT kind, k, v, grp, ROW_NUMBER() OVER (ORDER BY {order}) AS pos
+        found = self._all(f"""WITH f AS (SELECT kind, k, v, grp, ROW_NUMBER() OVER (ORDER BY {order}) AS pos
                 FROM name WHERE {where}),
             g AS (SELECT *, COUNT(*) OVER w AS size, ROW_NUMBER() OVER (w ORDER BY pos) AS nth,
                 LAST_VALUE(k) OVER (w ORDER BY pos ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS back
                 FROM f WINDOW w AS (PARTITION BY grp))
             SELECT kind, k, v, grp, size, back, COUNT(*) OVER () FROM g
             WHERE grp IS NULL OR nth = 1 OR grp IN (SELECT value FROM json_each(?))
-            ORDER BY pos"""
-        query_args = [*order_args, *args, json.dumps(sorted(opened))]
-        if terms:
-            found = self._all(sql + " LIMIT ? OFFSET ?", [*query_args, limit, offset])
-            total = found[0][6] if found else self._all(
-                f"""SELECT COUNT(*) FROM (SELECT grp, ROW_NUMBER() OVER (PARTITION BY grp) AS nth
-                FROM name WHERE {where}) WHERE grp IS NULL OR nth = 1 OR grp IN (SELECT value FROM json_each(?))""",
-                [*args, json.dumps(sorted(opened))])[0][0]
-        else:
-            # Browsing without a search reads the whole list a page at a
-            # time (and the book prefetches pages on either side): the
-            # collapsed list is kept for the last few kinds and open groups.
-            everything = self._browse(kind, sql, query_args)
-            found, total = everything[offset:offset + limit], len(everything)
+            ORDER BY pos LIMIT ? OFFSET ?""", [*order_args, *args, json.dumps(sorted(opened)), limit, offset])
+        total = found[0][6] if found else self._all(
+            f"""SELECT COUNT(*) FROM (SELECT grp, ROW_NUMBER() OVER (PARTITION BY grp) AS nth
+            FROM name WHERE {where}) WHERE grp IS NULL OR nth = 1 OR grp IN (SELECT value FROM json_each(?))""",
+            [*args, json.dumps(sorted(opened))])[0][0]
         rows, shown = [], []
         for kind_, k, v, grp, size, back, _ in found:
             rows.append((kind_, k, v))
@@ -845,19 +870,57 @@ class RecipeIndex:
                                                    "forced": forced, "back": None if open_ or size < 2 else back})
         return rows, total, shown
 
-    def _browse(self, kind, sql, args):
-        cache_key = (kind, args[-1])
+    def _catalog(self, kind, where, args, order):
+        """Browsing without a search: the whole catalog in order (for one
+        kind filter), read once, with where each group starts and ends.
+        Opening or shutting a group then only filters it (_browse), rather
+        than collapsing every name again in SQL (~150 ms for GTNH)."""
+        def build():
+            rows = self._all(f"SELECT kind, k, grp FROM name WHERE {where} ORDER BY {order}", args)
+            kinds, keys, grps = bytearray(len(rows)), [None] * len(rows), array("i", bytes(4 * len(rows)))
+            first, size, last = {}, {}, {}
+            for i, (kind_, k, grp) in enumerate(rows):
+                kinds[i], keys[i], grps[i] = kind_, k, -1 if grp is None else grp
+                if grp is not None:
+                    first.setdefault(grp, i)
+                    size[grp] = size.get(grp, 0) + 1
+                    last[grp] = i
+            loose = sum(1 for g in grps if g < 0)
+            return _Catalog(kinds, keys, grps, first, size, last,
+                            (len(rows), loose, len(first), min(first) if first else None))
+        return self.memo(("catalog", kind), build)
+
+    def _browse(self, catalog, info, opened, forced, limit, offset):
+        """A page of the catalog with these groups open; which rows show is
+        kept for the last few sets of open groups (a few dozen KB each)."""
+        cache_key = (id(catalog), frozenset(opened))
         with self._lock:
             cache = self._memo.setdefault("browse", OrderedDict())
-            if cache_key in cache:
+            visible = cache.get(cache_key)
+            if visible is not None:
                 cache.move_to_end(cache_key)
-                return cache[cache_key]
-        rows = self._all(sql, args)
-        with self._lock:
-            cache[cache_key] = rows
-            while len(cache) > BROWSE_CACHE:
-                cache.popitem(last=False)
-        return rows
+        if visible is None:
+            first, grps = catalog.first, catalog.grps
+            visible = array("i", (i for i, g in enumerate(grps) if g < 0 or g in opened or first[g] == i))
+            with self._lock:
+                cache[cache_key] = visible
+                while len(cache) > BROWSE_CACHE:
+                    cache.popitem(last=False)
+        page = visible[offset:offset + limit]
+        names = {}
+        for kind in {catalog.kinds[i] for i in page}:
+            names[kind] = self.names(kind, [catalog.keys[i] for i in page if catalog.kinds[i] == kind])
+        rows, shown = [], []
+        for i in page:
+            kind, k, grp = catalog.kinds[i], catalog.keys[i], catalog.grps[i]
+            rows.append((kind, k, names[kind].get(k)))
+            if grp < 0:
+                shown.append(None)
+                continue
+            open_, size = grp in opened, catalog.size[grp]
+            shown.append({"id": grp, "name": info[grp][0], "size": size, "open": open_, "forced": forced,
+                          "back": None if open_ or size < 2 else catalog.keys[catalog.last[grp]]})
+        return rows, len(visible), shown
 
     def _item_groups(self):
         """{id: (name, open by default)}; empty for exports without NEI's groups."""
