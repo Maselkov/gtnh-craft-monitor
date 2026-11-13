@@ -246,6 +246,13 @@ def test_keys_preserve_registry_colons_and_do_not_invent_concrete_damage():
     assert recipe_viewer.parse_key('mod:internal:name:*') == (0, 'mod:internal:name:*')
 
 
+def test_fluid_registry_names_may_contain_spaces():
+    assert recipe_viewer.parse_key('fluid:naquadah based liquid fuel mkiv') == (1, 'naquadah based liquid fuel mkiv')
+    for bad in ('fluid:a\tb', 'fluid:a\nb', 'fluid:a\x7fb'):
+        with pytest.raises(ValueError):
+            recipe_viewer.parse_key(bad)
+
+
 def test_requirements_drop_empty_and_false_values_without_losing_zero_tiers_or_chances():
     assert recipe_viewer.requirement_notes({'metadata': {'cleanroom': False}, 'mSpecialItems': None,
                                           'empty': [], 'unexpanded': {'class': 'Example'}}) == []
