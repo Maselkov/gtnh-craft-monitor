@@ -128,7 +128,7 @@ def parse_key(key):
     """HTTP form: mod:internal:damage (including *) or fluid:registry-name.
     Item damage remains None for wildcard identity; icons may use a fallback.
     A Forestry genome item may name its species: mod:internal:damage#species."""
-    if not isinstance(key, str) or not key or len(key) > 1024 or re.search(r"[\x00-\x20\x7f]", key):
+    if not isinstance(key, str) or not key or len(key) > 1024 or re.search(r"[\x00-\x1f\x7f]", key):
         raise ValueError("Choose a valid item or fluid key.")
     if key.startswith("fluid:"):
         name = key[6:]
