@@ -1,7 +1,7 @@
 """Read-only recipe browsing, using the selected game data bundle."""
-from flask import Blueprint, jsonify, request
+from flask import abort, Blueprint, jsonify, request, Response
 
-from gcm import auth, gamedata, icons, recipe_viewer, recipes
+from gcm import auth, charts, gamedata, icons, recipe_card, recipe_viewer, recipes
 
 bp = Blueprint("recipe_viewer", __name__)
 
@@ -111,3 +111,23 @@ def listing():
                        recipes=shown, machines=recipe_viewer.machine_summaries(shown))
     except ValueError as e:
         return _error(e)
+
+
+@bp.route("/api/recipes/card.png", methods=["GET"])
+@auth.viewer_required
+def card():
+    """A /recipes link's recipe drawn as its book card, for the link's
+    preview (gcm/recipe_card.py): the same key, dir, map and page."""
+    limited = charts.rate_limit_response()
+    if limited:
+        return limited
+    try:
+        page = recipe_card.Page(request.args)
+    except ValueError:
+        abort(404)
+    if page.row is None:
+        abort(404)
+    key = ("recipe-card", page.dataset, request.args.get("key"), page.direction, page.map, page.index)
+    png = charts.cached_png(key, lambda: recipe_card.render(page))
+    # ?v= names the game data, so a link's image only changes with it.
+    return Response(png, mimetype="image/png", headers={"Cache-Control": "public, max-age=86400"})

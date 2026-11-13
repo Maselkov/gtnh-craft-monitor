@@ -658,6 +658,11 @@ The `/recipes?key=...`
 address follows the item, direction, category and page, so it can be copied
 or bookmarked to come back to that exact recipe; a fresh link opens over the
 Network tab. Turning pages updates the address without adding Back steps.
+Pasted into Discord, the link previews that recipe: what goes in and what
+comes out in words, with its machine's costs, and a picture of the recipe as
+the book draws it. Discord shows only the first frame of an animated image
+in a preview, so animated icons appear still. A private server previews no
+recipes, as for its other links.
 
 The hint line above the toolbar (**Hover icons for details · Help**, or
 **Tap icons for details** on touch devices) opens the shortcut help. When an

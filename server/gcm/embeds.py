@@ -105,6 +105,16 @@ def power(title, desc, chart_url, page_url):
     return container(children)
 
 
+def recipe(title, desc_md, icon_url, card_url, page_url):
+    """One page of the recipe book (gcm/recipe_card.py): the item, which
+    recipe this is, the recipe in words, and its card."""
+    children = [section(f"## {md_escape(title)}\n{desc_md}", icon_url)]
+    if card_url:
+        children.append(gallery(card_url))
+    children.append(open_button(page_url))
+    return container(children)
+
+
 def _body(payload):
     """The payload as sent: <, > and & escaped so no text in it can
     close the tag."""
