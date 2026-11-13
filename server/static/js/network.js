@@ -12,7 +12,7 @@ import { activeTab } from './tabs.js';
 import { bindCellTooltip, hideTooltip, showTooltip, tooltipVisible } from './tooltip.js';
 import {
   closeNote, delegateActions, escapeHtml, essentiaBadgeHtml, formatDuration, formatQty, formatRate,
-  formatRelativeTime, iconClass, iconKeyUrl, iconUrl, noteClosed, PIN_ICON, TERMINAL_DOCS_URL,
+  formatRelativeTime, iconClass, iconKeyUrl, iconUrl, noteClosed, PIN_ICON, pollFetch, TERMINAL_DOCS_URL,
 } from './util.js';
 
 // ---------- Network browser ----------
@@ -491,9 +491,13 @@ function dismissTerminalNote() {
   updateTerminalNote();
 }
 
+// A big network's snapshot is megabytes: on a slow connection it takes
+// a while, so it gets as long as the tab's poll interval.
+export const NETWORK_TIMEOUT_MS = 60000;
+
 export async function fetchNetwork() {
   try {
-    const res = await fetch('/api/network');
+    const res = await pollFetch('/api/network', {}, NETWORK_TIMEOUT_MS);
     const data = await res.json();
     // Kit patterns are reusable transport slots, not useful inventory
     // entries. Keep the server's snapshot intact for planning/history.

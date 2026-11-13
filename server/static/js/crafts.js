@@ -12,7 +12,7 @@ import { nameText } from './description.js';
 import { craftsBadge, setTabBadge } from './tab-badges.js';
 import {
   delegateActions, docsUrl, escapeHtml, formatDuration, formatRelativeTime, iconClass, iconUrl, PIN_ICON,
-  updateHtml,
+  pollFetch, updateHtml,
 } from './util.js';
 
 // Toggle-open state of the idle-CPU section, which has to survive the
@@ -162,8 +162,8 @@ export async function refreshPinsAndCompletions() {
   }
   try {
     const [pinsRes, completionsRes] = await Promise.all([
-      fetch('/api/pins'),
-      fetch('/api/completions'),
+      pollFetch('/api/pins'),
+      pollFetch('/api/completions'),
     ]);
     if (pinsRes.status === 401 || completionsRes.status === 401) {
       expireAuthentication(user);
@@ -390,7 +390,7 @@ let craftsEtag = null;
 // leaves the 304 to us instead of answering it from its cache). True
 // when lastData is new.
 async function fetchCrafts() {
-  const res = await fetch('/api/crafts', {
+  const res = await pollFetch('/api/crafts', {
     cache: 'no-store',
     headers: craftsEtag ? { 'If-None-Match': craftsEtag } : {},
   });
@@ -421,10 +421,8 @@ export async function refresh() {
 
 // Just the cards, every second in between: a game report shows up
 // within a second of arriving, and an unchanged one costs an empty 304.
-let polling = false;
+// main.js runs it with pollEvery, one at a time.
 export async function pollCrafts() {
-  if (polling) return;
-  polling = true;
   try {
     if (await fetchCrafts()) {
       render(lastData);
@@ -432,8 +430,6 @@ export async function pollCrafts() {
     }
   } catch (e) {
     // refresh() reports an unreachable server
-  } finally {
-    polling = false;
   }
 }
 

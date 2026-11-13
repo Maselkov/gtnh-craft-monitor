@@ -8,7 +8,7 @@ import { AUTH_USER, closeSettingsMenu } from './auth.js';
 import { fetchNetwork } from './network.js';
 import { openRecipeCheck, updateRecipeNotice, versionsToCheck } from './recipe-check.js';
 import {
-  TERMINAL_DOCS_URL, closeNote, delegateActions, escapeHtml, noteClosed, onBackdropClick,
+  TERMINAL_DOCS_URL, closeNote, delegateActions, escapeHtml, noteClosed, onBackdropClick, pollEvery, pollFetch,
 } from './util.js';
 
 const NOTICE_MS = 5 * 60 * 1000;
@@ -185,11 +185,11 @@ function stopPolling() {
 
 function startPolling() {
   stopPolling();
-  pollTimer = setInterval(pollStatus, 1000);
+  pollTimer = pollEvery(pollStatus, 1000);
 }
 
 async function pollStatus() {
-  const response = await fetch('/api/admin/gamedata/status');
+  const response = await pollFetch('/api/admin/gamedata/status');
   if (!response.ok) {
     stopPolling();
     return;
@@ -308,7 +308,7 @@ export async function updateGameDataNotice() {
     return;
   }
   try {
-    const res = await fetch('/api/admin/gamedata-notice');
+    const res = await pollFetch('/api/admin/gamedata-notice');
     if (res.ok) notice = await res.json();
   } catch (e) { /* keep what was shown */ }
   renderNotice();
@@ -318,7 +318,7 @@ export async function updateGameDataNotice() {
 
 export function setupGameDataActions() {
   document.getElementById('recipeCheckForHow').href = TERMINAL_DOCS_URL;
-  setInterval(updateGameDataNotice, NOTICE_MS);
+  pollEvery(updateGameDataNotice, NOTICE_MS);
   delegateActions(document, {
     'gamedata-notice-switch': () => openGameDataModal({ version: notice.suggest }),
     'dismiss-gamedata-notice': () => {

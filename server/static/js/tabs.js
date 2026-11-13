@@ -17,7 +17,7 @@ import { setPageView } from './page-title.js';
 import { fetchPower, powerMachineFromUrl, powerPath, tickPowerSourceLine } from './power.js';
 import { hideRecipeViewer, restoreRecipeViewer } from './recipe-viewer.js';
 import { fetchStockRules } from './stock.js';
-import { delegateActions } from './util.js';
+import { delegateActions, pollEvery } from './util.js';
 
 // ---------- Tabs ----------
 export let activeTab = 'crafts';
@@ -66,7 +66,7 @@ export function switchTab(tab, pushUrl) {
 
   if (tab === 'power') {
     fetchPower();
-    if (!powerInterval) powerInterval = setInterval(fetchPower, 15000);
+    if (!powerInterval) powerInterval = pollEvery(fetchPower, 15000);
     if (!powerTickInterval) powerTickInterval = setInterval(tickPowerSourceLine, 1000);
   } else {
     if (powerInterval) { clearInterval(powerInterval); powerInterval = null; }
@@ -81,13 +81,13 @@ export function switchTab(tab, pushUrl) {
     // fast - no point polling anywhere near as often as crafts/power.
     // Stock rules only change with a scan (or an auto-craft's answer);
     // main.js polls them on every tab, for the tab badge.
-    if (!networkInterval) networkInterval = setInterval(fetchNetwork, 60000);
+    if (!networkInterval) networkInterval = pollEvery(fetchNetwork, 60000);
     if (!networkTickInterval) networkTickInterval = setInterval(tickNetworkSourceLine, 1000);
     // Craft requests are the opposite - they should resolve within
     // seconds, matching craft_monitor.lua's own ~1.5s request-polling
     // loop, so this polls much faster than the network snapshot does.
     fetchCraftRequests();
-    if (!craftRequestsInterval) craftRequestsInterval = setInterval(fetchCraftRequests, 2000);
+    if (!craftRequestsInterval) craftRequestsInterval = pollEvery(fetchCraftRequests, 2000);
   } else {
     if (networkInterval) { clearInterval(networkInterval); networkInterval = null; }
     if (networkTickInterval) { clearInterval(networkTickInterval); networkTickInterval = null; }

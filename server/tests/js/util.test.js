@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   closeNote, escapeHtml, essentiaBadgeHtml, formatDuration, formatQty, formatRate, iconClass, iconKeyUrl, iconUrl, kindTooltipHtml, loadDismissedNotes, noteClosed,
-  withAlpha,
+  pollEvery, pollFetch, withAlpha,
 } from '../../static/js/util.js';
 
 test('formatQty abbreviates like the in-game terminal', () => {
@@ -151,4 +151,47 @@ test('withAlpha turns a theme colour into the chart fill', () => {
   assert.equal(withAlpha('#2272C9', 0.15), 'rgba(34,114,201,0.15)');
   // Anything but #rrggbb comes back as is, rather than as a wrong colour.
   assert.equal(withAlpha('rgb(1, 2, 3)', 0.5), 'rgb(1, 2, 3)');
+});
+
+test('pollEvery skips ticks while the last call is still running', async () => {
+  let calls = 0;
+  let finish;
+  const id = pollEvery(() => { calls++; return new Promise((r) => { finish = r; }); }, 5);
+  try {
+    await new Promise((r) => setTimeout(r, 40));
+    assert.equal(calls, 1, 'a stalled call is never joined by a second');
+    finish();
+    await new Promise((r) => setTimeout(r, 20));
+    assert.ok(calls >= 2, 'the next tick runs once it ends');
+  } finally {
+    clearInterval(id);
+  }
+});
+
+test('pollEvery keeps polling after a call throws', async () => {
+  let calls = 0;
+  const id = pollEvery(async () => { calls++; throw new Error('down'); }, 5);
+  try {
+    await new Promise((r) => setTimeout(r, 40));
+    assert.ok(calls >= 2);
+  } finally {
+    clearInterval(id);
+  }
+});
+
+test('pollFetch gives up on a request that never answers', async () => {
+  const real = Object.getOwnPropertyDescriptor(globalThis, 'fetch');
+  let seen;
+  // A server that never answers: only the abort ends the request.
+  globalThis.fetch = (url, init) => new Promise((resolve, reject) => {
+    seen = init;
+    init.signal.addEventListener('abort', () => reject(init.signal.reason));
+  });
+  try {
+    await assert.rejects(pollFetch('/api/crafts', { cache: 'no-store' }, 10), { name: 'TimeoutError' });
+    assert.equal(seen.cache, 'no-store', 'the caller\'s options are kept');
+  } finally {
+    if (real) Object.defineProperty(globalThis, 'fetch', real);
+    else delete globalThis.fetch;
+  }
 });

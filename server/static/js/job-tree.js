@@ -13,7 +13,7 @@ import { itemMatchesSearch, parseSearchQuery } from './search.js';
 import { ensureLoaded, flashRow, graft, matchingEntries, matchTree, nodeAt, openAbove, searchNoteText } from './tree-nav.js';
 import { itemOfKey, lookupItemTooltipHtml, onShiftChange } from './item-tooltip.js';
 import { bindCellTooltip, showTooltip, tooltipVisible } from './tooltip.js';
-import { delegateActions, escapeHtml, formatDuration, formatQty, iconClass, iconUrl, machinePlace, TERMINAL_DOCS_URL } from './util.js';
+import { delegateActions, escapeHtml, formatDuration, formatQty, iconClass, iconUrl, machinePlace, pollFetch, TERMINAL_DOCS_URL } from './util.js';
 
 let cpu = null;            // the CPU shown, null when the tree isn't
 let treeData = null;       // the last /api/crafts/<cpu>/tree answer
@@ -338,7 +338,7 @@ export async function refreshJobTree() {
   fetching = true;
   const forCpu = cpu;
   try {
-    const res = await fetch(`/api/crafts/${encodeURIComponent(cpu)}/steps`);
+    const res = await pollFetch(`/api/crafts/${encodeURIComponent(cpu)}/steps`);
     const data = await res.json().catch(() => ({}));
     if (forCpu !== cpu || !data.steps) return;  // idle now: keep the last look
     steps = data.steps;

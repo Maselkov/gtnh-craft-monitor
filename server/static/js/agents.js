@@ -10,6 +10,7 @@ import { AUTH_USER, closeSettingsMenu } from './auth.js';
 import { showToast } from './craft-actions.js';
 import {
   closeNote, copyText, delegateActions, escapeHtml, formatDuration, formatQty, formatRelativeTime, noteClosed, onBackdropClick,
+  pollEvery, pollFetch,
 } from './util.js';
 
 const REFRESH_MS = 5000;
@@ -191,7 +192,7 @@ export function renderHealth(h) {
 async function loadHealth() {
   const el = document.getElementById('serverHealth');
   try {
-    const res = await fetch('/api/admin/health');
+    const res = await pollFetch('/api/admin/health');
     if (!res.ok) throw new Error(`health: ${res.status}`);
     el.innerHTML = renderHealth(await res.json());
   } catch (e) {
@@ -201,7 +202,7 @@ async function loadHealth() {
 
 async function loadAgents() {
   try {
-    const res = await fetch('/api/admin/agents');
+    const res = await pollFetch('/api/admin/agents');
     if (!res.ok) throw new Error(`agents: ${res.status}`);
     const data = await res.json();
     latestRelease = data.latest_release;
@@ -417,7 +418,7 @@ async function openAgentsModal({ toConnect = false, toComputers = false } = {}) 
   loadSettings();
   loadConnect();
   clearInterval(refreshTimer);
-  refreshTimer = setInterval(() => { loadHealth(); loadAgents(); }, REFRESH_MS);
+  refreshTimer = pollEvery(() => Promise.all([loadHealth(), loadAgents()]), REFRESH_MS);
   await Promise.all([loadHealth(), loadAgents()]);
   if (toConnect) document.querySelector('#agentsModal .connect-heading').scrollIntoView({ block: 'start' });
   if (toComputers) document.querySelector('#agentsModal .computers-heading').scrollIntoView({ block: 'start' });
@@ -471,7 +472,7 @@ export async function updateScriptsNotice() {
     return;
   }
   try {
-    const res = await fetch('/api/admin/scripts-notice');
+    const res = await pollFetch('/api/admin/scripts-notice');
     if (res.ok) scriptsNotice = await res.json();
   } catch (e) { /* keep what was shown */ }
   renderScriptsNotice();
@@ -504,14 +505,14 @@ export async function updateRelease() {
     return;
   }
   try {
-    const res = await fetch('/api/release');
+    const res = await pollFetch('/api/release');
     if (res.ok) renderRelease(await res.json());
   } catch (e) { /* keep what was shown */ }
 }
 
 export function setupAgentsActions() {
-  setInterval(updateScriptsNotice, SCRIPTS_NOTICE_MS);
-  setInterval(updateRelease, RELEASE_MS);
+  pollEvery(updateScriptsNotice, SCRIPTS_NOTICE_MS);
+  pollEvery(updateRelease, RELEASE_MS);
   delegateActions(document, {
     'scripts-notice-update': () => openAgentsModal({ toComputers: true }),
     'dismiss-scripts-notice': () => dismissScriptsNotice(),

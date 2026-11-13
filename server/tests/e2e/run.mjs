@@ -3338,7 +3338,10 @@ async function main() {
     await waitFor('absent recipe item shows a real zero stock count', `$('.network-tooltip .network-tooltip-stock .mc-6')?.textContent === '0'
       && !$('.network-tooltip').textContent.includes('Amount:')`);
     await click(`$('#recipeViewerList .recipe-stack-control[data-key="gregtech:gt.metaitem.01:11028"]')`);
-    await waitFor('current item opens its stock', `$('.recipe-viewer-box').dataset.itemName === 'Neutronium Ingot' && visible($('.recipe-current-slot')) && $('.recipe-current-slot').getAttribute('aria-label') === 'Open stock page for Neutronium Ingot'`);
+    // Loaded, not just named: the render that follows the recipes'
+    // arrival clears a tooltip shown before it.
+    await waitFor('current item opens its stock', `$('.recipe-viewer-box').dataset.itemName === 'Neutronium Ingot' && visible($('.recipe-current-slot')) && $('.recipe-current-slot').getAttribute('aria-label') === 'Open stock page for Neutronium Ingot'
+      && $('.recipe-viewer-box').getAttribute('aria-busy') === 'false'`);
     await evaluate(`$('.recipe-current-slot').dispatchEvent(new MouseEvent('mouseover', {bubbles:true,clientX:80,clientY:700})), true`);
     await waitFor('current item has the game tooltip', `visible($('.network-tooltip')) && $('.network-tooltip .network-tooltip-name').textContent === 'Neutronium Ingot'`);
     await click(`$('.recipe-current-slot')`);

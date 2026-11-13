@@ -153,6 +153,11 @@ it open many at once. If the server log says `total open connections reached
 the connection limit`, the proxy is holding more than that: cap its idle
 upstream connections (nginx `keepalive`, Caddy `keepalive_idle_conns_per_host`).
 
+Any request that takes a second or more is logged as `slow request: GET
+/api/... took 12.3s (200), 8 running when it started`. If the page or the
+game stalls, these lines show which requests were slow, and the running
+count shows whether they were holding all 8 of the server's threads.
+
 HTTPS is also required for desktop notifications when the page is opened from
 another device (see [Pins and notifications](using.md#pins-and-notifications)).
 
