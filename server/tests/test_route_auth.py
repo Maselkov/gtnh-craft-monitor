@@ -5,6 +5,7 @@ from conftest import login_as
 # The base's own data: anyone may read it, unless the server is private
 # (gcm.auth.is_private, test_private.py).
 VIEWER_ENDPOINTS = {
+    "recipe_viewer.card",
     "recipe_viewer.item",
     "recipe_viewer.listing",
     "recipe_viewer.search",

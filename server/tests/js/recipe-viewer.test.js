@@ -82,9 +82,18 @@ test('recipe URLs preserve wildcards, fluid namespaces, direction and map', () =
   assert.equal(recipeItemKey(item), 'mod:item:*');
   assert.equal(recipeItemKey({ mod: null, internal: 'mod:water', kind: 'fluid' }), 'fluid:mod:water');
   assert.equal(recipeItemKey({ internal: 'aer', kind: 'essentia' }), null);
-  const frame = { key: 'fluid:mod:water', dir: 'using', map: 'gt.recipe.test' };
+  const frame = { key: 'fluid:mod:water', dir: 'using', map: 'gt.recipe.test', page: 0 };
   assert.deepEqual(recipeFromUrl(new URL(recipeUrl(frame), 'https://example.test')), frame);
   assert.equal(recipeFromUrl(new URL('https://example.test/network')), null);
+});
+
+test('recipe URLs carry the page, counted from 1, and ignore a bad one', () => {
+  const frame = { key: 'mod:item:0', dir: 'making', map: 'gt.recipe.test', page: 20 };
+  assert.equal(recipeUrl(frame), '/recipes?key=mod%3Aitem%3A0&map=gt.recipe.test&page=21');
+  assert.deepEqual(recipeFromUrl(new URL(recipeUrl(frame), 'https://example.test')), frame);
+  assert.doesNotMatch(recipeUrl({...frame, page: 0}), /page=/);
+  for (const bad of ['0', '-3', 'x', '1.5', '1e400', ''])
+    assert.equal(recipeFromUrl(new URL('https://example.test/recipes?key=a:b:0&page=' + bad)).page, 0, bad);
 });
 
 test('ancestor navigation counts history entries rather than adding duplicate ancestors', () => {
@@ -255,7 +264,7 @@ test('a bee of one species opens that species, in URLs and recent lookups', () =
   const bee = {mod:'Forestry',internal:'beeDroneGE',damage:0,kind:'item',variant:'abc123',species:'forestry.speciesForest'};
   assert.equal(recipeItemKey(bee), 'Forestry:beeDroneGE:0#forestry.speciesForest');
   assert.equal(recipeItemKey({...bee,species:undefined}), 'Forestry:beeDroneGE:0');
-  const frame = {key:'Forestry:beeDroneGE:0#forestry.speciesForest',dir:'making',map:''};
+  const frame = {key:'Forestry:beeDroneGE:0#forestry.speciesForest',dir:'making',map:'',page:0};
   assert.deepEqual(recipeFromUrl(new URL(recipeUrl(frame), 'https://example.test')), frame);
   const keys = ['Forestry:beeDroneGE:0#forestry.speciesForest','Forestry:beeDroneGE:*#forestry.speciesForest','mod:item:0#a b','mod:item:0#'];
   assert.deepEqual(parseRecipeRecents(JSON.stringify({version:'2.9.0',keys})).keys, ['Forestry:beeDroneGE:0#forestry.speciesForest']);

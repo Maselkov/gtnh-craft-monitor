@@ -1443,6 +1443,25 @@ block is never run, so the CSP doesn't apply to it. Discord takes the
 `media`, so the dark one comes last. Unfurled `components` embeds are
 output only: webhooks still send a classic embed.
 
+**A recipe link's preview draws the recipe on the server.** For
+`/recipes?key=…&dir=…&map=…&page=…`, gcm/recipe_card.py picks the recipe
+the book would (the item's first category with recipes that way when the
+link names none, the last page for a page past the end), describes it in a
+line, and `/api/recipes/card.png` draws its card with Pillow: the slot
+layout of static/js/recipe-render.js (the crafting grid, the bundle's
+positioned preview, or inputs → outputs for rows with neither), the book's
+pixel font, at a whole number of image pixels per GUI pixel so pixel art
+stays sharp. It doesn't render the page in a browser: no Chromium on
+hosted servers. The two renderers can drift: the card ports the slots,
+layers, breeding lines, Research Station wiring, essentia row, research
+line and stats, so a change to how the page draws any of them needs the
+same change in recipe_card.py. The font is an ASCII subset, so text on the
+card is transliterated (`glyphs()`: "·" to "-", accents dropped). Icons
+are drawn still: Discord shows an animated image's first frame in a link
+preview (GIF or WebP; its CDN serves animated WebP only with
+`?animated=true`, which an og:image doesn't get). The image URL carries a
+hash of the game data, since Discord keeps an image it has fetched.
+
 **A link to a craft names it by CPU and first sight, and works after it
 ends.** `/crafts?cpu=<name>&job=<time>` (gcm/job_links.py): the time is
 when the server first saw the job (whole seconds), known from its first

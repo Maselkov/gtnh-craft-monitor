@@ -10,7 +10,7 @@ from urllib.parse import quote, unquote
 
 from flask import abort, Blueprint, request, Response, send_from_directory
 
-from gcm import app_icons, auth, charts, config, embeds, icons, inventory, job_links, mctext, security, state, store
+from gcm import app_icons, auth, charts, config, embeds, icons, inventory, job_links, mctext, recipe_card, security, state, store
 
 
 bp = Blueprint("pages", __name__)
@@ -155,6 +155,30 @@ def _job_preview(named, icon_url, page_url):
     return title, desc, embeds.job(title, md, icon_url(icon), page_url)
 
 
+def _recipe_preview(args, icon_url, base, page_url):
+    """(title, description, card image URL, its size, component embed) for
+    a link to a page of the recipe book."""
+    try:
+        page = recipe_card.Page(args)
+    except ValueError:  # an unknown item, or no recipes in the game data
+        return "Recipes", "GTNH recipe book", None, None, None
+    row = page.row
+    if row is None:
+        return page.item, f"{page.heading()} · No recipes", None, None, None
+    title = mctext.plain(next((e.get("name") for e in row.get("outputs", []) if e.get("name")), "")) or page.item
+    words = recipe_card.summary(row)
+    desc = f"{page.position()}\n{words}" if words else page.position()
+    query = {"key": args.get("key"), "dir": page.direction, "map": page.map, "page": page.index + 1,
+             "v": page.version_tag}
+    image = f"{base}/api/recipes/card.png?" + "&".join(f"{k}={quote(str(v), safe='')}" for k, v in query.items())
+    md = f"{embeds.md_escape(page.position())}\n{embeds.md_escape(words)}" if words else embeds.md_escape(page.position())
+    if page.direction == "using" or title != page.item:
+        md = f"-# {embeds.md_escape(page.heading())}\n{md}"
+    output = recipe_card.display_first(row.get("outputs"))
+    embed = embeds.recipe(title, md, icon_url(output.get("icon")) if output else None, image, page_url)
+    return title, desc, image, recipe_card.size(page), embed
+
+
 def _build_og_tags(path, args):
     base = request.url_root.rstrip("/")
     # request.full_path always appends a trailing "?" even with no query
@@ -167,6 +191,7 @@ def _build_og_tags(path, args):
     title = "GTNH Monitor"
     desc = "GTNH crafting, power, and network monitor"
     image = None
+    image_size = (charts.WIDTH_PX, charts.HEIGHT_PX)
     # A Discord component embed (gcm/embeds.py), for the pages it suits.
     embed = None
     page_url = base + full_path
@@ -246,6 +271,9 @@ def _build_og_tags(path, args):
         else:
             title = "Item"
 
+    elif path == "/recipes" and args.get("key"):
+        title, desc, image, image_size, embed = _recipe_preview(args, icon_url, base, page_url)
+
     elif path == "/network":
         with state.network_lock:
             items = state.network["items"]
@@ -288,8 +316,8 @@ def _build_og_tags(path, args):
         # it was evidently landing on the thumbnail layout by default.
         tags += (
             f'<meta property="og:image" content="{html_escape(image)}">\n'
-            f'<meta property="og:image:width" content="{charts.WIDTH_PX}">\n'
-            f'<meta property="og:image:height" content="{charts.HEIGHT_PX}">\n'
+            f'<meta property="og:image:width" content="{image_size[0]}">\n'
+            f'<meta property="og:image:height" content="{image_size[1]}">\n'
             f'<meta name="twitter:card" content="summary_large_image">\n'
         )
     return tags + embeds.script_tag(embed)
