@@ -10,6 +10,38 @@ export function removeLegacyStorageKeys() {
     .forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
 }
 
+// A request the page repeats on a timer gives up after this long, so
+// one the server or a proxy never answers (a stall, a connection that
+// died while the laptop slept) frees its connection and lets the next
+// tick try again. Far above a normal answer's few milliseconds.
+export const POLL_TIMEOUT_MS = 15000;
+
+// fetch() for those repeated requests. A timeout rejects like a network
+// error (a TimeoutError), so callers' existing catches handle it.
+export function pollFetch(url, init = {}, timeoutMs = POLL_TIMEOUT_MS) {
+  return fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+}
+
+// setInterval for a poll: a tick that comes while the last call is
+// still running is skipped, so a slow server gets one request at a
+// time rather than a new one every tick piling up behind it. fn's
+// fetches need pollFetch's timeout, or one that never ends stops the
+// poll for good. Returns the interval's id, for clearInterval.
+export function pollEvery(fn, ms) {
+  let busy = false;
+  return setInterval(async () => {
+    if (busy) return;
+    busy = true;
+    try {
+      await fn();
+    } catch (e) {
+      // fn reports its own failures; the next tick tries again
+    } finally {
+      busy = false;
+    }
+  }, ms);
+}
+
 // Animated icons are animated WebPs (APNGs in older game data). Viewers
 // who've asked their browser for reduced motion get each one's first
 // frame instead (the server's ?still=1).

@@ -39,7 +39,7 @@ import { setupRecipeCheckActions } from './recipe-check.js';
 import { fetchStockRules, setupStockActions } from './stock.js';
 import { applyHistoryState, focusNetworkSearch, pathToTab, refreshActiveTab, setupTabActions, switchTab } from './tabs.js';
 import { setupTheme } from './theme.js';
-import { removeLegacyStorageKeys, setupImageErrorRemoval } from './util.js';
+import { pollEvery, removeLegacyStorageKeys, setupImageErrorRemoval } from './util.js';
 import { setupWebhooksActions } from './webhooks.js';
 import { setupAssistantActions } from './assistant.js';
 
@@ -113,15 +113,17 @@ updateNetworkSearchHighlight();
 function start() {
   initFromUrl();
   refresh();
-  setInterval(refresh, 3000);
-  setInterval(pollCrafts, 1000);
+  // One request at a time each: a stalled server isn't sent a new
+  // round every tick (util.js).
+  pollEvery(refresh, 3000);
+  pollEvery(pollCrafts, 1000);
   setInterval(tickSourceLine, 1000);
   // For the tab badges (tab-badges.js), whichever tab is open. The
   // Network tab also fetches stock rules as it opens.
   fetchStockRules();
   fetchPowerBadge();
   showKitButton();
-  setInterval(() => { fetchStockRules(); fetchPowerBadge(); }, 60000);
+  pollEvery(() => Promise.all([fetchStockRules(), fetchPowerBadge()]), 60000);
   // Hidden tabs keep polling (slowly, as the browser allows): the
   // completions poll is what shows a notification without Web Push.
   document.addEventListener('visibilitychange', () => {

@@ -3,7 +3,7 @@
 import { CHART_RANGE_SECONDS_JS, CHART_TIME_CONFIG, chartXTicks } from './history.js';
 import { machineLabel, powerBadge, setTabBadge } from './tab-badges.js';
 import {
-  chartColors, delegateActions, escapeHtml, formatDuration, formatRate, onBackdropClick, onThemeChange,
+  chartColors, delegateActions, escapeHtml, formatDuration, formatRate, onBackdropClick, onThemeChange, pollFetch,
 } from './util.js';
 
 // ---------- Power chart ----------
@@ -204,7 +204,7 @@ export async function fetchPower() {
   try {
     const query = new URLSearchParams({ range: powerRange });
     if (powerMachine != null) query.set('machine', powerMachine);
-    const res = await fetch('/api/power?' + query);
+    const res = await pollFetch('/api/power?' + query);
     const data = await res.json();
     if (seq !== powerFetchSeq) return;
     lastPowerData = data;
@@ -318,7 +318,7 @@ export function powerEtaText(trend) {
 // for the trend, and far fewer points than the chart's range.
 export async function fetchPowerBadge() {
   try {
-    const res = await fetch('/api/power?range=hour');
+    const res = await pollFetch('/api/power?range=hour');
     const data = await res.json();
     setPowerBadge(data);
     setPowerTabFill(data.machines);

@@ -10,7 +10,7 @@ import { nameText } from './description.js';
 import { activeTab } from './tabs.js';
 import {
   bindFilterInput, dayLabel, delegateActions, escapeHtml, formatDuration, formatRelativeTime,
-  iconClass, iconUrl, updateHtml,
+  iconClass, iconUrl, pollFetch, updateHtml,
 } from './util.js';
 
 const PAGE_SIZE = 25;
@@ -74,7 +74,7 @@ async function fetchPage(params) {
   if (query) filters.q = query;
   if (status) filters.status = status;
   const search = new URLSearchParams({ limit: PAGE_SIZE, ...filters, ...params });
-  const res = await fetch(`/api/crafts/history?${search}`);
+  const res = await pollFetch(`/api/crafts/history?${search}`);
   if (!res.ok) throw new Error(`history: ${res.status}`);
   return res.json();
 }

@@ -5,7 +5,7 @@
 // when it opens, when the range changes, and every REFRESH_MS after.
 
 import { nameText } from './description.js';
-import { delegateActions, escapeHtml, formatDuration, iconClass, iconUrl, machinePlace } from './util.js';
+import { delegateActions, escapeHtml, formatDuration, iconClass, iconUrl, machinePlace, pollFetch } from './util.js';
 
 const REFRESH_MS = 30000;
 
@@ -38,7 +38,7 @@ export async function refreshCraftStats(now = false) {
   lastFetchAt = Date.now();
   const gen = ++generation;
   try {
-    const res = await fetch(`/api/crafts/stats?range=${encodeURIComponent(range)}`);
+    const res = await pollFetch(`/api/crafts/stats?range=${encodeURIComponent(range)}`);
     if (!res.ok) throw new Error(`stats: ${res.status}`);
     const data = await res.json();
     if (gen !== generation) return;

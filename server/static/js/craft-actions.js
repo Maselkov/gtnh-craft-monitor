@@ -14,7 +14,7 @@ import { closeRecipeViewer, recipeViewerOpen } from './recipe-viewer.js';
 import { closeRecipeCheck } from './recipe-check.js';
 import { closeWebhooksModal } from './webhooks.js';
 import { closeAssistantModal } from './assistant.js';
-import { delegateActions, escapeHtml, iconClass, iconUrl, onBackdropClick, updateHtml } from './util.js';
+import { delegateActions, escapeHtml, iconClass, iconUrl, onBackdropClick, pollFetch, updateHtml } from './util.js';
 
 // ---------- Craft request modal ----------
 let craftRequestTarget = null;
@@ -155,7 +155,7 @@ async function submitCancelConfirm() {
 async function pollCancelResult(id, cpuName, attemptsLeft) {
   if (attemptsLeft === undefined) attemptsLeft = 15;
   try {
-    const res = await fetch('/api/craft/cancel/' + id);
+    const res = await pollFetch('/api/craft/cancel/' + id);
     const data = await res.json();
     if (data.status === 'resolved') {
       pendingCancelCpus.delete(cpuName);
@@ -293,7 +293,7 @@ export async function fetchCraftRequests() {
     return;
   }
   try {
-    const res = await fetch('/api/craft/requests');
+    const res = await pollFetch('/api/craft/requests');
     if (res.status === 401) { expireAuthentication(user); return; }
     if (!res.ok) return;
     const data = await res.json();

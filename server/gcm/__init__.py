@@ -5,7 +5,7 @@ from flask import Flask
 
 from gcm import (
     agents, auth, backup, bottlenecks, charts, commands, config, db, gamedata, gamedata_check, inventory, job_tree, lenient_json, patterns,
-    multiblocks, planner, push, recipes, retention, security, state, store, webhooks,
+    multiblocks, planner, push, recipes, retention, security, slow_requests, state, store, webhooks,
 )
 from gcm.routes import agent, craft_requests, crafts, mcp, network, oauth, pages, power, users
 from gcm.routes import backup as backup_routes
@@ -33,6 +33,7 @@ def create_app(data_dir=None, api_key=None):
     app = Flask(__name__, root_path=config.SERVER_DIR)
     app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024
     app.json = lenient_json.LenientJSONProvider(app)
+    slow_requests.init_app(app)
     security.init_app(app)
     for blueprint in (
         crafts.bp,

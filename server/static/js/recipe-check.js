@@ -11,7 +11,7 @@ export { amountText, machineText };
 
 import { closeSettingsMenu, isOperator } from './auth.js';
 import {
-  TERMINAL_DOCS_URL, closeNote, delegateActions, escapeHtml, noteClosed, onBackdropClick,
+  TERMINAL_DOCS_URL, closeNote, delegateActions, escapeHtml, noteClosed, onBackdropClick, pollEvery, pollFetch,
 } from './util.js';
 
 const POLL_MS = 1000;
@@ -212,7 +212,7 @@ export async function updateRecipeNotice() {
     return;
   }
   try {
-    const res = await fetch('/api/recipe-notice');
+    const res = await pollFetch('/api/recipe-notice');
     if (res.ok) notice = await res.json();
   } catch (e) { /* keep what was shown */ }
   renderNotice();
@@ -222,7 +222,7 @@ export async function updateRecipeNotice() {
 
 export function setupRecipeCheckActions() {
   document.getElementById('recipeCheckErrorHow').href = TERMINAL_DOCS_URL;
-  setInterval(updateRecipeNotice, NOTICE_MS);
+  pollEvery(updateRecipeNotice, NOTICE_MS);
   delegateActions(document, {
     'close-recipe-check': () => closeRecipeCheck(),
     'recipe-notice-show': () => openRecipeCheck(),
