@@ -89,13 +89,16 @@ export function recipeUrl(frame) {
   const query = new URLSearchParams({ key: frame.key });
   if (frame.dir === 'using') query.set('dir', 'using');
   if (frame.map) query.set('map', frame.map);
+  // Pages count from 1 in the address, as the book shows them.
+  if (frame.page > 0) query.set('page', String(frame.page + 1));
   return '/recipes?' + query;
 }
 
 export function recipeFromUrl(url) {
   if (url.pathname !== '/recipes' || !url.searchParams.get('key')) return null;
+  const page = Number(url.searchParams.get('page'));
   return { key: url.searchParams.get('key'), dir: url.searchParams.get('dir') === 'using' ? 'using' : 'making',
-    map: url.searchParams.get('map') || '' };
+    map: url.searchParams.get('map') || '', page: Number.isSafeInteger(page) && page > 1 ? page - 1 : 0 };
 }
 
 export function trailDistance(stack, index) {

@@ -3087,14 +3087,33 @@ async function main() {
     await waitFor('drilled after paging', `$('.recipe-viewer-box').dataset.itemName === 'Neutronium Ingot'`);
     await click(`$('#recipeViewerBack')`);
     await waitFor('category and page restored', `$('.recipe-viewer-box').dataset.itemName === 'Iron Ingot' && $('#recipeViewerPage').textContent === 'Page 21/30'`);
+    assert.equal(await evaluate(`new URL(location.href).searchParams.get('page')`), '21');
+    const depth = await evaluate(`history.length`);
     await click(`$('#recipePagePrevious')`);
     await waitFor('previous recipe page', `$('#recipeViewerPage').textContent === 'Page 20/30'`);
+    // Turning a page updates the address without adding to Back.
+    await waitFor('page in the address', `new URL(location.href).searchParams.get('page') === '20' && history.length === ${depth}`);
     await click(`$('#recipeCategoryPrevious')`);
     await waitFor('category arrow selects crafting', `$('#recipeCategoryName').textContent === 'Shapeless Crafting' && $('#recipeViewerPage').textContent === 'Page 1/1'`);
     await click(`$('[data-action="recipe-close"]')`);
     await waitFor('close returned to item', `!visible($('#recipeViewerModal')) && visible($('#itemHistoryModal')) && location.pathname.startsWith('/network/item/')`);
     await evaluate(`pressKey('Escape'), true`);
     await waitFor('item closed', `!visible($('#itemHistoryModal'))`);
+  });
+
+  step('recipes: a link opens its page, past the first batch, and a page too far opens the last', async () => {
+    await cdp.send('Page.navigate', {url:base+'/recipes?key=example:many_pages:0&page=51'});
+    await waitFor('page link loaded', `document.readyState === 'complete' && !window.byText`);
+    await evaluate(PAGE_LIB);
+    await waitFor('linked page shown', `$('#recipeViewerPage').textContent === 'Page 51/125' && $('.recipe-viewer-box').getAttribute('aria-busy') === 'false'
+      && $('#recipeViewerList .recipe-viewer-row') && new URL(location.href).searchParams.get('page') === '51'`);
+    await click(`$('#recipePageNext')`);
+    await waitFor('page after the link', `$('#recipeViewerPage').textContent === 'Page 52/125' && new URL(location.href).searchParams.get('page') === '52'`);
+    await cdp.send('Page.navigate', {url:base+'/recipes?key=example:many_pages:0&page=9999'});
+    await waitFor('page too far loaded', `document.readyState === 'complete' && !window.byText`);
+    await evaluate(PAGE_LIB);
+    await waitFor('last page shown', `$('#recipeViewerPage').textContent === 'Page 125/125' && $('#recipeViewerList .recipe-viewer-row')
+      && new URL(location.href).searchParams.get('page') === '125'`);
   });
 
   step('recipes: wheel navigates pages and categories, including empty top-tab space', async () => {

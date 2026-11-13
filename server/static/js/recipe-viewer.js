@@ -116,10 +116,10 @@ function writeState(replace) {
   history[replace ? 'replaceState' : 'pushState'](state, '', recipeUrl(frame));
 }
 
-export function openRecipeViewer(key, dir = 'making', map = '') {
+export function openRecipeViewer(key, dir = 'making', map = '', page = 0) {
   if (!key) return;
   rememberScroll();
-  const frame = { key, dir, map, id: `${Date.now()}-${++serial}` };
+  const frame = { key, dir, map, page, id: `${Date.now()}-${++serial}` };
   const previous = state;
   state = previous
     ? { ...previous, recipe: { ...previous.recipe, stack: [...previous.recipe.stack, frame] } }
@@ -146,7 +146,7 @@ export function recipeViewerFromUrl() {
     // A fresh shared link gets an in-app origin. Close/Back can then go to
     // Network without accidentally navigating away from the monitor.
     history.replaceState({ view: 'network' }, '', '/network');
-    openRecipeViewer(frame.key, frame.dir, frame.map);
+    openRecipeViewer(frame.key, frame.dir, frame.map, frame.page);
   }
 }
 
@@ -154,7 +154,9 @@ function select(dir, map, defer = false) {
   if (!state) return;
   if (current().dir === dir && current().map === map) return;
   rememberScroll();
-  const frame = { ...current(), dir, map };
+  const frame = { ...current(), dir, map, page: 0 };
+  // A category seen before keeps its page (showSelection shows it).
+  frame.page = cached(frame)?.page || 0;
   state = { ...state, recipe: { stack: [...state.recipe.stack.slice(0, -1), frame] } };
   writeState(true);
   clearTimeout(categoryTimer); clearTimeout(preloadTimer);
@@ -231,17 +233,21 @@ async function loadFrame(force = false) {
       frame.map = metadata.maps.find(map => metadata[frame.dir][map.id])?.id || '';
     }
     const stored = !force && cached(frame);
+    const total = metadata[frame.dir][frame.map] || 0;
+    // A new selection starts on the frame's page: a link's, or the one
+    // this frame was on before the cache let it go.
     model = stored && sameRecipeDataset(stored.metadata, metadata) ? stored
-      : {metadata, recipes:[], total:metadata[frame.dir][frame.map] || 0, scroll:0, page:0, loaded:false};
+      : {metadata, recipes:[], total, scroll:0, page:Math.max(0, Math.min(frame.page || 0, total - 1)), loaded:false};
     model.metadata = metadata;
     cache.set(frameKey(frame), model);
     // Bound the cache by item/category selections, including their pages.
     // Evicted ancestors/categories simply fetch again when revisited.
     if (cache.size > 100) cache.delete(cache.keys().next().value);
     frame.name = metadata.item.name;
+    frame.page = model.page || 0;
     writeState(true);
     render(model);
-    if (!model.loaded) await page(model, frame, token);
+    if (!model.loaded) await page(model, frame, token, Math.floor((model.page || 0) / 20) * 20);
     if (token !== generation) return;
     render(model);
     startCycling();
@@ -311,6 +317,9 @@ async function turnPage(direction, wrap = false) {
     }
     if (token === generation) {
       model.page = Math.max(0, Math.min(model.requestedPage, model.total - 1)); model.scroll = 0;
+      // The address follows the page, so it can be copied or bookmarked;
+      // turning pages replaces the entry rather than adding to Back.
+      if (current() === frame && frame.page !== model.page) { frame.page = model.page; writeState(true); }
       render(model); startCycling(); warm(model, frame, token);
     }
   } catch (e) {

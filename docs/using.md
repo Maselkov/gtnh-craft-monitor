@@ -655,7 +655,9 @@ stock page, and browser Back returns to the recipes. On touch devices, tapping
 it opens the same details sheet as a recipe's icons. The magnifier opens the
 item search.
 The `/recipes?key=...`
-address can be copied or bookmarked; a fresh link opens over the Network tab.
+address follows the item, direction, category and page, so it can be copied
+or bookmarked to come back to that exact recipe; a fresh link opens over the
+Network tab. Turning pages updates the address without adding Back steps.
 
 The hint line above the toolbar (**Hover icons for details · Help**, or
 **Tap icons for details** on touch devices) opens the shortcut help. When an
