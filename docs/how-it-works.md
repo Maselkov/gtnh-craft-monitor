@@ -308,7 +308,11 @@ and when something last came back, and calls it held up:
 
 - **blocked**: runs are pending, `storedItems()` has one run's inputs, and
   nothing has been sent for `CRAFT_BLOCK_GRACE_SECONDS`. AE2 sends a run as
-  soon as it has the inputs, so the machine side is refusing it.
+  soon as it has the inputs, so the machine side is refusing it. Only a
+  pattern the job can be using counts (its inputs are all among the job's
+  steps and what it pulled at the start), and not while one of its inputs
+  is a step of the job that hasn't made any yet: the step is waiting for
+  that one, whatever the CPU holds of the input.
 - **busy**: output is out, none has come back for that long, and the same
   machine has given another step something back in that time.
 - **stalled**: output is out, none back for `CRAFT_STALL_SECONDS`, and

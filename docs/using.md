@@ -50,7 +50,9 @@ their size added, such as `Main 64k #1`, each with a **?** that says so (see
   - **can't be sent to its machine**: the CPU has the step's inputs, but
     nothing has gone out for `CRAFT_BLOCK_GRACE_SECONDS` (1 minute by
     default). The machine won't take it: its inventory is full, the
-    interface is in blocking mode, or a pattern hatch is full.
+    interface is in blocking mode, or a pattern hatch is full. A step
+    whose inputs include a sub-component this job hasn't made yet waits
+    for it instead.
   - **machine busy with ...**: what was sent there hasn't come back for
     that long, while the same machine finished another step in that time,
     of this job or another CPU's. Two interfaces with the same name that
