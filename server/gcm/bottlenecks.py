@@ -14,7 +14,10 @@ So tracking keeps, per step (gcm/tracking.py's "flow"), when it was last
 pushed and when a machine last gave some back, and a step is held up:
   - blocked: runs pending, a run's inputs in the CPU, and nothing sent
     for CRAFT_BLOCK_GRACE_SECONDS: the machine side won't take it (its
-    inventory full, blocking mode, a full pattern hatch).
+    inventory full, blocking mode, a full pattern hatch). Only a pattern
+    the job can be using counts, and not while one of its inputs is a
+    step of the job that hasn't made any yet: then it's waiting for that
+    step, whatever the CPU holds of the input.
   - busy: output out and none back for the grace period, while the same
     machine gave another step (this job's or another CPU's) something in
     that time: it's working for someone else.
@@ -57,7 +60,7 @@ BUCKET_SECONDS = 3600
 
 _lock = threading.Lock()
 _network = (None, None)  # (the pattern list it was built from, _Network)
-_job_makers = {}  # cpu -> ((started_at, step count, _Network), {step: [pattern]})
+_job_makers = {}  # cpu -> ((started_at, step count, _Network), _makers())
 _accounted = {}  # cpu -> {started_at, at, counted: provider keys}
 
 
@@ -130,8 +133,10 @@ def _jobs():
 
 
 def _makers(cpu, job, net):
-    """{step: [planner pattern]}: what makes each of the job's steps - the
-    patterns the job could be using, else every one making it."""
+    """{step: ([planner pattern], used)}: what makes each of the job's
+    steps - the patterns the job could be using (used: True), else every
+    one making it (False), which only says where the step is made: a
+    pattern the job can't be using says nothing about it being ready."""
     key = (job["started_at"], len(job["peaks"]), net)
     with _lock:
         hit = _job_makers.get(cpu)
@@ -141,21 +146,38 @@ def _makers(cpu, job, net):
     out = {}
     for step in job["peaks"]:
         candidates = net.makers.get(job_tree.step_item_key(step), [])
-        out[step] = [p for p in candidates if job_tree.used_by_job(p, items)] or candidates
+        used = [p for p in candidates if job_tree.used_by_job(p, items)]
+        out[step] = (used, True) if used else (candidates, False)
     with _lock:
         _job_makers[cpu] = (key, out)
     return out
 
 
-def _has_inputs(p, stored):
+def _has_inputs(p, stored, unmade):
     """Whether `stored` ({item base key: amount}) holds one run of
-    pattern p's inputs."""
-    return all(stored.get(job_tree.base_key(k), 0) >= size for k, _, size in p.inputs + p.once)
+    pattern p's inputs, none of them in `unmade`."""
+    return all(job_tree.base_key(k) not in unmade and stored.get(job_tree.base_key(k), 0) >= size
+               for k, _, size in p.inputs + p.once)
+
+
+def _unmade(job):
+    """Item base keys of the job's steps that haven't made any yet: none
+    given back, all still to make. A pattern taking one waits for that
+    step, whatever the CPU holds of it - an amount AE2 took from storage
+    goes to another step, or it would have been sent (a step held up
+    behind a sub-component isn't blocked)."""
+    out = set()
+    for step, f in job["flow"].items():
+        left = f["pending"] + f["active"]
+        if left > 0 and f["gave_at"] is None and left >= job["peaks"].get(step, 0):
+            out.add(job_tree.step_item_key(step))
+    return out
 
 
 def _note_ready(jobs, makers, now):
     """Keeps each step's ready_since - since when the CPU has held a run
-    of its inputs - in tracking's entries, and in `jobs`, their copies."""
+    of the inputs of a pattern the job can be using - in tracking's
+    entries, and in `jobs`, their copies."""
     with state.tracking_lock:
         for cpu, job in jobs.items():
             entry = state.cpu_last_known.get(cpu)
@@ -165,8 +187,10 @@ def _note_ready(jobs, makers, now):
             for step, amount in job["stored"].items():
                 k = job_tree.step_item_key(step)
                 stored[k] = stored.get(k, 0) + amount
+            unmade = _unmade(job)
             for step, f in job["flow"].items():
-                if f["pending"] > 0 and any(_has_inputs(p, stored) for p in makers[cpu].get(step, ())):
+                made_by, used = makers[cpu].get(step, ((), False))
+                if f["pending"] > 0 and used and any(_has_inputs(p, stored, unmade) for p in made_by):
                     entry["ready_since"].setdefault(step, now)
                 else:
                     entry["ready_since"].pop(step, None)
@@ -181,7 +205,7 @@ def _classify(jobs, makers, net, now, only=None):
     grace, stall = config.CRAFT_BLOCK_GRACE_SECONDS, config.CRAFT_STALL_SECONDS
 
     def providers(cpu, step):
-        keys = {patterns.provider_key(p.pattern["provider"]) for p in makers[cpu].get(step, ())}
+        keys = {patterns.provider_key(p.pattern["provider"]) for p in makers[cpu].get(step, ((), False))[0]}
         return sorted(keys, key=lambda k: tuple(str(v) for v in k))
 
     # Which machines gave something back lately, and to which step.

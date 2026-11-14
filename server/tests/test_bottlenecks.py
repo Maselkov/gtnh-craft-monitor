@@ -78,6 +78,42 @@ class TestStates:
             post(client, api_headers, waiting)
         assert bottlenecks.steps("A1")[key(PLATE)]["state"] == "waiting"
 
+    def test_waiting_for_a_sub_component_isnt_blocked(self, client, api_headers, clock):
+        start(client, api_headers, "A1")
+        # A gear's plates and bolt in the CPU (pulled from storage, for
+        # another step), but the job's own plates and bolts not made yet:
+        # the gears wait for them, however long.
+        def report(pending, active, stored):
+            post(client, api_headers, job("A1", pending=pending, active=active, stored=stored))
+
+        held = [stack("Plate", PLATE[1], 4), stack("Bolt", BOLT[1], 1), stack("Ingot", INGOT[1], 9)]
+        for t in (0, GRACE, 2 * GRACE):
+            clock.at(t)
+            report([stack("Gear", GEAR[1], 2), stack("Plate", PLATE[1], 8)], [stack("Bolt", BOLT[1], 4)], held)
+        assert bottlenecks.steps("A1")[key(GEAR)]["state"] == "waiting"
+        # Plates and bolts made, the gears' inputs all in, nothing sent:
+        # blocked.
+        made = [stack("Plate", PLATE[1], 8), stack("Bolt", BOLT[1], 4)]
+        for t in (3 * GRACE, 4 * GRACE + 5):
+            clock.at(t)
+            report([stack("Gear", GEAR[1], 2)], [], made)
+        gear = bottlenecks.steps("A1")[key(GEAR)]
+        assert gear["state"] == "blocked" and gear["since"] == T0 + 3 * GRACE
+
+    def test_a_pattern_the_job_cant_be_using_isnt_ready(self, client, api_headers, clock):
+        # The job pulled no ingots or molten iron at the start: it can't be
+        # bending or solidifying plates, so ingots in the CPU later don't
+        # make the plates ready.
+        start(client, api_headers, "A1")
+        clock.at(0)
+        post(client, api_headers, job("A1", pending=[stack("Gear", GEAR[1], 2), stack("Plate", PLATE[1], 8)]))
+        for t in (5, GRACE + 10):
+            clock.at(t)
+            post(client, api_headers, job("A1", pending=[stack("Gear", GEAR[1], 2), stack("Plate", PLATE[1], 8)],
+                                          stored=[stack("Ingot", INGOT[1], 9)]))
+        plate = bottlenecks.steps("A1")[key(PLATE)]
+        assert plate["state"] == "waiting"
+
     def test_a_machine_giving_another_cpu_its_output_is_busy(self, client, api_headers, clock):
         start(client, api_headers, "A1", "A2")
         mine = job("A1", pending=[stack("Gear", GEAR[1], 1)], active=[stack("Bolt", BOLT[1], 4)])
