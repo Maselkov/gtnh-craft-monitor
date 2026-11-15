@@ -761,6 +761,16 @@ def _app_kit_preferences(conn):
     """)
 
 
+def _app_batches(conn):
+    # Each account's batch being put together (gcm/batches.py).
+    conn.execute("""
+        CREATE TABLE batches (
+            user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            value TEXT NOT NULL
+        )
+    """)
+
+
 APP_MIGRATIONS = [
     _app_baseline,
     _app_drop_orphaned_user_rows,
@@ -778,6 +788,7 @@ APP_MIGRATIONS = [
     _app_cancel_source,
     _app_craft_event_first_seen,
     _app_kit_preferences,
+    _app_batches,
 ]
 POWER_MIGRATIONS = [
     _power_baseline, _power_machines, _power_drop_impossible_times, _power_wireless_lsc, _power_machine_names,

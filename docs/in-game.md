@@ -153,9 +153,15 @@ a note about it until one of them closes it, and **Status** lists Patterns as
 ### Kit interface
 
 Optional. It lets the page request a [multiblock kit](using.md#multiblock-kits)
-as one crafting job: `craft_monitor.lua` rewrites a pattern in this
-interface so its inputs are the kit's blocks, and requests it. Without
-one, a kit is requested a block at a time.
+or a [batch](using.md#batches) as one crafting job: `craft_monitor.lua`
+rewrites a pattern in this interface so its inputs are the kit's blocks
+(or the batch's items), and requests it. Without one, they're requested
+one item at a time. A batch's fluids go into the pattern as fluids, so
+for a batch with fluids the kit interface has to push fluids as well as
+items (a Dual Interface), and the return path has to take them back
+(with a Fluid Storage Bus). Fluids in a batch are new and haven't been
+tried on every setup: if such a job gets stuck, craft the batch's items
+separately.
 
 1. Place an **ME Interface** on the main network, with a **Fake Crafting
    Card** in it and blocking mode off. You can hide this interface from

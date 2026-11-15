@@ -394,7 +394,14 @@ function FakeME:_edit_pattern(iface, which, slot, index, detail, stackType)
   local list = p[which]
   while #list < index do list[#list + 1] = false end
   if detail ~= nil then
-    if stackType ~= "item" then error("Type " .. tostring(stackType) .. " hasn't been registered", 0) end
+    if stackType ~= "item" and stackType ~= "fluid" then
+      error("Type " .. tostring(stackType) .. " hasn't been registered", 0)
+    end
+    if stackType == "fluid" then
+      list[index] = { name = detail.name, size = detail.size or 1, fluid = true }
+      self:_pattern_edited(p)
+      return true
+    end
     -- A tag gives the stack a custom name: the test says which, as
     -- me.tag_labels[tag] (the fake can't read NBT).
     local label = detail.tag and (self.tag_labels or {})[detail.tag] or nil

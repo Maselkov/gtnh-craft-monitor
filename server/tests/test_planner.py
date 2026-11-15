@@ -443,6 +443,19 @@ class TestPlanMany:
     def test_nothing_to_plan(self):
         assert self.many({}, []) is None
 
+    def test_reserved_stock_isnt_left_for_the_others(self):
+        # A batch of 2 plates and a gear, with 5 plates in stock. As one
+        # job, AE2 takes all 5 plates as the batch's input and crafts 2
+        # more: the gear's 4 plates are crafted too, not taken from stock.
+        targets = [("Plate", 2), ("Gear", 1)]
+        shared = self.many({"Plate": 5, "Ingot": 100}, targets)
+        assert child(shared["root"]["children"][1], "Plate")["from_stock"] == 4
+        reserved = self.many({"Plate": 5, "Ingot": 100}, targets, reserve=True)
+        gear_plate = child(reserved["root"]["children"][1], "Plate")
+        assert (gear_plate["from_stock"], gear_plate["craft"]) == (0, 4)
+        plate = totals(reserved, "Plate")
+        assert (plate["available"], plate["from_stock"], plate["craft"]) == (5, 5, 6)
+
 
 class TestRoute:
     URL = "/api/network/plan"
@@ -520,6 +533,18 @@ class TestRoute:
         assert client.get(self.URL, query_string={"targets": "[]"}).get_json()["plan"] is None
         for bad in ("nope", '[["x", 1]]', json.dumps([[key("Gear"), 0]]), json.dumps([[key("Gear"), 1]] * 101)):
             assert client.get(self.URL, query_string={"targets": bad}).status_code == 400, bad
+
+    def test_a_batch_plan_as_one_job(self, client, api_headers):
+        self.scan(client, api_headers, {"Plate": 5, "Ingot": 100})
+        login_as(client, "usr_alice")
+        targets = json.dumps([[key("Plate"), 2], [key("Gear"), 1]])
+        data = client.get(self.URL, query_string={"targets": targets, "batch": 1, "reserve": 1}).get_json()
+        root = data["plan"]["root"]
+        assert (root["status"], root["name"]) == ("kit", "Batch of 2 items")
+        plate = next(i for i in data["plan"]["items"] if i["name"] == "Plate")
+        assert plate["from_stock"] == 5 and plate["craft"] == 6
+        separate = client.get(self.URL, query_string={"targets": targets, "batch": 1}).get_json()
+        assert next(i for i in separate["plan"]["items"] if i["name"] == "Plate")["craft"] == 2
 
     def test_nothing_makes_it(self, client, api_headers):
         self.scan(client, api_headers, {})

@@ -259,13 +259,19 @@ def kit_label(name, n=1):
 
 
 def queue_kit(user_id, name, mod, internal, damage, inputs, source="manual"):
-    """Queues a multiblock kit as ONE craft request: craft_monitor.lua
-    rewrites a kit pattern in the base's kit interface so its inputs are
-    `inputs` ([{mod, internal, damage, amount}]) and its output the
-    controller, named "<name> kit", then requests that. AE2 plans it as
-    one job, sharing what the blocks have in common, and the interface
-    pushes the blocks back into the network (docs/in-game.md has the
-    setup). Returns its id.
+    """Queues a multiblock kit as ONE craft request (queue_pattern_job):
+    its output is the controller, named "<name> kit"."""
+    return queue_pattern_job(user_id, name, mod, internal, damage, inputs, source)
+
+
+def queue_pattern_job(user_id, name, mod, internal, damage, inputs, source="manual"):
+    """Queues several items as ONE craft request (a multiblock kit, a
+    batch): craft_monitor.lua rewrites a kit pattern in the base's kit
+    interface so its inputs are `inputs` ([{mod, internal, damage,
+    amount, kind?}]) and its output the item mod:internal:damage, named
+    "<name> kit", then requests that. AE2 plans it as one job, sharing
+    what the inputs have in common, and the interface pushes them back
+    into the network (docs/in-game.md has the setup). Returns its id.
 
     Two kit patterns that make the same name are two patterns for one
     output, and AE2 may plan either, so the request offers kit_names:
@@ -291,13 +297,10 @@ def queue_kit(user_id, name, mod, internal, damage, inputs, source="manual"):
             "variant": None,
             "variant_name": None,
             # The name, as NBT: getCraftable() then finds the kit pattern's
-            # output and not the controller's own pattern.
+            # output and not the item's own pattern.
             "tag": names[0]["tag"],
             "kit_names": names,
-            "kit_inputs": [
-                {"name": f"{i['mod']}:{i['internal']}", "damage": int(i["damage"] or 0), "size": int(i["amount"])}
-                for i in inputs
-            ],
+            "kit_inputs": [_kit_input(i) for i in inputs],
             "source": source,
             "target_key": None,
             "reason": None,
@@ -308,6 +311,15 @@ def queue_kit(user_id, name, mod, internal, damage, inputs, source="manual"):
             req_id, user_id, label, mod, internal, damage, 1, "item", created_at, source
         ),
     )
+
+
+def _kit_input(i):
+    """One of a kit pattern's inputs as craft_monitor.lua writes it. A
+    fluid's carries its type: only a script that reported kit_fluids
+    is sent one (gcm/batches.py)."""
+    if i.get("kind") == "fluid":
+        return {"name": i["internal"], "damage": 0, "size": int(i["amount"]), "type": "fluid"}
+    return {"name": f"{i['mod']}:{i['internal']}", "damage": int(i["damage"] or 0), "size": int(i["amount"])}
 
 
 # Craft cancellation. Simpler than craft REQUESTS: AE2's cancel() call

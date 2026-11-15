@@ -10,6 +10,7 @@
 - [Recipes and Uses](#recipes-and-uses)
 - [Requesting and cancelling crafts](#requesting-and-cancelling-crafts)
 - [Multiblock kits](#multiblock-kits)
+- [Batches](#batches)
 - [Stock rules](#stock-rules)
 - [Limitations](#limitations)
 
@@ -849,6 +850,10 @@ what's in storage first, so the kit asks for what's in stock of each block
 plus the Request amount, and crafts the Request amount. That stock goes
 through the kit with the crafted blocks and comes back with them.
 
+**Add to batch** puts the blocks Request would ask for into your
+[batch](#batches) instead of requesting them, to request them later with
+other items (another multiblock's blocks, say), planned together.
+
 Tick **Craft each material separately** to queue each block as its own
 craft instead, as if you'd requested them one by one: each lands in the
 network as soon as it's done. Without a kit interface, that's how a kit is
@@ -898,6 +903,52 @@ The counts come from building each multiblock in the game when the game data
 is made, the way NEI's multiblock preview does (see
 [Bundle format](../tools/icon-export/README.md#bundle-format)). A
 multiblock whose structure isn't built with StructureLib has no kit.
+
+## Batches
+
+A batch is several items to request together. Requested one at a time,
+AE2 plans each craft on its own, against what's in storage as it starts:
+two components that need the same circuits can each look fine and one
+then comes up short, and nothing one leaves over goes to the other. A
+batch is planned as one job instead, the way a
+[multiblock kit](#multiblock-kits) is, so what the items share is made
+once.
+
+Operators and admins open it with **Batch** in the Network tab, which
+shows how many items it holds. Add items there by searching for anything
+the network can craft, or with **Add to batch**:
+
+- in an item's craft dialog, which adds the amount typed in Quantity
+  instead of requesting it;
+- in a multiblock kit, which adds the blocks Request would ask for, each
+  marked "from *multiblock* kit".
+
+Adding an item that's already there adds the amounts up. Change an
+amount in its **Craft** box (mB for a fluid), or remove the item with
+**×**; **Clear** empties the batch. The batch is kept for your account
+until you request it, so it's there from another browser too, and
+**In network** is from the last scan. Items with NBT variants can't go
+in a batch: request those on their own.
+
+**Review & request** shows the [crafting plan](#requesting-and-cancelling-crafts)
+for everything together, then **Request as one job** starts it, through
+the [kit interface](in-game.md#kit-interface). The job shows on the Crafts
+tab as making "*first item* batch kit" (or "… batch kit #2" while another
+is running), with the first item's icon, and the items reach the network
+together when it's done. As with a kit, AE2 uses what's in storage first,
+so all of each item's stock goes into the job and comes back with it. The
+plan counts it that way: an item in the batch that another one also needs
+is crafted for that one too, not taken from the stock the job holds.
+
+Tick **Craft each item separately** to queue each item as its own craft
+instead, each in the network as soon as it's done. Without a kit
+interface that's the only way, and the box says so. The page remembers
+the choice.
+
+A batch made as one job needs at least one item (its job is named after
+one), and fluids in it need a `craft_monitor.lua` from this version on;
+an older one says so, and the items can still be requested separately.
+An item the network has no pattern for has to be removed first.
 
 ## Stock rules
 
@@ -991,7 +1042,7 @@ What it can look at:
 | `craft_job` | A running job's steps, held-up ones first, with the machines holding them up |
 | `craft_history` | Jobs that ended |
 | `craft_stats` | Totals, most crafted items, CPU use, slowest machines |
-| `plan_craft` | The [crafting plan](#requesting-and-cancelling-crafts) for an amount of an item |
+| `plan_craft` | The [crafting plan](#requesting-and-cancelling-crafts) for an amount of an item, or for several planned together as a [batch](#batches) |
 | `stock_rules` | Keep-in-stock targets and your alerts |
 | `power` | Stored EU over time and its trend |
 | `find_recipes` | How the game makes an item, or what it's used for (the recipe book's Uses): supported crafting-table, furnace and GregTech recipes for your GTNH version, one machine's at a time if asked, with a link that opens them in the recipe book |
@@ -1009,6 +1060,7 @@ What it can change:
 | `set_stock_alert`, `remove_stock_alert` | Your own [low-stock alerts](#stock-rules) | Anyone signed in |
 | `set_stock_target`, `remove_stock_target` | The base's keep-in-stock targets | Operators, admins |
 | `request_craft` | Asks AE2 for an amount of an item, like **Craft** on the page | Operators, admins |
+| `request_batch` | Asks AE2 for several items as one job, like a [batch](#batches) on the page (it doesn't use or change your batch) | Operators, admins |
 | `cancel_craft` | Cancels a CPU's job, like **Cancel** on the page | Operators, admins |
 
 `find_recipes` reports what the installed game data covers. New bundles include
@@ -1028,7 +1080,7 @@ The tool reports approximation flags and export coverage, so an empty result
 means the bundle has no supported recipe for it, not that it cannot be made.
 The [pattern check](#pattern-check) continues to compare only GregTech recipes.
 
-`request_craft` works out the crafting plan first. If ingredients are
+`request_craft` and `request_batch` work out the crafting plan first. If ingredients are
 missing it doesn't start, and tells the assistant what's missing; it only
 starts anyway when asked to again with `force`. It also doesn't start when
 the base is already getting the item (a request waiting for the game, a CPU

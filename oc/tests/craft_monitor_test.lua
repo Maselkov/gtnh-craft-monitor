@@ -452,6 +452,23 @@ test("a kit is written into a kit slot and requested as one job", function()
   t.eq(posts[#posts].kit_slots, 1)
 end)
 
+test("a batch's fluids are written into the kit pattern as fluids", function()
+  local env, _, iface = kit_setup({ ["GET /api/craft/requests/pending"] = queue({ kit_request(19, {
+    { name = "gregtech:gt.blockcasings", damage = 11, size = 3 },
+    { name = "molten.solderingalloy", damage = 0, size = 1440, type = "fluid" },
+  }) }) })
+  env:start_service("craft_monitor")
+  env:run({ seconds = 10 })
+
+  t.eq(iface.patterns[2].inputs, {
+    { name = "gregtech:gt.blockcasings", damage = 11, size = 3 },
+    { name = "molten.solderingalloy", size = 1440, fluid = true },
+  })
+  t.eq(results_for(env, 19)[1].status, "accepted")
+  local posts = crafts_posts(env)
+  t.eq(posts[#posts].kit_fluids, true)
+end)
+
 test("a kit slot is used again once its job has ended, and never shrinks to nothing", function()
   local env, me, iface = kit_setup({
     ["GET /api/craft/requests/pending"] = queue({ kit_request(21) }, {}, {}, {}, {}, {},

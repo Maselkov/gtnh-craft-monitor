@@ -1008,6 +1008,31 @@ requests that. What it found on the way:
 - OC compresses a CPU's output NBT its own way, so the job is matched to
   its CPU by item, not by tag.
 
+**A batch is a kit pattern with any items in it.** Nothing in the kit
+path above is about multiblocks: `prepare_kit()` takes any request with
+`kit_inputs`, so a batch (`gcm/batches.py`) is the same request with the
+player's items as inputs and the first item as the output, named
+"*item* batch kit". The " kit" ending is kept so `is_kit_output()` (and
+the page's `isKitOutput()`) take it with no script change, and the
+first item rather than a Command Block is the output because a named
+Command Block reads as a fresh slot to the script, which would lose the
+name that keeps two patterns from making the same thing. Some choices:
+- The batch being put together is kept per account on the server
+  (`store/batches.py`), not in the browser, so it follows the player and
+  survives a reload; the request takes the rows the player reviewed, not
+  the stored ones, and empties the stored batch once it's queued.
+- No NBT variants: OC's pattern editing writes name, damage and size
+  only, so an input with NBT can't be written.
+- Fluids are written with OC's "fluid" stack type, which only a
+  `craft_monitor.lua` that reports `kit_fluids` does; the server refuses
+  a one-job batch with fluids otherwise. That path is from OC's driver
+  having a type argument, not from a test on a real base.
+- One job's inputs are each item's stock plus the amount to craft, as
+  for a kit, so AE2 takes all of that stock before planning the rest. The
+  plan does the same (`plan_many(reserve=True)`): without it, an item in
+  the batch that another one needs (robot arms and an assembler) showed
+  the stock being used twice. Kits plan with it too, as one job.
+
 **Connected textures are joined up in the browser, not captured.**
 Capturing them would take a second game launch with Angelica on (it
 can't be on for the icons) and a mesh for every way a block's neighbours

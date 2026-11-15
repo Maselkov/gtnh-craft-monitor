@@ -512,3 +512,44 @@ def test_install_checks_the_key_with_the_server(game, api_key):
     assert ("POST", "/api/agent/ping", 401) in game.requests
     assert game.lua('return env:printed("The server refused the API key.")') is True
     assert game.lua("return env.shutdown == nil") is True
+
+
+def test_a_batch_is_written_into_a_kit_slot_and_requested_as_one_job(game, client):
+    # A kit interface with a fresh kit slot: a pattern making a Command Block.
+    game.lua(
+        """
+        me = ae2.new(env)
+        me:add_cpu({ name = "CPU 1" })
+        iface = me:add_interface(9)
+        me:set_pattern(1, { inputs = { { name = "minecraft:dirt", damage = 0, size = 1 } },
+          outputs = { { name = "minecraft:command_block", damage = 0, size = 1 } } }, iface)
+        env:start_service("craft_monitor")
+        """
+    )
+    with state.network_lock:
+        state.network["items"] = [
+            {"mod": "gregtech", "internal": "gt.metaitem.01", "damage": 32600, "kind": "item",
+             "name": "Titanium Gear", "size": 3, "isCraftable": True},
+            {"mod": None, "internal": "molten.titanium", "damage": None, "kind": "fluid",
+             "name": "Molten Titanium", "size": 0, "isCraftable": True},
+        ]
+    game.run(5)
+    # The script says it has a kit slot, and writes fluids.
+    assert state.kit_slots() == 1 and state.kit_fluids()
+    login_as(client, "usr_operator", role="operator")
+    res = client.post("/api/craft/request-batch-job", json={"items": [
+        {"key": "gregtech|gt.metaitem.01|32600|item", "amount": 4},
+        {"key": "|molten.titanium||fluid", "amount": 144},
+    ]})
+    assert res.status_code == 200, res.get_json()
+
+    game.run(10)
+    assert game.lua("return iface.patterns[1].inputs[1].size") == 7
+    assert game.lua("return iface.patterns[1].inputs[2].name") == "molten.titanium"
+    assert game.lua("return iface.patterns[1].inputs[2].fluid") is True
+    assert game.lua("return iface.patterns[1].outputs[1].name") == "gregtech:gt.metaitem.01"
+    # Accepted, and its job ran to the end.
+    req_id = res.get_json()["id"]
+    assert client.get("/api/craft/requests").get_json()["requests"] == []
+    assert ("POST", f"/api/craft/requests/{req_id}/result", 200) in game.requests
+    assert ("POST", f"/api/craft/requests/{req_id}/outcome", 200) in game.requests

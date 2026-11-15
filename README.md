@@ -29,6 +29,8 @@ Basically, it's web AE2 for your base.
 - **[Multiblock kits](docs/using.md#multiblock-kits)** — every block a
   GregTech multiblock is built from, for the coils, glass and size you
   pick, with what the network has; request the missing ones at once.
+- **[Batches](docs/using.md#batches)** — several items requested as one
+  AE2 job, so the parts they share are planned and made once.
 - **[Stock rules](docs/using.md#stock-rules)** — get a notification when an
   item runs low, or have the server queue a craft to keep it stocked.
 - **[Pattern check](docs/using.md#pattern-check)** — before or after a GTNH

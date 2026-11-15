@@ -7,7 +7,7 @@ import time
 import pytest
 
 from conftest import login_as
-from gcm import commands, stock, store, tracking
+from gcm import commands, state, stock, store, tracking
 from gcm.mcp import tools
 from test_mcp import IRON_KEY, call, make_token, modern, ok
 from test_network_api import run_scan
@@ -16,7 +16,7 @@ from test_stock import GOLD, IRON, cpus, scanned
 
 GOLD_KEY = "minecraft|gold_ingot|0|item"
 PLANKS_KEY = "minecraft|planks|0|item"
-OPERATOR_TOOLS = {"set_stock_target", "remove_stock_target", "request_craft", "cancel_craft"}
+OPERATOR_TOOLS = {"set_stock_target", "remove_stock_target", "request_craft", "request_batch", "cancel_craft"}
 
 
 @pytest.fixture()
@@ -49,6 +49,7 @@ class TestRoles:
     def test_and_cant_call_them(self, client, viewer, network):
         for name, args in [
             ("request_craft", {"item": IRON_KEY, "amount": 1}),
+            ("request_batch", {"items": [{"item": IRON_KEY, "amount": 1}]}),
             ("cancel_craft", {"cpu": "B0"}),
             ("set_stock_target", {"item": IRON_KEY, "keep_at_least": 1, "refill_to": 2}),
             ("remove_stock_target", {"item": IRON_KEY}),
@@ -104,6 +105,55 @@ class TestStockRules:
         assert is_error and answer == "only items the network can craft can be kept in stock"
         answer, is_error = call(client, operator, "set_stock_target", item=IRON_KEY, keep_at_least=5, refill_to=5)
         assert is_error and answer == "refill_to must be more than keep_at_least"
+
+
+class TestRequestBatch:
+    @pytest.fixture()
+    def planks(self, client, api_headers):
+        log = pattern_item("log", "Oak Wood", size=1, item_id=17)
+        planks = pattern_item("planks", "Oak Wood Planks", size=2, item_id=5, isCraftable=True)
+        iron = {**pattern_item("iron_ingot", "Iron Ingot", size=500, item_id=265), "isCraftable": True}
+        run_scan(client, api_headers, [[log, planks, iron]], interface_terminal=True)
+        run_pattern_scan(client, api_headers, [[PLANKS_PATTERN]])
+        cpus(client, api_headers, idle=2)
+
+    @pytest.fixture()
+    def kit_slots(self):
+        with state.crafts_lock:
+            state.crafts["kit_slots"] = 1
+
+    def test_plan_several_together(self, client, operator, planks, kit_slots):
+        plan = ok(client, operator, "plan_craft", items=[{"item": PLANKS_KEY, "amount": 4}])
+        assert plan["as_one_job"] is True and plan["can_craft"] is True
+        [planks_row] = plan["requested"]
+        # As one job, the 2 planks in stock go in too: 4 crafted from 1 log.
+        assert (planks_row["name"], planks_row["crafted"], planks_row["from_storage"]) == ("Oak Wood Planks", 4, 2)
+        answer, is_error = call(client, operator, "plan_craft", items=[{"item": PLANKS_KEY, "amount": 4}],
+                                item=PLANKS_KEY, amount=1)
+        assert is_error and "either" in answer
+
+    def test_queued_as_one_job(self, client, operator, planks, kit_slots):
+        # No pattern makes iron in this scan: missing, so forced.
+        sent = ok(client, operator, "request_batch", force=True, items=[{"item": PLANKS_KEY, "amount": 4},
+                                                                         {"item": IRON_KEY, "amount": 8}])
+        assert "force" in sent["plan_note"]
+        assert sent["queued"] and sent["as_one_job"] and sent["job_name"] == "Oak Wood Planks batch kit"
+        [req] = commands.craft_requests.select(lambda r: True)
+        assert req["source"] == "assistant"
+        assert [i["size"] for i in req["kit_inputs"]] == [6, 508]
+
+    def test_missing_stops_it_and_separate_queues_each(self, client, operator, planks):
+        held = ok(client, operator, "request_batch", items=[{"item": PLANKS_KEY, "amount": 16}], separate=True)
+        assert held["queued"] is False and [m["name"] for m in held["missing"]] == ["Oak Wood"]
+        sent = ok(client, operator, "request_batch", separate=True, force=True,
+                  items=[{"item": PLANKS_KEY, "amount": 4}, {"item": IRON_KEY, "amount": 8}])
+        assert sent["queued"] and len(sent["request_ids"]) == 2
+
+    def test_needs_a_kit_slot_for_one_job(self, client, operator, planks):
+        answer, is_error = call(client, operator, "request_batch", items=[{"item": PLANKS_KEY, "amount": 1}])
+        assert is_error and "separate=true" in answer
+        answer, is_error = call(client, operator, "request_batch", items=[{"item": "nope", "amount": 1}])
+        assert is_error and answer.startswith("items:")
 
 
 class TestRequestCraft:

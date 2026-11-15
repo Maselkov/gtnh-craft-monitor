@@ -444,8 +444,14 @@ function render() {
 
 function planParams() {
   if (target.targets) {
-    const params = new URLSearchParams({ targets: JSON.stringify(target.targets), kit: target.kit,
-      count: String(target.count || 1) });
+    const params = new URLSearchParams({ targets: JSON.stringify(target.targets) });
+    if (target.batch) params.set('batch', '1');
+    else {
+      params.set('kit', target.kit);
+      params.set('count', String(target.count || 1));
+    }
+    // As one job, each target's stock goes into it first.
+    if (target.reserve) params.set('reserve', '1');
     if (Object.keys(choices).length) params.set('choose', JSON.stringify(choices));
     return params;
   }
@@ -632,14 +638,16 @@ export function updateCraftPlanAmount(amountValue, delay = FETCH_DELAY_MS) {
 
 // The kit dialog's plan, for its blocks requested together:
 // kit = {kit: controller game data key, count, targets: [[item key,
-// amount]]}, the panel going before `before`. Called again as the
+// amount]], reserve: planned as one job}, or a batch's ({kit: 'batch',
+// batch: true, targets, reserve}), the panel going before `before`. Called again as the
 // amounts change, it plans again, keeping what's open in the tree and
 // the patterns picked.
 export function openKitPlan(kit, before, onStatus = null) {
   kitPlanStatus = onStatus;
   const same = target && target.targets && target.kit === kit.kit;
   placePanel(before);
-  if (same && JSON.stringify(target.targets) === JSON.stringify(kit.targets) && target.count === kit.count) return;
+  if (same && JSON.stringify(target.targets) === JSON.stringify(kit.targets) && target.count === kit.count
+      && !!target.reserve === !!kit.reserve) return;
   target = kit;
   amount = 1;
   if (!same) {

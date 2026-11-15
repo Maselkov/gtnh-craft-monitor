@@ -442,7 +442,9 @@ local function post_report(source, jobs)
     -- stale when this is set higher than usual.
     -- kit_slots: how many multiblock kits can be requested as one job
     -- at a time; left out until the request loop has looked.
-    local kits = kitSlotsLookedAt and (',"kit_slots":' .. #kitSlots) or ""
+    -- kit_fluids: this script writes fluids into a kit pattern too (a
+    -- batch's, as one job).
+    local kits = kitSlotsLookedAt and (',"kit_slots":' .. #kitSlots .. ',"kit_fluids":true') or ""
     return '{"source":' .. json_encode(source) .. ',"poll_seconds":' .. json_encode(CONFIG.POLL_SECONDS) .. kits
       .. ',"jobs":[' .. table.concat(jobs, ",") .. "]}"
   end)
@@ -575,6 +577,9 @@ end
 -- through the kit interface into a subnet that leads back into the
 -- network; a Fake Crafting Card in the interface ends the job there,
 -- as the output never arrives. docs/in-game.md has the setup.
+-- A batch (any items the player picked, to be planned together) comes
+-- the same way: its output is its first item, named "<item> batch kit",
+-- and its inputs may include fluids ({ type = "fluid", name, size }).
 --
 -- A slot is a kit slot when its pattern makes a Command Block (one the
 -- player set up and that was never used) or something named "... kit"
@@ -741,7 +746,13 @@ local function write_kit(ks, pattern, output, inputs)
   call("setInterfacePatternOutput", ks.slot, 1, output, "item")
   for i = last_index(pattern.outputs), 2, -1 do call("clearInterfacePatternOutput", ks.slot, i) end
   for i, item in ipairs(inputs) do
-    call("setInterfacePatternInput", ks.slot, i, { name = item.name, damage = item.damage, size = item.size }, "item")
+    -- A batch's fluids (kit_fluids in the report): AE2's fluid stack
+    -- type, by fluid name and mB.
+    if item.type == "fluid" then
+      call("setInterfacePatternInput", ks.slot, i, { name = item.name, size = item.size }, "fluid")
+    else
+      call("setInterfacePatternInput", ks.slot, i, { name = item.name, damage = item.damage, size = item.size }, "item")
+    end
   end
   for i = last_index(pattern.inputs), #inputs + 1, -1 do call("clearInterfacePatternInput", ks.slot, i) end
 end
