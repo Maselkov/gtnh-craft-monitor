@@ -29,6 +29,7 @@ key matches only that species; the bare key still matches all of them."""
 
 import gzip
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -43,11 +44,14 @@ from urllib.parse import quote
 
 # Bumped when the schema or what goes in it changes: an index of another
 # format is built again.
-FORMAT = 9
+FORMAT = 10
 # An index built beside a bundle's recipes.json.gz is called this.
 FILE = "recipes.sqlite"
 ITEM, FLUID = 0, 1
-NON_GT_MAPS = frozenset({"crafting", "furnace", "assembly_line"})
+# The map of GregTech ore processing diagrams, which the index composes
+# from its own GT recipes (ore_processing.py).
+ORE_PROCESSING_MAP = "ore_processing"
+NON_GT_MAPS = frozenset({"crafting", "furnace", "assembly_line", ORE_PROCESSING_MAP})
 # These NEI diagrams show the researched target as a fake output. Treating
 # them as production would claim that scanning an item manufactures it.
 REFERENCE_ONLY_MAPS = frozenset({"nei.gt.gt.recipe.fakeAssemblylineProcess",
@@ -518,6 +522,7 @@ def _build(source_file, out_path, raw, map_ids, signature, species=None):
                 inputs.add((ITEM, body["research"]["item"][0]))
             conn.executemany("INSERT INTO input VALUES (?, ?, ?)", ((kind, k, recipe_id) for kind, k in inputs))
             recipe_id += 1
+        recipe_id = _ore_processing(conn, map_ids, items, raw.get("item_names"), recipe_id)
         if conn.execute("SELECT 1 FROM display_ref r LEFT JOIN display_stack s ON s.id = r.id WHERE s.id IS NULL LIMIT 1").fetchone():
             raise ValueError("unknown display stack reference")
         for kind, keys, names in ((ITEM, items, raw.get("item_names")), (FLUID, fluids, raw.get("fluid_names"))):
@@ -546,6 +551,47 @@ def _build(source_file, out_path, raw, map_ids, signature, species=None):
         if not complete:
             os.remove(tmp)
     os.replace(tmp, out_path)
+
+
+def _ore_processing_module():
+    # By path: the build runs this file alone (python -I), outside the gcm package.
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ore_processing.py")
+    spec = importlib.util.spec_from_file_location("gcm_ore_processing", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _ore_processing(conn, map_ids, items, item_names, recipe_id):
+    """Add the ore processing diagrams, composed from the GT recipes just
+    indexed, as one more map; returns the next recipe id."""
+    ore = _ore_processing_module()
+    if ORE_PROCESSING_MAP in map_ids or not all(name in map_ids for name in ore.REQUIRED_MAPS):
+        return recipe_id
+    wanted = {map_ids[name]: name for name in ore.MAPS if name in map_ids}
+    marks = ",".join("?" * len(wanted))
+    rows = [(wanted[m], json.loads(body)) for m, body in conn.execute(
+        f"SELECT map, body FROM recipe WHERE map IN ({marks}) AND json_extract(body, '$.type') = 'gt' ORDER BY id",
+        tuple(wanted))]
+    machines = {wanted[m]: [json.loads(v) for (v,) in conn.execute(
+        "SELECT v FROM machine WHERE map = ? ORDER BY seq", (m,))] for m in wanted}
+    names = dict(zip(items, item_names, strict=False)) if isinstance(item_names, list) else {}
+    diagrams = ore.compose(rows, machines, names)
+    if not diagrams:
+        return recipe_id
+    map_id = max(map_ids.values(), default=-1) + 1
+    map_ids[ORE_PROCESSING_MAP] = map_id
+    conn.execute("INSERT INTO map VALUES (?, ?)", (map_id, ORE_PROCESSING_MAP))
+    conn.execute("INSERT INTO machine VALUES (?, 0, ?)", (map_id, json.dumps({"name": ore.TITLE, "key": None})))
+    # NEI Custom Diagram's tab shows an ore block: iron's, where there is one.
+    iron = next((d for d in diagrams if names.get(d["crushed"]) == "Crushed Iron Ore"), diagrams[0])
+    conn.execute("INSERT INTO map_icon VALUES (?, ?)", (map_id, iron["groups"][0]["alts"][0][0]))
+    for body in diagrams:
+        conn.execute("INSERT INTO recipe VALUES (?, ?, 4, 0, 0, ?)", (recipe_id, map_id, json.dumps(body)))
+        conn.executemany("INSERT OR IGNORE INTO output VALUES (?, ?, ?)", ((ITEM, o[0], recipe_id) for o in body["o"]))
+        conn.executemany("INSERT OR IGNORE INTO input VALUES (?, ?, ?)", ((ITEM, i[0], recipe_id) for i in body["i"]))
+        recipe_id += 1
+    return recipe_id
 
 
 def _catalog_order(conn, raw, items):

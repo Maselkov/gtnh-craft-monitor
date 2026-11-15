@@ -873,9 +873,17 @@ def find_recipes(user, args):
                 row["slots"].append(presented)
             if b["type"] == "shaped":
                 row.update(width=b["w"], height=b["h"], mirrored=b["mirrored"])
+        elif b["type"] == "ore_tree":
+            # A diagram, not one recipe: each step's input, machine and outputs.
+            row["outputs"] = []
+            row["steps"] = [{"machine": recipe_viewer.map_info(idx, step["map"])["name"],
+                             "input": stacks([[step["in"], 1]], "item", item_names)[0],
+                             "outputs": stacks(step["out"], "item", item_names, chances=True),
+                             **({"fluid": step["fluid"]} if step.get("fluid") else {})}
+                            for step in b.get("steps", [])]
         else:
             row["inputs"] = stacks(b["i"], "item", item_names) + stacks(b["f"], "fluid", fluid_names)
-        if "groups" in b:
+        if "groups" in b and b["type"] != "ore_tree":
             row["ingredient_groups"] = [{"alternatives": stacks(group["alts"][:RECIPE_ALTERNATIVES_MAX], group["kind"],
                                                                  fluid_names if group["kind"] == "fluid" else item_names),
                                           "alternatives_total": len(group["alts"])} for group in b["groups"]]
@@ -884,6 +892,9 @@ def find_recipes(user, args):
             row["research"] = {**research, "item": stacks([research["item"]], "item", item_names)[0]}
         if b.get("requirements"):
             row["requirements"] = b["requirements"]
+            mining = recipe_viewer.space_mining(b["requirements"])
+            if mining:
+                row["space_mining"] = mining
         if b["type"] in ("gt", "assembly_line"):
             row.update(eu_per_tick=b["e"], tier=recipes._tier(b["e"]))
         if "d" in b:
@@ -1537,7 +1548,10 @@ TOOLS = [
             "Use this instead of remembering recipes. Takes an "
             "item key or a name; it can be any item in the game, not just ones in the network. Bees, saplings "
             "and other Forestry genome items are looked up by species (\"Diligent Princess\"): their keys end "
-            "in a species variant, and a bee's breeding recipes give the mutation chance and conditions."
+            "in a species variant, and a bee's breeding recipes give the mutation chance and conditions. "
+            "An ore's \"GregTech Ore Processing\" entry is its whole processing tree, as steps (input, machine, "
+            "outputs with chances); Space Mining recipes give space_mining (module tier, distance, asteroid size, "
+            "computation per second, weight)."
         ),
         "inputSchema": _schema({
             "item": {"type": "string", "description": "An item key (from search_items or game_item), or a name."},

@@ -265,14 +265,24 @@ export function craftingHtml(step, options = {}) {
   return `<div class="recipe-crafting recipe-grid recipe-grid-w${grid.w}" role="group" aria-label="${craftingTitle(step)}">${previewHtml({...step,preview}, options)}</div>`;
 }
 
+// An arrowhead with its tip at (x, y), pointing dir (N, S, E or W).
+export function arrowPoints({x, y, dir}) {
+  const [dx, dy] = {N:[0,-1], S:[0,1], E:[1,0], W:[-1,0]}[dir] || [0, 1];
+  const bx = x - dx*4, by = y - dy*4;
+  return [[x, y], [bx + dy*3, by + dx*3], [bx - dy*3, by - dx*3]].map(pt => pt.join(',')).join(' ');
+}
+
 export function previewHtml(step, options = {}) {
   const p = step.preview;
   const layers = p.layers.map(layer => {
     const [u, v, right, bottom] = layer.uv;
     return `<svg x="${layer.x}" y="${layer.y}" width="${layer.w}" height="${layer.h}" opacity="${layer.opacity ?? 1}" viewBox="${u} ${v} ${right-u} ${bottom-v}" preserveAspectRatio="none"><image href="${iconUrl(layer.image)}" width="1" height="1" preserveAspectRatio="none"/></svg>`;
   }).join('');
-  // A breeding tree's (BBAB) lines from each bee to its parents, under the slots.
-  const treeLines = (p.lines || []).map(l => `<line class="recipe-tree-line" x1="${l.x1}" y1="${l.y1}" x2="${l.x2}" y2="${l.y2}"/>`).join('');
+  // A breeding tree's (BBAB) lines from each bee to its parents, or an ore
+  // processing diagram's from each step to the next, under the slots.
+  const lineClass = p.family === 'ore_tree' ? 'recipe-ore-line' : 'recipe-tree-line';
+  const treeLines = (p.lines || []).map(l => `<line class="${lineClass}" x1="${l.x1}" y1="${l.y1}" x2="${l.x2}" y2="${l.y2}"/>`).join('')
+    + (p.arrows || []).map(a => `<polygon class="recipe-ore-arrow" points="${arrowPoints(a)}"/>`).join('');
   const treeLabels = (p.labels || []).map((label, i) => {
     const title = label.conditions?.length ? ` title="${escapeHtml(label.conditions.join('\n'))}"` : '';
     return `<span class="recipe-preview-slot recipe-tree-chance" data-id="tree-chance-${i}" data-x="${label.x}" data-y="${label.y}" data-w="${label.w}" data-h="${label.h}"${title}>${escapeHtml(label.text)}</span>`;

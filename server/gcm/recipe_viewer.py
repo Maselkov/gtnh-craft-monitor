@@ -339,10 +339,14 @@ def present_recipes(rows, idx):
             handled = {"condensate_input"} if "f" in body.get("preview_stacks", {}) and map_name == "gt.recipe.assemble-condensate" else set()
             if body["requirements"].get("max_nanite_tier"):
                 handled.add("nanite_tiers")
+            mining = space_mining(body["requirements"])
+            if mining:
+                handled.update(("space_mining_data", "space_elevator_module_tier"))
             costs = body["requirements"]
             if map_name.endswith(ARCANE_MAPS):
                 costs = {k: v for k, v in costs.items() if k not in ("aspects", "vis", "prereqs")}
-            row["requirement_notes"] = requirement_notes(costs, handled_metadata=handled)
+            row["requirement_notes"] = (space_mining_notes(mining) if mining else []) \
+                + requirement_notes(costs, handled_metadata=handled)
         row["extras"] = [{"alternatives": [stack_entry(FLUID if g["kind"] == "fluid" else ITEM, s)
                                              for s in g["alts"][:ALTERNATIVES]]}
                          for g in body.get("extras", [])]
@@ -415,6 +419,38 @@ def catalog_items(rows, grouping=None):
                 group["back"] = entry(kind, back, 1, {}).get("icon")
             value["group"] = group
         out.append(value)
+    return out
+
+
+def space_mining(requirements):
+    """A Space Mining recipe's conditions, readable, from GT's recipe
+    metadata; None for any other recipe."""
+    meta = (requirements or {}).get("metadata") or {}
+    data = meta.get("space_mining_data")
+    if not isinstance(data, dict):
+        return None
+
+    def span(low, high):
+        lo, hi = data.get(low), data.get(high)
+        return None if lo is None or hi is None else {"min": lo, "max": hi}
+    out = {"module_tier": meta.get("space_elevator_module_tier"),
+           "distance": span("minDistance", "maxDistance"), "size": span("minSize", "maxSize"),
+           "computation_per_second": data.get("computation"), "weight": data.get("recipeWeight")}
+    return {k: v for k, v in out.items() if v is not None}
+
+
+def space_mining_notes(mining):
+    """The lines NEI's Space Mining page prints under the energy, in its order."""
+    out = []
+    if mining.get("module_tier") is not None:
+        out.append(f"Needs Mk-{mining['module_tier']} Module")
+    for key, label in (("distance", "Distance"), ("size", "Size")):
+        if key in mining:
+            out.append(f"{label}: {mining[key]['min']:,}-{mining[key]['max']:,}")
+    if mining.get("computation_per_second") is not None:
+        out.append(f"Min Computation: {mining['computation_per_second']:,} /s")
+    if mining.get("weight") is not None:
+        out.append(f"Weight: {mining['weight']:,}")
     return out
 
 
@@ -554,10 +590,20 @@ def present_layout(layout, sources, body, idx):
         if indices is not None:
             index = indices.index(index) if index in indices else -1
         alternatives = sources[role][index] if 0 <= index < len(sources[role]) else []
-        out["slots"].append({**{k: number(slot.get(k), 18 if k in ("w", "h") else 0) for k in ("x", "y", "w", "h")},
-                             "role": role, "index": slot["index"], "alternatives": alternatives,
-                             "framed": bool(layout.get("item_frames", True)),
-                             "frame": asset(slot.get("asset")) if layout.get("item_frames", True) else None})
+        framed = bool(layout.get("item_frames", True)) and slot.get("framed", True) is not False
+        presented = {**{k: number(slot.get(k), 18 if k in ("w", "h") else 0) for k in ("x", "y", "w", "h")},
+                     "role": role, "index": slot["index"], "alternatives": alternatives,
+                     "framed": framed, "frame": asset(slot.get("asset")) if framed else None}
+        if isinstance(slot.get("label"), str):
+            presented["note"] = slot["label"][:128]
+        out["slots"].append(presented)
+    if out["family"] == "ore_tree":
+        # The diagram's connecting lines, and arrowheads at the slots they feed.
+        out["lines"] = [{k: number(line.get(k)) for k in ("x1", "y1", "x2", "y2")}
+                        for line in layout.get("lines", [])[:128] if isinstance(line, dict)]
+        out["arrows"] = [{"x": number(a.get("x")), "y": number(a.get("y")),
+                          "dir": a["dir"] if a.get("dir") in ("N", "S", "E", "W") else "S"}
+                         for a in layout.get("arrows", [])[:64] if isinstance(a, dict)]
     for layer in layout.get("layers", [])[:64]:
         uv = layer.get("uv", [0, 0, 1, 1])
         if not isinstance(uv, list) or len(uv) != 4 or not all(type(v) in (int, float) and 0 <= v <= 1 for v in uv):

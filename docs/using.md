@@ -623,6 +623,18 @@ required, voltage and amperage appear separately from total usage. These tabs
 also appear in **Uses** for the research item. Scanning unlocks the pictured target's
 Assembly Line recipe; it does not manufacture the target.
 
+Ores have a **GregTech Ore Processing** tab, as NEI Custom Diagram adds in
+game. It draws the whole processing tree on one page: the ore (every stone
+type, cycling) and its raw ore, through the macerator, ore washer, chemical
+baths, thermal centrifuge, sifter, centrifuge and electromagnetic separator to
+dust, with each step's machine and byproducts and their chances. The tab is in
+**Uses** for the ore and every stage it passes through, and in **Recipes** for
+everything it makes. Steps the game has no recipe for are left out. The
+server draws the tree from the GregTech recipes it already has, so it works with
+game data exported before it was added. **Space Mining** recipes print the
+module tier, distance, asteroid size, minimum computation and weight under
+the costs, as NEI does.
+
 Hover an ingredient or output for the same instant item tooltip used in the
 Network browser: rarity colour, exported description and mod name. Hold **Shift**
 for extended details where available. Item tooltips show **Amount in system**

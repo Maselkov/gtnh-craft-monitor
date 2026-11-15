@@ -214,6 +214,25 @@ def recipes(path, ingots):
         {"type": "nei", "groups": [{"alts": [bee("Forest", 1)]}, {"alts": [bee("Meadows", 1)]}], "o": [bee("Common", 0)], "approximate": ["nei_display"],
          "preview": {"family": "positioned", "width": 166, "height": 80, "layers": [],
                      "slots": [slot("o", 0, 73, 0), slot("groups", 0, 33, 49), slot("groups", 1, 113, 49)]}}]}
+    # An ore: the index composes its GregTech Ore Processing diagram from
+    # these (gcm/ore_processing.py); and a Space Mining recipe that mines it.
+    first_ore = len(data["items"])
+    data["items"] += ["gregtech:gt.blockores2:69", "gregtech:gt.metaitem.03:5069", "gregtech:gt.metaitem.01:5069",
+                      "gregtech:gt.metaitem.01:6069", "gregtech:gt.metaitem.01:7069", "gtnhintergalactic:item.MiningDrone:0",
+                      "gregtech:gt.metaitem.01:2069"]
+    data["item_names"] += ["Samarium Ore", "Raw Samarium Ore", "Crushed Samarium Ore", "Purified Samarium Ore",
+                           "Centrifuged Samarium Ore", "Mining Drone MK-I", "Samarium Dust"]
+    def ore(n): return first_ore + n
+    def gt(i, outs): return {"type": "gt", "i": [[i, 1]], "o": outs, "e": 16, "d": 200}
+    data["maps"]["gt.recipe.macerator"]["machines"].append({"name": "Basic Macerator", "key": "minecraft:iron_ingot:0"})
+    data["maps"]["gt.recipe.macerator"]["recipes"] += [gt(ore(0), [[ore(2), 2], [ore(6), 1, 1000]]), gt(ore(1), [[ore(2), 2], [ore(6), 1, 500]])]
+    data["maps"]["gt.recipe.orewasher"] = {"machines": [{"name": "Ore Washer", "key": None}], "recipes": [gt(ore(2), [[ore(3), 1], [ore(6), 1, 1111]])]}
+    data["maps"]["gt.recipe.thermalcentrifuge"] = {"machines": [{"name": "Thermal Centrifuge", "key": None}], "recipes": [
+        gt(ore(2), [[ore(4), 1], [ore(6), 1, 1111]]), gt(ore(3), [[ore(4), 1], [ore(6), 1, 1111]])]}
+    data["maps"]["gt.recipe.spaceMining"] = {"machines": [{"name": "Space Mining Module Mk-I", "key": None}], "recipes": [
+        {"type": "gt", "i": [[ore(5), 0]], "o": [[ore(0), 64, 5000]], "e": 7680, "d": 50, "requirements": {"metadata": {
+            "space_elevator_module_tier": 1, "space_mining_data": {"computation": 20, "minDistance": 5, "maxDistance": 20,
+                                                                   "minSize": 10, "maxSize": 20, "recipeWeight": 120}}}}]}
     data["items"] += [f"example:catalog:{n}" for n in range(500)]
     data["item_names"] += [f"Catalog Material {n:02}" for n in range(500)]
     # NEI's item groups (CatalogOrder.java): six plates in one, and a loose item beside them.
@@ -3592,6 +3611,30 @@ async function main() {
     await waitFor('a tree bee opens its species', `$('.recipe-viewer-box').dataset.itemName === 'Meadows Drone'`);
     await evaluate(`pressKey('Escape')`);
     await waitFor('bees closed', `!visible($('#recipeViewerModal'))`);
+  });
+
+  step('recipes: an ore\'s processing diagram and the space mining that finds it', async () => {
+    const ore = encodeURIComponent('gregtech:gt.blockores2:69');
+    await cdp.send('Page.navigate', {url: base + '/recipes?key=' + ore + '&dir=using&map=ore_processing'});
+    await waitFor('ore page loaded', `document.readyState === 'complete' && !window.byText`);
+    await evaluate(PAGE_LIB);
+    await waitFor('ore processing diagram', `$('#recipeCategoryName').textContent === 'GregTech Ore Processing'
+      && $$('#recipeViewerList .recipe-ore-line').length > 5 && $$('#recipeViewerList .recipe-ore-arrow').length === 4
+      && $$('#recipeViewerList .recipe-stack-control[data-key="gregtech:gt.metaitem.01:5069"]').length === 2
+      && $$('#recipeViewerList .recipe-preview-slot').some(s => s.querySelector('[data-key="minecraft:iron_ingot:0"]')
+           && !s.classList.contains('recipe-preview-fallback-frame'))`);
+    await click(`$('#recipeViewerList .recipe-stack-control[data-key="gregtech:gt.metaitem.01:6069"]')`);
+    await waitFor('a stage opens its own recipes', `$('.recipe-viewer-box').dataset.itemName === 'Purified Samarium Ore'`);
+    await cdp.send('Page.navigate', {url: base + '/recipes?key=' + ore + '&map=gt.recipe.spaceMining'});
+    await waitFor('space mining page loaded', `document.readyState === 'complete' && !window.byText`);
+    await evaluate(PAGE_LIB);
+    await waitFor('space mining conditions as NEI prints them', `(() => {
+      const lines = $$('#recipeViewerList .recipe-card-line').map(l => l.textContent);
+      return ['Needs Mk-1 Module', 'Distance: 5-20', 'Size: 10-20', 'Min Computation: 20 /s', 'Weight: 120'].every(t => lines.includes(t))
+        && !/space_mining_data|recipeWeight/.test($('#recipeViewerList').textContent);
+    })()`);
+    await evaluate(`pressKey('Escape')`);
+    await waitFor('ore closed', `!visible($('#recipeViewerModal'))`);
   });
 
   step('recipes: shared R/U in Network, craft cards, ingredients and crafting plans', async () => {

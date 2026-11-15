@@ -160,7 +160,8 @@ def _preview_scene(row):
                    for a in p.get("aspects", []) if "x" in a]
     return {"width": p["width"], "height": p["height"], "slots": slots, "layers": p.get("layers", []),
             "lines": p.get("lines", []), "labels": p.get("labels", []), "aspects": aspects, "arrow": None,
-            "wires": p.get("family") == "research_station"}
+            "wires": p.get("family") == "research_station", "ore": p.get("family") == "ore_tree",
+            "arrows": p.get("arrows", [])}
 
 
 def _plain_scene(row):
@@ -647,8 +648,14 @@ def render(page):
     if layout.get("wires"):
         _draw_wires(draw, ox, oy, s, layout["width"], layout["height"])
     for line in layout["lines"]:
+        # recipe-render.js: an ore diagram's lines are the canvas ink, 2px.
         draw.line([ox + line["x1"] * s, oy + line["y1"] * s, ox + line["x2"] * s, oy + line["y2"] * s],
-                  fill=TREE_LINE, width=s)
+                  fill=INK if layout.get("ore") else TREE_LINE, width=2 * s if layout.get("ore") else s)
+    for a in layout.get("arrows", []):
+        dx, dy = {"N": (0, -1), "S": (0, 1), "E": (1, 0), "W": (-1, 0)}.get(a["dir"], (0, 1))
+        bx, by = a["x"] - dx * 4, a["y"] - dy * 4
+        draw.polygon([(ox + px * s, oy + py * s) for px, py in
+                      ((a["x"], a["y"]), (bx + dy * 3, by + dx * 3), (bx - dy * 3, by - dx * 3))], fill=INK)
     arrow = layout["arrow"]
     if arrow:
         x, y, w, h = box(arrow)

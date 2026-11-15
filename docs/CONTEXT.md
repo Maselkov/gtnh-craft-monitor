@@ -1128,7 +1128,12 @@ name as well as a key: `RecipeIndex.find_names` (a `LIKE` over the
 index's `name` table, every item and fluid a recipe names) plus the
 network's names, and when that isn't one item they answer with the
 candidates' keys instead of guessing. `base_patterns` reads the planner's
-pattern index (`planner.index().candidates`), in AE2's order.
+pattern index (`planner.index().candidates`), in AE2's order. An ore
+processing diagram (`ore_processing` map) goes to it as `steps` (each
+step's input, machine and outputs) rather than its display groups, and a
+Space Mining recipe gets a readable `space_mining` beside the raw
+`requirements` (`recipe_viewer.space_mining()`, which the page's lines
+come from too).
 `pattern_check` is `recipes.result()` for `recipes.default_versions()`,
 the check the page's notice asks for, so it answers "preparing" while
 recipes download or index.
@@ -2500,3 +2505,26 @@ recipe row between 1× and 3×, retaining the gesture anchor; one finger pans or
 scrolls normally. Buttons provide the same zoom without a gesture. The compact
 touch shell uses DOM controls instead of the desktop frame canvas, horizontal
 machine and category strips, and 44px navigation controls.
+
+**Ore processing diagrams are composed, not exported.** NEI Custom
+Diagram builds its "GregTech Ore Processing" pages lazily, when the game
+first asks, so the headless export never sees them; but they are a pure
+function of GT recipe maps the index already holds. `recipe_index._build`
+therefore calls `ore_processing.compose()` once the GT recipes are in,
+and files the result as one more map, `ore_processing` (index format 10),
+in `NON_GT_MAPS` so the pattern check never matches it. The module is
+standard-library only and loaded by path: the build runs
+`recipe_index.py` alone under `python -I`, outside the `gcm` package.
+The geometry is the mod's own (`LayoutHandler`, read from its bytecode
+in 1.8.36): grid point (x, y) is a slot centred on (9 + 12x, 9 + 12y),
+output groups stack 18 px from their anchor, and lines run through grid
+points to arrowheads on slot edges. A diagram per crushed ore (an item
+both the ore washer and the thermal centrifuge take), its sources being
+the single-input macerator recipes that make it. Raw ores are told from
+ore blocks by key (`gt.metaitem.03`, bartworks' `rawOre`, GT++'s
+`oreRaw`) or a name starting "Raw ". Ores sort GregTech's first and by
+numeric damage, so the plain stone ore leads its cycling slot and the
+diagram uses its macerator recipe. Stone dust is dropped, as the mod
+does; of several recipes for one input, the one with the most outputs.
+The mod's "additional recipes" labels (furnace, blast furnace, chemical
+reactor, mixer, autoclave) aren't drawn.

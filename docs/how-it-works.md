@@ -42,7 +42,7 @@ format 1 has GregTech only. Format 3 adds native Assembly Line recipes/research,
 GT display maps, NEI display recipes and an audit of registered handlers. Format 4
 adds exact display-stack references, resolved GUI textures, slot geometry, aspect
 names and static research metadata. The server
-reads source formats 1–4 into a read-only SQLite index (format 7), normally built beside shared game data to avoid rebuilding it
+reads source formats 1–4 into a read-only SQLite index (format 10), normally built beside shared game data to avoid rebuilding it
 on each hosted instance. The builder reads two passes of the compressed file,
 keeping intern tables and one recipe in memory instead of the full JSON. The
 [exporter guide](../tools/icon-export/README.md#bundle-format) describes the schema.
@@ -106,6 +106,19 @@ Addons' breeding cards show the mutation's chance and conditions, and Bee Better
 At Bees' tree gets the lines and chances BBAB draws itself: each bee is joined to
 the two nearest bees on the row below, confirmed against NEI Addons' mutations,
 which also give the chance.
+
+NEI Custom Diagram's **GregTech Ore Processing** pages aren't in the bundle:
+the mod builds them when the game first asks, after the export has run. The
+index composes them itself (`gcm/ore_processing.py`), as the mod does, from the
+GT recipes it has just read: one diagram per crushed ore (an item both the ore
+washer and the thermal centrifuge take), following its macerator, ore washer,
+chemical bath, thermal centrifuge, sifter, centrifuge and electromagnetic
+separator recipes, laid out on the mod's own grid. A diagram is one record in
+the `ore_processing` map, with its slots as display groups. The ore and every
+stage it passes through are its inputs, and everything it makes its outputs,
+so it shows from any of them. The processing-pattern check ignores it. Space
+Mining's metadata (module tier, distance, size, computation, weight) is printed
+as NEI prints it, and given readably to the assistant.
 
 ## Crafting CPUs
 
