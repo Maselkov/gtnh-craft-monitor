@@ -225,6 +225,15 @@ def machine_summaries(rows):
 
 
 def present_recipes(rows, idx):
+    # Where an ore generates: drawn as a positioned page with lines of text.
+    ore_texts = {}
+    laid_out = []
+    for rid, map_name, body in rows:
+        if body["type"] in ORE_GEN_TYPES:
+            groups, layout, ore_texts[rid] = ore_gen_layout(body)
+            body = {**body, "groups": groups, "preview": layout}
+        laid_out.append((rid, map_name, body))
+    rows = laid_out
     wanted = {ITEM: set(), FLUID: set()}
     for _, _, body in rows:
         for side in ("i", "o"):
@@ -288,6 +297,7 @@ def present_recipes(rows, idx):
 
     out = []
     for rid, map_name, body in rows:
+        texts = ore_texts.get(rid)
         row = {"id": rid, "map": map_name, "type": body["type"], "machines": map_info(idx, map_name)["machines"],
                "inputs": [stack_entry(ITEM, s) for s in body["i"]]
                + [stack_entry(FLUID, s) for s in body["f"]],
@@ -368,6 +378,11 @@ def present_recipes(rows, idx):
             row["preview"] = present_layout(layout, sources, body, idx)
             if map_name == BBAB_TREE_MAP:
                 row["preview"].update(tree_overlay(row["preview"], idx))
+        if texts is not None:
+            row["preview"]["texts"] = [{**t, "text": mctext.plain(t["text"]) if "text" in t
+                                        else row["groups"][t["name_of"]]["alternatives"][0]["name"]}
+                                       for t in texts if "text" in t or row["groups"][t["name_of"]]["alternatives"]]
+            row["ore_gen"] = ore_gen_summary(body)
         out.append(row)
     return out
 
@@ -420,6 +435,70 @@ def catalog_items(rows, grouping=None):
             value["group"] = group
         out.append(value)
     return out
+
+
+ORE_GEN_TYPES = ("ore_vein", "small_ore")
+VEIN_ROLES = {"primary": "Primary", "secondary": "Secondary", "between": "Between", "sporadic": "Sporadic"}
+
+
+def ore_gen_layout(body):
+    """A Vein Stats or Small Ore Stats page laid out as gtneioreplugin
+    draws it: (display groups, a positioned layout over them, the lines of
+    text, each placed). A text with "name_of" is that group's first name."""
+    groups, slots, texts = [], [], []
+    width = 166
+
+    def slot(stacks, x, y):
+        slots.append({"role": "groups", "index": len(groups), "x": x, "y": y, "w": 18, "h": 18})
+        groups.append({"kind": "item", "alts": stacks})
+        return len(groups) - 1
+
+    def text(x, y, value, w=None, **extra):
+        texts.append({"x": x, "y": y, "w": w or width - x - 2, "h": 9, "text": value, **extra})
+
+    def stacks_row(y, stacks):
+        """One slot a stack, nine to a row; returns the y below them."""
+        for k, stack in enumerate(stacks[:72]):
+            slot([stack], 2 + 18 * (k % 9), y + 18 * (k // 9))
+        return y + 18 * ((min(len(stacks), 72) + 8) // 9)
+    text(0, 2, body["name"], w=width, align="center", title=True)
+    y = 16
+    if body["type"] == "ore_vein":
+        for layer in body["layers"]:
+            group = slot(layer["alts"], 2, y)
+            text(24, y, VEIN_ROLES[layer["role"]])
+            texts.append({"x": 24, "y": y + 9, "w": width - 26, "h": 9, "name_of": group})
+            y += 22
+        text(2, y, f"Height: {body['height']}", w=88)
+        text(92, y, f"Weight: {body['weight']}", w=72)
+        y += 11
+    else:
+        # The ore in each stone type, beside the stone's dust, cycling together.
+        group = slot(body["ores"], 2, y)
+        x = 24
+        if body["dust"]:
+            slot(body["dust"], 20, y)
+            x = 42
+        texts.append({"x": x, "y": y + 4, "w": width - x - 2, "h": 9, "name_of": group})
+        y += 22
+        text(2, y, f"Height: {body['height']}")
+        text(2, y + 11, f"Amount per chunk: {body['amount']}")
+        y += 22
+        if body["drops"]:
+            text(2, y, "Drops:")
+            y = stacks_row(y + 10, body["drops"]) + 3
+    if body["dims"]:
+        text(2, y, "Generated world:")
+        y = stacks_row(y + 10, body["dims"])
+    return groups, {"family": "ore_gen", "width": width, "height": y + 2, "slots": slots, "layers": [],
+                    "graphics": "slots_only"}, texts
+
+
+def ore_gen_summary(body):
+    """Where the ore generates, readably: a vein's or small ore's numbers."""
+    keys = ("height", "weight", "size", "density", "dim_heights") if body["type"] == "ore_vein" else ("height", "amount")
+    return {"kind": "vein" if body["type"] == "ore_vein" else "small_ore", "name": mctext.plain(body["name"]),
+            **{k: body[k] for k in keys if k in body}}
 
 
 def space_mining(requirements):

@@ -161,7 +161,7 @@ def _preview_scene(row):
     return {"width": p["width"], "height": p["height"], "slots": slots, "layers": p.get("layers", []),
             "lines": p.get("lines", []), "labels": p.get("labels", []), "aspects": aspects, "arrow": None,
             "wires": p.get("family") == "research_station", "ore": p.get("family") == "ore_tree",
-            "arrows": p.get("arrows", [])}
+            "arrows": p.get("arrows", []), "texts": p.get("texts", [])}
 
 
 def _plain_scene(row):
@@ -697,6 +697,15 @@ def render(page):
         tx, ty = x + w - font.getlength(count), y + h - 8 * s
         draw.text((tx + s, ty + s), count, font=font, fill=COUNT_SHADOW)
         draw.text((tx, ty), count, font=font, fill=COUNT)
+    for t in layout.get("texts", []):
+        # recipe-render.js's preview text: one line, cut to its box.
+        x, y, w, _h = box(t)
+        font = _font(8 * s)
+        text = glyphs(t.get("text", ""))
+        while text and font.getlength(text) > w:
+            text = text[:-1]
+        tx = x + (w - font.getlength(text)) / 2 if t.get("align") == "center" else x
+        draw.text((tx, y), text, font=font, fill=INK)
     for label in layout["labels"]:
         x, y, w, _h = box(label)
         text = glyphs(label.get("text", ""))

@@ -3553,6 +3553,12 @@ body.oauth-page {
 .recipe-tree-line { stroke:var(--recipe-tree-line); stroke-width:1; }
 .recipe-ore-line { stroke:var(--recipe-canvas-ink); stroke-width:2; stroke-linecap:square; }
 .recipe-ore-arrow { fill:var(--recipe-canvas-ink); }
+.recipe-preview-text {
+  overflow:hidden; white-space:nowrap; text-overflow:ellipsis;
+  font-family:"GCM Recipe", monospace; font-size:clamp(14px, 4.7cqw, 24px); line-height:1;
+  color:var(--recipe-canvas-ink); pointer-events:auto;
+}
+.recipe-preview-center { text-align:center; }
 .recipe-tree-chance {
   display:flex; align-items:center; justify-content:center; overflow:visible; white-space:nowrap;
   font-family:"GCM Recipe", monospace; font-size:clamp(14px, 4.7cqw, 24px); line-height:1;

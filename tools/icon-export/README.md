@@ -183,6 +183,26 @@ per collection), exclude client/world/registry graphs, and mark unexpanded data.
 They are an archive of available display data, not an exact serialization of
 arbitrary Java recipe logic.
 
+gtneioreplugin's **Vein Stats** and **Small Ore Stats** pages say where ores
+generate. NEI gives them no result stack and draws their numbers rather than
+stacking them, so instead of `recipes` their maps carry `ore_gen`, read from each
+page's cached recipe (`NeiRecipes.oreGen`). Readers that predate it skip the field,
+as they skip `archive`, so it needs no new format:
+
+```json
+{"type": "ore_vein", "name": "Samarium Vein", "height": "10-40", "weight": 10, "size": 16, "density": 2,
+ "layers": [{"role": "primary", "alts": [[item, 1, null, []], ...]}, ...],
+ "dims": [[dimension display item, 1, null, []], ...], "dim_heights": {"Ca": "10-40"}}
+{"type": "small_ore", "name": "Copper", "height": "5-60", "amount": 32,
+ "ores": [...], "dust": [...], "drops": [[item, 1, chance, []], ...], "dims": [...]}
+```
+
+A vein's `layers` are primary, secondary, between and sporadic, each with the ore
+in every stone type the vein's dimensions have. `name` is the page's title, with
+any formatting codes. `weight`, `size` and `density` are the vein's world
+generation numbers. `dim_heights` is optional and gives a height range per
+dimension where it differs. `amount` is a small ore's amount per chunk.
+
 The coverage audit collects both NEI crafting and usage registries, deduplicating
 by class and category. It lists every GT map and NEI handler, including native coverage,
 exported displays, archived records, unavailable handlers and categories returning

@@ -219,9 +219,9 @@ def recipes(path, ingots):
     first_ore = len(data["items"])
     data["items"] += ["gregtech:gt.blockores2:69", "gregtech:gt.metaitem.03:5069", "gregtech:gt.metaitem.01:5069",
                       "gregtech:gt.metaitem.01:6069", "gregtech:gt.metaitem.01:7069", "gtnhintergalactic:item.MiningDrone:0",
-                      "gregtech:gt.metaitem.01:2069"]
+                      "gregtech:gt.metaitem.01:2069", "gtneioreplugin:blockDimensionDisplay_Ca:0"]
     data["item_names"] += ["Samarium Ore", "Raw Samarium Ore", "Crushed Samarium Ore", "Purified Samarium Ore",
-                           "Centrifuged Samarium Ore", "Mining Drone MK-I", "Samarium Dust"]
+                           "Centrifuged Samarium Ore", "Mining Drone MK-I", "Samarium Dust", "Callisto"]
     def ore(n): return first_ore + n
     def gt(i, outs): return {"type": "gt", "i": [[i, 1]], "o": outs, "e": 16, "d": 200}
     data["maps"]["gt.recipe.macerator"]["machines"].append({"name": "Basic Macerator", "key": "minecraft:iron_ingot:0"})
@@ -229,6 +229,10 @@ def recipes(path, ingots):
     data["maps"]["gt.recipe.orewasher"] = {"machines": [{"name": "Ore Washer", "key": None}], "recipes": [gt(ore(2), [[ore(3), 1], [ore(6), 1, 1111]])]}
     data["maps"]["gt.recipe.thermalcentrifuge"] = {"machines": [{"name": "Thermal Centrifuge", "key": None}], "recipes": [
         gt(ore(2), [[ore(4), 1], [ore(6), 1, 1111]]), gt(ore(3), [[ore(4), 1], [ore(6), 1, 1111]])]}
+    data["maps"]["nei.gtneioreplugin.plugin.gregtech5.PluginGT5VeinStat::"] = {"machines": [{"name": "Vein Stats", "key": None}],
+        "recipes": [], "ore_gen": [{"type": "ore_vein", "name": "Samarium Vein", "height": "10-40", "weight": 10, "size": 16, "density": 2,
+            "layers": [{"role": "primary", "alts": [[ore(0), 1, None, []]]}, {"role": "secondary", "alts": [[ore(1), 1, None, []]]}],
+            "dims": [[ore(7), 1, None, []]]}]}
     data["maps"]["gt.recipe.spaceMining"] = {"machines": [{"name": "Space Mining Module Mk-I", "key": None}], "recipes": [
         {"type": "gt", "i": [[ore(5), 0]], "o": [[ore(0), 64, 5000]], "e": 7680, "d": 50, "requirements": {"metadata": {
             "space_elevator_module_tier": 1, "space_mining_data": {"computation": 20, "minDistance": 5, "maxDistance": 20,
@@ -3625,6 +3629,13 @@ async function main() {
            && !s.classList.contains('recipe-preview-fallback-frame'))`);
     await click(`$('#recipeViewerList .recipe-stack-control[data-key="gregtech:gt.metaitem.01:6069"]')`);
     await waitFor('a stage opens its own recipes', `$('.recipe-viewer-box').dataset.itemName === 'Purified Samarium Ore'`);
+    await cdp.send('Page.navigate', {url: base + '/recipes?key=' + ore + '&map=' + encodeURIComponent('nei.gtneioreplugin.plugin.gregtech5.PluginGT5VeinStat::')});
+    await waitFor('vein page loaded', `document.readyState === 'complete' && !window.byText`);
+    await evaluate(PAGE_LIB);
+    await waitFor('where the ore generates, as gtneioreplugin shows it', `$('#recipeCategoryName').textContent === 'Vein Stats'
+      && JSON.stringify($$('#recipeViewerList .recipe-preview-text').map(t => t.textContent)) === JSON.stringify(
+        ['Samarium Vein', 'Primary', 'Samarium Ore', 'Secondary', 'Raw Samarium Ore', 'Height: 10-40', 'Weight: 10', 'Generated world:'])
+      && $('#recipeViewerList .recipe-stack-control[data-key="gtneioreplugin:blockDimensionDisplay_Ca:0"]')`);
     await cdp.send('Page.navigate', {url: base + '/recipes?key=' + ore + '&map=gt.recipe.spaceMining'});
     await waitFor('space mining page loaded', `document.readyState === 'complete' && !window.byText`);
     await evaluate(PAGE_LIB);

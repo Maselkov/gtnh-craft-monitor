@@ -162,6 +162,13 @@ ITEMS = [
     ("Basic Centrifuge", "block", (120, 120, 150)),
     ("Space Mining Module Mk-I", "block", (40, 110, 160)),
     ("Mining Drone MK-I", "rod", (90, 90, 100)),
+    # Where it generates (ore_maps()): a vein's other ores and the
+    # dimensions gtneioreplugin shows as display blocks.
+    ("Neodymium Ore", "block", (120, 160, 220)),
+    ("Tartarite Ore", "block", (200, 120, 110)),
+    ("Callisto", "block", (150, 110, 170)),
+    ("Ceres", "block", (170, 130, 80)),
+    ("Triton", "block", (190, 220, 240)),
     ("Ordo", "essentia", None),
     ("Metallum", "essentia", None),
     ("Praecantatio", "essentia", None),
@@ -842,6 +849,17 @@ def ore_maps():
         "gt.recipe.centrifuge": {"machines": [machine("Basic Centrifuge")], "recipes": [
             gt([impure], [(dust, 2), (dust, 2, 1111)]),
             gt([pure_dust], [(dust, 2), (dust, 2, 1111)])]},
+        # gtneioreplugin's pages, as the exporter writes them (NeiRecipes.oreGen).
+        "nei.gtneioreplugin.plugin.gregtech5.PluginGT5VeinStat::": {
+            "machines": ["Vein Stats"], "recipes": [], "icon": ore, "ore_gen": [{
+                "type": "ore_vein", "name": "Samarium Vein", "height": "10-40", "weight": 10, "size": 16, "density": 2,
+                "layers": [{"role": "primary", "alts": [[ore, 1]]}, {"role": "secondary", "alts": [[k("Neodymium Ore"), 1]]},
+                           {"role": "between", "alts": [[k("Tartarite Ore"), 1]]}, {"role": "sporadic", "alts": [[k("Tartarite Ore"), 1]]}],
+                "dims": [[k(d), 1] for d in ("Callisto", "Ceres", "Triton")]}]},
+        "nei.gtneioreplugin.plugin.gregtech5.PluginGT5SmallOreStat::": {
+            "machines": ["Small Ore Stats"], "recipes": [], "icon": ore, "ore_gen": [{
+                "type": "small_ore", "name": "Samarium", "height": "5-60", "amount": 32, "ores": [[ore, 1]],
+                "dust": [[dust, 1]], "drops": [[k("Samarium Ore Concentrate Dust"), 1, 2500]], "dims": [[k("Ceres"), 1]]}]},
         "gt.recipe.spaceMining": {"machines": [machine("Space Mining Module Mk-I")], "recipes": [{
             "i": [[k("Mining Drone MK-I"), 0], [k("Osmium Rod"), 4]], "o": [[ore, 64, 5000], [raw, 64, 3500]],
             "e": 7680, "d": 50, "requirements": {"metadata": {
@@ -940,6 +958,11 @@ def write_recipes(path, maps):
                     recipe[side] = [stack(table, alt) for alt in r[side]]
             recipes.append(recipe)
         out[map_name] = {"machines": [m if isinstance(m, dict) else {"name": m, "key": None} for m in entry["machines"]], "recipes": recipes}
+        if entry.get("ore_gen"):
+            out[map_name]["ore_gen"] = [{
+                **r, **{field: [stack("items", alt) for alt in r[field]] for field in ("dims", "ores", "dust", "drops") if field in r},
+                **({"layers": [{**layer, "alts": [stack("items", alt) for alt in layer["alts"]]} for layer in r["layers"]]}
+                   if "layers" in r else {})} for r in entry["ore_gen"]]
         if entry.get("icon"):
             out[map_name]["icon"] = entry["icon"]
     names = {_recipe_key(it["name"]): it["name"] for it in CATALOG if it["kind"] != "essentia"}

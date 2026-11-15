@@ -2528,3 +2528,22 @@ diagram uses its macerator recipe. Stone dust is dropped, as the mod
 does; of several recipes for one input, the one with the most outputs.
 The mod's "additional recipes" labels (furnace, blast furnace, chemical
 reactor, mixer, autoclave) aren't drawn.
+
+**Ore generation is a map field, not a recipe type.** gtneioreplugin's
+Vein Stats and Small Ore Stats were archive-only: NEI gives them no
+result stack, and `RecipeSnapshot` leaves their `OreLayerWrapper` /
+`OreSmallWrapper` unexpanded (it only walks classes named like recipes),
+so height, weight, size and density were never captured.
+`NeiRecipes.oreGen` reads the cached recipe directly instead (its `title`
+lines, the `positionedStack*` layers, `dimensionDisplayItems`, and the
+wrapper's numbers) and writes typed records to the map's `ore_gen`. A new
+field, not new recipe types under `recipes`, so the bundle stays format 4:
+older servers' `_source_events` skip unknown map fields as they skip
+`archive`, where a new type would fail their whole index build. The index
+validates them (`_ore_gen_body`) and stores them as rows with `o` (every
+ore once) and `i` (the dimension blocks) for lookup. The viewer turns
+them into a positioned layout plus placed lines of text (`texts`, which
+`recipe-render.js` and `recipe_card.py` both draw) at present time, so
+item names come from the same lookup as everything else. NEI shows size
+and density only in the plugin's CSV, not its page, so the page doesn't
+either; `find_recipes` gives them.

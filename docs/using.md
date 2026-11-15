@@ -635,6 +635,14 @@ game data exported before it was added. **Space Mining** recipes print the
 module tier, distance, asteroid size, minimum computation and weight under
 the costs, as NEI does.
 
+**Vein Stats** and **Small Ore Stats** say where an ore generates, as
+gtneioreplugin's pages do in game. A vein shows its primary, secondary, between
+and sporadic ores, its height and weight, and the dimensions it generates in. A
+small ore shows its height, amount per chunk, drops and dimensions. They are
+in an ore's **Recipes**, and in **Uses** for a dimension's icon, which lists
+every vein and small ore found there. They need game data exported since they
+were added.
+
 Hover an ingredient or output for the same instant item tooltip used in the
 Network browser: rarity colour, exported description and mod name. Hold **Shift**
 for extended details where available. Item tooltips show **Amount in system**

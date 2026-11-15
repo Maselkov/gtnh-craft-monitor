@@ -120,6 +120,13 @@ so it shows from any of them. The processing-pattern check ignores it. Space
 Mining's metadata (module tier, distance, size, computation, weight) is printed
 as NEI prints it, and given readably to the assistant.
 
+gtneioreplugin's Vein Stats and Small Ore Stats come as a map's `ore_gen`
+records, not recipes (the [exporter guide](../tools/icon-export/README.md#bundle-format)
+has their shape). The index files a vein's ores, or a small ore's ores and drops,
+as its outputs, and its dimensions' display blocks as its inputs, as NEI looks
+them up. The viewer lays each one out as the plugin's page, with its lines of
+text placed beside the icons.
+
 ## Crafting CPUs
 
 GTNH's AE2 integration has no `getCraftingCPUs()`. The method is

@@ -135,6 +135,12 @@ eventual production bundle; the recipe capture does not depend on animation.
 “Display” exposes a labelled approximate recipe. “Archived/info” means no safe
 primary output or an informational/preview handler; captured raw data is retained
 where readable. Listed/captured counts are handler records, not unique recipes.
+“Ore generation” is gtneioreplugin's Vein Stats and Small Ore Stats, exported
+since 2026-11-15 as `ore_gen` records rather than recipes (counts from a 2.9.0
+export that day); the rest of this inventory is from the original audit.
+NEI Custom Diagram's GregTech Ore Processing isn't listed: the mod registers its
+diagrams after the export runs. The server composes them from the GT maps
+instead ([how it works](how-it-works.md#game-recipe-data)).
 
 | Category and handler ID | Status | Listed | Browsable | Archived/unreadable |
 | --- | --- | ---: | ---: | ---: |
@@ -425,9 +431,9 @@ where readable. Listed/captured counts are handler records, not unique recipes.
 | Circuit Assembly Line Imprinting<br>`gregtech.nei.GTNEIImprintHandler::gt.recipe.cal-imprinting` | Display | 37 | 37 | 0 |
 | Macerator Conversion<br>`gregtech.nei.GTNEIMacerationStackConversion::gt.recipe.macerator.conversion` | Display | 2 | 2 | 0 |
 | Decayables<br>`gtPlusPlus.nei.DecayableRecipeHandler::GTPP_Decayables` | Display | 4 | 4 | 0 |
-| Small Ore Stats<br>`gtneioreplugin.plugin.gregtech5.PluginGT5SmallOreStat::` | Archived/info | 54 | 0 | 54 |
+| Small Ore Stats<br>`gtneioreplugin.plugin.gregtech5.PluginGT5SmallOreStat::` | Ore generation | 54 | 54 | 0 |
 | Underground Fluid Stats<br>`gtneioreplugin.plugin.gregtech5.PluginGT5UndergroundFluid::` | Display | 30 | 30 | 0 |
-| Vein Stats<br>`gtneioreplugin.plugin.gregtech5.PluginGT5VeinStat::` | Archived/info | 122 | 0 | 122 |
+| Vein Stats<br>`gtneioreplugin.plugin.gregtech5.PluginGT5VeinStat::` | Ore generation | 122 | 122 | 0 |
 | Planetary Gas Siphon<br>`gtnhintergalactic.nei.GasSiphonRecipeHandler::` | Display | 16 | 16 | 0 |
 | Space Pumping Module<br>`gtnhintergalactic.nei.SpacePumpModuleRecipeHandler::` | Display | 40 | 40 | 0 |
 | Bee Breeding Tree<br>`hellfirepvp.beebetteratbees.client.gui.BBABGuiRecipeTreeHandler::` | Display | 428 | 428 | 0 |
