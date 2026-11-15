@@ -3635,7 +3635,8 @@ async function main() {
     await waitFor('where the ore generates, as gtneioreplugin shows it', `$('#recipeCategoryName').textContent === 'Vein Stats'
       && JSON.stringify($$('#recipeViewerList .recipe-preview-text').map(t => t.textContent)) === JSON.stringify(
         ['Samarium Vein', 'Primary', 'Samarium Ore', 'Secondary', 'Raw Samarium Ore', 'Height: 10-40', 'Weight: 10', 'Generated world:'])
-      && $('#recipeViewerList .recipe-stack-control[data-key="gtneioreplugin:blockDimensionDisplay_Ca:0"]')`);
+      && $('#recipeViewerList .recipe-stack-control[data-key="gtneioreplugin:blockDimensionDisplay_Ca:0"]')
+        ?.dataset.tooltipNote === 'Chance per ore chunk: 100%'`);
     await cdp.send('Page.navigate', {url: base + '/recipes?key=' + ore + '&map=gt.recipe.spaceMining'});
     await waitFor('space mining page loaded', `document.readyState === 'complete' && !window.byText`);
     await evaluate(PAGE_LIB);

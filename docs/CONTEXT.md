@@ -2572,3 +2572,13 @@ them into a positioned layout plus placed lines of text (`texts`, which
 item names come from the same lookup as everything else. NEI shows size
 and density only in the plugin's CSV, not its page, so the page doesn't
 either; `find_recipes` gives them.
+
+**A vein's chance per ore chunk is computed, not exported.** In game,
+hovering a dimension on a Vein Stats page shows "Chance per ore chunk",
+which gtneioreplugin's `NormalOreDimensionWrapper.calculateWeights` works
+out as the vein's weight over the summed weight of every vein in that
+dimension. Every vein's weight and dimensions are already in the bundle,
+so `_vein_chances` does the same sum once all veins are in and stores
+`dim_chances` on each (index format 11), and the viewer puts it on the
+dimension slot as a tooltip note, in NEI's `0.##` format. Small Ore Stats
+has no such tooltip in game, so it gets none.
