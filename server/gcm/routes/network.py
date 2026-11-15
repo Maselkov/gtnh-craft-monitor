@@ -559,7 +559,10 @@ def network_plan_get():
 
     For a multiblock kit, ?targets=[[item key, amount], ...] in place of
     the item plans them all together (planner.plan_many), under a step
-    for the kit: ?kit=<its controller's mod:internal:damage>&count=n."""
+    for the kit: ?kit=<its controller's mod:internal:damage>&count=n, or
+    ?batch=1 for a batch. reserve=1 plans them as one job does: each
+    target's stock goes into the job before anything else is planned
+    (planner.plan_many)."""
     targets = None
     if request.args.get("targets") is not None:
         targets, error = _plan_targets(request.args.get("targets"))
@@ -610,9 +613,12 @@ def network_plan_get():
 
     rules = planner.rules_for_user(g.user["id"])
     if targets is not None:
-        root = multiblocks.plan_root(request.args.get("kit") or "", request.args.get("count"))
+        if request.args.get("batch"):
+            root = {"key": "batch", "name": f"Batch of {len(targets)} item{'' if len(targets) == 1 else 's'}"}
+        else:
+            root = multiblocks.plan_root(request.args.get("kit") or "", request.args.get("count"))
         result = planner.cached_plan_many(pattern_list, stock_levels, stock_version, targets, root, choices, rules,
-                                          describe=inventory.describe)
+                                          describe=inventory.describe, reserve=request.args.get("reserve") == "1")
         if result is None:
             return jsonify({"plan": None, "reason": "Nothing to request, so nothing to plan."})
     else:

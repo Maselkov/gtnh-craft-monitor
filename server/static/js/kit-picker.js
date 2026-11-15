@@ -9,24 +9,29 @@ function iconMarkup(icon) {
 
 // Also used by the materials table's redraw, so its keyed combobox and
 // focused input survive a change of block, count or row order.
-export function kitPickerHtml({ id, label, searchable = false, inline = false }) {
+// placeholder and footer: a searchable one's hint and the line under
+// its options (the kit's multiblock picker's by default).
+// action: its actions' prefix, one per setupKitPickers() (action names
+// are unique page-wide).
+export function kitPickerHtml({ id, label, searchable = false, inline = false,
+  placeholder = 'Find a multiblock…', footer = 'Controllers in your network', action = 'kit-choice' }) {
   const safeId = escapeHtml(id);
   return `<div class="kit-choice-field">
     ${inline ? '' : '<span class="kit-choice-current-icon" aria-hidden="true"></span>'}
     <input id="${safeId}" class="kit-choice-input" role="combobox" aria-label="${escapeHtml(label)}"
       aria-expanded="false" aria-controls="${safeId}List" aria-haspopup="listbox"
-      ${searchable ? 'aria-autocomplete="list" placeholder="Find a multiblock…"' : 'readonly'}
-      autocomplete="off" spellcheck="false" data-action="kit-choice-toggle">
+      ${searchable ? `aria-autocomplete="list" placeholder="${escapeHtml(placeholder)}"` : 'readonly'}
+      autocomplete="off" spellcheck="false" data-action="${action}-toggle">
     <span class="kit-choice-chevron" aria-hidden="true"></span>
     ${inline ? `<label class="kit-choice-caption" for="${safeId}">${escapeHtml(label)}</label>` : ''}
   </div>
   <div class="kit-choice-menu" popover="manual" hidden>
     <div id="${safeId}List" class="kit-choice-options" role="listbox" aria-label="${escapeHtml(label)}"></div>
-    ${searchable ? '<div class="kit-choice-footer">Controllers in your network</div>' : ''}
+    ${searchable && footer ? `<div class="kit-choice-footer">${escapeHtml(footer)}</div>` : ''}
   </div>`;
 }
 
-export function setupKitPickers(container) {
+export function setupKitPickers(container, action = 'kit-choice') {
   const pickers = new WeakMap();
   let opened = null;
 
@@ -37,12 +42,12 @@ export function setupKitPickers(container) {
   }
 
   delegateActions(container, {
-    'kit-choice-toggle': (el) => pickers.get(el.closest('.kit-choice'))?.toggle(),
-    'kit-choice-pick': (el) => pickers.get(el.closest('.kit-choice'))?.choose(el.dataset.value),
+    [`${action}-toggle`]: (el) => pickers.get(el.closest('.kit-choice'))?.toggle(),
+    [`${action}-pick`]: (el) => pickers.get(el.closest('.kit-choice'))?.choose(el.dataset.value),
   });
   container.addEventListener('pointerdown', (e) => {
     // Selecting an option keeps focus on its combobox, including on touch.
-    if (e.target.closest('[data-action="kit-choice-pick"]')) e.preventDefault();
+    if (e.target.closest(`[data-action="${action}-pick"]`)) e.preventDefault();
   });
   document.addEventListener('click', (e) => {
     if (opened && !opened.root.contains(e.target)) close();
@@ -61,11 +66,14 @@ export function setupKitPickers(container) {
   }, true);
   window.addEventListener('resize', () => close());
 
-  function mount(root, { id, label, searchable = false, inline = false, onSelect }) {
+  // limit: the most options shown at once, for a long list that's
+  // searched rather than scrolled through.
+  function mount(root, { id, label, searchable = false, inline = false, onSelect, placeholder, footer,
+    limit = Infinity }) {
     if (pickers.has(root)) return pickers.get(root);
     const safeId = escapeHtml(id);
     root.classList.add('kit-choice');
-    updateHtml(root, kitPickerHtml({ id, label, searchable, inline }));
+    updateHtml(root, kitPickerHtml({ id, label, searchable, inline, placeholder, footer, action }));
     const input = root.querySelector('input');
     const menu = root.querySelector('.kit-choice-menu');
     const list = root.querySelector('[role="listbox"]');
@@ -91,10 +99,15 @@ export function setupKitPickers(container) {
     }
 
     function render() {
-      visible = options.filter(o => o.label.toLowerCase().includes(query.toLowerCase().trim()));
+      const q = query.toLowerCase().trim();
+      visible = [];
+      for (const o of options) {
+        if (visible.length >= limit) break;
+        if (o.label.toLowerCase().includes(q)) visible.push(o);
+      }
       updateHtml(list, visible.map((o, i) => `<div id="${safeId}Option${i}" role="option"
         class="kit-choice-option" aria-selected="${o.value === selected?.value}" data-key="${escapeHtml(o.value)}"
-        data-action="kit-choice-pick" data-value="${escapeHtml(o.value)}">
+        data-action="${action}-pick" data-value="${escapeHtml(o.value)}">
         ${iconMarkup(o.icon)}<span class="kit-choice-name">${escapeHtml(o.label)}</span>
         <span class="kit-choice-check" aria-hidden="true">${o.value === selected?.value ? '✓' : ''}</span>
       </div>`).join('') || `<div class="kit-choice-empty" role="status">${escapeHtml(empty)}</div>`);

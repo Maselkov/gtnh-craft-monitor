@@ -22,7 +22,7 @@ import time
 import urllib.parse
 
 from gcm import (
-    auth, bottlenecks, commands, config, craft_stats, gamedata, inventory, item_info, job_links, patterns, planner, rates,
+    auth, batches, bottlenecks, commands, config, craft_stats, gamedata, inventory, item_info, job_links, patterns, planner, rates,
     mctext, multiblocks, recipe_index, recipe_viewer, recipes, search, state, stock, store, tracking,
 )
 
@@ -173,6 +173,14 @@ def _schema(properties, required=()):
 
 
 ITEM_ARG = {"type": "string", "description": "An item key, the `item` value search_items returns."}
+BATCH_ITEMS_ARG = {
+    "type": "array", "minItems": 1, "maxItems": batches.MAX_ROWS,
+    "description": "Several items to craft together: each an item key and how many (mB for a fluid).",
+    "items": {"type": "object", "properties": {"item": ITEM_ARG, "amount": {"type": "integer", "minimum": 1}},
+              "required": ["item", "amount"], "additionalProperties": False},
+}
+SEPARATE_ARG = {"type": "boolean", "default": False,
+                "description": "Each item as its own request rather than one job planned together."}
 
 
 def _range_arg(choices, default, what):
@@ -589,10 +597,71 @@ def _plan_row(i, requested=False):
 
 
 def plan_craft(user, args):
+    if args.get("items") is not None:
+        if args.get("item") is not None or args.get("amount") is not None:
+            raise ToolError("give either item and amount, or items")
+        rows = _batch_rows(args)
+        separate = _arg(args, "separate", "boolean", False)
+        one_job = not separate and state.kit_slots() > 0
+        return {"items": [{"item": r["key"], "name": r["name"], "amount": r["amount"]} for r in rows],
+                "as_one_job": one_job, **_plan_batch(user, rows, one_job)}
     key = _arg(args, "item", "string", required=True)
     amount = _arg(args, "amount", "integer", required=True, minimum=1, maximum=10**12)
     _parse_key(key)
     return {"item": key, "amount": amount, **_plan(user, key, amount)}
+
+
+def _batch_rows(args):
+    """A batch's items as given ([{item, amount}]), described as the
+    page's batch describes them (gcm/batches.py)."""
+    raw = args.get("items")
+    if not isinstance(raw, list) or not raw:
+        raise ToolError("items must be a non-empty list of {item, amount}")
+    given = []
+    for i, entry in enumerate(raw):
+        if not isinstance(entry, dict):
+            raise ToolError(f"items[{i}] must be an object {{item, amount}}")
+        given.append({"key": entry.get("item"), "amount": entry.get("amount")})
+    rows, error = batches.parse(given)
+    if error:
+        raise ToolError(f"items: {error}")
+    return batches.describe(rows)
+
+
+def _plan_batch(user, rows, one_job):
+    """The crafting plan for a batch's items together (planner.plan_many),
+    as the model sees it: as one job, each item's stock goes into the job
+    first, as AE2 does with a kit pattern's inputs."""
+    pattern_list, patterns_at = patterns.current()
+    if patterns_at is None:
+        raise ToolError(patterns.missing_reason("crafting plan"))
+    stock_levels, stock_at, stock_version = inventory.stock_levels()
+    root = {"key": "batch", "name": "Batch"}
+    result = planner.cached_plan_many(
+        pattern_list, stock_levels, stock_version, [(r["key"], r["amount"]) for r in rows], root, None,
+        planner.rules_for_user(user["id"]), describe=inventory.describe, reserve=one_job,
+    )
+    keys = {r["key"] for r in rows}
+    items = sorted(
+        (i for i in result["items"] if i["key"] not in keys),
+        key=lambda i: (-(i["missing"] > 0), -i["craft"], i["name"] or ""),
+    )
+    return {
+        "can_craft": not result["missing"],
+        "requested": [_plan_row(i) for i in result["items"] if i["key"] in keys],
+        "missing": [_plan_row(i) for i in result["missing"]],
+        "ingredients": [_plan_row(i) for i in items[:60]],
+        "ingredients_total": len(items),
+        "steps": result["steps"],
+        "truncated": result["truncated"],
+        "patterns_scanned_at": _iso(patterns_at),
+        "stock_scanned_at": _iso(stock_at),
+        "note": ("An estimate from the network's patterns and last scan, worked out the way AE2 plans, with the "
+                 "items counted against one stock. Each row is a total over the whole batch; its `plan` "
+                 "sentence says how it's covered."
+                 + (" As one job, all of each requested item's stock goes into the job (and comes back with "
+                    "it), so none of it is left for the other items: they craft more." if one_job else "")),
+    }
 
 
 def stock_rules_tool(user, args):
@@ -1294,6 +1363,67 @@ def request_craft(user, args):
     return out
 
 
+def request_batch(user, args):
+    _require_operator(user, "request crafts")
+    rows = _batch_rows(args)
+    separate = _arg(args, "separate", "boolean", False)
+    force = _arg(args, "force", "boolean", False)
+    allow_duplicate = _arg(args, "allow_duplicate", "boolean", False)
+    one_job = not separate
+    error = batches.check(rows, one_job)
+    if error:
+        raise ToolError(error + (" (or pass separate=true)" if one_job and not state.kit_slots() else ""))
+    _require_game("the request")
+    listed = [{"item": r["key"], "name": r["name"], "amount": r["amount"], "unit": _unit(r["kind"])} for r in rows]
+
+    if not allow_duplicate:
+        underway = {}
+        for r in rows:
+            found = _already_underway(r["key"], r["mod"], r["internal"], r["damage"])
+            if found:
+                underway[r["key"]] = found
+        if underway:
+            return {
+                "queued": False, "items": listed, "already": underway,
+                "note": ("Not started: the base is already getting some of these items. Tell the user. Only call "
+                         "again with allow_duplicate=true if they want more on top, or leave those items out."),
+            }
+
+    plan_note = None
+    try:
+        plan = _plan_batch(user, rows, one_job)
+    except ToolError as e:
+        plan_note = f"Couldn't check the ingredients first: {e}"
+    else:
+        if not plan["can_craft"] and not force:
+            return {
+                "queued": False, "items": listed, "missing": plan["missing"],
+                "note": ("Not started: the plan says these are missing. Tell the user. Only call again with "
+                         "force=true if they want to try anyway (AE2 then fails the request if they're "
+                         "still missing)."),
+            }
+        if not plan["can_craft"]:
+            plan_note = "Started with force: the plan said ingredients were missing."
+
+    if one_job:
+        req_id, label = batches.queue_job(user["id"], rows, source="assistant")
+        out = {
+            "queued": True, "as_one_job": True, "request_id": req_id, "job_name": label, "items": listed,
+            "note": ("Sent to the game as one job named after the first item: the game rewrites a kit pattern "
+                     "with these items and asks AE2 for it within a few seconds. request_status says whether it "
+                     "started. While it runs, the items' stock is in the job and comes back with it."),
+        }
+    else:
+        ids = batches.queue_separately(user["id"], rows, source="assistant")
+        out = {
+            "queued": True, "as_one_job": False, "request_ids": ids, "items": listed,
+            "note": "Sent to the game as one request per item. request_status follows each.",
+        }
+    if plan_note:
+        out["plan_note"] = plan_note
+    return out
+
+
 def _job_id(job):
     """What a busy CPU is making, as cancel_craft takes it back, or None
     when the CPU doesn't report it (no Crafting Monitor)."""
@@ -1481,12 +1611,15 @@ TOOLS = [
         "description": (
             "What crafting an amount of an item would take, worked out from the network's patterns "
             "and stock: what comes from storage, what gets crafted, and what's missing. Doesn't "
-            "start anything."
+            "start anything. Give item and amount, or items for several to be requested together "
+            "with request_batch (planned against one stock, sharing what they have in common)."
         ),
         "inputSchema": _schema({
             "item": ITEM_ARG,
             "amount": {"type": "integer", "minimum": 1, "description": "How many (mB for a fluid)."},
-        }, ["item", "amount"]),
+            "items": BATCH_ITEMS_ARG,
+            "separate": SEPARATE_ARG,
+        }),
         "annotations": READ_ONLY,
         "handler": plan_craft,
     },
@@ -1699,6 +1832,31 @@ TOOLS = [
         "annotations": GAME_CHANGES,
         "operator": True,
         "handler": request_craft,
+    },
+    {
+        "name": "request_batch",
+        "title": "Request several crafts together",
+        "description": (
+            "Asks AE2 to craft several items as one job (a batch): AE2 plans them together, so the parts "
+            "they share are made once, and they arrive together when it's all done. Use it when the user "
+            "wants several things that share sub-parts. A real craft in the game: before calling, tell "
+            "the user the items and amounts and get their OK. Plan it first with plan_craft's items. "
+            "Doesn't start if ingredients are missing (returns them; force=true starts anyway, only when "
+            "the user asks after seeing them), or if the base is already getting one of the items "
+            "(allow_duplicate=true to add more). It needs the base's kit interface; without one, or with "
+            "separate=true, each item is its own request. Returns request ids for request_status."
+        ),
+        "inputSchema": _schema({
+            "items": BATCH_ITEMS_ARG,
+            "separate": SEPARATE_ARG,
+            "force": {"type": "boolean", "default": False,
+                      "description": "Start even though the plan says ingredients are missing."},
+            "allow_duplicate": {"type": "boolean", "default": False,
+                                "description": "Start even though the base is already getting one of the items."},
+        }, ["items"]),
+        "annotations": GAME_CHANGES,
+        "operator": True,
+        "handler": request_batch,
     },
     {
         "name": "cancel_craft",

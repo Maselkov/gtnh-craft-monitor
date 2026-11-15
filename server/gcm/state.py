@@ -42,6 +42,9 @@ crafts = {
     # interface it may rewrite to request a multiblock kit as one job);
     # None from a craft_monitor.lua too old to say.
     "kit_slots": None,
+    # Whether it can write fluids into a kit pattern (a batch with
+    # fluids as one job); False from one too old to say.
+    "kit_fluids": False,
 }
 
 
@@ -50,6 +53,13 @@ def kit_slots():
     never said."""
     with crafts_lock:
         return crafts["kit_slots"] or 0
+
+
+def kit_fluids():
+    """Whether the game's craft_monitor.lua can put fluids in a kit
+    pattern."""
+    with crafts_lock:
+        return bool(crafts["kit_fluids"])
 
 
 # ---------------------------------------------------------------------
@@ -195,6 +205,7 @@ def reset():
         crafts["received_at"] = None
         crafts["poll_seconds"] = None
         crafts["kit_slots"] = None
+        crafts["kit_fluids"] = False
     with network_lock:
         network_buffer.clear()
         network_tag_buffer.clear()

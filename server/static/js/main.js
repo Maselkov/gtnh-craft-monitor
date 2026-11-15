@@ -19,6 +19,7 @@ import {
 import { setupGameDataActions } from './gamedata.js';
 import { setupIngredientsActions } from './ingredients.js';
 import { setupKitActions, showKitButton } from './multiblock.js';
+import { setupBatchActions } from './batch.js';
 import { readJobLinkFromUrl, setupJobLink } from './job-link.js';
 import {
   parseItemUrlPath,
@@ -67,6 +68,7 @@ setupWebhooksActions();
 setupAssistantActions();
 setupIngredientsActions();
 setupKitActions();
+setupBatchActions();
 setupTabActions();
 setupPowerActions();
 setupNetworkActions();

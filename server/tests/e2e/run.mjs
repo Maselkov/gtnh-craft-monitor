@@ -4193,6 +4193,85 @@ async function main() {
     await waitFor('original stock restored', `$$('#networkList .network-cell').length === 3`);
   });
 
+  step('batch: add from the craft dialog and a kit, edit, plan together, request as one job', async () => {
+    const { data: scan } = await game(base, '/api/network/scan/start', {});
+    await game(base, '/api/network/scan/batch', { scan_token: scan.scan_token, items: [
+      ...SEEDED_ITEMS.map(it => ({ ...it })),
+      { mod: 'minecraft', internal: 'gold_ingot', damage: 0, name: 'Gold Ingot', size: 0, isCraftable: true },
+    ] });
+    await game(base, '/api/network/scan/finish', { scan_token: scan.scan_token, chunks_sent: 1, total_errors: 0 });
+    await postCrafts(base, true, false, { kit_slots: 1 });
+    await waitFor('batch button for an operator', `visible($('#networkBatchButton')) && $('#networkBatchButton button').textContent === 'Batch'`);
+    // From the craft dialog: the typed amount, not requested.
+    await evaluate(`openItem('Iron Ingot'), true`);
+    await click(`$('#itemHistoryCraftBtn')`);
+    await waitFor('craft dialog offers the batch', `visible($('#craftRequestModal')) && visible($('#craftRequestBatchBtn'))`);
+    await evaluate(`typeInto('#craftRequestAmount', '6*2')`);
+    await click(`$('#craftRequestBatchBtn')`);
+    await waitFor('added, not requested', `!visible($('#craftRequestModal'))
+      && $('#toastContainer').textContent.includes('Added Iron Ingot to the batch (1 item)')
+      && $('#networkBatchButton button').textContent === 'Batch (1)'`);
+    // From a kit: the blocks Request would ask for.
+    await click(`$('#networkKitButton [data-action="open-kit"]')`);
+    await click(`$('#kitPicker')`);
+    await waitFor('kit to pick', `$('#kitPickerList [role="option"]')`);
+    await click(`$('#kitPickerList [role="option"]')`);
+    await waitFor('kit ready', `$('#kitChannel-coil') && visible($('#kitBatchBtn'))`);
+    await click(`$('#kitChannel-coil')`);
+    await click(`$('#kitChannel-coilList [data-value="2"]')`);
+    await waitFor('gold coils to craft', `$('#kitChannel-coil').value === 'Gold Ingot' && !$('#kitBatchBtn').disabled`);
+    await click(`$('#kitBatchBtn')`);
+    await waitFor('kit added', `!visible($('#kitModal')) && $('#networkBatchButton button').textContent === 'Batch (2)'`);
+    // Open it: both, the kit's marked.
+    await click(`$('#networkBatchButton [data-action="open-batch"]')`);
+    const row = name => `$$('#batchRows .batch-row').find(r => r.querySelector('.kit-name')?.textContent === '${name}')`;
+    await waitFor('batch rows', `visible($('#batchModal')) && ${row('Iron Ingot')}?.querySelector('.kit-request').value === '12'
+      && /^from .* kit$/.test(${row('Gold Ingot')}?.querySelector('.batch-note')?.textContent || '')
+      && !$('#batchSeparate').checked && $('#batchModeLine [aria-hidden="false"]').textContent.startsWith('As one job')`);
+    // An item already in it isn't added twice.
+    await click(`$('#batchFinder')`);
+    await evaluate(`typeInto('#batchFinder', 'iron')`);
+    await waitFor('found', `$('#batchFinderList [role="option"]')?.textContent.includes('Iron Ingot')`);
+    await click(`$('#batchFinderList [role="option"]')`);
+    await waitFor('no second row', `$$('#batchRows .batch-row:not(.kit-head)').length === 2`);
+    // Edits are kept on the server.
+    await evaluate(`(() => { const b = ${row('Iron Ingot')}.querySelector('.kit-request'); b.value = 20; b.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+    await click(`${row('Gold Ingot')}.querySelector('[data-action="batch-remove"]')`);
+    await waitFor('one left', `$$('#batchRows .batch-row:not(.kit-head)').length === 1 && $('#networkBatchButton button').textContent === 'Batch (1)'`);
+    await evaluate(`new Promise((r) => setTimeout(r, 700))`);
+    await evaluate(`fetch('/api/batch').then(r => r.json()).then(d => { window.batchSavedItems = d.items; return true; })`);
+    await waitFor('saved', `window.batchSavedItems?.length === 1 && window.batchSavedItems[0].amount === 20`);
+    await evaluate(`(() => {
+      window.batchSends = [];
+      window.batchRealFetch = window.fetch;
+      window.fetch = (...args) => {
+        if (String(args[0]) === '/api/craft/request-batch-job') {
+          window.batchSends.push(JSON.parse(args[1].body));
+          return Promise.resolve(new Response(JSON.stringify({ ok: true, id: 1, label: 'Iron Ingot batch kit' }), { status: 200 }));
+        }
+        return window.batchRealFetch(...args);
+      };
+      return true;
+    })()`);
+    await click(`$('#batchReviewBtn')`);
+    await waitFor('planned together', `visible($('#batchReview #craftPlan')) && !$('#batchRequestBtn').disabled
+      && $('#batchReviewSummary').textContent === '1 item to craft · As one job'
+      && $('#batchRequestBtn').textContent === 'Request as one job (1 item)'`);
+    await evaluate(`pressKey('Escape', '#batchReviewTitle'), true`);
+    await waitFor('Escape goes back to the batch', `visible($('#batchConfiguration')) && visible($('#batchModal'))`);
+    await click(`$('#batchReviewBtn')`);
+    await waitFor('reviewed again', `visible($('#batchReview #craftPlan')) && !$('#batchRequestBtn').disabled`);
+    await click(`$('#batchRequestBtn')`);
+    await waitFor('requested as one job', `!visible($('#batchModal')) && window.batchSends.length === 1
+      && !window.batchSends[0].separate && window.batchSends[0].items[0].amount === 20
+      && window.batchSends[0].items[0].key === 'minecraft|iron_ingot|0|item'
+      && $('#toastContainer').textContent.includes('Requested Iron Ingot batch kit as one job')
+      && $('#networkBatchButton button').textContent === 'Batch'`);
+    await evaluate(`window.fetch = window.batchRealFetch, fetch('/api/batch', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: '{"items": []}' }), true`);
+    await scanNetwork(base);
+    await postCrafts(base, true);
+  });
+
   step('admin: check the patterns against another version\'s recipes', async () => {
     await click(`$('#settingsBtn')`);
     await click(`$('#gamedataBtn')`);

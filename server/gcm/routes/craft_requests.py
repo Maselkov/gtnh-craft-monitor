@@ -11,7 +11,7 @@ Two-sided auth:
 
 from flask import Blueprint, g, jsonify, request
 
-from gcm import auth, commands, mctext, multiblocks, state, stock, store, tracking
+from gcm import auth, batches, commands, mctext, multiblocks, patterns, state, stock, store, tracking
 
 
 bp = Blueprint("craft_requests", __name__)
@@ -122,6 +122,83 @@ def craft_request_kit_post():
     # The damage as a number: OC reads a stack's damage only as one.
     req_id = commands.queue_kit(g.user["id"], mctext.plain(controller["name"]), mod, internal, int(damage), inputs)
     return jsonify({"ok": True, "id": req_id})
+
+
+def _batch_answer(user_id):
+    """The account's batch as the page shows it (gcm/batches.py)."""
+    plan_available = patterns.missing() is None
+    return {
+        "items": batches.describe(store.batches.get(user_id)),
+        **batches.capabilities(),
+        "plan_available": plan_available,
+        "plan_unavailable_reason": None if plan_available else patterns.missing_reason("crafting plan"),
+        "needs_terminal": patterns.terminal_missing(),
+    }
+
+
+@bp.route("/api/batch", methods=["GET"])
+@auth.login_required
+@auth.operator_required
+def batch_get():
+    return jsonify(_batch_answer(g.user["id"]))
+
+
+@bp.route("/api/batch", methods=["PUT"])
+@auth.login_required
+@auth.operator_required
+def batch_put():
+    """Replaces the batch: {items: [{key, amount, name?, from?}]}."""
+    rows, error = batches.parse((request.get_json(silent=True) or {}).get("items"))
+    if error:
+        return jsonify({"error": error}), 400
+    store.batches.save(g.user["id"], rows)
+    return jsonify(_batch_answer(g.user["id"]))
+
+
+@bp.route("/api/batch/add", methods=["POST"])
+@auth.login_required
+@auth.operator_required
+def batch_add_post():
+    """Adds to the batch: {items: [...]} as PUT takes them; an item
+    already in it has the amounts added up."""
+    added, error = batches.parse((request.get_json(silent=True) or {}).get("items"))
+    if not error and not added:
+        error = "nothing to add"
+    if not error:
+        rows, error = batches.merge(store.batches.get(g.user["id"]), added)
+    if error:
+        return jsonify({"error": error}), 400
+    store.batches.save(g.user["id"], rows)
+    return jsonify(_batch_answer(g.user["id"]))
+
+
+@bp.route("/api/craft/request-batch-job", methods=["POST"])
+@auth.login_required
+@auth.operator_required
+def craft_request_batch_job_post():
+    """Requests a batch (gcm/batches.py): {items: [{key, amount}],
+    separate: bool}, the rows the player reviewed - as one job, or each
+    as its own craft with separate. The account's batch is emptied once
+    they're queued."""
+    payload = request.get_json(silent=True) or {}
+    separate = payload.get("separate") is True
+    rows, error = batches.parse(payload.get("items"))
+    if error:
+        return jsonify({"error": error}), 400
+    rows = batches.describe(rows)
+    error = batches.check(rows, one_job=not separate)
+    if error:
+        status = 409 if not separate and not state.kit_slots() else 400
+        return jsonify({"error": error}), status
+    user_id = g.user["id"]
+    if separate:
+        ids = batches.queue_separately(user_id, rows)
+        answer = {"ok": True, "ids": ids}
+    else:
+        req_id, label = batches.queue_job(user_id, rows)
+        answer = {"ok": True, "id": req_id, "label": label}
+    store.batches.save(user_id, [])
+    return jsonify(answer)
 
 
 @bp.route("/api/craft/requests", methods=["GET"])

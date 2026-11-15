@@ -1,7 +1,7 @@
 // Craft request and cancel modals, pending craft requests.
 
 import { evaluateAmountExpression } from './amount.js';
-import { AUTH_USER, closeAdminUsersModal, closeBackupsModal, closeSettingsMenu, expireAuthentication } from './auth.js';
+import { AUTH_USER, closeAdminUsersModal, isOperator, closeBackupsModal, closeSettingsMenu, expireAuthentication } from './auth.js';
 import { closeCraftPlan, openCraftPlan, updateCraftPlanAmount } from './craft-plan.js';
 import { nameText } from './description.js';
 import { lastData, render } from './crafts.js';
@@ -10,6 +10,8 @@ import { closeGameDataModal } from './gamedata.js';
 import { closeItemHistory } from './history.js';
 import { closeIngredientsModal } from './ingredients.js';
 import { closeKit, kitOpen } from './multiblock.js';
+import { addToBatch, batchOpen, closeBatch } from './batch.js';
+import { networkItemKey } from './network.js';
 import { closeRecipeViewer, recipeViewerOpen } from './recipe-viewer.js';
 import { closeRecipeCheck } from './recipe-check.js';
 import { closeWebhooksModal } from './webhooks.js';
@@ -39,6 +41,10 @@ export function openCraftRequestModal(it) {
   const btn = document.getElementById('craftRequestSubmitBtn');
   btn.disabled = false;
   btn.textContent = 'Request';
+  // Not an NBT variant: a batch's kit pattern can't carry NBT.
+  const batchBtn = document.getElementById('craftRequestBatchBtn');
+  batchBtn.hidden = !isOperator() || !!it.variant || !['item', 'fluid'].includes(it.kind || 'item');
+  batchBtn.disabled = false;
   document.getElementById('craftRequestModal').style.display = 'flex';
   // Ready to type the amount over the 1. Not on touch devices, where
   // the on-screen keyboard would cover the plan before it's asked for.
@@ -282,6 +288,31 @@ async function submitCraftRequest() {
   }
 }
 
+// The dialog's item and amount, into the batch (batch.js) rather than
+// requested now.
+async function addCraftToBatch() {
+  const it = craftRequestTarget;
+  if (!it) return;
+  const errorEl = document.getElementById('craftRequestError');
+  const evaluated = evaluateAmountExpression(document.getElementById('craftRequestAmount').value);
+  const amount = evaluated.ok ? Math.round(evaluated.value) : null;
+  if (!amount || amount <= 0) {
+    errorEl.textContent = 'Enter a quantity of at least 1 to add to the batch.';
+    errorEl.style.display = 'block';
+    return;
+  }
+  const btn = document.getElementById('craftRequestBatchBtn');
+  btn.disabled = true;
+  const added = await addToBatch([{
+    key: networkItemKey(it.mod, it.internal, it.damage, it.kind),
+    amount,
+    name: nameText(it.name || it.internal),
+  }], nameText(it.name || it.internal));
+  if (craftRequestTarget !== it) return;
+  btn.disabled = false;
+  if (added) closeCraftRequestModal();
+}
+
 // ---------- Pending craft requests ----------
 let craftRequests = [];
 
@@ -364,6 +395,8 @@ export function setupCraftDialogActions() {
       } else if (kitOpen()) {
         // Before the item dialog it's opened over.
         closeKit();
+      } else if (batchOpen()) {
+        closeBatch();
       } else if (document.getElementById('itemHistoryModal').style.display !== 'none') {
         closeItemHistory();
       } else if (document.getElementById('ingredientsModal').style.display !== 'none') {
@@ -400,6 +433,7 @@ export function setupCraftDialogActions() {
   delegateActions(document, {
     'close-craft-request': () => closeCraftRequestModal(),
     'submit-craft-request': () => submitCraftRequest(),
+    'craft-add-to-batch': () => addCraftToBatch(),
     'close-cancel-confirm': () => closeCancelConfirmModal(),
     'submit-cancel': () => submitCancelConfirm(),
   });

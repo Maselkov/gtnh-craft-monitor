@@ -3190,6 +3190,9 @@ body.oauth-page {
   .kit-actions { grid-template-columns: minmax(0, 1fr); }
   .kit-actions > .modal-buttons { grid-column: 1; }
   .kit-actions > .modal-buttons > .modal-btn { flex: 1; }
+  /* Its own row, so the quantity and Review keep theirs. */
+  .kit-actions > .modal-buttons:has(> #kitBatchBtn:not([hidden])) { flex-wrap: wrap; }
+  .kit-actions > .modal-buttons > #kitBatchBtn { flex: 1 0 100%; order: -1; }
   .kit-row {
     grid-template-columns: 28px minmax(0, 1fr) 52px;
     gap: 8px;
@@ -3329,6 +3332,50 @@ body.oauth-page {
   .kit-preview { height: auto; aspect-ratio: auto; min-height: 0; max-height: none; flex-shrink: 0; }
   .kit-preview .kit-viewport { height: clamp(140px, 23vh, 200px); flex: none; }
   .kit-actions { margin-top: 12px; padding-top: 10px; }
+}
+
+/* Batch (batch.js): the kit dialog's layout, with a list of any items. */
+#batchModal { z-index: 2001; }
+.batch-box { width: min(720px, calc(100vw - 48px)); }
+.batch-box:has(#batchReview:not([hidden])) { width: min(640px, calc(100vw - 48px)); }
+.batch-box .kit-header { grid-template-columns: minmax(0, 1fr) 32px; }
+.batch-box .kit-header > .history-name-wrap { grid-column: 1; }
+.batch-box .kit-header > .history-close-btn { grid-column: 2; }
+#batchConfiguration { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+#batchConfiguration > .kit-control { flex: 0 0 auto; margin-bottom: 8px; }
+#batchReview { min-height: 0; overflow-y: auto; }
+#batchConfiguration[hidden], #batchReview[hidden] { display: none; }
+#batchProblem, #batchError { flex-shrink: 0; }
+.batch-intro { margin: 0 0 10px; }
+.batch-materials { flex: 1 1 auto; max-height: min(420px, calc(100dvh - 300px)); }
+.batch-rows .kit-row,
+.kit-rows-operator.batch-rows .kit-row { grid-template-columns: 28px minmax(0, 1fr) 80px 104px 28px; }
+.batch-name { display: flex; flex-direction: column; min-width: 0; }
+.batch-note { font-size: 11px; color: var(--muted); }
+.batch-empty { margin: 12px 0; }
+.batch-problem { margin: 10px 0 0; color: var(--busy); }
+.batch-remove {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+}
+.batch-remove:hover, .batch-remove:focus-visible { border-color: var(--border-strong); color: var(--text); }
+@media (max-width: 1080px) {
+  .batch-box, .batch-box:has(#batchReview:not([hidden])) { width: min(640px, calc(100vw - 32px)); }
+  #batchConfiguration { overflow-y: auto; }
+  .batch-materials { max-height: none; overflow: visible; }
+}
+@media (max-width: 520px) {
+  .batch-rows .kit-row,
+  .kit-rows-operator.batch-rows .kit-row { grid-template-columns: 28px minmax(0, 1fr) 84px 28px; }
+  .batch-rows .kit-head span:nth-child(4) { display: block; }
 }
 
 /* NEI-style recipe book: top tabs and left catalysts share the paper frame. */

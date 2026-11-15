@@ -2,6 +2,7 @@
 
 import { updateRelease, updateScriptsNotice } from './agents.js';
 import { updateRecipeNotice } from './recipe-check.js';
+import { refreshBatch } from './batch.js';
 import { fetchCraftRequests, showToast } from './craft-actions.js';
 import {
   clearPins,
@@ -46,6 +47,7 @@ function updateAuthenticationControl() {
   // Refresh personal state on sign-in, and clear it on sign-out.
   fetchNetworkPins();
   fetchCraftRequests();
+  refreshBatch();
   const input = document.getElementById('accessTokenInput');
   const button = document.getElementById('authBtn');
   const adminButton = document.getElementById('adminBtn');

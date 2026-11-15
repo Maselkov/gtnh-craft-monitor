@@ -16,6 +16,7 @@ import { AUTH_USER, isOperator } from './auth.js';
 import { closeCraftPlan, kitPlanOpen, openKitPlan } from './craft-plan.js';
 import { hideLayout, setupLayoutView, showLayout } from './multiblock-view.js';
 import { fetchCraftRequests, showToast } from './craft-actions.js';
+import { addToBatch } from './batch.js';
 import { nameText } from './description.js';
 import { lookupItemTooltipHtml, onShiftChange } from './item-tooltip.js';
 import { kitPickerHtml, setupKitPickers } from './kit-picker.js';
@@ -393,7 +394,7 @@ function updatePlan() {
   document.getElementById('kitReviewSummary').textContent =
     `${kit.count} kit${kit.count === 1 ? '' : 's'} · ${targets.length} material${targets.length === 1 ? '' : 's'} to craft · `
     + (oneJob() ? 'As one job' : 'One craft per material');
-  openKitPlan({ kit: kit.controller.key, count: kit.count, targets }, document.getElementById('kitReviewEnd'), status => {
+  openKitPlan({ kit: kit.controller.key, count: kit.count, targets, reserve: oneJob() }, document.getElementById('kitReviewEnd'), status => {
     if (status === planStatus) return;
     planStatus = status;
     updateRequestButton();
@@ -461,6 +462,9 @@ function updateRequestButton() {
   review.hidden = !AUTH_USER || !kit?.plan_available || reviewing;
   review.disabled = n === 0 || !kitReady || submitting;
   review.textContent = n === 0 ? 'Nothing to request' : isOperator() ? 'Review & request' : 'Review plan';
+  const batchBtn = document.getElementById('kitBatchBtn');
+  batchBtn.hidden = !isOperator() || !kit || reviewing;
+  batchBtn.disabled = n === 0 || !kitReady || submitting;
   const back = document.getElementById('kitBackBtn');
   back.hidden = !reviewing;
   back.disabled = submitting;
@@ -541,6 +545,17 @@ async function submitKit() {
   }
 }
 
+// The blocks Request would ask for, into the batch (batch.js), to be
+// requested with other items.
+async function addKitToBatch() {
+  if (!kit || !kitReady || submitting) return;
+  const name = nameText(kit.controller.name);
+  const from = kit.count > 1 ? `${kit.count} × ${name} kit` : `${name} kit`;
+  const items = kit.rows.filter(r => r.craftable && requestOf(r) > 0)
+    .map(r => ({ key: r.item, amount: requestOf(r), name: nameText(r.name), from }));
+  if (await addToBatch(items, `the ${from}'s blocks`)) closeKit();
+}
+
 // A row's icon has the game's tooltip, as items do elsewhere; its counts
 // are the row's columns, so it leaves them out. Only the icon: over the
 // whole row it would cover the slider.
@@ -584,6 +599,7 @@ export function setupKitActions() {
     'kit-request': () => submitKit(),
     'kit-review': () => reviewKit(),
     'kit-back': () => backToKit(),
+    'kit-add-to-batch': () => addKitToBatch(),
     'kit-retry-plan': () => {
       closeCraftPlan();
       planStatus = 'idle';

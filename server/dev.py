@@ -1181,11 +1181,17 @@ class Cpu:
 
 
 def kit_blocks(inputs):
-    """A kit request's blocks ({name: "mod:internal", damage, size}) as
-    catalog items [{name, size}], leaving out any the catalog lacks."""
+    """A kit or batch request's inputs ({name: "mod:internal", damage,
+    size}, or a fluid's {name: internal, size, type: "fluid"}) as catalog
+    items [{name, size}], leaving out any the catalog lacks."""
     by_id = {(f"{it['mod']}:{it['internal']}", it["damage"]): it["name"] for it in CATALOG if it["kind"] == "item"}
-    return [{"name": by_id[(i["name"], i["damage"])], "size": i["size"]}
-            for i in inputs if (i["name"], i["damage"]) in by_id]
+    fluids = {it["internal"]: it["name"] for it in CATALOG if it["kind"] == "fluid"}
+    found = []
+    for i in inputs:
+        name = fluids.get(i["name"]) if i.get("type") == "fluid" else by_id.get((i["name"], i["damage"]))
+        if name:
+            found.append({"name": name, "size": i["size"]})
+    return found
 
 
 def random_ingredients(count, exclude):
@@ -1314,7 +1320,7 @@ class FakeGame:
         self.answer_requests()
         # Two kit slots: multiblock kits can be requested as one job.
         self.call("POST", "/api/crafts", {"source": "me_controller", "poll_seconds": TICK_SECONDS,
-                                          "kit_slots": 2, "jobs": [cpu.report() for cpu in self.cpus]})
+                                          "kit_slots": 2, "kit_fluids": True, "jobs": [cpu.report() for cpu in self.cpus]})
         stored, trend = power_reading(time.time())
         self.call("POST", "/api/power", {"stored": stored, "capacity": CAPACITY, "poll_seconds": TICK_SECONDS, **trend})
         name, capacity, lag = BATTERIES
@@ -1363,7 +1369,7 @@ class FakeGame:
                 named = {"label": req["label"]}
             label = req["label"] if req["label"] in BY_NAME else "Iron Ingot"
             if req.get("kit_inputs"):
-                # A multiblock kit: its blocks, all on the one CPU.
+                # A multiblock kit or a batch: its inputs, all on the one CPU.
                 cpu.start(label, [(it["name"], it["size"]) for it in kit_blocks(req["kit_inputs"])])
             else:
                 cpu.start(label, random_ingredients(random.randint(2, 8), label))

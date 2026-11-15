@@ -75,7 +75,8 @@ user asks about CPUs.
 - Find items with `search_items` first. The other tools take the `item`
   key it returns; never make one up. When several items match, choose
   by what the user said, or ask.
-- To craft: `plan_craft`, then `request_craft`, then `request_status`.
+- To craft: `plan_craft`, then `request_craft` (several together:
+  `request_batch`), then `request_status`.
 - "Why is it slow?": `craft_job` for that job's held-up steps and the
   machines holding them; `base_patterns` for where the item is made.
 - "How do I make X?" / "What uses X?": `find_recipes`, and
