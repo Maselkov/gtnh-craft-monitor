@@ -448,18 +448,20 @@ def ore_gen_layout(body):
     groups, slots, texts = [], [], []
     width = 166
 
-    def slot(stacks, x, y):
-        slots.append({"role": "groups", "index": len(groups), "x": x, "y": y, "w": 18, "h": 18})
+    def slot(stacks, x, y, label=None):
+        slots.append({"role": "groups", "index": len(groups), "x": x, "y": y, "w": 18, "h": 18,
+                      **({"label": label} if label else {})})
         groups.append({"kind": "item", "alts": stacks})
         return len(groups) - 1
 
     def text(x, y, value, w=None, **extra):
         texts.append({"x": x, "y": y, "w": w or width - x - 2, "h": 9, "text": value, **extra})
 
-    def stacks_row(y, stacks):
+    def stacks_row(y, stacks, labels=()):
         """One slot a stack, nine to a row; returns the y below them."""
+        labels = list(labels)
         for k, stack in enumerate(stacks[:72]):
-            slot([stack], 2 + 18 * (k % 9), y + 18 * (k // 9))
+            slot([stack], 2 + 18 * (k % 9), y + 18 * (k // 9), labels[k] if k < len(labels) else None)
         return y + 18 * ((min(len(stacks), 72) + 8) // 9)
     text(0, 2, body["name"], w=width, align="center", title=True)
     y = 16
@@ -489,9 +491,17 @@ def ore_gen_layout(body):
             y = stacks_row(y + 10, body["drops"]) + 3
     if body["dims"]:
         text(2, y, "Generated world:")
-        y = stacks_row(y + 10, body["dims"])
+        y = stacks_row(y + 10, body["dims"], map(chunk_chance, body.get("dim_chances", [])))
     return groups, {"family": "ore_gen", "width": width, "height": y + 2, "slots": slots, "layers": [],
                     "graphics": "slots_only"}, texts
+
+
+def chunk_chance(fraction):
+    """A vein's chance per ore chunk in a dimension, worded as
+    gtneioreplugin's dimension tooltip ("0.##" percent)."""
+    if fraction is None:
+        return None
+    return f"Chance per ore chunk: {f'{fraction * 100:.2f}'.rstrip('0').rstrip('.')}%"
 
 
 def ore_gen_summary(body):

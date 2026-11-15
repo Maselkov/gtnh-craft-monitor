@@ -638,8 +638,9 @@ the costs, as NEI does.
 
 **Vein Stats** and **Small Ore Stats** say where an ore generates, as
 gtneioreplugin's pages do in game. A vein shows its primary, secondary, between
-and sporadic ores, its height and weight, and the dimensions it generates in. A
-small ore shows its height, amount per chunk, drops and dimensions. They are
+and sporadic ores, its height and weight, and the dimensions it generates in;
+hover a dimension for the vein's chance per ore chunk there, its share of the
+weight of every vein in that dimension. A small ore shows its height, amount per chunk, drops and dimensions. They are
 in an ore's **Recipes**, and in **Uses** for a dimension's icon, which lists
 every vein and small ore found there. They need game data exported since they
 were added.

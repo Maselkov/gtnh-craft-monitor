@@ -44,7 +44,7 @@ from urllib.parse import quote
 
 # Bumped when the schema or what goes in it changes: an index of another
 # format is built again.
-FORMAT = 10
+FORMAT = 11
 # An index built beside a bundle's recipes.json.gz is called this.
 FILE = "recipes.sqlite"
 ITEM, FLUID = 0, 1
@@ -521,6 +521,7 @@ def _build(source_file, out_path, raw, map_ids, signature, species=None):
         conn.executescript(SCHEMA)
         conn.execute("CREATE TEMP TABLE display_ref (id TEXT PRIMARY KEY)")
         recipe_id = 0
+        veins = []  # (recipe id, body) of each ore vein, for _vein_chances
         conn.executemany("INSERT INTO map VALUES (?, ?)", ((i, name) for name, i in map_ids.items()))
         for event, map_name, value in _source_events(source_file):
             if event == "variant":
@@ -545,6 +546,8 @@ def _build(source_file, out_path, raw, map_ids, signature, species=None):
                 conn.executemany("INSERT OR IGNORE INTO display_ref VALUES (?)",
                                  ((ref,) for stack in stacks if len(stack) == 4 for ref in stack[3]))
                 conn.execute("INSERT INTO recipe VALUES (?, ?, 3, 0, 0, ?)", (recipe_id, map_ids[map_name], json.dumps(body)))
+                if body["type"] == "ore_vein":
+                    veins.append((recipe_id, body))
                 conn.executemany("INSERT OR IGNORE INTO output VALUES (?, ?, ?)", ((ITEM, o[0], recipe_id) for o in body["o"]))
                 conn.executemany("INSERT OR IGNORE INTO input VALUES (?, ?, ?)", ((ITEM, i[0], recipe_id) for i in body["i"]))
                 recipe_id += 1
@@ -596,6 +599,7 @@ def _build(source_file, out_path, raw, map_ids, signature, species=None):
             conn.executemany("INSERT INTO input VALUES (?, ?, ?)", ((kind, k, recipe_id) for kind, k in inputs))
             recipe_id += 1
         recipe_id = _ore_processing(conn, map_ids, items, raw.get("item_names"), recipe_id)
+        _vein_chances(conn, veins)
         if conn.execute("SELECT 1 FROM display_ref r LEFT JOIN display_stack s ON s.id = r.id WHERE s.id IS NULL LIMIT 1").fetchone():
             raise ValueError("unknown display stack reference")
         for kind, keys, names in ((ITEM, items, raw.get("item_names")), (FLUID, fluids, raw.get("fluid_names"))):
@@ -624,6 +628,20 @@ def _build(source_file, out_path, raw, map_ids, signature, species=None):
         if not complete:
             os.remove(tmp)
     os.replace(tmp, out_path)
+
+
+def _vein_chances(conn, veins):
+    """Each vein's chance per ore chunk in each of its dimensions, as
+    gtneioreplugin shows it on a dimension's tooltip: its weight over the
+    weight of every vein that generates there. Stored on the vein as
+    "dim_chances", one a dimension in "dims" order."""
+    totals = {}
+    for _, body in veins:
+        for dim in body["dims"]:
+            totals[dim[0]] = totals.get(dim[0], 0) + body["weight"]
+    for rid, body in veins:
+        body["dim_chances"] = [body["weight"] / totals[dim[0]] if totals[dim[0]] else None for dim in body["dims"]]
+        conn.execute("UPDATE recipe SET body = ? WHERE id = ?", (json.dumps(body), rid))
 
 
 def _ore_processing_module():

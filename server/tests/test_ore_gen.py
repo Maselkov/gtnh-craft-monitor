@@ -14,9 +14,10 @@ SAMARIUM, SAMARIUM_MOON = "gregtech:gt.blockores3:4098", "gregtech:gt.blockores3
 NEODYMIUM, TARTARITE = "gregtech:gt.blockores3:4100", "gregtech:gt.blockores3:4096"
 CALLISTO, CERES = "gtneioreplugin:blockDimensionDisplay_Ca:0", "gtneioreplugin:blockDimensionDisplay_Ce:0"
 SMALL_ORE, DUST, GEM = "gregtech:gt.blockores2:17035", "gregtech:gt.metaitem.01:2035", "gregtech:gt.metaitem.01:8035"
+LEDOX = "gregtech:gt.blockores1:4390"
 NAMES = {SAMARIUM: "Callisto Samarium Ore", SAMARIUM_MOON: "Ceres Samarium Ore", NEODYMIUM: "Callisto Neodymium Ore",
          TARTARITE: "Callisto Tartarite Ore", CALLISTO: "Callisto", CERES: "Ceres",
-         SMALL_ORE: "Small Copper Ore", DUST: "Copper Dust", GEM: "Copper Nugget"}
+         SMALL_ORE: "Small Copper Ore", DUST: "Copper Dust", GEM: "Copper Nugget", LEDOX: "Callisto Ledox Ore"}
 
 
 def bundle():
@@ -29,6 +30,9 @@ def bundle():
                        {"role": "between", "alts": [[i(TARTARITE), 1, None, []]]},
                        {"role": "sporadic", "alts": [[i(TARTARITE), 1, None, []]]}],
             "dims": [[i(CALLISTO), 1, None, []], [i(CERES), 1, None, []]]}
+    # Shares Callisto with the samarium vein: 10 of 40 weight there.
+    ledox = {"type": "ore_vein", "name": "Ledox Vein", "height": "55-65", "weight": 30, "size": 16, "density": 2,
+             "layers": [{"role": "primary", "alts": [[i(LEDOX), 1, None, []]]}], "dims": [[i(CALLISTO), 1, None, []]]}
     small = {"type": "small_ore", "name": "Copper", "height": "5-60", "amount": 32,
              "ores": [[i(SMALL_ORE), 1, None, []]], "dust": [[i(DUST), 1, None, []]],
              "drops": [[i(GEM), 1, 2500, []]], "dims": [[i(CALLISTO), 1, None, []]]}
@@ -37,7 +41,7 @@ def bundle():
         "display_stacks": {}, "ui_assets": {}, "research_info": {}, "aspects": {},
         "coverage": {"handlers": ["gregtech", "nei"], "identity": "item_id_damage", "limitations": []},
         "maps": {
-            VEINS: {"machines": [{"name": "Vein Stats"}], "recipes": [], "archive": [{"raw": True}], "ore_gen": [vein]},
+            VEINS: {"machines": [{"name": "Vein Stats"}], "recipes": [], "archive": [{"raw": True}], "ore_gen": [vein, ledox]},
             SMALL: {"machines": [{"name": "Small Ore Stats"}], "recipes": [], "ore_gen": [small]},
         },
     }
@@ -53,7 +57,7 @@ def idx(tmp_path):
 def test_an_ores_recipes_show_its_veins_and_a_dimensions_uses_list_them(idx):
     for ore in (SAMARIUM, SAMARIUM_MOON, NEODYMIUM, TARTARITE):
         assert idx.counts_making(recipe_index.ITEM, ore) == {VEINS: 1}
-    assert idx.counts_using(recipe_index.ITEM, CALLISTO) == {VEINS: 1, SMALL: 1}
+    assert idx.counts_using(recipe_index.ITEM, CALLISTO) == {VEINS: 2, SMALL: 1}
     assert idx.counts_using(recipe_index.ITEM, CERES) == {VEINS: 1}
     for item in (SMALL_ORE, DUST, GEM):
         assert idx.counts_making(recipe_index.ITEM, item) == {SMALL: 1}
@@ -111,6 +115,8 @@ def test_vein_page_reads_like_neis(idx):
     dims = preview["slots"][4:]
     assert [(s["x"], s["alternatives"][0]["key"]) for s in dims] == [(2, CALLISTO), (20, CERES)]
     assert dims[0]["y"] == preview["texts"][-1]["y"] + 10
+    # Hovering a dimension gives the vein's share of that dimension's veins.
+    assert [s.get("note") for s in dims] == ["Chance per ore chunk: 25%", "Chance per ore chunk: 100%"]
     assert preview["height"] == dims[0]["y"] + 20
     assert row["ore_gen"] == {"kind": "vein", "name": "Samarium Vein", "height": "10-40", "weight": 10, "size": 16,
                               "density": 2, "dim_heights": {"Ca": "10-40"}}
@@ -126,6 +132,13 @@ def test_small_ore_page(idx):
     assert [(s["x"], s["y"]) for s in slots[:2]] == [(2, 16), (20, 16)]
     assert row["preview"]["texts"][1]["x"] == 42
     assert slots[2]["alternatives"][0]["chance"] == 25
+    assert all("note" not in s for s in slots)  # Small ores have no chance tooltip in game.
+
+
+def test_chunk_chance_reads_like_neis_0_hash_hash_format():
+    assert recipe_viewer.chunk_chance(1 / 3) == "Chance per ore chunk: 33.33%"
+    assert recipe_viewer.chunk_chance(0.125) == "Chance per ore chunk: 12.5%"
+    assert recipe_viewer.chunk_chance(None) is None
 
 
 def test_find_recipes_says_where_an_ore_generates(idx, monkeypatch):
@@ -138,6 +151,7 @@ def test_find_recipes_says_where_an_ore_generates(idx, monkeypatch):
     assert vein["ore_generation"] == {
         "kind": "vein", "name": "Samarium Vein", "height": "10-40", "weight": 10, "size": 16, "density": 2,
         "dim_heights": {"Ca": "10-40"}, "dimensions": ["Callisto", "Ceres"],
+        "chance_per_ore_chunk_percent": {"Callisto": 25.0, "Ceres": 100.0},
         "layers": [{"layer": "primary", "ore": "Callisto Samarium Ore"}, {"layer": "secondary", "ore": "Callisto Neodymium Ore"},
                    {"layer": "between", "ore": "Callisto Tartarite Ore"}, {"layer": "sporadic", "ore": "Callisto Tartarite Ore"}]}
 

@@ -948,6 +948,10 @@ def find_recipes(user, args):
             row["outputs"] = []
             where = {**recipe_viewer.ore_gen_summary(b),
                      "dimensions": [s["name"] for s in stacks(b["dims"], "item", item_names)]}
+            if b.get("dim_chances"):
+                where["chance_per_ore_chunk_percent"] = {
+                    name: round(chance * 100, 2) for name, chance in zip(where["dimensions"], b["dim_chances"], strict=False)
+                    if chance is not None}
             if b["type"] == "ore_vein":
                 where["layers"] = [{"layer": layer["role"], "ore": stacks(layer["alts"][:1], "item", item_names)[0]["name"]}
                                    for layer in b["layers"]]
@@ -1696,7 +1700,7 @@ TOOLS = [
             "and other Forestry genome items are looked up by species (\"Diligent Princess\"): their keys end "
             "in a species variant, and a bee's breeding recipes give the mutation chance and conditions. "
             "An ore's \"Vein Stats\" and \"Small Ore Stats\" entries say where it generates (ore_generation: "
-            "layers or drops, dimensions, height, weight). "
+            "layers or drops, dimensions, height, weight, and a vein's chance per ore chunk in each dimension). "
             "An ore's \"GregTech Ore Processing\" entry is its whole processing tree, as steps (input, machine, "
             "outputs with chances); Space Mining recipes give space_mining (module tier, distance, asteroid size, "
             "computation per second, weight)."
