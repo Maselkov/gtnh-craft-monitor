@@ -65,8 +65,18 @@ final class NeiRecipes {
                 report.put("registered",count);
                 List<Object> recipes=new ArrayList<>();
                 List<Object> archive=new ArrayList<>();
+                List<Object> oreGen=new ArrayList<>();
                 Map<String,Integer> skipped=new TreeMap<>();
+                boolean ores=cls.equals(VEIN_STATS) || cls.equals(SMALL_ORE_STATS);
                 for(int i=0;i<count;i++) {
+                    if(ores) {
+                        try { oreGen.add(oreGen(h,i)); }
+                        catch(Throwable e) {
+                            try { archive.add(raw(h,i)); skipped.merge("archived_unreadable_display",1,Integer::sum); }
+                            catch(Throwable unavailable) { skipped.merge("unreadable_display",1,Integer::sum); }
+                        }
+                        continue;
+                    }
                     try {
                         Map<String,Object> body=body(h,i);
                         if (body!=null) recipes.add(body);
@@ -76,15 +86,16 @@ final class NeiRecipes {
                         catch(Throwable unavailable) { skipped.merge("unreadable_display",1,Integer::sum); }
                     }
                 }
-                report.put("exported",recipes.size()); report.put("skipped",skipped);
-                report.put("status",count==0 ? "not_enumerable" : recipes.isEmpty() ? "informational_or_unsupported" : "display");
-                if (!recipes.isEmpty() || !archive.isEmpty()) {
+                report.put("exported",recipes.size()+oreGen.size()); report.put("skipped",skipped);
+                report.put("status",count==0 ? "not_enumerable" : recipes.isEmpty() && oreGen.isEmpty() ? "informational_or_unsupported" : "display");
+                if (!recipes.isEmpty() || !archive.isEmpty() || !oreGen.isEmpty()) {
                     List<Object> machines=new ArrayList<>();
                     machines.add(AssemblyRecipes.machine(original.getRecipeName(),null));
                     for(PositionedStack catalyst:RecipeCatalysts.getRecipeCatalysts(overlay==null?original.getHandlerId():overlay)) {
                         if(catalyst.item!=null) machines.add(AssemblyRecipes.machine(catalyst.item.getDisplayName(),Recipes.keyOf(catalyst.item)));
                     }
                     Map<String,Object> map=new LinkedHashMap<>();map.put("machines",machines);map.put("recipes",recipes);map.put("archive",archive);
+                    if(!oreGen.isEmpty()) map.put("ore_gen",oreGen);
                     String icon=tabIcon(original);
                     if(icon!=null) map.put("icon",icon);
                     maps.put("nei."+id,map);
@@ -161,6 +172,90 @@ final class NeiRecipes {
         if(!costs.isEmpty()) body.put("requirements",costs);
         body.put("approximate",Collections.singletonList("nei_display"));
         return body;
+    }
+
+    // gtneioreplugin's pages: where ores generate. NEI gives them no result
+    // and draws their numbers rather than stacking them, so the generic path
+    // would only archive them; their cached recipes have it all.
+    static final String VEIN_STATS="gtneioreplugin.plugin.gregtech5.PluginGT5VeinStat";
+    static final String SMALL_ORE_STATS="gtneioreplugin.plugin.gregtech5.PluginGT5SmallOreStat";
+    private static final String[][] VEIN_LAYERS={{"primary","positionedStackPrimary"},{"secondary","positionedStackSecondary"},
+            {"between","positionedStackBetween"},{"sporadic","positionedStackSporadic"}};
+
+    /** A vein's or small ore's record for the bundle's ore_gen (README's "Bundle format"). */
+    private Map<String,Object> oreGen(IRecipeHandler h,int index) throws ReflectiveOperationException {
+        Field f=TemplateRecipeHandler.class.getDeclaredField("arecipes");f.setAccessible(true);
+        Object cached=((List<?>)f.get(h)).get(index);
+        Map<String,Object> body=new LinkedHashMap<>();
+        Object title=field(cached,"title");
+        List<String> lines=new ArrayList<>();
+        if(title instanceof List) for(Object line:(List<?>)title) if(line!=null) lines.add(line.toString());
+        body.put("name",String.join(" ",lines).trim());
+        Object vein=fieldOrNull(cached,"oreVein");
+        if(vein!=null) {
+            body.put("type","ore_vein");
+            List<Object> layers=new ArrayList<>();
+            for(String[] layer:VEIN_LAYERS) {
+                List<Object> alts=alts((PositionedStack)field(cached,layer[1]),false);
+                if(alts.isEmpty()) continue;
+                Map<String,Object> value=new LinkedHashMap<>();value.put("role",layer[0]);value.put("alts",alts);layers.add(value);
+            }
+            if(layers.isEmpty()) throw new IllegalStateException("vein without ores");
+            body.put("layers",layers);
+            body.put("height",String.valueOf(field(vein,"worldGenHeightRange")));
+            for(String[] key:new String[][]{{"weight","randomWeight"},{"size","size"},{"density","density"}})
+                body.put(key[0],((Number)field(vein,key[1])).intValue());
+            Object heights=fieldOrNull(vein,"dimWorldGenHeightRange");
+            if(heights instanceof Map && !((Map<?,?>)heights).isEmpty()) {
+                Map<String,Object> byDim=new TreeMap<>();
+                for(Map.Entry<?,?> e:((Map<?,?>)heights).entrySet()) byDim.put(String.valueOf(e.getKey()),String.valueOf(e.getValue()));
+                body.put("dim_heights",byDim);
+            }
+        } else {
+            Object small=field(cached,"oreSmall");
+            body.put("type","small_ore");
+            List<Object> ores=alts((PositionedStack)field(cached,"positionedStackOreSmall"),false);
+            if(ores.isEmpty()) throw new IllegalStateException("small ore without ores");
+            body.put("ores",ores);
+            Object dust=fieldOrNull(cached,"positionedStackMaterialDust");
+            if(dust instanceof PositionedStack) body.put("dust",alts((PositionedStack)dust,false));
+            List<Object> drops=new ArrayList<>();
+            Object list=fieldOrNull(cached,"positionedDropStackList");
+            if(list instanceof List) for(Object drop:(List<?>)list) if(drop instanceof PositionedStack) drops.addAll(alts((PositionedStack)drop,true));
+            body.put("drops",drops);
+            body.put("height",String.valueOf(field(small,"worldGenHeightRange")));
+            body.put("amount",((Number)field(small,"amountPerChunk")).intValue());
+        }
+        List<Object> dims=new ArrayList<>();
+        Object displays=fieldOrNull(cached,"dimensionDisplayItems");
+        if(displays instanceof List) for(Object dim:(List<?>)displays) if(dim instanceof PositionedStack) dims.addAll(alts((PositionedStack)dim,false));
+        body.put("dims",dims);
+        return body;
+    }
+
+    /** A stack's item alternatives, as the bundle's stacks; with its labelled chance (drops) when asked. */
+    private List<Object> alts(PositionedStack stack,boolean withChance) {
+        List<Object> out=new ArrayList<>();
+        if(stack==null || stack.items==null) return out;
+        int chance=withChance ? chance(stack) : 0;
+        for(ItemStack item:stack.items) {
+            if(item==null || item.getItem()==null) continue;
+            List<Object> one=owner.stacks(new ItemStack[]{item},chance>0 && chance<10000 ? new int[]{chance} : null);
+            if(one.size()==1 && !out.contains(one.get(0))) out.add(one.get(0));
+        }
+        return out;
+    }
+
+    private static Object field(Object owner,String name) throws ReflectiveOperationException {
+        for(Class<?> c=owner.getClass();c!=null;c=c.getSuperclass()) {
+            try { Field f=c.getDeclaredField(name);f.setAccessible(true);return f.get(owner); }
+            catch(NoSuchFieldException absent) { /* Try the superclass. */ }
+        }
+        throw new NoSuchFieldException(name);
+    }
+
+    private static Object fieldOrNull(Object owner,String name) {
+        try { return field(owner,name); } catch(ReflectiveOperationException absent) { return null; }
     }
 
     private Map<String,Object> raw(IRecipeHandler h,int index) throws Exception {

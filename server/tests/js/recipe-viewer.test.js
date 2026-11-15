@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { amountText, craftingHtml, craftingTitle, energyHtml, gridHtml, machineSidebarHtml, stackHtml, stepHtml, voltageHtml } from '../../static/js/recipe-render.js';
+import { amountText, arrowPoints, craftingHtml, craftingTitle, energyHtml, gridHtml, machineSidebarHtml, stackHtml, stepHtml, voltageHtml, previewHtml } from '../../static/js/recipe-render.js';
 import { RECIPE_RECENT_LIMIT, moveRecipePage, parseRecipeGroups, parseRecipeRecents, recipeGroupQuery, setAllRecipeGroups, setRecipeGroup, recipeCatalogCapacity, recipeCatalogGrid, recipeFromUrl, recipeItemKey, recipeUrl, sameRecipeDataset, trailDistance } from '../../static/js/recipe-state.js';
 
 const item = { key: 'mod:item:*', name: 'Any Item', mod: 'mod', internal: 'item', damage: null, kind: 'item', size: 1, wildcard: true };
@@ -287,4 +287,15 @@ test('item group state is validated, bounded and turned into the search query', 
   for (let id = 0; id < 300; id++) many = setRecipeGroup(many, id, true);
   assert.equal(many.open.length, 128);
   assert.equal(many.open.at(-1), 299);
+});
+
+test('an ore processing diagram draws its lines and arrows in the canvas ink, tips on the slot edges', () => {
+  assert.equal(arrowPoints({x: 57, y: 84, dir: 'S'}), '57,84 60,80 54,80');
+  assert.equal(arrowPoints({x: 66, y: 201, dir: 'W'}), '66,201 70,198 70,204');
+  const step = {id: 1, preview: {family: 'ore_tree', width: 166, height: 230, slots: [], layers: [], aspects: [],
+    lines: [{x1: 57, y1: 93, x2: 81, y2: 93}], arrows: [{x: 57, y: 84, dir: 'S'}]}};
+  const html = previewHtml(step);
+  assert.match(html, /<line class="recipe-ore-line" x1="57" y1="93" x2="81" y2="93"\/>/);
+  assert.match(html, /<polygon class="recipe-ore-arrow" points="57,84 60,80 54,80"\/>/);
+  assert.doesNotMatch(html, /recipe-tree-line/);
 });

@@ -630,6 +630,26 @@ def test_presentation_contract_keeps_exact_display_references():
         validate.validate_recipes(data)
 
 
+@pytest.mark.parametrize('change,why', [
+    (lambda r: r.update(type='vein'), 'invalid ore generation record'),
+    (lambda r: r['layers'][0].update(role='core'), 'vein without ore layers'),
+    (lambda r: r['layers'][0]['alts'].append([99, 1]), 'intern reference'),
+    (lambda r: r['dims'].append([0, 1, None, ['missing']]), 'unknown display stack reference'),
+    (lambda r: r.update(weight=None), 'invalid vein numbers'),
+])
+def test_ore_generation_records_are_validated(change, why):
+    data = recipe_fixture4()
+    vein = {'type': 'ore_vein', 'name': 'Log Vein', 'height': '10-40', 'weight': 10, 'size': 16, 'density': 2,
+            'layers': [{'role': 'primary', 'alts': [[0, 1, None, []]]}], 'dims': [[0, 1, None, []]]}
+    small = {'type': 'small_ore', 'name': 'Log', 'height': '5-60', 'amount': 32, 'ores': [[0, 1, None, []]],
+             'drops': [[0, 1, 2500, []]], 'dims': []}
+    data['maps']['nei.ores'] = {'machines': [], 'recipes': [], 'ore_gen': [vein, small]}
+    validate.validate_recipes(data)
+    change(vein)
+    with pytest.raises(ValueError, match=why):
+        validate.validate_recipes(data)
+
+
 def test_preview_only_images_survive_conversion_and_texture_fallback(tmp_path):
     lookup = tmp_path / 'icons_lookup.json'
     lookup.write_text(json.dumps({'by_variant': {'one': 'item/log~nbt.png'},

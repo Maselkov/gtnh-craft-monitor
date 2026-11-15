@@ -265,18 +265,30 @@ export function craftingHtml(step, options = {}) {
   return `<div class="recipe-crafting recipe-grid recipe-grid-w${grid.w}" role="group" aria-label="${craftingTitle(step)}">${previewHtml({...step,preview}, options)}</div>`;
 }
 
+// An arrowhead with its tip at (x, y), pointing dir (N, S, E or W).
+export function arrowPoints({x, y, dir}) {
+  const [dx, dy] = {N:[0,-1], S:[0,1], E:[1,0], W:[-1,0]}[dir] || [0, 1];
+  const bx = x - dx*4, by = y - dy*4;
+  return [[x, y], [bx + dy*3, by + dx*3], [bx - dy*3, by - dx*3]].map(pt => pt.join(',')).join(' ');
+}
+
 export function previewHtml(step, options = {}) {
   const p = step.preview;
   const layers = p.layers.map(layer => {
     const [u, v, right, bottom] = layer.uv;
     return `<svg x="${layer.x}" y="${layer.y}" width="${layer.w}" height="${layer.h}" opacity="${layer.opacity ?? 1}" viewBox="${u} ${v} ${right-u} ${bottom-v}" preserveAspectRatio="none"><image href="${iconUrl(layer.image)}" width="1" height="1" preserveAspectRatio="none"/></svg>`;
   }).join('');
-  // A breeding tree's (BBAB) lines from each bee to its parents, under the slots.
-  const treeLines = (p.lines || []).map(l => `<line class="recipe-tree-line" x1="${l.x1}" y1="${l.y1}" x2="${l.x2}" y2="${l.y2}"/>`).join('');
+  // A breeding tree's (BBAB) lines from each bee to its parents, or an ore
+  // processing diagram's from each step to the next, under the slots.
+  const lineClass = p.family === 'ore_tree' ? 'recipe-ore-line' : 'recipe-tree-line';
+  const treeLines = (p.lines || []).map(l => `<line class="${lineClass}" x1="${l.x1}" y1="${l.y1}" x2="${l.x2}" y2="${l.y2}"/>`).join('')
+    + (p.arrows || []).map(a => `<polygon class="recipe-ore-arrow" points="${arrowPoints(a)}"/>`).join('');
   const treeLabels = (p.labels || []).map((label, i) => {
     const title = label.conditions?.length ? ` title="${escapeHtml(label.conditions.join('\n'))}"` : '';
     return `<span class="recipe-preview-slot recipe-tree-chance" data-id="tree-chance-${i}" data-x="${label.x}" data-y="${label.y}" data-w="${label.w}" data-h="${label.h}"${title}>${escapeHtml(label.text)}</span>`;
   }).join('');
+  // Lines of text on the page itself (where an ore generates), placed like slots.
+  const texts = (p.texts || []).map((t, i) => `<span class="recipe-preview-slot recipe-preview-text${t.title ? ' recipe-preview-title' : ''}${t.align === 'center' ? ' recipe-preview-center' : ''}" data-id="text-${i}" data-x="${t.x}" data-y="${t.y}" data-w="${t.w}" data-h="${t.h}" title="${escapeHtml(t.text)}">${escapeHtml(t.text)}</span>`).join('');
   const slots = p.slots.map((slot, i) => {
     const e = displayChoices(slot.alternatives)[0];
     return `<span class="recipe-preview-slot${slot.crafting ? ' recipe-crafting-slot' : ''}${slot.output ? ' recipe-outputs' : ''}${slot.framed && !slot.frame ? ' recipe-preview-fallback-frame' : ''}" data-id="preview-${i}" data-choice="${step.id}:${slot.choice ?? `preview-${i}`}" data-x="${slot.x}" data-y="${slot.y}" data-w="${slot.w}" data-h="${slot.h}">${slot.frame ? `<img class="recipe-preview-frame" src="${iconUrl(slot.frame)}" alt="">` : ''}<span class="recipe-preview-choice">${e ? stackHtml(e, {...options, compact:true, preview:true,note:slot.note ?? options.note}) : ''}</span></span>`;
@@ -289,7 +301,7 @@ export function previewHtml(step, options = {}) {
   const aspects = p.aspects.map(a => `<span class="recipe-preview-aspect" ${aspectTooltip(a)}>${a.icon ? `<img src="${iconUrl(a.icon)}" alt="${escapeHtml(a.name)}">` : escapeHtml(a.name)}<span>${a.amount}</span></span>`).join('');
   const arcane = p.family === 'arcane';
   const positionedAspects = arcane ? p.aspects.map(a => `<span class="recipe-preview-slot recipe-preview-aspect recipe-stack-compact" data-id="aspect-${escapeHtml(a.tag)}" data-x="${a.x}" data-y="${a.y}" data-w="${a.w}" data-h="${a.h}" ${aspectTooltip(a)}>${a.icon ? `<img src="${iconUrl(a.icon)}" alt="${escapeHtml(a.name)}">` : escapeHtml(a.name)}<span class="recipe-stack-amount">${a.amount}</span></span>`).join('') : '';
-  return `${p.family === 'infusion' ? '<div class="recipe-preview-paper">' : ''}<div class="recipe-preview${p.family === 'infusion' ? ' recipe-preview-infusion' : ''}" data-width="${p.width}" data-height="${p.height}"><svg class="recipe-preview-layers" viewBox="0 0 ${p.width} ${p.height}" aria-hidden="true">${layers}${treeLines}</svg>${p.family === 'research_station' ? researchWires(step) : ''}${slots}${treeLabels}${positionedAspects}${p.family === 'crafting' ? `<span class="recipe-preview-slot recipe-crafting-arrow" data-x="${33+Math.max(3,step.grid.w)*18}" data-y="${6+Math.max(3,step.grid.h)*9}" data-w="26" data-h="12" aria-hidden="true"></span>` : ''}</div>
+  return `${p.family === 'infusion' ? '<div class="recipe-preview-paper">' : ''}<div class="recipe-preview${p.family === 'infusion' ? ' recipe-preview-infusion' : ''}" data-width="${p.width}" data-height="${p.height}"><svg class="recipe-preview-layers" viewBox="0 0 ${p.width} ${p.height}" aria-hidden="true">${layers}${treeLines}</svg>${p.family === 'research_station' ? researchWires(step) : ''}${slots}${treeLabels}${texts}${positionedAspects}${p.family === 'crafting' ? `<span class="recipe-preview-slot recipe-crafting-arrow" data-x="${33+Math.max(3,step.grid.w)*18}" data-y="${6+Math.max(3,step.grid.h)*9}" data-w="26" data-h="12" aria-hidden="true"></span>` : ''}</div>
     ${p.family === 'infusion' ? `<div class="recipe-preview-instability">Instability: ${escapeHtml(String(step.requirements?.instability ?? '?'))}</div>` : ''}
     ${aspects && !arcane ? `<div class="recipe-preview-aspects">${aspects}</div>` : ''}
     ${p.family === 'infusion' ? '</div>' : ''}

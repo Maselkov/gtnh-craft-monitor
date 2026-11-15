@@ -146,6 +146,29 @@ ITEMS = [
     ("\u00a7a16k\u00a7r ME Storage Component", "circuit", (60, 140, 60)),
     # Newer than the selected game data: see NEWER_ITEM.
     ("Reinforced Neutronium Casing", "block", (70, 70, 80)),
+    # An ore and its processing (ore_maps()), and the machines that do it.
+    ("Samarium Ore", "block", (150, 190, 240)),
+    ("Raw Samarium Ore", "gem", (150, 190, 240)),
+    ("Crushed Samarium Ore", "dust", (200, 120, 70)),
+    ("Purified Samarium Ore", "dust", (220, 140, 90)),
+    ("Centrifuged Samarium Ore", "dust", (180, 100, 60)),
+    ("Impure Pile of Samarium Dust", "dust", (190, 110, 80)),
+    ("Purified Pile of Samarium Dust", "dust", (230, 170, 190)),
+    ("Samarium Ore Concentrate Dust", "dust", (240, 130, 60)),
+    ("Stone Dust", "dust", (130, 130, 130)),
+    ("Basic Macerator", "block", (110, 110, 140)),
+    ("Basic Ore Washing Plant", "block", (90, 140, 190)),
+    ("Basic Thermal Centrifuge", "block", (60, 60, 60)),
+    ("Basic Centrifuge", "block", (120, 120, 150)),
+    ("Space Mining Module Mk-I", "block", (40, 110, 160)),
+    ("Mining Drone MK-I", "rod", (90, 90, 100)),
+    # Where it generates (ore_maps()): a vein's other ores and the
+    # dimensions gtneioreplugin shows as display blocks.
+    ("Neodymium Ore", "block", (120, 160, 220)),
+    ("Tartarite Ore", "block", (200, 120, 110)),
+    ("Callisto", "block", (150, 110, 170)),
+    ("Ceres", "block", (170, 130, 80)),
+    ("Triton", "block", (190, 220, 240)),
     ("Ordo", "essentia", None),
     ("Metallum", "essentia", None),
     ("Praecantatio", "essentia", None),
@@ -791,7 +814,59 @@ def recipe_maps(changed):
         "approximate": ["nei_display"],
     }]}
     maps.update(bee_maps())
+    maps.update(ore_maps())
     return maps
+
+
+def ore_maps():
+    """An ore's processing, which the index composes into a GregTech Ore
+    Processing diagram (gcm/ore_processing.py), and a Space Mining
+    recipe that mines it. Illustrative amounts and chances."""
+    k = _recipe_key
+    ore, raw, crushed = k("Samarium Ore"), k("Raw Samarium Ore"), k("Crushed Samarium Ore")
+    purified, centrifuged = k("Purified Samarium Ore"), k("Centrifuged Samarium Ore")
+    impure, pure_dust, dust = k("Impure Pile of Samarium Dust"), k("Purified Pile of Samarium Dust"), k("Samarium Ore Concentrate Dust")
+    stone = k("Stone Dust")
+
+    def gt(inputs, outputs, fluids=()):
+        return {"i": [[key, 1] for key in inputs], "o": [list(o) for o in outputs],
+                "f": [[_recipe_key(f), 1000] for f in fluids], "e": 16, "d": 400}
+
+    def machine(name):
+        return {"name": name, "key": k(name)}
+    return {
+        "gt.recipe.macerator": {"machines": [machine("Basic Macerator")], "recipes": [
+            gt([ore], [(crushed, 2), (dust, 2, 1000), (stone, 1, 5000)]),
+            gt([raw], [(crushed, 2), (dust, 2, 500)]),
+            gt([crushed], [(impure, 1), (dust, 2, 1000)]),
+            gt([purified], [(pure_dust, 1), (dust, 2, 1000)]),
+            gt([centrifuged], [(dust, 2), (dust, 2, 1000)])]},
+        "gt.recipe.orewasher": {"machines": [machine("Basic Ore Washing Plant")], "recipes": [
+            gt([crushed], [(purified, 1), (dust, 2, 1111), (stone, 1)], fluids=["Water"])]},
+        "gt.recipe.thermalcentrifuge": {"machines": [machine("Basic Thermal Centrifuge")], "recipes": [
+            gt([crushed], [(centrifuged, 1), (dust, 2, 1111)]),
+            gt([purified], [(centrifuged, 1), (dust, 2, 1111)])]},
+        "gt.recipe.centrifuge": {"machines": [machine("Basic Centrifuge")], "recipes": [
+            gt([impure], [(dust, 2), (dust, 2, 1111)]),
+            gt([pure_dust], [(dust, 2), (dust, 2, 1111)])]},
+        # gtneioreplugin's pages, as the exporter writes them (NeiRecipes.oreGen).
+        "nei.gtneioreplugin.plugin.gregtech5.PluginGT5VeinStat::": {
+            "machines": ["Vein Stats"], "recipes": [], "icon": ore, "ore_gen": [{
+                "type": "ore_vein", "name": "Samarium Vein", "height": "10-40", "weight": 10, "size": 16, "density": 2,
+                "layers": [{"role": "primary", "alts": [[ore, 1]]}, {"role": "secondary", "alts": [[k("Neodymium Ore"), 1]]},
+                           {"role": "between", "alts": [[k("Tartarite Ore"), 1]]}, {"role": "sporadic", "alts": [[k("Tartarite Ore"), 1]]}],
+                "dims": [[k(d), 1] for d in ("Callisto", "Ceres", "Triton")]}]},
+        "nei.gtneioreplugin.plugin.gregtech5.PluginGT5SmallOreStat::": {
+            "machines": ["Small Ore Stats"], "recipes": [], "icon": ore, "ore_gen": [{
+                "type": "small_ore", "name": "Samarium", "height": "5-60", "amount": 32, "ores": [[ore, 1]],
+                "dust": [[dust, 1]], "drops": [[k("Samarium Ore Concentrate Dust"), 1, 2500]], "dims": [[k("Ceres"), 1]]}]},
+        "gt.recipe.spaceMining": {"machines": [machine("Space Mining Module Mk-I")], "recipes": [{
+            "i": [[k("Mining Drone MK-I"), 0], [k("Osmium Rod"), 4]], "o": [[ore, 64, 5000], [raw, 64, 3500]],
+            "e": 7680, "d": 50, "requirements": {"metadata": {
+                "space_elevator_module_tier": 1,
+                "space_mining_data": {"asteroidName": "samariumAsteroid", "computation": 20, "minDistance": 5,
+                                      "maxDistance": 20, "minSize": 10, "maxSize": 20, "recipeWeight": 120}}}}]},
+    }
 
 
 def bee_maps():
@@ -883,6 +958,11 @@ def write_recipes(path, maps):
                     recipe[side] = [stack(table, alt) for alt in r[side]]
             recipes.append(recipe)
         out[map_name] = {"machines": [m if isinstance(m, dict) else {"name": m, "key": None} for m in entry["machines"]], "recipes": recipes}
+        if entry.get("ore_gen"):
+            out[map_name]["ore_gen"] = [{
+                **r, **{field: [stack("items", alt) for alt in r[field]] for field in ("dims", "ores", "dust", "drops") if field in r},
+                **({"layers": [{**layer, "alts": [stack("items", alt) for alt in layer["alts"]]} for layer in r["layers"]]}
+                   if "layers" in r else {})} for r in entry["ore_gen"]]
         if entry.get("icon"):
             out[map_name]["icon"] = entry["icon"]
     names = {_recipe_key(it["name"]): it["name"] for it in CATALOG if it["kind"] != "essentia"}

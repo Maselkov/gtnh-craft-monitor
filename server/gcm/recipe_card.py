@@ -160,7 +160,8 @@ def _preview_scene(row):
                    for a in p.get("aspects", []) if "x" in a]
     return {"width": p["width"], "height": p["height"], "slots": slots, "layers": p.get("layers", []),
             "lines": p.get("lines", []), "labels": p.get("labels", []), "aspects": aspects, "arrow": None,
-            "wires": p.get("family") == "research_station"}
+            "wires": p.get("family") == "research_station", "ore": p.get("family") == "ore_tree",
+            "arrows": p.get("arrows", []), "texts": p.get("texts", [])}
 
 
 def _plain_scene(row):
@@ -647,8 +648,14 @@ def render(page):
     if layout.get("wires"):
         _draw_wires(draw, ox, oy, s, layout["width"], layout["height"])
     for line in layout["lines"]:
+        # recipe-render.js: an ore diagram's lines are the canvas ink, 2px.
         draw.line([ox + line["x1"] * s, oy + line["y1"] * s, ox + line["x2"] * s, oy + line["y2"] * s],
-                  fill=TREE_LINE, width=s)
+                  fill=INK if layout.get("ore") else TREE_LINE, width=2 * s if layout.get("ore") else s)
+    for a in layout.get("arrows", []):
+        dx, dy = {"N": (0, -1), "S": (0, 1), "E": (1, 0), "W": (-1, 0)}.get(a["dir"], (0, 1))
+        bx, by = a["x"] - dx * 4, a["y"] - dy * 4
+        draw.polygon([(ox + px * s, oy + py * s) for px, py in
+                      ((a["x"], a["y"]), (bx + dy * 3, by + dx * 3), (bx - dy * 3, by - dx * 3))], fill=INK)
     arrow = layout["arrow"]
     if arrow:
         x, y, w, h = box(arrow)
@@ -690,6 +697,15 @@ def render(page):
         tx, ty = x + w - font.getlength(count), y + h - 8 * s
         draw.text((tx + s, ty + s), count, font=font, fill=COUNT_SHADOW)
         draw.text((tx, ty), count, font=font, fill=COUNT)
+    for t in layout.get("texts", []):
+        # recipe-render.js's preview text: one line, cut to its box.
+        x, y, w, _h = box(t)
+        font = _font(8 * s)
+        text = glyphs(t.get("text", ""))
+        while text and font.getlength(text) > w:
+            text = text[:-1]
+        tx = x + (w - font.getlength(text)) / 2 if t.get("align") == "center" else x
+        draw.text((tx, y), text, font=font, fill=INK)
     for label in layout["labels"]:
         x, y, w, _h = box(label)
         text = glyphs(label.get("text", ""))

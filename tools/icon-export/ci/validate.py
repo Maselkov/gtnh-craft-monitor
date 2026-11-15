@@ -253,6 +253,21 @@ def validate_recipes(data):
             for key in ("requirements", "snapshot"):
                 if key in r:
                     require(isinstance(r[key], dict), f"invalid {key}")
+        # gtneioreplugin's Vein Stats and Small Ore Stats (NeiRecipes.oreGen).
+        for r in entry.get("ore_gen", []):
+            require(isinstance(r, dict) and r.get("type") in ("ore_vein", "small_ore")
+                    and isinstance(r.get("name"), str) and isinstance(r.get("height"), str), "invalid ore generation record")
+            for field in ("dims", "ores", "dust", "drops"):
+                stacks(r.get(field, []), "items")
+            if r["type"] == "ore_vein":
+                require(isinstance(r.get("layers"), list) and r["layers"] and all(
+                    isinstance(layer, dict) and layer.get("role") in ("primary", "secondary", "between", "sporadic")
+                    and layer.get("alts") for layer in r["layers"]), "vein without ore layers")
+                for layer in r["layers"]:
+                    stacks(layer["alts"], "items")
+                require(all(type(r.get(k)) is int and r[k] >= 0 for k in ("weight", "size", "density")), "invalid vein numbers")
+            else:
+                require(r.get("ores") and type(r.get("amount")) is int and r["amount"] >= 0, "invalid small ore")
 
     coverage = data.get("coverage")
     require(isinstance(coverage, dict) and coverage.get("identity") == "item_id_damage", "missing identity coverage")

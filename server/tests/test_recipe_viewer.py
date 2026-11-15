@@ -176,6 +176,21 @@ def test_nei_metadata_fluid_display_is_distinct_from_production_inputs(data, mon
     assert row['requirement_notes'] == ['Needs Cleanroom', 'Max Nanite Tier:', 'Magmatter (Tier 10)']
 
 
+def test_space_mining_prints_neis_conditions_instead_of_raw_metadata(data):
+    body = {'type': 'gt', 'i': [['gtnhintergalactic:item.MiningDrone:0', 0]], 'o': [['gregtech:gt.blockores2:2535', 64, 7000]],
+            'f': [], 'g': [], 'e': 7680, 'd': 50, 's': 0,
+            'requirements': {'metadata': {'space_elevator_module_tier': 1, 'space_mining_data': {
+                'asteroidName': 'coalAsteroid', 'class': 'gtnhintergalactic.recipe.SpaceMiningData', 'computation': 20,
+                'minDistance': 5, 'maxDistance': 20, 'minSize': 10, 'maxSize': 20, 'recipeWeight': 120}}}}
+    row = recipe_viewer.present_recipes([(1, 'gt.recipe.spaceMining', body)], data)[0]
+    assert row['requirement_notes'] == ['Needs Mk-1 Module', 'Distance: 5-20', 'Size: 10-20',
+                                        'Min Computation: 20 /s', 'Weight: 120']
+    assert recipe_viewer.space_mining(body['requirements']) == {
+        'module_tier': 1, 'distance': {'min': 5, 'max': 20}, 'size': {'min': 10, 'max': 20},
+        'computation_per_second': 20, 'weight': 120}
+    assert recipe_viewer.space_mining({'metadata': {'cleanroom': True}}) is None
+
+
 @pytest.mark.parametrize('shape,layers', [('shaped', 3), ('shapeless', 1)])
 def test_arcane_preview_uses_aspect_glyphs_and_short_research_without_raw_nei_fields(data, shape, layers):
     data.presentation['aspects']['ordo'] = {'name': 'Order', 'icon': 'aspect/ordo.webp'}

@@ -29,6 +29,7 @@ key matches only that species; the bare key still matches all of them."""
 
 import gzip
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -43,11 +44,14 @@ from urllib.parse import quote
 
 # Bumped when the schema or what goes in it changes: an index of another
 # format is built again.
-FORMAT = 9
+FORMAT = 10
 # An index built beside a bundle's recipes.json.gz is called this.
 FILE = "recipes.sqlite"
 ITEM, FLUID = 0, 1
-NON_GT_MAPS = frozenset({"crafting", "furnace", "assembly_line"})
+# The map of GregTech ore processing diagrams, which the index composes
+# from its own GT recipes (ore_processing.py).
+ORE_PROCESSING_MAP = "ore_processing"
+NON_GT_MAPS = frozenset({"crafting", "furnace", "assembly_line", ORE_PROCESSING_MAP})
 # These NEI diagrams show the researched target as a fake output. Treating
 # them as production would claim that scanning an item manufactures it.
 REFERENCE_ONLY_MAPS = frozenset({"nei.gt.gt.recipe.fakeAssemblylineProcess",
@@ -294,6 +298,66 @@ def _body(recipe, map_name, items, fluids, source_format):
     return body
 
 
+def _ore_gen_body(record, items):
+    """A map's ore_gen record (gtneioreplugin's Vein Stats or Small Ore
+    Stats page) as the index keeps it: where an ore generates. Its ores are
+    its outputs and its dimensions' display blocks its inputs, as NEI looks
+    them up; "o" and "i" hold them, each once."""
+    if not isinstance(record, dict) or record.get("type") not in ("ore_vein", "small_ore"):
+        raise ValueError("invalid ore generation record")
+
+    def stacks(value):
+        return _checked_stacks(value, items, variants=True)
+
+    def text(value):
+        if not isinstance(value, str) or len(value) > 256:
+            raise ValueError("invalid ore generation text")
+        return value
+
+    def number(value):
+        if type(value) is not int or not 0 <= value <= 1_000_000:
+            raise ValueError("invalid ore generation number")
+        return value
+    body = {"type": record["type"], "name": text(record.get("name", "")), "dims": stacks(record.get("dims", [])),
+            "height": text(record.get("height", ""))}
+    if record["type"] == "ore_vein":
+        layers = record.get("layers")
+        if not isinstance(layers, list) or not 1 <= len(layers) <= 8:
+            raise ValueError("vein needs ore layers")
+        body["layers"] = []
+        for layer in layers:
+            if not isinstance(layer, dict) or layer.get("role") not in ("primary", "secondary", "between", "sporadic"):
+                raise ValueError("invalid vein layer")
+            alts = stacks(layer.get("alts"))
+            if not alts:
+                raise ValueError("vein layer without ores")
+            body["layers"].append({"role": layer["role"], "alts": alts})
+        for key in ("weight", "size", "density"):
+            body[key] = number(record.get(key))
+        heights = record.get("dim_heights", {})
+        if not isinstance(heights, dict) or len(heights) > 64:
+            raise ValueError("invalid per-dimension heights")
+        if heights:
+            body["dim_heights"] = {text(k): text(v) for k, v in heights.items()}
+        ores = [s for layer in body["layers"] for s in layer["alts"]]
+    else:
+        body["ores"] = stacks(record.get("ores"))
+        if not body["ores"]:
+            raise ValueError("small ore without ores")
+        body["dust"] = stacks(record.get("dust", []))
+        body["drops"] = stacks(record.get("drops", []))
+        body["amount"] = number(record.get("amount"))
+        ores = body["ores"] + body["dust"] + body["drops"]
+
+    def once(values):
+        seen = {}
+        for s in values:
+            seen.setdefault(s[0], [s[0], 1])
+        return list(seen.values())
+    body.update(i=once(body["dims"]), o=once(ores), f=[], g=[])
+    return body
+
+
 class _JSONStream:
     """Small standard-library JSON reader: decode individual values, not
     the recipes array or a whole map. The JSON decoder still handles strings,
@@ -398,6 +462,9 @@ def _source_events(source_file):
                     elif field == "archive":
                         for _ in reader.values():
                             pass
+                    elif field == "ore_gen":
+                        for body in reader.values():
+                            yield "ore_gen", map_name, body
                     elif field == "preview":
                         yield "layout", map_name, reader.value()
                     elif field == "machines":
@@ -472,6 +539,16 @@ def _build(source_file, out_path, raw, map_ids, signature, species=None):
                 if isinstance(value, str) and 0 < len(value) <= 512:
                     conn.execute("INSERT OR REPLACE INTO map_icon VALUES (?, ?)", (map_ids[map_name], value))
                 continue
+            if event == "ore_gen":
+                body = _ore_gen_body(value, items)
+                stacks = [s for side in ("i", "o") for s in body[side]] + [s for field in ("dust", "drops") for s in body.get(field, [])]
+                conn.executemany("INSERT OR IGNORE INTO display_ref VALUES (?)",
+                                 ((ref,) for stack in stacks if len(stack) == 4 for ref in stack[3]))
+                conn.execute("INSERT INTO recipe VALUES (?, ?, 3, 0, 0, ?)", (recipe_id, map_ids[map_name], json.dumps(body)))
+                conn.executemany("INSERT OR IGNORE INTO output VALUES (?, ?, ?)", ((ITEM, o[0], recipe_id) for o in body["o"]))
+                conn.executemany("INSERT OR IGNORE INTO input VALUES (?, ?, ?)", ((ITEM, i[0], recipe_id) for i in body["i"]))
+                recipe_id += 1
+                continue
             if event not in ("machines", "recipe"):
                 continue
             map_id = map_ids[map_name]
@@ -518,6 +595,7 @@ def _build(source_file, out_path, raw, map_ids, signature, species=None):
                 inputs.add((ITEM, body["research"]["item"][0]))
             conn.executemany("INSERT INTO input VALUES (?, ?, ?)", ((kind, k, recipe_id) for kind, k in inputs))
             recipe_id += 1
+        recipe_id = _ore_processing(conn, map_ids, items, raw.get("item_names"), recipe_id)
         if conn.execute("SELECT 1 FROM display_ref r LEFT JOIN display_stack s ON s.id = r.id WHERE s.id IS NULL LIMIT 1").fetchone():
             raise ValueError("unknown display stack reference")
         for kind, keys, names in ((ITEM, items, raw.get("item_names")), (FLUID, fluids, raw.get("fluid_names"))):
@@ -546,6 +624,47 @@ def _build(source_file, out_path, raw, map_ids, signature, species=None):
         if not complete:
             os.remove(tmp)
     os.replace(tmp, out_path)
+
+
+def _ore_processing_module():
+    # By path: the build runs this file alone (python -I), outside the gcm package.
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ore_processing.py")
+    spec = importlib.util.spec_from_file_location("gcm_ore_processing", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _ore_processing(conn, map_ids, items, item_names, recipe_id):
+    """Add the ore processing diagrams, composed from the GT recipes just
+    indexed, as one more map; returns the next recipe id."""
+    ore = _ore_processing_module()
+    if ORE_PROCESSING_MAP in map_ids or not all(name in map_ids for name in ore.REQUIRED_MAPS):
+        return recipe_id
+    wanted = {map_ids[name]: name for name in ore.MAPS if name in map_ids}
+    marks = ",".join("?" * len(wanted))
+    rows = [(wanted[m], json.loads(body)) for m, body in conn.execute(
+        f"SELECT map, body FROM recipe WHERE map IN ({marks}) AND json_extract(body, '$.type') = 'gt' ORDER BY id",
+        tuple(wanted))]
+    machines = {wanted[m]: [json.loads(v) for (v,) in conn.execute(
+        "SELECT v FROM machine WHERE map = ? ORDER BY seq", (m,))] for m in wanted}
+    names = dict(zip(items, item_names, strict=False)) if isinstance(item_names, list) else {}
+    diagrams = ore.compose(rows, machines, names)
+    if not diagrams:
+        return recipe_id
+    map_id = max(map_ids.values(), default=-1) + 1
+    map_ids[ORE_PROCESSING_MAP] = map_id
+    conn.execute("INSERT INTO map VALUES (?, ?)", (map_id, ORE_PROCESSING_MAP))
+    conn.execute("INSERT INTO machine VALUES (?, 0, ?)", (map_id, json.dumps({"name": ore.TITLE, "key": None})))
+    # NEI Custom Diagram's tab shows an ore block: iron's, where there is one.
+    iron = next((d for d in diagrams if names.get(d["crushed"]) == "Crushed Iron Ore"), diagrams[0])
+    conn.execute("INSERT INTO map_icon VALUES (?, ?)", (map_id, iron["groups"][0]["alts"][0][0]))
+    for body in diagrams:
+        conn.execute("INSERT INTO recipe VALUES (?, ?, 4, 0, 0, ?)", (recipe_id, map_id, json.dumps(body)))
+        conn.executemany("INSERT OR IGNORE INTO output VALUES (?, ?, ?)", ((ITEM, o[0], recipe_id) for o in body["o"]))
+        conn.executemany("INSERT OR IGNORE INTO input VALUES (?, ?, ?)", ((ITEM, i[0], recipe_id) for i in body["i"]))
+        recipe_id += 1
+    return recipe_id
 
 
 def _catalog_order(conn, raw, items):
