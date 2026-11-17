@@ -81,6 +81,62 @@ test("request_with_timeout fails without an Internet Card", function()
   t.truthy(err)
 end)
 
+-- Takes every connection the card has, as other scripts on the computer
+-- would; returns the handles.
+local function fill_card(env)
+  local internet = env.globals.require("component").internet
+  local held = {}
+  for i = 1, env.max_connections do
+    held[i] = internet.request("http://gcm.test/other", "{}")
+  end
+  return held
+end
+
+test("request_with_timeout waits for a connection when the card is full", function()
+  local env, http = http_lib({ ["POST /x"] = { status = 200, body = "done" } })
+  local held = fill_card(env)
+  env:spawn(function()
+    env:sleep(3)
+    held[1].close()
+  end, "other script")
+  local ok, body
+  env:spawn(function()
+    ok, body = http.request_with_timeout("http://gcm.test/x", "{}", {}, 20)
+  end, "caller")
+  env:run()
+  t.eq(ok, true, body)
+  t.eq(body, "done")
+  t.near(env.requests[#env.requests].at, 3, 0.3, "sent once a connection was free")
+end)
+
+test("request_with_timeout gives up on a card that stays full", function()
+  local env, http = http_lib({ ["POST /x"] = { status = 200, body = "done" } })
+  fill_card(env)
+  local ok, err = http.request_with_timeout("http://gcm.test/x", "{}", {}, 20)
+  t.eq(ok, false)
+  t.truthy(err:find("too many open connections", 1, true), err)
+  t.truthy(err:find("(waited 20s)", 1, true), err)
+  t.near(env.now, 20, 0.5)
+  t.eq(#env:requests_to("/x"), 0, "never sent")
+  t.eq(env.open_connections, env.max_connections, "took no connection of its own")
+end)
+
+test("download_to_file waits for a connection when the card is full", function()
+  local env, http = http_lib({ ["GET /file"] = { status = 200, body = "data" } })
+  local held = fill_card(env)
+  env:spawn(function()
+    env:sleep(2)
+    held[2].close()
+  end, "other script")
+  local ok
+  env:spawn(function()
+    ok = http.download_to_file("http://gcm.test/file", "/home/out.txt", {}, 20)
+  end, "caller")
+  env:run()
+  t.eq(ok, true)
+  t.eq(env:read_file("/home/out.txt"), "data")
+end)
+
 test("download_to_file writes the body", function()
   local env, http = http_lib({ ["GET /file"] = { status = 200, body = "line1\nline2\n", connect_delay = 0.3 } })
   t.eq(http.download_to_file("http://gcm.test/file", "/home/out.txt", {}, 20), true)

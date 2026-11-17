@@ -61,29 +61,50 @@ local function real_seconds_elapsed(startSeconds)
   return computer.uptime() - startSeconds
 end
 
+-- How often to ask again for a connection while the card is full.
+local CONNECTION_RETRY_SECONDS = 0.25
+
 -- The Internet Card's handle for a new request, or nil and why not.
-local function open_request(url, body, headers)
-  local ok, handle, reason = pcall(function()
-    return component.internet.request(url, body, headers)
-  end)
-  if not ok or not handle then
-    return nil, tostring(ok and reason or handle)
+-- A card holds only a few connections at once (OC's maxTcpConnections,
+-- 4 by default), counted across every script on the computer, and
+-- refuses another with "too many open connections". When the scripts'
+-- requests overlap, a slot frees as soon as one of them finishes, so
+-- this asks again until timeoutSeconds have passed instead of failing
+-- the request - a lost batch fails a whole network scan.
+local function open_request(url, body, headers, timeoutSeconds)
+  local started = computer.uptime()
+  while true do
+    local ok, handle, reason = pcall(function()
+      return component.internet.request(url, body, headers)
+    end)
+    if ok and handle then
+      return handle
+    end
+    local err = tostring(ok and reason or handle)
+    if not err:find("too many open connections", 1, true) then
+      return nil, err
+    end
+    local waited = real_seconds_elapsed(started)
+    if waited >= timeoutSeconds then
+      return nil, err .. string.format(" (waited %.0fs)", waited)
+    end
+    os.sleep(CONNECTION_RETRY_SECONDS)
   end
-  return handle
 end
 
 -- Sends a request (a POST with body, a GET without) and reads the whole
 -- response: true and the body, or false and an error message. Gives up
 -- once nothing has arrived for timeoutSeconds, whether the connection
 -- never comes up, the server never answers, or the body stops partway -
--- a connection that goes silent can't hold the script forever. Not
+-- a connection that goes silent can't hold the script forever. A card
+-- with no free connection is waited on for up to timeoutSeconds too. Not
 -- OpenOS's internet.request(): its iterator sleeps in its own loop until
 -- data comes, so nothing can time out a request that never sends any.
 -- As with that iterator, an error status fails the read (the card raises
 -- it, body unread), so a 4xx or 5xx comes back as false and the card's
 -- message.
 local function request_with_timeout(url, body, headers, timeoutSeconds)
-  local handle, requestErr = open_request(url, body, headers)
+  local handle, requestErr = open_request(url, body, headers, timeoutSeconds)
   if not handle then
     return false, requestErr
   end
@@ -121,7 +142,7 @@ end
 -- chunks, takes longer than timeoutSeconds. Returns true, or false and an
 -- error message (the file at path may then be partial).
 local function download_to_file(url, path, headers, timeoutSeconds)
-  local handle, requestErr = open_request(url, nil, headers)
+  local handle, requestErr = open_request(url, nil, headers, timeoutSeconds)
   if not handle then
     return false, requestErr
   end

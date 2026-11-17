@@ -72,6 +72,8 @@ function M.new(opts)
     components = {},
     address_seq = 0,
     http_handler = opts.http_handler,
+    -- The card's connection limit (OC's maxTcpConnections, default 4).
+    max_connections = opts.max_connections or 4,
   }, Env)
   for _, dir in ipairs({ "/home", "/usr/lib", "/etc/rc.d", "/tmp" }) do
     env:mkdir(dir)
@@ -269,6 +271,11 @@ function Env:_internet_card()
     isHttpEnabled = function() return true end,
     isTcpEnabled = function() return false end,
     request = function(url, body, headers, method)
+      -- As the real card: open connections are counted per card, and a
+      -- full card raises rather than returning nil and a reason.
+      if env.open_connections >= env.max_connections then
+        error("too many open connections")
+      end
       local req = {
         method = method or (body and "POST" or "GET"),
         url = url,

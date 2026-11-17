@@ -72,7 +72,11 @@ end
 function M.env(opts)
   opts = opts or {}
   local server = M.server(opts.routes)
-  local env = oc_env.new({ http_handler = server.handle, internet = opts.internet })
+  local env = oc_env.new({
+    http_handler = server.handle,
+    internet = opts.internet,
+    max_connections = opts.max_connections,
+  })
   env.server = server
   local cfg = { SERVER_URL = "http://gcm.test", API_KEY = "test-key" }
   for k, v in pairs(opts.config or {}) do cfg[k] = v end

@@ -103,6 +103,15 @@ the script for good (the likeliest cause of the stuck scans
 left the handle open, holding one of the card's few connections.
 `download_to_file` already worked this way.
 
+Those few connections are OC's `maxTcpConnections` (4 by default),
+counted per Internet Card, so every script on a computer shares them;
+OC's `request()` raises "too many open connections" past it, and only
+the computer the card sits in can use it, so a rack's servers can't
+share or exhaust one card. Scripts overlapping their requests did hit
+it (a scan batch refused, so the whole scan was turned away), so both
+functions wait for a free connection, asking every 0.25s, for up to
+their timeout before failing; any other error fails at once.
+
 **File organization, server side**: `server/app.py` is only the
 entrypoint (`python app.py` to serve, `python app.py new-token <name>`
 for admin recovery). The server itself is the `server/gcm/` package:
