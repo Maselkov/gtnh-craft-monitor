@@ -948,6 +948,9 @@ the network can craft, or with **Add to batch**:
 - in a multiblock kit, which adds the blocks Request would ask for, each
   marked "from *multiblock* kit".
 
+The message that confirms an add has **Open batch**, to go straight to
+it from whichever tab you're on.
+
 Adding an item that's already there adds the amounts up. Change an
 amount in its **Craft** box (mB for a fluid), or remove the item with
 **×**; **Clear** empties the batch. The batch is kept for your account

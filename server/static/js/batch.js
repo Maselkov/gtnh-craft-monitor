@@ -89,6 +89,17 @@ function updateButton() {
   btn.querySelector('button').textContent = n ? `Batch (${n})` : 'Batch';
 }
 
+// Flashes the Network tab's button, when it's on screen, so an added item
+// is seen going in.
+function pulseButton() {
+  const btn = document.querySelector('#networkBatchButton button');
+  if (!btn || !btn.getClientRects().length) return;
+  btn.classList.remove('batch-pulse');
+  void btn.offsetWidth;  // restarts the animation
+  btn.classList.add('batch-pulse');
+  btn.addEventListener('animationend', () => btn.classList.remove('batch-pulse'), { once: true });
+}
+
 // The Network tab's button and its count. Called on sign-in and out.
 export async function refreshBatch() {
   if (!isOperator()) {
@@ -128,7 +139,9 @@ export async function addToBatch(items, what) {
     batch = data;
     updateButton();
     if (batchOpen()) render();
-    showToast(`Added ${what} to the batch (${plural(rows().length, 'item')}). Open it from the Network tab.`);
+    pulseButton();
+    showToast(`Added ${what} to the batch (${plural(rows().length, 'item')}).`, false,
+      { label: 'Open batch', run: () => openBatch() });
     return true;
   } catch (e) {
     showToast('Could not reach server.', true);

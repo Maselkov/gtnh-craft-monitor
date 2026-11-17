@@ -67,13 +67,23 @@ function updateCraftPlanFromInput() {
   if (result.ok) updateCraftPlanAmount(Math.round(result.value));
 }
 
-export function showToast(message, isError) {
+// `action` ({label, run}) adds a button that runs it and closes the toast;
+// such a toast stays a little longer, to give time to reach it.
+export function showToast(message, isError, action) {
   const container = document.getElementById('toastContainer');
   const el = document.createElement('div');
   el.className = 'toast' + (isError ? ' error' : '');
   el.textContent = message;
+  if (action) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'toast-action';
+    btn.textContent = action.label;
+    btn.addEventListener('click', () => { el.remove(); action.run(); });
+    el.append(' ', btn);
+  }
   container.appendChild(el);
-  setTimeout(() => el.remove(), 5000);
+  setTimeout(() => el.remove(), action ? 8000 : 5000);
 }
 
 // ---------- Cancel craft ----------

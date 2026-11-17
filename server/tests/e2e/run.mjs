@@ -4268,7 +4268,8 @@ async function main() {
     await click(`$('#craftRequestBatchBtn')`);
     await waitFor('added, not requested', `!visible($('#craftRequestModal'))
       && $('#toastContainer').textContent.includes('Added Iron Ingot to the batch (1 item)')
-      && $('#networkBatchButton button').textContent === 'Batch (1)'`);
+      && $('#networkBatchButton button').textContent === 'Batch (1)'
+      && $('#networkBatchButton button').classList.contains('batch-pulse')`);
     // From a kit: the blocks Request would ask for.
     await click(`$('#networkKitButton [data-action="open-kit"]')`);
     await click(`$('#kitPicker')`);
@@ -4280,8 +4281,10 @@ async function main() {
     await waitFor('gold coils to craft', `$('#kitChannel-coil').value === 'Gold Ingot' && !$('#kitBatchBtn').disabled`);
     await click(`$('#kitBatchBtn')`);
     await waitFor('kit added', `!visible($('#kitModal')) && $('#networkBatchButton button').textContent === 'Batch (2)'`);
-    // Open it: both, the kit's marked.
-    await click(`$('#networkBatchButton [data-action="open-batch"]')`);
+    // Open it from the toast: both, the kit's marked.
+    await waitFor('toast offers to open it', `$$('#toastContainer .toast').at(-1)?.textContent.includes('to the batch (2 items)')
+      && $$('#toastContainer .toast-action').at(-1)?.textContent === 'Open batch'`);
+    await click(`$$('#toastContainer .toast-action').at(-1)`);
     const row = name => `$$('#batchRows .batch-row').find(r => r.querySelector('.kit-name')?.textContent === '${name}')`;
     await waitFor('batch rows', `visible($('#batchModal')) && ${row('Iron Ingot')}?.querySelector('.kit-request').value === '12'
       && /^from .* kit$/.test(${row('Gold Ingot')}?.querySelector('.batch-note')?.textContent || '')
