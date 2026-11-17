@@ -61,6 +61,7 @@ function M.new(opts)
     thread_seq = 0,
     current = nil,
     requests = {},
+    open_connections = 0,  -- requests whose handle isn't closed yet
     output = {},
     shell_log = {},
     shell_handler = nil,  -- function(cmd) -> shell.execute's results; nil: true
@@ -287,6 +288,7 @@ function Env:_internet_card()
       local connect_at = env.now + (res.connect_delay or 0)
       local next_chunk, next_at = 1, connect_at
       local closed = false
+      env.open_connections = env.open_connections + 1
       local handle = {}
       function handle.finishConnect()
         if res.connect_error then return nil, res.connect_error end
@@ -312,7 +314,10 @@ function Env:_internet_card()
         next_at = env.now + (res.chunk_delay or 0)
         return data
       end
-      function handle.close() closed = true end
+      function handle.close()
+        if not closed then env.open_connections = env.open_connections - 1 end
+        closed = true
+      end
       return handle
     end,
   }

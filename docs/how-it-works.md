@@ -212,7 +212,9 @@ a stack traceback and free memory, to `/home/network_browser_debug.log`. It
 also reports the error to the server, which ends the dead scan and shows the
 error on the Network tab until a scan finishes.
 Then it starts over after `CRASH_RESTART_SECONDS`. Each line of that log
-records free memory (`mem=`), so a slow leak shows as a falling number.
+starts with the computer's uptime (h:mm:ss, real time; the in-game clock
+`os.date()` reads runs 72 times faster) and records free memory (`mem=`),
+so a slow leak shows as a falling number.
 Without this, the error was printed to a screen that other scripts keep
 clearing, `rc network_browser status` still said running, and the page just
 showed a scan that never finished.

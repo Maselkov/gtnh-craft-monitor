@@ -18,7 +18,6 @@
 -- referencing config internally at all) - a file called "config"
 -- holding this much real transport logic was the wrong shape.
 
-local internet = require("internet")
 local component = require("component")
 local computer = require("computer")
 
@@ -34,10 +33,10 @@ local computer = require("computer")
 -- progressively laggier over time, NOT fixed by restarting the
 -- computer (computer state isn't where the leak lives), only fixed by
 -- restarting the whole Minecraft server (a fresh JVM clears it).
--- Whatever gap this leaves - a request that never receives even its
--- first chunk can't be timed out this way, only a stall BETWEEN chunks
--- already arriving can - is a far better trade than a leak that
--- degrades the entire server over hours, not just this one script.
+-- No thread is needed anyway: both functions below poll the Internet
+-- Card's request handle themselves, sleeping a tick between empty reads,
+-- so they can give up at any point - before the connection is up, before
+-- the first chunk, or between chunks.
 --
 -- Elapsed time is measured with computer.uptime(), NOT os.date(). An
 -- earlier version of this used os.date("*t") based on what looked like
@@ -62,34 +61,55 @@ local function real_seconds_elapsed(startSeconds)
   return computer.uptime() - startSeconds
 end
 
--- Reads a full response body from an internet.request() iterator, but
--- bails out with an error if too much time passes between two
--- successfully-received chunks - rather than the loop just sitting
--- there indefinitely if the connection stalls partway through. This can
--- only catch a stall AFTER at least one chunk has already arrived - see
--- the note above for why that known gap is accepted rather than closed
--- with a thread-based approach.
-local function read_response_with_timeout(req, timeoutSeconds)
-  local startSeconds = computer.uptime()
-  local chunks = {}
-  for chunk in req do
-    chunks[#chunks + 1] = chunk
-    if real_seconds_elapsed(startSeconds) > timeoutSeconds then
-      error("timed out after " .. timeoutSeconds .. "s waiting for the rest of the response")
-    end
+-- The Internet Card's handle for a new request, or nil and why not.
+local function open_request(url, body, headers)
+  local ok, handle, reason = pcall(function()
+    return component.internet.request(url, body, headers)
+  end)
+  if not ok or not handle then
+    return nil, tostring(ok and reason or handle)
   end
-  return table.concat(chunks)
+  return handle
 end
 
--- Thin wrapper matching the OLD request_with_timeout(url, body, headers,
--- timeout) call shape, so the three scripts didn't need every call site
--- rewritten again on top of everything else that changed reverting this.
+-- Sends a request (a POST with body, a GET without) and reads the whole
+-- response: true and the body, or false and an error message. Gives up
+-- once nothing has arrived for timeoutSeconds, whether the connection
+-- never comes up, the server never answers, or the body stops partway -
+-- a connection that goes silent can't hold the script forever. Not
+-- OpenOS's internet.request(): its iterator sleeps in its own loop until
+-- data comes, so nothing can time out a request that never sends any.
+-- As with that iterator, an error status fails the read (the card raises
+-- it, body unread), so a 4xx or 5xx comes back as false and the card's
+-- message.
 local function request_with_timeout(url, body, headers, timeoutSeconds)
-  local ok, result = pcall(function()
-    local req = internet.request(url, body, headers)
-    return read_response_with_timeout(req, timeoutSeconds)
-  end)
-  return ok, result
+  local handle, requestErr = open_request(url, body, headers)
+  if not handle then
+    return false, requestErr
+  end
+  local chunks = {}
+  local lastData = computer.uptime()
+  while true do
+    local okRead, data, readErr = pcall(handle.read)
+    if not okRead or data == nil then
+      handle.close()
+      if not okRead or readErr then
+        return false, tostring(okRead and readErr or data)
+      end
+      return true, table.concat(chunks)
+    end
+    if #data > 0 then
+      chunks[#chunks + 1] = data
+      lastData = computer.uptime()
+    elseif real_seconds_elapsed(lastData) > timeoutSeconds then
+      -- Closed, or the card keeps the connection - it allows only a few.
+      handle.close()
+      return false, "timed out after " .. timeoutSeconds .. "s waiting for "
+        .. (#chunks == 0 and "a response" or "the rest of the response")
+    else
+      os.sleep(0.05)
+    end
+  end
 end
 
 -- Downloads url into the file at path, writing each chunk as it arrives
@@ -101,9 +121,9 @@ end
 -- chunks, takes longer than timeoutSeconds. Returns true, or false and an
 -- error message (the file at path may then be partial).
 local function download_to_file(url, path, headers, timeoutSeconds)
-  local ok, handle, reason = pcall(component.internet.request, url, nil, headers)
-  if not ok or not handle then
-    return false, tostring(ok and reason or handle)
+  local handle, requestErr = open_request(url, nil, headers)
+  if not handle then
+    return false, requestErr
   end
   local started = computer.uptime()
   local code

@@ -524,6 +524,8 @@ test("an error that kills the scan is logged, reported, and scanning starts over
   local log = env:read_file("/home/network_browser_debug.log")
   t.truthy(log:find("CRASHED during", 1, true), "logged")
   t.truthy(log:find("stack traceback", 1, true), "with the traceback")
+  -- Stamped with the computer's uptime (real time), not the in-game clock.
+  t.truthy(log:match("^%[0:00:%d%d%] "), log:sub(1, 40))
   t.eq(#env:requests_to("^/api/network/scan/finish$"), 0)
 
   env:run({ seconds = 60 })

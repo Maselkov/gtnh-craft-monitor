@@ -91,6 +91,18 @@ them; consolidating means a fix like the json_encode-crash pcall fix
 separately to multiple call sites across multiple files - only needs
 to happen once from here on.
 
+`http.lua`'s `request_with_timeout` polls the Internet Card's request
+handle itself - `read()` returns "" until data comes, and raises on an
+error status - sleeping a tick between empty reads, and gives up once
+nothing has arrived for the timeout: before the connection is up,
+before the first chunk, or between chunks. It used to read OpenOS's
+`internet.request()` iterator, which sleeps in its own loop until data
+comes, so a connection that went silent before sending anything held
+the script for good (the likeliest cause of the stuck scans
+`network_browser.lua`'s debug log was added for), and its timeout error
+left the handle open, holding one of the card's few connections.
+`download_to_file` already worked this way.
+
 **File organization, server side**: `server/app.py` is only the
 entrypoint (`python app.py` to serve, `python app.py new-token <name>`
 for admin recovery). The server itself is the `server/gcm/` package:
