@@ -187,10 +187,14 @@ test('pollFetch gives up on a request that never answers', async () => {
     seen = init;
     init.signal.addEventListener('abort', () => reject(init.signal.reason));
   });
+  // AbortSignal.timeout()'s timer doesn't keep Node running: with nothing
+  // else pending, the test ended (cancelled) before it fired.
+  const keepAlive = setInterval(() => {}, 1000);
   try {
     await assert.rejects(pollFetch('/api/crafts', { cache: 'no-store' }, 10), { name: 'TimeoutError' });
     assert.equal(seen.cache, 'no-store', 'the caller\'s options are kept');
   } finally {
+    clearInterval(keepAlive);
     if (real) Object.defineProperty(globalThis, 'fetch', real);
     else delete globalThis.fetch;
   }

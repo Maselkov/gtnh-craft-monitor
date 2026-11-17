@@ -38,3 +38,20 @@ test('formatChangePercent: whole percents, one decimal under 1%', () => {
   assert.equal(formatChangePercent(-0.004), '−0.4%');
   assert.equal(formatChangePercent(-1), '−100%');
 });
+
+test('sortNetworkItems: pinned first, then by the sort, each group on its own', async () => {
+  const { sortNetworkItems, networkItemKey } = await import('../../static/js/network.js');
+  const item = (name, size, internal = name.toLowerCase()) => ({ mod: 'm', internal, damage: 0, kind: 'item', name, size });
+  const items = [item('§eBeta', 5), item('alpha', 50), item('Gamma', 500), item('Delta', 1)];
+  const pinned = new Set([networkItemKey('m', 'delta', 0, 'item')]);
+  const names = (list) => list.map(it => it.name);
+
+  assert.deepEqual(names(sortNetworkItems(items, 'name', pinned, () => null)),
+    ['Delta', 'alpha', '§eBeta', 'Gamma'], 'by name without formatting codes, case aside');
+  assert.deepEqual(names(sortNetworkItems(items, 'size', pinned, () => null)),
+    ['Delta', 'Gamma', 'alpha', '§eBeta']);
+  const changes = { gamma: { from: 1000 }, alpha: { from: 10 } };
+  assert.deepEqual(names(sortNetworkItems(items, 'change', new Set(), it => changes[it.internal] || null)),
+    ['Gamma', 'alpha', '§eBeta', 'Delta'], 'fell, rose, then unchanged by quantity');
+  assert.deepEqual(names(items), ['§eBeta', 'alpha', 'Gamma', 'Delta'], 'the list given is left alone');
+});
