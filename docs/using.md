@@ -643,7 +643,10 @@ hover a dimension for the vein's chance per ore chunk there, its share of the
 weight of every vein in that dimension. A small ore shows its height, amount per chunk, drops and dimensions. As in
 NEI, they are found by material: they're in **Recipes** for the ore in any stone
 type, its raw, crushed, purified and centrifuged ore, its dusts and its gems,
-even for a stone the vein doesn't generate in. They're also in **Uses** for a
+even for a stone the vein doesn't generate in. As GregTech's own NEI pages do,
+an ore's **Recipes** also show GregTech recipes making the same ore in another
+stone type of its block: Space Mining's End Bauxite Ore shows for Bauxite Ore.
+They're also in **Uses** for a
 dimension's icon, which lists every vein and small ore found there. They need
 game data exported since they were added.
 

@@ -2614,9 +2614,18 @@ is its `variantOre<M>` name (every stone type has one), else its single
 `ore<M>`, else, for GT small ores (not in the ore dictionary), the dust
 of its damage's material id; each vein then gets output rows for every
 bundle item named `<prefix><M>`. The ore dictionary's checksum joins the
-index fingerprint (index format 12). Space Mining needs nothing like it:
-GT's own NEI lookup only widens dusts and ingots (`mFamiliarPrefixes`),
-so in game too, End Bauxite Ore's recipes aren't the stone one's.
+index fingerprint (index format 12).
+
+**GT maps find a GT ore's other stone types.** GT's own NEI lookup
+(`GTNEIDefaultHandler.loadCraftingRecipes`) widens an item whose name
+starts with `gt.blockores` to the same block's eight stone types,
+damage `id % 1000 + n * 1000`: stone Bauxite Ore (`gt.blockores2:822`)
+shows Space Mining's End Bauxite Ore (`:2822`). `_where(as_nei=True)`
+does the same for GT maps (`gt.*`, `nei.gt.*`) in what the recipe book
+shows (`counts_making`, `made_by`), not in `making()`, which the planner
+and pattern check read: those recipes make another item. Its Uses
+(`loadUsageRecipes`) doesn't widen, so ours doesn't either. (The
+handler's `mFamiliarPrefixes` widening is only dust and ingot sizes.)
 
 **Tabs follow NEI's handlerordering.csv.** NEI sorts its tabs by that
 file's number (GTNH's puts NEI Custom Diagram's at -1000, the ore washer

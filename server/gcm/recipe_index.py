@@ -701,6 +701,16 @@ ORE_LOOKUP_PREFIXES = ("dust", "dustPure", "dustImpure", "ore", "oreBlackgranite
 _GT_ORE_BLOCK = re.compile(r"^gregtech:gt\.blockores\d*:(\d+)$")
 
 
+def _gt_ore_stones(key):
+    """A GT ore block's other stone types, as GT's NEI handler widens a
+    lookup: the same block item, damage id % 1000 + n * 1000 for n 0-7."""
+    match = _GT_ORE_BLOCK.match(key)
+    if not match:
+        return []
+    item, damage = key.rpartition(":")[0], int(match[1])
+    return [f"{item}:{damage % 1000 + n * 1000}" for n in range(8) if damage % 1000 + n * 1000 != damage]
+
+
 def _ore_gen_lookups(conn, records, ore_dict, known):
     """Make each vein and small ore come up in Recipes for every item NEI
     finds it by: gtneioreplugin looks an ore up by its material, so a vein
@@ -852,6 +862,8 @@ class RecipeIndex:
         self._conn = sqlite3.connect(f"file:{quote(path)}?mode=ro&immutable=1", uri=True, check_same_thread=False)
         self._maps = dict(self._conn.execute("SELECT id, name FROM map"))
         self._map_ids = {name: map_id for map_id, name in self._maps.items()}
+        # Maps GT's NEI handler shows: its recipe maps and their display maps.
+        self._gt_maps = sorted(m for m, name in self._maps.items() if name.startswith(("gt.", "nei.gt.")))
         meta = dict(self._conn.execute("SELECT k, v FROM meta"))
         self.source_format = int(meta["source_format"])
         self.fingerprint = meta["fingerprint"]
@@ -922,7 +934,7 @@ class RecipeIndex:
             out.update((key, json.loads(body)) for key, body in rows)
         return out
 
-    def _where(self, kind, key, map_name):
+    def _where(self, kind, key, map_name, *, as_nei=False):
         if kind not in (ITEM, FLUID) or not isinstance(key, str) or not key:
             raise ValueError("recipe lookup needs an item or fluid key")
         # A concrete damage matches a wildcard ingredient/output as well. A
@@ -932,13 +944,23 @@ class RecipeIndex:
             keys.append(key.rpartition(":")[0] + ":*")
         where = f"x.kind = ? AND x.k IN ({','.join('?' for _ in keys)})"
         args = [kind, *keys]
+        stones = _gt_ore_stones(key) if as_nei and kind == ITEM else []
+        if stones and self._gt_maps:
+            # GT's NEI handler finds a GT ore's recipes for its block's
+            # other stone types too (GTNEIDefaultHandler.loadCraftingRecipes):
+            # Space Mining's End Bauxite Ore shows for the stone one. One IN
+            # over all the keys keeps the (kind, k) index in use.
+            every = [*keys, *stones]
+            where = (f"x.kind = ? AND x.k IN ({','.join('?' for _ in every)}) AND (x.k IN "
+                     f"({','.join('?' for _ in keys)}) OR r.map IN ({','.join('?' for _ in self._gt_maps)}))")
+            args = [kind, *every, *keys, *self._gt_maps]
         if map_name is not None:
             where += " AND r.map = ?"
             args.append(self._map_ids.get(map_name, -1))
         return where, args
 
-    def _rows(self, table, kind, key, map_name=None, limit=None, offset=0):
-        where, args = self._where(kind, key, map_name)
+    def _rows(self, table, kind, key, map_name=None, limit=None, offset=0, as_nei=False):
+        where, args = self._where(kind, key, map_name, as_nei=as_nei)
         # DISTINCT precedes LIMIT: the same recipe can take both a concrete
         # stack and a wildcard, or several alternatives with the same key.
         sql = (f"SELECT DISTINCT r.id, r.map, r.body, r.priority, r.eut, r.ticks "
@@ -954,8 +976,8 @@ class RecipeIndex:
         """Every recipe making key, in the same stable order as made_by()."""
         return self._rows("output", kind, key)
 
-    def _counts(self, table, kind, key, map_name=None):
-        where, args = self._where(kind, key, map_name)
+    def _counts(self, table, kind, key, map_name=None, as_nei=False):
+        where, args = self._where(kind, key, map_name, as_nei=as_nei)
         rows = self._all(
             f"SELECT r.map, COUNT(DISTINCT r.id) FROM {table} x JOIN recipe r ON r.id = x.recipe "
             f"WHERE {where} GROUP BY r.map ORDER BY r.map", args,
@@ -963,7 +985,10 @@ class RecipeIndex:
         return {self._maps[map_id]: n for map_id, n in rows}
 
     def counts_making(self, kind, key):
-        return self._counts("output", kind, key)
+        """Recipes per map making key, as NEI's Recipes finds them: a GT
+        ore's GT recipes take in its block's other stone types, as made_by's
+        do. making() doesn't: they make another item."""
+        return self._counts("output", kind, key, as_nei=True)
 
     def counts_using(self, kind, key):
         return self._counts("input", kind, key)
@@ -975,8 +1000,9 @@ class RecipeIndex:
     def _page(self, table, kind, key, map_name, limit, offset):
         if type(limit) is not int or not 1 <= limit <= PAGE_MAX or type(offset) is not int or offset < 0:
             raise ValueError(f"recipe page needs limit 1-{PAGE_MAX} and a nonnegative offset")
-        total = sum(self._counts(table, kind, key, map_name).values())
-        return self._rows(table, kind, key, map_name, limit, offset), total
+        as_nei = table == "output"
+        total = sum(self._counts(table, kind, key, map_name, as_nei).values())
+        return self._rows(table, kind, key, map_name, limit, offset, as_nei), total
 
     def made_by(self, kind, key, map_name=None, *, limit=20, offset=0):
         """(rows, total) making key. Crafting first, then furnace, then GT

@@ -189,3 +189,29 @@ def test_find_recipes_says_where_an_ore_generates(idx, monkeypatch):
     assert small["ore_generation"]["drops"] == [{"name": "Copper Nugget", "amount": 1, "unit": "items", "chance_percent": 25.0}]
     assert small["ore_generation"]["drops"][0] == {"name": "Copper Nugget", "amount": 1, "unit": "items", "chance_percent": 25.0}
 
+
+
+def test_gt_maps_find_a_gt_ores_other_stone_types_as_neis_recipes_do(tmp_path):
+    # GTNEIDefaultHandler widens a gt.blockores lookup to the block's other
+    # stone types (damage % 1000 + n * 1000): the stone ore's Recipes show
+    # Space Mining's endstone ore. Only GT maps, only Recipes, and not for
+    # the planner (making()), which needs the item itself.
+    stone, end, other_block = "gregtech:gt.blockores2:822", "gregtech:gt.blockores2:2822", "gregtech:gt.blockores3:2822"
+    keys = [stone, end, other_block, "gtnhintergalactic:item.MiningDrone:0"]
+    data = {"format": 3, "items": keys, "item_names": ["Bauxite Ore", "End Bauxite Ore", "Phobos Bauxite Ore", "Drone"],
+            "fluids": [], "fluid_names": [], "coverage": {"handlers": ["gregtech", "nei"], "identity": "item_id_damage", "limitations": []},
+            "maps": {"gt.recipe.spaceMining": {"machines": [{"name": "Space Mining"}], "recipes": [
+                         {"type": "gt", "i": [[3, 0]], "o": [[1, 64, 5000]], "e": 7680, "d": 50},
+                         {"type": "gt", "i": [[3, 0]], "o": [[2, 64]], "e": 7680, "d": 50}]},
+                     "nei.some.Handler::": {"machines": [{"name": "Other"}], "recipes": [
+                         {"type": "nei", "groups": [{"kind": "item", "alts": [[3, 1]]}], "o": [[1, 1]]}]}}}
+    index = build_index(tmp_path, data)
+    try:
+        assert index.counts_making(recipe_index.ITEM, stone) == {"gt.recipe.spaceMining": 1}
+        rows, total = index.made_by(recipe_index.ITEM, stone, "gt.recipe.spaceMining")
+        assert total == 1 and rows[0][2]["o"][0][0] == end
+        assert index.counts_making(recipe_index.ITEM, end) == {"gt.recipe.spaceMining": 1, "nei.some.Handler::": 1}
+        assert index.making(recipe_index.ITEM, stone) == []
+        assert index.counts_using(recipe_index.ITEM, end) == {}
+    finally:
+        index.close()
