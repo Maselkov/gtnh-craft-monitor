@@ -150,7 +150,7 @@ instead ([how it works](how-it-works.md#game-recipe-data)).
 | Shaped Orb Crafting<br>`WayofTime.alchemicalWizardry.client.nei.NEIBloodOrbShapedHandler::crafting` | Display | 61 | 61 | 0 |
 | Shapeless Orb Crafting<br>`WayofTime.alchemicalWizardry.client.nei.NEIBloodOrbShapelessHandler::crafting` | Display | 5 | 5 | 0 |
 | Alchemic Calcinator<br>`WayofTime.alchemicalWizardry.client.nei.NEICalcinatorHandler::alchemicalwizardry.calcinator` | Display | 15 | 15 | 0 |
-| Meteor Ritual<br>`WayofTime.alchemicalWizardry.client.nei.NEIMeteorRecipeHandler::alchemicalwizardry.meteor` | Archived/info | 57 | 0 | 57 |
+| Meteor Ritual<br>`WayofTime.alchemicalWizardry.client.nei.NEIMeteorRecipeHandler::alchemicalwizardry.meteor` | Display (since 2026-11-17) | 57 | 57 | 0 |
 | Molecular Transformer<br>`advsolar.client.nei.MTRecipeHandler::` | No enumeration | 0 | 0 | 0 |
 | Witch's Cauldron<br>`alkalus.main.nei.NEI_Handler_Cauldron::witchery_brewing_plus` | Display | 26 | 26 | 0 |
 | Distillery<br>`alkalus.main.nei.NEI_Handler_Distillery::witchery_distilling` | Archived/info | 9 | 0 | 9 |

@@ -11,6 +11,7 @@ import java.util.TreeMap;
 import net.minecraft.item.ItemStack;
 import net.minecraftforge.fluids.FluidStack;
 
+import codechicken.nei.NEIClientConfig;
 import codechicken.nei.PositionedStack;
 import codechicken.nei.recipe.GuiCraftingRecipe;
 import codechicken.nei.recipe.GuiRecipeTab;
@@ -98,6 +99,7 @@ final class NeiRecipes {
                     if(!oreGen.isEmpty()) map.put("ore_gen",oreGen);
                     String icon=tabIcon(original);
                     if(icon!=null) map.put("icon",icon);
+                    putOrder(map,NEIClientConfig.getHandlerOrder(original));
                     maps.put("nei."+id,map);
                 }
             } catch(Throwable e) { report.put("status","unavailable"); report.put("error",e.toString()); }
@@ -105,9 +107,27 @@ final class NeiRecipes {
         return audit;
     }
 
+    /** NEI's tab order for a map (its handlerordering.csv number), where it isn't 0. */
+    static void putOrder(Map<String,Object> map,int order) {
+        if(order!=0) map.put("order",order);
+    }
+
+    /** handlerordering.csv's number for a handler id (a GT map's is its name). */
+    static int order(String handlerId) {
+        Integer order=NEIClientConfig.handlerOrdering.get(handlerId);
+        return order==null ? 0 : order;
+    }
+
     private Map<String,Object> body(IRecipeHandler h,int index) throws Exception {
         PositionedStack result=h.getResultStack(index);
-        if(result==null || result.items==null || result.items.length==0) return null;
+        // NEI Addons' produce pages draw every product, each with its chance
+        // as a label, but give NEI only the first as the result; Blood
+        // Magic's meteors give none, and a chance in each output's tooltip.
+        List<PositionedStack> products=labeledProducts(h,index);
+        if(result==null || result.items==null || result.items.length==0) {
+            if(products==null || products.isEmpty() || !h.getClass().getName().equals(METEOR)) return null;
+            result=products.get(0);
+        }
         Map<String,Object> body=new LinkedHashMap<>();body.put("type","nei");
         List<Object> groups=new ArrayList<>();
         for(PositionedStack input:h.getIngredientStacks(index)) {
@@ -120,9 +140,6 @@ final class NeiRecipes {
             owner.presentation.slot(preview,"groups",slotIndex++,Math.max(0,input.relx-1),Math.max(0,input.rely-1));
             maxY=Math.max(maxY,input.rely+20);maxX=Math.max(maxX,input.relx+20);
         }
-        // NEI Addons' produce pages draw every product, each with its chance
-        // as a label, but give NEI only the first as the result.
-        List<PositionedStack> products=labeledProducts(h,index);
         List<Object> productOutputs=new ArrayList<>();
         if(products!=null) {
             for(PositionedStack product:products) {
@@ -169,6 +186,7 @@ final class NeiRecipes {
         for(String key:new String[]{"energy","time","cookTime","mana","manaUsage","lp","lp_amount","tier","consumption","drain","instability","aspects","vis","prereqs","catalyst","requirements","power","processingTime","temperature","chance","outputChance","experience"}) {
             if(details.get(key)!=null) costs.put(key,details.get(key));
         }
+        if(h.getClass().getName().equals(METEOR)) costs.putAll(meteorCosts(h,index));
         if(!costs.isEmpty()) body.put("requirements",costs);
         body.put("approximate",Collections.singletonList("nei_display"));
         return body;
@@ -295,14 +313,31 @@ final class NeiRecipes {
     }
 
     /** A cached recipe's "products" list (NEI Addons' bee and tree produce), or null. */
+    static final String METEOR="WayofTime.alchemicalWizardry.client.nei.NEIMeteorRecipeHandler";
+
+    /** A meteor's summoning cost in LP and its radius, as its page draws them. */
+    private static Map<String,Object> meteorCosts(IRecipeHandler h,int index) {
+        Map<String,Object> out=new LinkedHashMap<>();
+        try {
+            Field f=TemplateRecipeHandler.class.getDeclaredField("arecipes");f.setAccessible(true);
+            Object cached=((List<?>)f.get(h)).get(index);
+            out.put("lp",cached.getClass().getMethod("getCost").invoke(cached));
+            out.put("radius",cached.getClass().getMethod("getRadius").invoke(cached));
+        } catch(ReflectiveOperationException | RuntimeException unreadable) { /* Left out; the raw snapshot keeps it. */ }
+        return out;
+    }
+
     private static List<PositionedStack> labeledProducts(IRecipeHandler h,int index) {
         if(!(h instanceof TemplateRecipeHandler)) return null;
+        // Blood Magic's meteor keeps its drops in "outputs"; elsewhere that
+        // name can mean anything, so only there.
+        String field=h.getClass().getName().equals(METEOR) ? "outputs" : "products";
         try {
             Field f=TemplateRecipeHandler.class.getDeclaredField("arecipes");f.setAccessible(true);
             Object cached=((List<?>)f.get(h)).get(index);
             for(Class<?> c=cached.getClass();c!=null && c!=TemplateRecipeHandler.CachedRecipe.class;c=c.getSuperclass()) {
                 Field products;
-                try { products=c.getDeclaredField("products"); } catch(NoSuchFieldException absent) { continue; }
+                try { products=c.getDeclaredField(field); } catch(NoSuchFieldException absent) { continue; }
                 products.setAccessible(true);
                 Object value=products.get(cached);
                 if(!(value instanceof List)) return null;
@@ -314,20 +349,31 @@ final class NeiRecipes {
         return null;
     }
 
-    /** A labelled stack's chance ("12.5%", or "12,5%" in some locales) out of 10,000; 0 when it has none. */
+    /** A labelled stack's chance ("12.5%", or "12,5%" in some locales) out of 10,000; 0 when it has none.
+     * The label is NEI Addons'; Blood Magic's TooltipStack has its chance on a line of "tooltips". */
     private static int chance(PositionedStack stack) {
         for(Class<?> c=stack.getClass();c!=null && c!=PositionedStack.class;c=c.getSuperclass()) {
             try {
                 Field f=c.getDeclaredField("label");f.setAccessible(true);
                 Object label=f.get(stack);
-                if(label==null) return 0;
-                String text=label.toString().replaceAll("\u00a7.","").replace(',','.').replaceAll("[^0-9.]","");
-                if(text.isEmpty()) return 0;
-                return (int)Math.round(Math.min(100,Double.parseDouble(text))*100);
+                return label==null ? 0 : percent(label.toString());
+            } catch(NoSuchFieldException absent) { /* Try tooltips, then the superclass. */ }
+            catch(ReflectiveOperationException unreadable) { return 0; }
+            try {
+                Field f=c.getDeclaredField("tooltips");f.setAccessible(true);
+                Object lines=f.get(stack);
+                if(lines instanceof List) for(Object line:(List<?>)lines) if(line!=null && line.toString().contains("%")) return percent(line.toString());
+                return 0;
             } catch(NoSuchFieldException absent) { /* Try the superclass. */ }
-            catch(ReflectiveOperationException | NumberFormatException unreadable) { return 0; }
+            catch(ReflectiveOperationException unreadable) { return 0; }
         }
         return 0;
+    }
+
+    private static int percent(String text) {
+        String number=text.replaceAll("\u00a7.","").replace(',','.').replaceAll("[^0-9.]","");
+        try { return number.isEmpty() ? 0 : (int)Math.round(Math.min(100,Double.parseDouble(number))*100); }
+        catch(NumberFormatException unreadable) { return 0; }
     }
 
     private Object snapshot(PositionedStack stack) {

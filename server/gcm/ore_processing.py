@@ -19,6 +19,10 @@ import re
 
 MAP = "ore_processing"
 TITLE = "GregTech Ore Processing"
+# Its tab's place: GTNH's NEI handlerordering.csv puts NEI Custom Diagram's
+# ore processing (neicustomdiagram.diagramgroup.gregtech.oreprocessing) at
+# -1000, before every other tab.
+ORDER = -1000
 # The maps a diagram reads, by step.
 MACERATOR = "gt.recipe.macerator"
 ORE_WASHER = "gt.recipe.orewasher"

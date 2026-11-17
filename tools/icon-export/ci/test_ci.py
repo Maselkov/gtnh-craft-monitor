@@ -650,6 +650,17 @@ def test_ore_generation_records_are_validated(change, why):
         validate.validate_recipes(data)
 
 
+@pytest.mark.parametrize('order,ok', [(-1000, True), (10, True), (0, False), ('first', False), (True, False)])
+def test_a_maps_tab_order_is_a_nonzero_number(order, ok):
+    data = recipe_fixture4()
+    next(iter(data['maps'].values()))['order'] = order
+    if ok:
+        validate.validate_recipes(data)
+    else:
+        with pytest.raises(ValueError, match='invalid tab order'):
+            validate.validate_recipes(data)
+
+
 def test_preview_only_images_survive_conversion_and_texture_fallback(tmp_path):
     lookup = tmp_path / 'icons_lookup.json'
     lookup.write_text(json.dumps({'by_variant': {'one': 'item/log~nbt.png'},

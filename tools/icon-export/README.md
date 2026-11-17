@@ -203,6 +203,10 @@ any formatting codes. `weight`, `size` and `density` are the vein's world
 generation numbers. `dim_heights` is optional and gives a height range per
 dimension where it differs. `amount` is a small ore's amount per chunk.
 
+A map whose NEI tab isn't in the default place carries `order`, its number in
+NEI's `handlerordering.csv` (smaller first; most handlers have none, which is 0).
+The recipe book sorts its tabs by it, as NEI does.
+
 The coverage audit collects both NEI crafting and usage registries, deduplicating
 by class and category. It lists every GT map and NEI handler, including native coverage,
 exported displays, archived records, unavailable handlers and categories returning

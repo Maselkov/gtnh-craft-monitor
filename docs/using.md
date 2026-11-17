@@ -640,10 +640,21 @@ the costs, as NEI does.
 gtneioreplugin's pages do in game. A vein shows its primary, secondary, between
 and sporadic ores, its height and weight, and the dimensions it generates in;
 hover a dimension for the vein's chance per ore chunk there, its share of the
-weight of every vein in that dimension. A small ore shows its height, amount per chunk, drops and dimensions. They are
-in an ore's **Recipes**, and in **Uses** for a dimension's icon, which lists
-every vein and small ore found there. They need game data exported since they
-were added.
+weight of every vein in that dimension. A small ore shows its height, amount per chunk, drops and dimensions. As in
+NEI, they are found by material: they're in **Recipes** for the ore in any stone
+type, its raw, crushed, purified and centrifuged ore, its dusts and its gems,
+even for a stone the vein doesn't generate in. They're also in **Uses** for a
+dimension's icon, which lists every vein and small ore found there. They need
+game data exported since they were added.
+
+Blood Magic's **Meteor Ritual** shows each focus's meteor: the blocks it brings
+with their chances, the LP it costs to summon and its radius. It needs game data
+exported since 2026-11-17.
+
+Tabs are in NEI's order: GTNH's NEI config puts some first (GregTech Ore
+Processing before all others) and some last; the rest go by name, after
+crafting and the furnace. Game data exported before 2026-11-17 only knows
+GregTech Ore Processing's place.
 
 Hover an ingredient or output for the same instant item tooltip used in the
 Network browser: rarity colour, exported description and mod name. Hold **Shift**

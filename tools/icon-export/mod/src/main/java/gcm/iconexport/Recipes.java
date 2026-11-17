@@ -132,11 +132,13 @@ final class Recipes {
             out.put("preview", presentation.gt(map));
             out.put("recipes", recipes);
             if (!archive.isEmpty()) out.put("archive", archive);
+            NeiRecipes.putOrder(out, NeiRecipes.order(name));
             if (!recipes.isEmpty() || !archive.isEmpty()) maps.put(name, out);
             if (!displays.isEmpty()) {
                 Map<String, Object> displayMap = new LinkedHashMap<>();
                 displayMap.put("machines", machines); displayMap.put("recipes", displays);
                 displayMap.put("preview", out.get("preview"));
+                NeiRecipes.putOrder(displayMap, NeiRecipes.order(name));
                 maps.put("nei.gt." + name, displayMap);
             }
             recipeCount += recipes.size();

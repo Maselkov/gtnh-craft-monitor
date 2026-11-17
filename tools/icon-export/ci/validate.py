@@ -253,6 +253,9 @@ def validate_recipes(data):
             for key in ("requirements", "snapshot"):
                 if key in r:
                     require(isinstance(r[key], dict), f"invalid {key}")
+        # NEI's tab order (handlerordering.csv), only where it isn't 0.
+        if "order" in entry:
+            require(type(entry["order"]) is int and entry["order"] != 0, "invalid tab order")
         # gtneioreplugin's Vein Stats and Small Ore Stats (NeiRecipes.oreGen).
         for r in entry.get("ore_gen", []):
             require(isinstance(r, dict) and r.get("type") in ("ore_vein", "small_ore")

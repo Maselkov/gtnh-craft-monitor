@@ -1,6 +1,7 @@
 """Where ores generate: gtneioreplugin's Vein Stats and Small Ore Stats,
 from a map's ore_gen records (NeiRecipes.oreGen)."""
 import copy
+import json
 
 import pytest
 
@@ -15,9 +16,15 @@ NEODYMIUM, TARTARITE = "gregtech:gt.blockores3:4100", "gregtech:gt.blockores3:40
 CALLISTO, CERES = "gtneioreplugin:blockDimensionDisplay_Ca:0", "gtneioreplugin:blockDimensionDisplay_Ce:0"
 SMALL_ORE, DUST, GEM = "gregtech:gt.blockores2:17035", "gregtech:gt.metaitem.01:2035", "gregtech:gt.metaitem.01:8035"
 LEDOX = "gregtech:gt.blockores1:4390"
+# Not in any vein's layers: NEI finds the veins from them by material.
+SAMARIUM_STONE, CRUSHED_SAMARIUM, COPPER_STONE = "gregtech:gt.blockores2:128", "gregtech:gt.metaitem.01:5128", "gregtech:gt.blockores2:35"
 NAMES = {SAMARIUM: "Callisto Samarium Ore", SAMARIUM_MOON: "Ceres Samarium Ore", NEODYMIUM: "Callisto Neodymium Ore",
          TARTARITE: "Callisto Tartarite Ore", CALLISTO: "Callisto", CERES: "Ceres",
-         SMALL_ORE: "Small Copper Ore", DUST: "Copper Dust", GEM: "Copper Nugget", LEDOX: "Callisto Ledox Ore"}
+         SMALL_ORE: "Small Copper Ore", DUST: "Copper Dust", GEM: "Copper Nugget", LEDOX: "Callisto Ledox Ore",
+         SAMARIUM_STONE: "Samarium Ore", CRUSHED_SAMARIUM: "Crushed Samarium Ore", COPPER_STONE: "Copper Ore"}
+ORE_DICT = {"variantOreSamarium": [SAMARIUM, SAMARIUM_MOON], "oreCallistoSamarium": [SAMARIUM],
+            "oreSamarium": [SAMARIUM_STONE], "crushedSamarium": [CRUSHED_SAMARIUM, "gregtech:not.in.bundle:1"],
+            "dustCopper": [DUST], "oreCopper": [COPPER_STONE], "ingotSamarium": ["gregtech:gt.metaitem.01:11128"]}
 
 
 def bundle():
@@ -90,6 +97,26 @@ def test_older_servers_skip_ore_gen_as_they_skip_archives(tmp_path):
     index = build_index(tmp_path, data)
     try:
         assert index.counts_making(recipe_index.ITEM, SAMARIUM) == {}
+    finally:
+        index.close()
+
+
+def test_nei_finds_a_vein_by_its_ores_material(tmp_path):
+    # gtneioreplugin looks veins up by material: the plain stone ore and the
+    # crushed ore find a vein that lists only Callisto's and Ceres' stones.
+    (tmp_path / recipe_index.ORE_DICT_FILE).write_text(json.dumps(ORE_DICT))
+    index = build_index(tmp_path, bundle())
+    try:
+        for item in (SAMARIUM_STONE, CRUSHED_SAMARIUM):
+            assert index.counts_making(recipe_index.ITEM, item) == {VEINS: 1}
+        # Small ores aren't in the ore dictionary: GT's damage gives the material.
+        assert index.counts_making(recipe_index.ITEM, COPPER_STONE) == {SMALL: 1}
+        assert index.counts_making(recipe_index.ITEM, "gregtech:gt.metaitem.01:11128") == {}
+        # The ore dictionary is part of what the index was built from.
+        source = str(tmp_path / "recipes.json.gz")
+        assert recipe_index.is_current(index.path, source)
+        (tmp_path / recipe_index.ORE_DICT_FILE).write_text("{}")
+        assert not recipe_index.is_current(index.path, source)
     finally:
         index.close()
 
