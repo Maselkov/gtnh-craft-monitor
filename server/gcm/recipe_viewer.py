@@ -406,7 +406,10 @@ def item_summary(idx, kind, key):
         counts.update({f"research.{method}": n for method, n in idx.research_counts(kind, key, direction).items()})
     maps = [research_map_info(idx, RESEARCH_MAPS[name]) if name in RESEARCH_MAPS else map_info(idx, name)
             for name in making.keys() | using.keys()]
-    maps.sort(key=lambda m: (0 if m["id"] == "crafting" else 1 if m["id"] == "furnace" else 2, m["name"]))
+    # As NEI orders its tabs: by handlerordering.csv's number, then (most
+    # are 0) crafting, furnace and the rest by name.
+    maps.sort(key=lambda m: (idx.map_order(m["id"]), 0 if m["id"] == "crafting" else 1 if m["id"] == "furnace" else 2,
+                             m["name"]))
     return {"item": it, "info": it["info"], "making": making, "using": using, "maps": maps,
             "coverage": recipes.coverage_summary(idx)}
 

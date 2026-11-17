@@ -44,9 +44,11 @@ from urllib.parse import quote
 
 # Bumped when the schema or what goes in it changes: an index of another
 # format is built again.
-FORMAT = 11
+FORMAT = 12
 # An index built beside a bundle's recipes.json.gz is called this.
 FILE = "recipes.sqlite"
+# The game data bundle's ore dictionary, read from beside the recipes file.
+ORE_DICT_FILE = "ore_dict.json"
 ITEM, FLUID = 0, 1
 # The map of GregTech ore processing diagrams, which the index composes
 # from its own GT recipes (ore_processing.py).
@@ -81,6 +83,9 @@ CREATE TABLE display_stack (id TEXT PRIMARY KEY, body TEXT NOT NULL) WITHOUT ROW
 CREATE TABLE preview_layout (map INTEGER PRIMARY KEY, body TEXT NOT NULL);
 -- The item NEI draws on a map's tab (its handler's), as an item key.
 CREATE TABLE map_icon (map INTEGER PRIMARY KEY, k TEXT NOT NULL);
+-- NEI's tab order for the map (its handlerordering.csv number; smaller
+-- first), where it isn't 0.
+CREATE TABLE map_order (map INTEGER PRIMARY KEY, n INTEGER NOT NULL);
 CREATE TABLE map (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE);
 -- What NEI lists as the map's machines, in its order: v is {"name", "key"}.
 CREATE TABLE machine (map INTEGER NOT NULL, seq INTEGER NOT NULL, v TEXT NOT NULL, PRIMARY KEY (map, seq)) WITHOUT ROWID;
@@ -134,16 +139,46 @@ def split_species(key):
 
 
 def fingerprint(source):
-    """What the index has to match: the recipes file's own checksum."""
+    """What the index has to match: the recipes file's own checksum, and
+    the ore dictionary's beside it (ore lookups read it)."""
     with open(source, "rb") as f:
-        return _fingerprint_file(f)
+        return _fingerprint_file(f, _ore_dict_digest(source))
 
 
-def _fingerprint_file(f):
+def _sha256(f):
     digest = hashlib.sha256()
     for chunk in iter(lambda: f.read(1 << 20), b""):
         digest.update(chunk)
-    return json.dumps({"format": FORMAT, "source": digest.hexdigest()}, sort_keys=True)
+    return digest.hexdigest()
+
+
+def _fingerprint_file(f, ore_dict=None):
+    return json.dumps({"format": FORMAT, "source": _sha256(f), "ore_dict": ore_dict}, sort_keys=True)
+
+
+def _ore_dict_path(source):
+    return os.path.join(os.path.dirname(os.path.abspath(source)), ORE_DICT_FILE)
+
+
+def _ore_dict_digest(source):
+    try:
+        with open(_ore_dict_path(source), "rb") as f:
+            return _sha256(f)
+    except FileNotFoundError:
+        return None
+
+
+def _load_ore_dict(source):
+    """The bundle's ore dictionary beside the recipes file ({name: [key,
+    ...]}), or {} without one (older or test bundles)."""
+    try:
+        with open(_ore_dict_path(source), encoding="utf-8") as f:
+            value = json.load(f)
+    except FileNotFoundError:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError("invalid ore dictionary")
+    return {str(k): [str(x) for x in v] for k, v in value.items() if isinstance(v, list)}
 
 
 def is_current(index_path, source):
@@ -471,6 +506,8 @@ def _source_events(source_file):
                         yield "machines", map_name, reader.value()
                     elif field == "icon":
                         yield "icon", map_name, reader.value()
+                    elif field == "order":
+                        yield "order", map_name, reader.value()
                     else:
                         reader.value()
         if reader.peek():
@@ -482,8 +519,10 @@ def build(source, out_path):
     Two passes allow JSON fields in any order (including maps before items).
     Keep one source descriptor so an atomic bundle replacement cannot mix
     one generation's bodies with another generation's fingerprint."""
+    ore_dict_digest = _ore_dict_digest(source)
+    ore_dict = _load_ore_dict(source)
     with open(source, "rb") as f:
-        signature = _fingerprint_file(f)
+        signature = _fingerprint_file(f, ore_dict_digest)
         f.seek(0)
         raw, map_names, species = {}, set(), {}
         for event, key, value in _source_events(f):
@@ -504,10 +543,10 @@ def build(source, out_path):
                                    or not isinstance(raw["coverage"].get("handlers"), list)):
             raise ValueError("typed recipes need coverage metadata")
         f.seek(0)
-        _build(f, out_path, raw, {name: i for i, name in enumerate(sorted(map_names))}, signature, species)
+        _build(f, out_path, raw, {name: i for i, name in enumerate(sorted(map_names))}, signature, species, ore_dict)
 
 
-def _build(source_file, out_path, raw, map_ids, signature, species=None):
+def _build(source_file, out_path, raw, map_ids, signature, species=None, ore_dict=None):
     species = species or {}
     species_names = {}
     items = [str(k) for k in raw.get("items") or []]
@@ -522,6 +561,7 @@ def _build(source_file, out_path, raw, map_ids, signature, species=None):
         conn.execute("CREATE TEMP TABLE display_ref (id TEXT PRIMARY KEY)")
         recipe_id = 0
         veins = []  # (recipe id, body) of each ore vein, for _vein_chances
+        ore_gen = []  # (recipe id, body) of each vein and small ore, for _ore_gen_lookups
         conn.executemany("INSERT INTO map VALUES (?, ?)", ((i, name) for name, i in map_ids.items()))
         for event, map_name, value in _source_events(source_file):
             if event == "variant":
@@ -534,6 +574,11 @@ def _build(source_file, out_path, raw, map_ids, signature, species=None):
                     if not isinstance(value, dict):
                         raise ValueError("invalid preview layout")
                     conn.execute("INSERT INTO preview_layout VALUES (?, ?)", (map_ids[map_name], json.dumps(value)))
+                continue
+            if event == "order":
+                # Display only, like the icon.
+                if type(value) is int and value and -1_000_000 <= value <= 1_000_000:
+                    conn.execute("INSERT OR REPLACE INTO map_order VALUES (?, ?)", (map_ids[map_name], value))
                 continue
             if event == "icon":
                 # Display only: an unusable one is left out, not an error.
@@ -548,6 +593,7 @@ def _build(source_file, out_path, raw, map_ids, signature, species=None):
                 conn.execute("INSERT INTO recipe VALUES (?, ?, 3, 0, 0, ?)", (recipe_id, map_ids[map_name], json.dumps(body)))
                 if body["type"] == "ore_vein":
                     veins.append((recipe_id, body))
+                ore_gen.append((recipe_id, body))
                 conn.executemany("INSERT OR IGNORE INTO output VALUES (?, ?, ?)", ((ITEM, o[0], recipe_id) for o in body["o"]))
                 conn.executemany("INSERT OR IGNORE INTO input VALUES (?, ?, ?)", ((ITEM, i[0], recipe_id) for i in body["i"]))
                 recipe_id += 1
@@ -600,6 +646,7 @@ def _build(source_file, out_path, raw, map_ids, signature, species=None):
             recipe_id += 1
         recipe_id = _ore_processing(conn, map_ids, items, raw.get("item_names"), recipe_id)
         _vein_chances(conn, veins)
+        _ore_gen_lookups(conn, ore_gen, ore_dict or {}, set(items))
         if conn.execute("SELECT 1 FROM display_ref r LEFT JOIN display_stack s ON s.id = r.id WHERE s.id IS NULL LIMIT 1").fetchone():
             raise ValueError("unknown display stack reference")
         for kind, keys, names in ((ITEM, items, raw.get("item_names")), (FLUID, fluids, raw.get("fluid_names"))):
@@ -644,6 +691,72 @@ def _vein_chances(conn, veins):
         conn.execute("UPDATE recipe SET body = ? WHERE id = ?", (json.dumps(body), rid))
 
 
+# What gtneioreplugin looks a vein or small ore up by, besides the ore
+# blocks themselves (PluginGT5VeinStat.PREFIX_WHITELIST): an item of one
+# of these ore dictionary prefixes finds its material's veins.
+ORE_LOOKUP_PREFIXES = ("dust", "dustPure", "dustImpure", "ore", "oreBlackgranite", "oreRedgranite", "oreMarble",
+                       "oreBasalt", "oreNetherrack", "oreNether", "oreEndstone", "oreEnd", "crushedCentrifuged",
+                       "crushedPurified", "crushed", "rawOre", "gemChipped", "gemFlawed", "gemFlawless",
+                       "gemExquisite", "gem")
+_GT_ORE_BLOCK = re.compile(r"^gregtech:gt\.blockores\d*:(\d+)$")
+
+
+def _gt_ore_stones(key):
+    """A GT ore block's other stone types, as GT's NEI handler widens a
+    lookup: the same block item, damage id % 1000 + n * 1000 for n 0-7."""
+    match = _GT_ORE_BLOCK.match(key)
+    if not match:
+        return []
+    item, damage = key.rpartition(":")[0], int(match[1])
+    return [f"{item}:{damage % 1000 + n * 1000}" for n in range(8) if damage % 1000 + n * 1000 != damage]
+
+
+def _ore_gen_lookups(conn, records, ore_dict, known):
+    """Make each vein and small ore come up in Recipes for every item NEI
+    finds it by: gtneioreplugin looks an ore up by its material, so a vein
+    listing only the Moon's and Mars' stone variants still shows for the
+    plain stone ore, its crushed ore, dust and gems."""
+    if not records or not ore_dict:
+        return
+    names = {}
+    for name, keys in ore_dict.items():
+        for key in keys:
+            names.setdefault(key, []).append(name)
+
+    def material(key):
+        """The ore block's material, as its ore dictionary names it."""
+        own = names.get(key, [])
+        variant = next((n[len("variantOre"):] for n in own if n.startswith("variantOre")), None)
+        if variant:
+            return variant
+        ores = [n[len("ore"):] for n in own if n.startswith("ore")]
+        if len(ores) == 1:
+            return ores[0]
+        # GT's small ores aren't in the ore dictionary: their damage's last
+        # three digits are the material, whose dust is.
+        match = _GT_ORE_BLOCK.match(key)
+        if match:
+            dust = f"gregtech:gt.metaitem.01:{2000 + int(match[1]) % 1000}"
+            return next((n[len("dust"):] for n in names.get(dust, []) if n.startswith("dust") and n[4:5].isupper()), None)
+        return None
+
+    found = {}
+
+    def lookups(mat):
+        if mat not in found:
+            keys = set(ore_dict.get("variantOre" + mat, []))
+            for prefix in ORE_LOOKUP_PREFIXES:
+                keys.update(ore_dict.get(prefix + mat, []))
+            found[mat] = {k for k in keys if k in known}
+        return found[mat]
+    for recipe_id, body in records:
+        ores = [s for layer in body["layers"] for s in layer["alts"]] if body["type"] == "ore_vein" else body["ores"]
+        keys = set()
+        for mat in {material(s[0]) for s in ores} - {None}:
+            keys |= lookups(mat)
+        conn.executemany("INSERT OR IGNORE INTO output VALUES (?, ?, ?)", ((ITEM, k, recipe_id) for k in sorted(keys)))
+
+
 def _ore_processing_module():
     # By path: the build runs this file alone (python -I), outside the gcm package.
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ore_processing.py")
@@ -677,6 +790,7 @@ def _ore_processing(conn, map_ids, items, item_names, recipe_id):
     # NEI Custom Diagram's tab shows an ore block: iron's, where there is one.
     iron = next((d for d in diagrams if names.get(d["crushed"]) == "Crushed Iron Ore"), diagrams[0])
     conn.execute("INSERT INTO map_icon VALUES (?, ?)", (map_id, iron["groups"][0]["alts"][0][0]))
+    conn.execute("INSERT INTO map_order VALUES (?, ?)", (map_id, ore.ORDER))
     for body in diagrams:
         conn.execute("INSERT INTO recipe VALUES (?, ?, 4, 0, 0, ?)", (recipe_id, map_id, json.dumps(body)))
         conn.executemany("INSERT OR IGNORE INTO output VALUES (?, ?, ?)", ((ITEM, o[0], recipe_id) for o in body["o"]))
@@ -748,6 +862,8 @@ class RecipeIndex:
         self._conn = sqlite3.connect(f"file:{quote(path)}?mode=ro&immutable=1", uri=True, check_same_thread=False)
         self._maps = dict(self._conn.execute("SELECT id, name FROM map"))
         self._map_ids = {name: map_id for map_id, name in self._maps.items()}
+        # Maps GT's NEI handler shows: its recipe maps and their display maps.
+        self._gt_maps = sorted(m for m, name in self._maps.items() if name.startswith(("gt.", "nei.gt.")))
         meta = dict(self._conn.execute("SELECT k, v FROM meta"))
         self.source_format = int(meta["source_format"])
         self.fingerprint = meta["fingerprint"]
@@ -756,6 +872,7 @@ class RecipeIndex:
         self._layouts = {self._maps[m]: json.loads(body) for m, body in self._conn.execute("SELECT map, body FROM preview_layout")}
         self._memo = {}
         self._icons = {self._maps[m]: k for m, k in self._conn.execute("SELECT map, k FROM map_icon")}
+        self._orders = {self._maps[m]: n for m, n in self._conn.execute("SELECT map, n FROM map_order")}
         self._machines = {}
         for map_id, v in self._conn.execute("SELECT map, v FROM machine ORDER BY map, seq"):
             self._machines.setdefault(self._maps[map_id], []).append(json.loads(v))
@@ -779,6 +896,10 @@ class RecipeIndex:
     def map_icon(self, map_name):
         """The item key NEI draws on the map's tab, or None."""
         return self._icons.get(map_name)
+
+    def map_order(self, map_name):
+        """NEI's tab order for the map: smaller first, 0 for most."""
+        return self._orders.get(map_name, 0)
 
     def memo(self, name, build):
         """build(), once per index: a table derived from its recipes."""
@@ -813,7 +934,7 @@ class RecipeIndex:
             out.update((key, json.loads(body)) for key, body in rows)
         return out
 
-    def _where(self, kind, key, map_name):
+    def _where(self, kind, key, map_name, *, as_nei=False):
         if kind not in (ITEM, FLUID) or not isinstance(key, str) or not key:
             raise ValueError("recipe lookup needs an item or fluid key")
         # A concrete damage matches a wildcard ingredient/output as well. A
@@ -823,13 +944,23 @@ class RecipeIndex:
             keys.append(key.rpartition(":")[0] + ":*")
         where = f"x.kind = ? AND x.k IN ({','.join('?' for _ in keys)})"
         args = [kind, *keys]
+        stones = _gt_ore_stones(key) if as_nei and kind == ITEM else []
+        if stones and self._gt_maps:
+            # GT's NEI handler finds a GT ore's recipes for its block's
+            # other stone types too (GTNEIDefaultHandler.loadCraftingRecipes):
+            # Space Mining's End Bauxite Ore shows for the stone one. One IN
+            # over all the keys keeps the (kind, k) index in use.
+            every = [*keys, *stones]
+            where = (f"x.kind = ? AND x.k IN ({','.join('?' for _ in every)}) AND (x.k IN "
+                     f"({','.join('?' for _ in keys)}) OR r.map IN ({','.join('?' for _ in self._gt_maps)}))")
+            args = [kind, *every, *keys, *self._gt_maps]
         if map_name is not None:
             where += " AND r.map = ?"
             args.append(self._map_ids.get(map_name, -1))
         return where, args
 
-    def _rows(self, table, kind, key, map_name=None, limit=None, offset=0):
-        where, args = self._where(kind, key, map_name)
+    def _rows(self, table, kind, key, map_name=None, limit=None, offset=0, as_nei=False):
+        where, args = self._where(kind, key, map_name, as_nei=as_nei)
         # DISTINCT precedes LIMIT: the same recipe can take both a concrete
         # stack and a wildcard, or several alternatives with the same key.
         sql = (f"SELECT DISTINCT r.id, r.map, r.body, r.priority, r.eut, r.ticks "
@@ -845,8 +976,8 @@ class RecipeIndex:
         """Every recipe making key, in the same stable order as made_by()."""
         return self._rows("output", kind, key)
 
-    def _counts(self, table, kind, key, map_name=None):
-        where, args = self._where(kind, key, map_name)
+    def _counts(self, table, kind, key, map_name=None, as_nei=False):
+        where, args = self._where(kind, key, map_name, as_nei=as_nei)
         rows = self._all(
             f"SELECT r.map, COUNT(DISTINCT r.id) FROM {table} x JOIN recipe r ON r.id = x.recipe "
             f"WHERE {where} GROUP BY r.map ORDER BY r.map", args,
@@ -854,7 +985,10 @@ class RecipeIndex:
         return {self._maps[map_id]: n for map_id, n in rows}
 
     def counts_making(self, kind, key):
-        return self._counts("output", kind, key)
+        """Recipes per map making key, as NEI's Recipes finds them: a GT
+        ore's GT recipes take in its block's other stone types, as made_by's
+        do. making() doesn't: they make another item."""
+        return self._counts("output", kind, key, as_nei=True)
 
     def counts_using(self, kind, key):
         return self._counts("input", kind, key)
@@ -866,8 +1000,9 @@ class RecipeIndex:
     def _page(self, table, kind, key, map_name, limit, offset):
         if type(limit) is not int or not 1 <= limit <= PAGE_MAX or type(offset) is not int or offset < 0:
             raise ValueError(f"recipe page needs limit 1-{PAGE_MAX} and a nonnegative offset")
-        total = sum(self._counts(table, kind, key, map_name).values())
-        return self._rows(table, kind, key, map_name, limit, offset), total
+        as_nei = table == "output"
+        total = sum(self._counts(table, kind, key, map_name, as_nei).values())
+        return self._rows(table, kind, key, map_name, limit, offset, as_nei), total
 
     def made_by(self, kind, key, map_name=None, *, limit=20, offset=0):
         """(rows, total) making key. Crafting first, then furnace, then GT

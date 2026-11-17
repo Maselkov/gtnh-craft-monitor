@@ -2602,3 +2602,46 @@ so `_vein_chances` does the same sum once all veins are in and stores
 `dim_chances` on each (index format 11), and the viewer puts it on the
 dimension slot as a tooltip note, in NEI's `0.##` format. Small Ore Stats
 has no such tooltip in game, so it gets none.
+
+**Veins are looked up by material, from the ore dictionary.** A vein's
+layers hold only the stone types of its own dimensions (the Bauxite Vein
+is Moon-to-Seth, so no plain stone Bauxite Ore), but gtneioreplugin's
+`loadCraftingRecipes` finds veins by material: `OreManager.getMaterial`
+for any ore block, else an ore-dict name with a `PREFIX_WHITELIST` prefix
+(dusts, ores, crushed, raw ore, gems). `_ore_gen_lookups` does the same
+at build time with the bundle's `ore_dict.json`: a layer ore's material
+is its `variantOre<M>` name (every stone type has one), else its single
+`ore<M>`, else, for GT small ores (not in the ore dictionary), the dust
+of its damage's material id; each vein then gets output rows for every
+bundle item named `<prefix><M>`. The ore dictionary's checksum joins the
+index fingerprint (index format 12).
+
+**GT maps find a GT ore's other stone types.** GT's own NEI lookup
+(`GTNEIDefaultHandler.loadCraftingRecipes`) widens an item whose name
+starts with `gt.blockores` to the same block's eight stone types,
+damage `id % 1000 + n * 1000`: stone Bauxite Ore (`gt.blockores2:822`)
+shows Space Mining's End Bauxite Ore (`:2822`). `_where(as_nei=True)`
+does the same for GT maps (`gt.*`, `nei.gt.*`) in what the recipe book
+shows (`counts_making`, `made_by`), not in `making()`, which the planner
+and pattern check read: those recipes make another item. Its Uses
+(`loadUsageRecipes`) doesn't widen, so ours doesn't either. (The
+handler's `mFamiliarPrefixes` widening is only dust and ingot sizes.)
+
+**Tabs follow NEI's handlerordering.csv.** NEI sorts its tabs by that
+file's number (GTNH's puts NEI Custom Diagram's at -1000, the ore washer
+at 10, research at 500); a stable sort keeps the rest. The exporter
+writes each map's non-zero number as `order`
+(`NEIClientConfig.getHandlerOrder`, or `handlerOrdering` by map name for
+GT maps), the index keeps it in `map_order`, and `item_summary` sorts by
+it before the old crafting-furnace-name order. The server's own
+`ore_processing` map takes -1000 (`ore_processing.ORDER`), so it leads
+even with older bundles.
+
+**Meteors are NEI displays with products.** Blood Magic's meteor page
+has no result stack, so it was archived. Its cached recipe keeps the
+drops in `outputs` as `TooltipStack`s whose tooltips carry "Chance: x%",
+and `getCost`/`getRadius`. The exporter takes the drops through the
+same products path as NEI Addons' (`labeledProducts`, chance from the
+tooltip line with a `%`), the first as the result, and puts the cost and
+radius in `requirements` as `lp` and `radius`. Only for that handler:
+"outputs" is too common a field name to trust elsewhere.

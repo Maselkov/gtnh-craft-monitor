@@ -191,3 +191,20 @@ def test_viewer_card_and_mcp_present_the_diagram(idx, monkeypatch):
                 and "fluid" not in s)
     assert wash["outputs"][1] == {"name": "Byproduct Dust", "amount": 1, "unit": "items", "chance_percent": 11.11}
     assert any(s.get("fluid") == "mercury" for s in tree["steps"])
+
+
+def test_tabs_go_in_neis_handler_order(tmp_path):
+    # NEI sorts tabs by handlerordering.csv's number (the export's "order"),
+    # where GTNH puts ore processing first and the ore washer at 10; the
+    # rest are 0 and go by name.
+    data = bundle()
+    data["maps"][ore_processing.ORE_WASHER]["order"] = 10
+    data["maps"][ore_processing.MACERATOR]["order"] = "first"  # Display only: ignored.
+    index = build_index(tmp_path, data)
+    try:
+        assert index.map_order(recipe_index.ORE_PROCESSING_MAP) == ore_processing.ORDER == -1000
+        tabs = [m["id"] for m in recipe_viewer.item_summary(index, recipe_index.ITEM, CRUSHED)["maps"]]
+        assert tabs[0] == recipe_index.ORE_PROCESSING_MAP and tabs[-1] == ore_processing.ORE_WASHER
+        assert index.map_order(ore_processing.MACERATOR) == 0
+    finally:
+        index.close()

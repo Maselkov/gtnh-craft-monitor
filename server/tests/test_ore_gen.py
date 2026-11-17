@@ -1,6 +1,7 @@
 """Where ores generate: gtneioreplugin's Vein Stats and Small Ore Stats,
 from a map's ore_gen records (NeiRecipes.oreGen)."""
 import copy
+import json
 
 import pytest
 
@@ -15,9 +16,15 @@ NEODYMIUM, TARTARITE = "gregtech:gt.blockores3:4100", "gregtech:gt.blockores3:40
 CALLISTO, CERES = "gtneioreplugin:blockDimensionDisplay_Ca:0", "gtneioreplugin:blockDimensionDisplay_Ce:0"
 SMALL_ORE, DUST, GEM = "gregtech:gt.blockores2:17035", "gregtech:gt.metaitem.01:2035", "gregtech:gt.metaitem.01:8035"
 LEDOX = "gregtech:gt.blockores1:4390"
+# Not in any vein's layers: NEI finds the veins from them by material.
+SAMARIUM_STONE, CRUSHED_SAMARIUM, COPPER_STONE = "gregtech:gt.blockores2:128", "gregtech:gt.metaitem.01:5128", "gregtech:gt.blockores2:35"
 NAMES = {SAMARIUM: "Callisto Samarium Ore", SAMARIUM_MOON: "Ceres Samarium Ore", NEODYMIUM: "Callisto Neodymium Ore",
          TARTARITE: "Callisto Tartarite Ore", CALLISTO: "Callisto", CERES: "Ceres",
-         SMALL_ORE: "Small Copper Ore", DUST: "Copper Dust", GEM: "Copper Nugget", LEDOX: "Callisto Ledox Ore"}
+         SMALL_ORE: "Small Copper Ore", DUST: "Copper Dust", GEM: "Copper Nugget", LEDOX: "Callisto Ledox Ore",
+         SAMARIUM_STONE: "Samarium Ore", CRUSHED_SAMARIUM: "Crushed Samarium Ore", COPPER_STONE: "Copper Ore"}
+ORE_DICT = {"variantOreSamarium": [SAMARIUM, SAMARIUM_MOON], "oreCallistoSamarium": [SAMARIUM],
+            "oreSamarium": [SAMARIUM_STONE], "crushedSamarium": [CRUSHED_SAMARIUM, "gregtech:not.in.bundle:1"],
+            "dustCopper": [DUST], "oreCopper": [COPPER_STONE], "ingotSamarium": ["gregtech:gt.metaitem.01:11128"]}
 
 
 def bundle():
@@ -94,6 +101,26 @@ def test_older_servers_skip_ore_gen_as_they_skip_archives(tmp_path):
         index.close()
 
 
+def test_nei_finds_a_vein_by_its_ores_material(tmp_path):
+    # gtneioreplugin looks veins up by material: the plain stone ore and the
+    # crushed ore find a vein that lists only Callisto's and Ceres' stones.
+    (tmp_path / recipe_index.ORE_DICT_FILE).write_text(json.dumps(ORE_DICT))
+    index = build_index(tmp_path, bundle())
+    try:
+        for item in (SAMARIUM_STONE, CRUSHED_SAMARIUM):
+            assert index.counts_making(recipe_index.ITEM, item) == {VEINS: 1}
+        # Small ores aren't in the ore dictionary: GT's damage gives the material.
+        assert index.counts_making(recipe_index.ITEM, COPPER_STONE) == {SMALL: 1}
+        assert index.counts_making(recipe_index.ITEM, "gregtech:gt.metaitem.01:11128") == {}
+        # The ore dictionary is part of what the index was built from.
+        source = str(tmp_path / "recipes.json.gz")
+        assert recipe_index.is_current(index.path, source)
+        (tmp_path / recipe_index.ORE_DICT_FILE).write_text("{}")
+        assert not recipe_index.is_current(index.path, source)
+    finally:
+        index.close()
+
+
 def texts(row):
     return [t["text"] for t in row["preview"]["texts"]]
 
@@ -162,3 +189,29 @@ def test_find_recipes_says_where_an_ore_generates(idx, monkeypatch):
     assert small["ore_generation"]["drops"] == [{"name": "Copper Nugget", "amount": 1, "unit": "items", "chance_percent": 25.0}]
     assert small["ore_generation"]["drops"][0] == {"name": "Copper Nugget", "amount": 1, "unit": "items", "chance_percent": 25.0}
 
+
+
+def test_gt_maps_find_a_gt_ores_other_stone_types_as_neis_recipes_do(tmp_path):
+    # GTNEIDefaultHandler widens a gt.blockores lookup to the block's other
+    # stone types (damage % 1000 + n * 1000): the stone ore's Recipes show
+    # Space Mining's endstone ore. Only GT maps, only Recipes, and not for
+    # the planner (making()), which needs the item itself.
+    stone, end, other_block = "gregtech:gt.blockores2:822", "gregtech:gt.blockores2:2822", "gregtech:gt.blockores3:2822"
+    keys = [stone, end, other_block, "gtnhintergalactic:item.MiningDrone:0"]
+    data = {"format": 3, "items": keys, "item_names": ["Bauxite Ore", "End Bauxite Ore", "Phobos Bauxite Ore", "Drone"],
+            "fluids": [], "fluid_names": [], "coverage": {"handlers": ["gregtech", "nei"], "identity": "item_id_damage", "limitations": []},
+            "maps": {"gt.recipe.spaceMining": {"machines": [{"name": "Space Mining"}], "recipes": [
+                         {"type": "gt", "i": [[3, 0]], "o": [[1, 64, 5000]], "e": 7680, "d": 50},
+                         {"type": "gt", "i": [[3, 0]], "o": [[2, 64]], "e": 7680, "d": 50}]},
+                     "nei.some.Handler::": {"machines": [{"name": "Other"}], "recipes": [
+                         {"type": "nei", "groups": [{"kind": "item", "alts": [[3, 1]]}], "o": [[1, 1]]}]}}}
+    index = build_index(tmp_path, data)
+    try:
+        assert index.counts_making(recipe_index.ITEM, stone) == {"gt.recipe.spaceMining": 1}
+        rows, total = index.made_by(recipe_index.ITEM, stone, "gt.recipe.spaceMining")
+        assert total == 1 and rows[0][2]["o"][0][0] == end
+        assert index.counts_making(recipe_index.ITEM, end) == {"gt.recipe.spaceMining": 1, "nei.some.Handler::": 1}
+        assert index.making(recipe_index.ITEM, stone) == []
+        assert index.counts_using(recipe_index.ITEM, end) == {}
+    finally:
+        index.close()

@@ -42,9 +42,11 @@ format 1 has GregTech only. Format 3 adds native Assembly Line recipes/research,
 GT display maps, NEI display recipes and an audit of registered handlers. Format 4
 adds exact display-stack references, resolved GUI textures, slot geometry, aspect
 names and static research metadata. The server
-reads source formats 1–4 into a read-only SQLite index (format 11), normally built beside shared game data to avoid rebuilding it
+reads source formats 1–4 into a read-only SQLite index (format 12), normally built beside shared game data to avoid rebuilding it
 on each hosted instance. The builder reads two passes of the compressed file,
-keeping intern tables and one recipe in memory instead of the full JSON. The
+keeping intern tables and one recipe in memory instead of the full JSON. It also
+reads the bundle's `ore_dict.json`, to find veins by material as NEI does, so a
+changed ore dictionary rebuilds the index too. The
 [exporter guide](../tools/icon-export/README.md#bundle-format) describes the schema.
 
 Crafting recipes retain grid holes and every ingredient alternative. The input
