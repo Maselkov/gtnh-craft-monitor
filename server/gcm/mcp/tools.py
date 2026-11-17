@@ -606,7 +606,7 @@ def plan_craft(user, args):
         return {"items": [{"item": r["key"], "name": r["name"], "amount": r["amount"]} for r in rows],
                 "as_one_job": one_job, **_plan_batch(user, rows, one_job)}
     key = _arg(args, "item", "string", required=True)
-    amount = _arg(args, "amount", "integer", required=True, minimum=1, maximum=10**12)
+    amount = _arg(args, "amount", "integer", required=True, minimum=1, maximum=commands.MAX_CRAFT_AMOUNT)
     _parse_key(key)
     return {"item": key, "amount": amount, **_plan(user, key, amount)}
 
@@ -1328,7 +1328,7 @@ def _already_underway(key, mod, internal, damage):
 def request_craft(user, args):
     _require_operator(user, "request crafts")
     key = _arg(args, "item", "string", required=True)
-    amount = _arg(args, "amount", "integer", required=True, minimum=1, maximum=10**12)
+    amount = _arg(args, "amount", "integer", required=True, minimum=1, maximum=commands.MAX_CRAFT_AMOUNT)
     force = _arg(args, "force", "boolean", False)
     allow_duplicate = _arg(args, "allow_duplicate", "boolean", False)
     mod, internal, damage, kind, variant = _parse_key(key)

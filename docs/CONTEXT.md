@@ -91,6 +91,18 @@ them; consolidating means a fix like the json_encode-crash pcall fix
 separately to multiple call sites across multiple files - only needs
 to happen once from here on.
 
+`http.lua`'s `request_with_timeout` polls the Internet Card's request
+handle itself - `read()` returns "" until data comes, and raises on an
+error status - sleeping a tick between empty reads, and gives up once
+nothing has arrived for the timeout: before the connection is up,
+before the first chunk, or between chunks. It used to read OpenOS's
+`internet.request()` iterator, which sleeps in its own loop until data
+comes, so a connection that went silent before sending anything held
+the script for good (the likeliest cause of the stuck scans
+`network_browser.lua`'s debug log was added for), and its timeout error
+left the handle open, holding one of the card's few connections.
+`download_to_file` already worked this way.
+
 **File organization, server side**: `server/app.py` is only the
 entrypoint (`python app.py` to serve, `python app.py new-token <name>`
 for admin recovery). The server itself is the `server/gcm/` package:
@@ -103,6 +115,7 @@ gcm/store/*.py      ALL other SQL, one module per domain: power, items,
                     crafts, requests, users
 gcm/auth.py         API key, signed-in user, roles, setup code, route decorators
 gcm/security.py     trusted-proxy wrapper, cross-origin hook, headers
+gcm/request_body.py a JSON body as an object (anything else as {}), for routes
 gcm/state.py        in-memory live state (crafts, network scan, CPU
                     transition tracking) + reset() - plain data, no SQL
 gcm/commands.py     craft/cancel request queues + their history rows
@@ -191,10 +204,17 @@ in their numbers and messages. Two guarantees matter to the game side:
   the cancel up. The request carries `expected_output` (mod, internal,
   damage from the latest status report). The server answers 409 if the
   browser's copy already differs, and craft_monitor.lua compares it with
-  the CPU's live `finalOutput()` before calling `cancel()`. A CPU without
-  a Crafting Monitor reports no output, so for it only the name is
-  checked. Two back-to-back jobs making the same item still can't be
-  told apart.
+  the CPU's live `finalOutput()` before calling `cancel()`. It also
+  carries `expected_started_at`, the job's `started_at` from
+  `/api/crafts` (the server's first sight of that job, new for each job
+  on a CPU): the server answers 409 if the job's start already differs,
+  and as the game polls `/cancel/pending` it answers, rather than sends,
+  any cancel whose CPU has started another job since (`claim_cancels()`).
+  That's what tells apart two back-to-back jobs making the same item (a
+  Level Maintainer's), and jobs on a CPU without a Crafting Monitor,
+  which reports no output. Only a new job the latest status report
+  hasn't shown yet can still slip through, on a CPU without a Crafting
+  Monitor or making the same item.
 
 Every change to a queued record goes through a `CommandQueue` method
 (`add`, `claim_pending`, `resolve`, `dismiss`, `select`); routes only

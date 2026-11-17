@@ -8,6 +8,7 @@
 // items together, so what they share is made once. Otherwise, or when
 // the viewer ticks "separately", each item is its own request.
 
+import { MAX_CRAFT_AMOUNT } from './amount.js';
 import { isOperator } from './auth.js';
 import { closeCraftPlan, kitPlanOpen, openKitPlan } from './craft-plan.js';
 import { fetchCraftRequests, showToast } from './craft-actions.js';
@@ -475,7 +476,7 @@ export function setupBatchActions() {
     const row = key && rows().find(r => r.key === key);
     if (!row) return;
     const n = Math.round(Number(e.target.value));
-    if (!Number.isFinite(n) || n < 1) return;  // fixed on change, below
+    if (!Number.isFinite(n) || n < 1 || n > MAX_CRAFT_AMOUNT) return;  // fixed on change, below
     row.amount = n;
     scheduleSave();
     updateControls();

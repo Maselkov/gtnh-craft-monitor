@@ -444,7 +444,7 @@ one clears the terminal on every cycle, so two would flicker.
 | `WATCH_REQUEST_OUTCOMES` | `true` | After a requested craft starts, report whether it finished or was cancelled |
 | `KIT_SCAN_SECONDS` | `600` | How often to look for [kit slots](#kit-interface) |
 | `COMPONENT` | `nil` (auto) | Force `"me_controller"` or `"me_interface"` |
-| `HTTP_TIMEOUT_SECONDS` | `20` | Give up on a request to the server that stalls this long |
+| `HTTP_TIMEOUT_SECONDS` | `20` | Give up on a request to the server once nothing has come back for this long |
 | `SHOW_STATUS` | `false` | Draw a compact status screen |
 | `VERBOSE` | `false` | Print one line per CPU per cycle, for debugging |
 | `DEBUG_DUMP` | `false` | Print the raw `getCpus()` data once and exit |
@@ -462,7 +462,7 @@ the output, then remove it again.
 | `COMPONENT_ADDRESS` | `nil` | Pick a specific `gt_machine` if several are connected |
 | `MACHINES` | `nil` | Report several machines instead, each with its own chart: see below |
 | `WIRELESS_NAME` | `"Wireless"` | Name of the wireless EU network's chart; `false` leaves it out. See below |
-| `HTTP_TIMEOUT_SECONDS` | `20` | Give up on a request to the server that stalls this long |
+| `HTTP_TIMEOUT_SECONDS` | `20` | Give up on a request to the server once nothing has come back for this long |
 | `SHOW_STATUS` | `false` | Draw a status screen |
 
 To chart several machines (say an LSC and a bank of battery buffers), list
@@ -514,7 +514,7 @@ against its wireless threshold instead of its capacity
 | `CHUNK_MAX_BYTES` | `65536` | Most JSON sent per POST, items or patterns: items with big NBT, like Tinkers' tools, go in smaller chunks. One item bigger than this still goes on its own. Each POST's body is built as one string, so lower uses less memory |
 | `DELAY_BETWEEN_BATCHES_SECONDS` | `0.1` | Pause between batches |
 | `MAX_CONSECUTIVE_ERRORS` | `5` | Batches in a row that may fail before the scan is abandoned |
-| `HTTP_TIMEOUT_SECONDS` | `20` | Give up on a request to the server that stalls this long |
+| `HTTP_TIMEOUT_SECONDS` | `20` | Give up on a request to the server once nothing has come back for this long |
 | `SHOW_STATUS` | `false` | Draw a status screen |
 
 A full scan takes about 165 batches with the GTNH catalog, which takes about

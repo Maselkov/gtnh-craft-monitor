@@ -306,13 +306,16 @@ def _restock(sizes, names, scan_started_at):
         if budget <= 0:
             store.stock.record_waiting(key, "waiting for a free crafting CPU")
             continue
+        # A whole number, as every craft request is: a target's amounts
+        # may have fractions (gcm/commands.py, MAX_CRAFT_AMOUNT).
+        amount = min(commands.MAX_CRAFT_AMOUNT, math.ceil(target["refill_to"] - current))
         req_id = commands.queue_craft(
             target["updated_by"],
             target["label"],
             target["mod"],
             target["internal"],
             target["damage"],
-            target["refill_to"] - current,
+            amount,
             target["kind"],
             target["variant"],
             names.get(key),
@@ -321,7 +324,7 @@ def _restock(sizes, names, scan_started_at):
         )
         store.stock.record_auto_request(key, req_id, now)
         budget -= 1
-        log.info("Requested %s x%s to keep it in stock", target["label"], target["refill_to"] - current)
+        log.info("Requested %s x%s to keep it in stock", target["label"], amount)
 
 
 def auto_request_result(req, status, reason):

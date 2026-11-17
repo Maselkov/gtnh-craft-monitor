@@ -146,11 +146,10 @@ local CONFIG = {
   CRASH_RESTART_SECONDS = 30,  -- after an error kills the scan loop (see
                                -- service_loop), wait this long and start over
   MAX_CONSECUTIVE_ERRORS = 5,
-  HTTP_TIMEOUT_SECONDS = 20,  -- see http.lua's read_response_with_timeout -
-                              -- bails out of an individual POST if a real,
-                              -- confirmed-from-a-live-hang stall happens
-                              -- mid-response, rather than that call sitting
-                              -- there indefinitely
+  HTTP_TIMEOUT_SECONDS = 20,  -- see http.lua's request_with_timeout -
+                              -- gives up on a request once nothing has
+                              -- come back for this long, rather than that
+                              -- call sitting there indefinitely
   SHOW_STATUS = false,  -- set true if you want the live status screen back -
                         -- same reasoning as power_monitor.lua's flag: two
                         -- screen-owning scripts fighting over one terminal
@@ -201,9 +200,8 @@ end
 --
 -- The rejection signal has to be read from the body, not the HTTP
 -- status - confirmed directly from http.lua's own source:
--- request_with_timeout/read_response_with_timeout never inspect the
--- status code at all, only whether reading the response itself
--- succeeded. A 200 with {"ok": false, ...} in the body and an actual
+-- request_with_timeout never inspects the status code at all, only
+-- whether reading the response itself succeeded. A 200 with {"ok": false, ...} in the body and an actual
 -- transport failure both come back as "the read succeeded", so the two
 -- have to be told apart by decoding and checking the body every time.
 --
@@ -390,9 +388,18 @@ local DEBUG_LOG_MAX_BYTES = 200000  -- crude single-rotation cap, not a
                                      -- specific issue, not indefinite
                                      -- long-term logging
 
+-- How long this computer has been up, as h:mm:ss: real time, where
+-- os.date() reads the in-game clock, which runs 72x faster (http.lua).
+local function uptime_text()
+  local s = math.floor(computer.uptime())
+  return string.format("%d:%02d:%02d", s // 3600, s // 60 % 60, s % 60)
+end
+
+-- Each line starts with the computer's uptime, so the gaps between them
+-- are real time.
 local function debug_log(msg)
   pcall(function()
-    local line = string.format("[%s] %s\n", os.date("%H:%M:%S"), msg)
+    local line = string.format("[%s] %s\n", uptime_text(), msg)
     local f = io.open(DEBUG_LOG_PATH, "a")
     if not f then return end
     local size = f:seek("end")
@@ -1021,7 +1028,7 @@ local function draw_status(lastResult, lastError, nextScanIn)
   term.clear()
   term.setCursor(1, 1)
   print("=== Network Browser ===")
-  print("Last scan:    " .. os.date("%H:%M:%S"))
+  print("Last scan:    " .. uptime_text() .. " after boot")
   if lastError then
     print("Last result:  FAILED - " .. tostring(lastError))
   elseif lastResult then

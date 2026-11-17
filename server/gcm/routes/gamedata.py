@@ -6,7 +6,7 @@ gcm/gamedata.py, gcm/recipes.py and gcm/gamedata_check.py."""
 
 from flask import Blueprint, g, jsonify, request
 
-from gcm import auth, gamedata, gamedata_check, patterns, recipes
+from gcm import auth, gamedata, gamedata_check, patterns, recipes, request_body
 
 
 bp = Blueprint("gamedata", __name__)
@@ -58,7 +58,7 @@ def admin_gamedata_status_get():
 @bp.route("/api/admin/gamedata/install", methods=["POST"])
 @auth.admin_required
 def admin_gamedata_install_post():
-    payload = request.get_json(silent=True) or {}
+    payload = request_body.json_object()
     error = gamedata.start_install(payload.get("version"), payload.get("textures") or "default")
     if error:
         return jsonify({"error": error}), 409

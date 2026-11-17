@@ -132,10 +132,9 @@ local CONFIG = {
                                      -- terminal fight each other and flicker.
                                      -- Only one should draw at a time.
   HTTP_TIMEOUT_SECONDS = 20,        -- see http.lua's
-                                     -- read_response_with_timeout - bails
-                                     -- out of an individual POST/GET if a
-                                     -- real, confirmed-from-a-live-hang
-                                     -- stall happens mid-response
+                                     -- request_with_timeout - gives up on
+                                     -- a POST/GET once nothing has come
+                                     -- back for this long
 
   CRAFT_API_URL = config.SERVER_URL .. "/api/craft",  -- base for
                                      -- /requests/pending, /requests/<id>/result
@@ -1116,12 +1115,19 @@ end
 -- print loop, which was the actual source of the slowness - a real
 -- terminal redraw/scroll for every one of 30+ lines, every cycle, adds
 -- up fast even though the AE2 calls themselves are cheap.
+-- How long this computer has been up, as h:mm:ss: real time, where
+-- os.date() reads the in-game clock, which runs 72x faster (http.lua).
+local function uptime_text()
+  local s = math.floor(computer.uptime())
+  return string.format("%d:%02d:%02d", s // 3600, s // 60 % 60, s % 60)
+end
+
 local function draw_status(kind, cpus, busy, post_ok, post_err, errors)
   term.clear()
   term.setCursor(1, 1)
   print("=== GTNH Craft Monitor ===")
   print("Component:    " .. kind)
-  print("Last poll:    " .. os.date("%H:%M:%S"))
+  print("Last poll:    " .. uptime_text() .. " after boot")
 
   print(string.format("CPUs:         %d total (%d busy, %d idle)", cpus, busy, cpus - busy))
   print("Last POST:    " .. (post_ok and "OK" or ("FAILED - " .. tostring(post_err))))

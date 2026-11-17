@@ -9,9 +9,9 @@ Two-sided auth:
     operator or admin role."""
 
 
-from flask import Blueprint, g, jsonify, request
+from flask import Blueprint, g, jsonify
 
-from gcm import auth, batches, commands, mctext, multiblocks, patterns, state, stock, store, tracking
+from gcm import auth, batches, commands, mctext, multiblocks, patterns, request_body, state, stock, store, tracking
 
 
 bp = Blueprint("craft_requests", __name__)
@@ -27,7 +27,7 @@ MAX_BATCH = 100
 def craft_request_post():
     user_id = g.user["id"]
 
-    payload = request.get_json(silent=True) or {}
+    payload = request_body.json_object()
     label = payload.get("label")
     mod = payload.get("mod")
     internal = payload.get("internal")
@@ -37,12 +37,12 @@ def craft_request_post():
     variant = payload.get("variant") or None
     variant_name = payload.get("variant_name") or None
 
-    error = commands.craft_request_error(label, internal, amount, kind, variant)
+    error = commands.craft_request_error(label, internal, amount, kind, variant, mod)
     if error:
         return jsonify({"error": error}), 400
 
     req_id = commands.queue_craft(
-        user_id, label, mod, internal, damage, amount, kind, variant, variant_name
+        user_id, label, mod, internal, damage, int(amount), kind, variant, variant_name
     )
     return jsonify({"ok": True, "id": req_id})
 
@@ -54,7 +54,7 @@ def craft_request_batch_post():
     """Several craft requests at once (a multiblock kit's): {requests:
     [{label, mod, internal, damage, amount}]}, all items. Each is queued
     as its own request, as if made one by one; none is if any is wrong."""
-    payload = request.get_json(silent=True) or {}
+    payload = request_body.json_object()
     rows = payload.get("requests")
     if not isinstance(rows, list) or not rows:
         return jsonify({"error": "requests must be a non-empty list"}), 400
@@ -63,12 +63,13 @@ def craft_request_batch_post():
     for i, row in enumerate(rows):
         if not isinstance(row, dict):
             return jsonify({"error": f"request {i + 1} isn't an object"}), 400
-        error = commands.craft_request_error(row.get("label"), row.get("internal"), row.get("amount"), "item", None)
+        error = commands.craft_request_error(row.get("label"), row.get("internal"), row.get("amount"), "item", None,
+                                             row.get("mod"))
         if error:
             return jsonify({"error": f"{row.get('label') or f'request {i + 1}'}: {error}"}), 400
     ids = [
         commands.queue_craft(g.user["id"], row["label"], row.get("mod"), row["internal"], row.get("damage"),
-                             row["amount"], "item")
+                             int(row["amount"]), "item")
         for row in rows
     ]
     return jsonify({"ok": True, "ids": ids})
@@ -88,7 +89,7 @@ def craft_request_kit_post():
     block with more in stock than the kit needs would be taken from
     storage instead of crafted. The blocks come straight back into the
     network when the job ends."""
-    payload = request.get_json(silent=True) or {}
+    payload = request_body.json_object()
     key = payload.get("key")
     tiers = payload.get("tiers") or {}
     amounts = payload.get("amounts")
@@ -148,7 +149,7 @@ def batch_get():
 @auth.operator_required
 def batch_put():
     """Replaces the batch: {items: [{key, amount, name?, from?}]}."""
-    rows, error = batches.parse((request.get_json(silent=True) or {}).get("items"))
+    rows, error = batches.parse(request_body.json_object().get("items"))
     if error:
         return jsonify({"error": error}), 400
     store.batches.save(g.user["id"], rows)
@@ -161,7 +162,7 @@ def batch_put():
 def batch_add_post():
     """Adds to the batch: {items: [...]} as PUT takes them; an item
     already in it has the amounts added up."""
-    added, error = batches.parse((request.get_json(silent=True) or {}).get("items"))
+    added, error = batches.parse(request_body.json_object().get("items"))
     if not error and not added:
         error = "nothing to add"
     if not error:
@@ -180,7 +181,7 @@ def craft_request_batch_job_post():
     separate: bool}, the rows the player reviewed - as one job, or each
     as its own craft with separate. The account's batch is emptied once
     they're queued."""
-    payload = request.get_json(silent=True) or {}
+    payload = request_body.json_object()
     separate = payload.get("separate") is True
     rows, error = batches.parse(payload.get("items"))
     if error:
@@ -251,7 +252,7 @@ def kit_label_used(req_id, label):
 @bp.route("/api/craft/requests/<int:req_id>/result", methods=["POST"])
 @auth.api_key_required
 def craft_request_result(req_id):
-    payload = request.get_json(silent=True) or {}
+    payload = request_body.json_object()
     status = payload.get("status")
     if status not in ("accepted", "failed"):
         return jsonify({"error": "status must be accepted or failed"}), 400
@@ -291,7 +292,7 @@ def craft_request_result(req_id):
 def craft_request_outcome(req_id):
     # How an accepted request's job ended, from its own AE2 crafting link
     # - sent only for requests accepted with watching=true.
-    payload = request.get_json(silent=True) or {}
+    payload = request_body.json_object()
     outcome = payload.get("outcome")
     cpu_name = payload.get("cpu_name")
     if outcome not in ("finished", "cancelled"):
@@ -309,8 +310,9 @@ def craft_request_outcome(req_id):
 def craft_cancel_post():
     user_id = g.user["id"]
 
-    payload = request.get_json(silent=True) or {}
-    req_id, error = commands.request_cancel(user_id, payload.get("cpu_name"), payload.get("expected_output"))
+    payload = request_body.json_object()
+    req_id, error = commands.request_cancel(user_id, payload.get("cpu_name"), payload.get("expected_output"),
+                                            shown_started_at=payload.get("expected_started_at"))
     if error:
         message, status = error
         return jsonify({"error": message}), status
@@ -332,13 +334,17 @@ def craft_cancel_get(req_id):
 @bp.route("/api/craft/cancel/pending", methods=["GET"])
 @auth.api_key_required
 def craft_cancel_pending():
-    return jsonify({"requests": commands.cancel_requests.claim_pending()})
+    send, refused = commands.claim_cancels()
+    for req_id in refused:
+        store.requests.resolve_cancel(req_id, False, commands.OTHER_JOB_REASON)
+        commands.cancel_requests.resolve(req_id, "resolved", success=False, reason=commands.OTHER_JOB_REASON)
+    return jsonify({"requests": send})
 
 
 @bp.route("/api/craft/cancel/<int:req_id>/result", methods=["POST"])
 @auth.api_key_required
 def craft_cancel_result(req_id):
-    payload = request.get_json(silent=True) or {}
+    payload = request_body.json_object()
     success = bool(payload.get("success"))
     reason = payload.get("reason")
 

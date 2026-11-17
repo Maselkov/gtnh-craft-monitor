@@ -1398,7 +1398,10 @@ async function main() {
   step('cancel dialog opens for the CPU and closes', async () => {
     await waitFor('cancel button', `card('W01').querySelector('.cancel-btn')`);
     await click(`card('W01').querySelector('.cancel-btn')`);
-    await waitFor('dialog open', `visible($('#cancelConfirmModal')) && $('#cancelConfirmSub').textContent === 'CPU W01'`);
+    // No game data yet, so the job has no icon to show.
+    await waitFor('dialog open, naming the job', `visible($('#cancelConfirmModal'))
+      && $('#cancelConfirmTitle').textContent === 'Cancel Iron Ingot?' && $('#cancelConfirmIcon').hidden
+      && /^CPU W01 · \\d+% done$/.test($('#cancelConfirmSub').textContent)`);
     await click(`byText('#cancelConfirmModal button', 'Keep going')`);
     await waitFor('closed by button', `!visible($('#cancelConfirmModal'))`);
     await click(`card('W01').querySelector('.cancel-btn')`);

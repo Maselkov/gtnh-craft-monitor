@@ -196,12 +196,33 @@ def _expire_craft_request(req_id, reason):
     store.stock.record_auto_result(req_id, "failed", reason)
 
 
-def craft_request_error(label, internal, amount, kind, variant):
+# The most one craft request may ask for: far above any real craft. The
+# game reads the amount as a whole number (OC's AE2 driver takes a long,
+# cutting off a fraction), so only whole numbers are taken, or the job
+# would make a different amount from the one the page and history show.
+MAX_CRAFT_AMOUNT = 10**12
+
+
+def craft_amount_error(amount):
+    """Why amount can't be a craft request's amount, or None. A float is
+    fine if it's whole (5.0); infinity (JSON's 1e400) and NaN aren't,
+    and would also have made the game's /pending poll invalid JSON."""
+    if isinstance(amount, float) and amount.is_integer():
+        amount = int(amount)
+    if isinstance(amount, bool) or not isinstance(amount, int) or not 1 <= amount <= MAX_CRAFT_AMOUNT:
+        return f"amount must be a whole number from 1 to {MAX_CRAFT_AMOUNT:,}"
+    return None
+
+
+def craft_request_error(label, internal, amount, kind, variant, mod=None):
     """Why a craft request can't be queued as given, or None."""
-    if not label or not internal:
+    if not isinstance(label, str) or not label or not isinstance(internal, str) or not internal:
         return "missing label/internal"
-    if isinstance(amount, bool) or not isinstance(amount, (int, float)) or amount <= 0:
-        return "amount must be a positive number"
+    if mod is not None and not isinstance(mod, str):
+        return "mod must be a string"
+    amount_error = craft_amount_error(amount)
+    if amount_error:
+        return amount_error
     if kind not in ("item", "fluid"):
         return "kind must be item or fluid"
     if variant is not None and not isinstance(variant, str):
@@ -367,12 +388,23 @@ def same_output(a, b):
     return all(a.get(key) == b.get(key) for key in ("mod", "internal", "damage"))
 
 
-def request_cancel(user_id, cpu_name, shown_output=None, source="manual"):
+# Why a cancel isn't sent: the job it was for has ended.
+OTHER_JOB_REASON = "a different job is now running on this CPU - not cancelled"
+
+
+def _same_start(a, b):
+    return abs(a - b) < 1e-6
+
+
+def request_cancel(user_id, cpu_name, shown_output=None, source="manual", shown_started_at=None):
     """Queues cancelling the job on a busy CPU. Returns (id, None), or
     (None, (error message, HTTP status)) when it can't be cancelled.
     shown_output is what the user saw the job making (output_identity's
-    form), if known: when the CPU has moved on to another job since, the
-    one they meant to cancel is gone, and nothing is queued."""
+    form), and shown_started_at that job's started_at as /api/crafts gave
+    it, if known: when the CPU has moved on to another job since, the one
+    they meant to cancel is gone, and nothing is queued. The start tells
+    apart two jobs making the same item one after the other (a Level
+    Maintainer's), and jobs on a CPU with no Crafting Monitor."""
     if not cpu_name:
         return None, ("missing cpu_name", 400)
 
@@ -396,7 +428,11 @@ def request_cancel(user_id, cpu_name, shown_output=None, source="manual"):
     # to report its output - then only the CPU name is known.
     expected_output = output_identity(job)
     if isinstance(shown_output, dict) and expected_output and not same_output(expected_output, shown_output):
-        return None, ("a different job is now running on this CPU - not cancelled", 409)
+        return None, (OTHER_JOB_REASON, 409)
+    started_at = job.get("started_at")
+    if (isinstance(shown_started_at, (int, float)) and not isinstance(shown_started_at, bool)
+            and started_at is not None and not _same_start(started_at, shown_started_at)):
+        return None, (OTHER_JOB_REASON, 409)
 
     created_at = time.time()
     req_id = cancel_requests.add(
@@ -404,6 +440,9 @@ def request_cancel(user_id, cpu_name, shown_output=None, source="manual"):
             "user_id": user_id,
             "cpu_name": cpu_name,
             "expected_output": expected_output,
+            # The job's start, checked again as the game picks the cancel
+            # up (claim_cancels()); None when the server hadn't seen it.
+            "started_at": started_at,
             # status: pending -> resolved
             "success": None,
             "reason": None,
@@ -414,6 +453,26 @@ def request_cancel(user_id, cpu_name, shown_output=None, source="manual"):
         ),
     )
     return req_id, None
+
+
+def claim_cancels():
+    """For the game's /cancel/pending poll: (the cancels to carry out,
+    the ids of those whose CPU has started another job since they were
+    asked for, as far as the latest status report says). Those would
+    cancel the wrong job; the caller answers them with OTHER_JOB_REASON
+    instead of sending them."""
+    claimed = cancel_requests.claim_pending()
+    with state.crafts_lock:
+        jobs = {j.get("name"): j for j in state.crafts.get("jobs", [])}
+    send, refused = [], []
+    for req in claimed:
+        job = jobs.get(req["cpu_name"])
+        current = job.get("started_at") if job and job.get("busy") else None
+        if req.get("started_at") is not None and current is not None and not _same_start(current, req["started_at"]):
+            refused.append(req["id"])
+        else:
+            send.append(req)
+    return send, refused
 
 
 def reset():

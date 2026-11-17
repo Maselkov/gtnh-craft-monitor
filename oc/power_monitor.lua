@@ -129,9 +129,9 @@ local CONFIG = {
   WIRELESS_NAME = "Wireless",       -- the wireless EU network's chart, read through
                                      -- an LSC (see WIRELESS above); false turns it off
   HTTP_TIMEOUT_SECONDS = 20,        -- see http.lua's
-                                     -- read_response_with_timeout - bails
-                                     -- out of a POST if a real, confirmed-
-                                     -- from-a-live-hang stall happens
+                                     -- request_with_timeout - gives up on
+                                     -- a POST once nothing has come back
+                                     -- for this long
                                      -- mid-response
 }
 
@@ -426,11 +426,18 @@ local function draw_machine_status(stored, capacity, post_ok, post_err, read_err
   print("Last POST:    " .. (post_ok and "OK" or ("FAILED - " .. tostring(post_err))))
 end
 
+-- How long this computer has been up, as h:mm:ss: real time, where
+-- os.date() reads the in-game clock, which runs 72x faster (http.lua).
+local function uptime_text()
+  local s = math.floor(computer.uptime())
+  return string.format("%d:%02d:%02d", s // 3600, s // 60 % 60, s % 60)
+end
+
 local function draw_status(results)
   term.clear()
   term.setCursor(1, 1)
   print("=== GTNH Power Monitor ===")
-  print("Last poll:    " .. os.date("%H:%M:%S"))
+  print("Last poll:    " .. uptime_text() .. " after boot")
   for _, r in ipairs(results) do
     if r.name then print("--- " .. r.name .. " ---") end
     draw_machine_status(r.stored, r.capacity, r.post_ok, r.post_err, r.read_err)

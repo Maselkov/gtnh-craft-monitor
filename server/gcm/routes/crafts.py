@@ -8,8 +8,8 @@ from collections import Counter
 from flask import Blueprint, g, jsonify, request, Response
 
 from gcm import (
-    auth, bottlenecks, config, craft_stats, gamedata_check, icons, job_links, job_tree, patterns, planner, state, store,
-    tracking,
+    auth, bottlenecks, config, craft_stats, gamedata_check, icons, job_links, job_tree, patterns, planner,
+    request_body, state, store, tracking,
 )
 
 
@@ -26,7 +26,7 @@ _DEBUG_DUMPS_KEEP = 10
 @bp.route("/api/debug", methods=["POST"])
 @auth.api_key_required
 def debug_post():
-    payload = request.get_json(silent=True) or {}
+    payload = request_body.json_object()
     with state.crafts_lock:
         state.debug_dumps.append(
             {
@@ -321,7 +321,7 @@ def pins_get():
 def pins_post():
     user_id = g.user["id"]
 
-    payload = request.get_json(silent=True) or {}
+    payload = request_body.json_object()
     cpu_name = payload.get("cpu_name")
     if not cpu_name:
         return jsonify({"error": "missing cpu_name"}), 400
@@ -347,7 +347,7 @@ def pins_post():
 def pins_unpin():
     user_id = g.user["id"]
 
-    payload = request.get_json(silent=True) or {}
+    payload = request_body.json_object()
     cpu_name = payload.get("cpu_name")
     if not cpu_name:
         return jsonify({"error": "missing cpu_name"}), 400

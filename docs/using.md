@@ -746,7 +746,8 @@ Network tab have a small Blank Pattern icon in the corner.
   extract items.
 
 The amount can be written as `10k`, `1.5M` or `2G`, or as arithmetic such as
-`4*64+10` or `(10k-2k)/2`; the dialog shows the result before you submit. The
+`4*64+10` or `(10k-2k)/2`; the dialog shows the result before you submit,
+rounded to a whole number, up to 1,000,000,000,000 (`1T`) in one request. The
 stock rule fields below take the same forms.
 
 With an [ME Interface Terminal](in-game.md#me-interface-terminal)
@@ -794,7 +795,10 @@ under a second to several minutes, and the request survives closing the tab.
 - **Failed** — the card turns red with AE2's reason (usually
   `request failed (missing resources?)`) until you dismiss it.
 
-To cancel a running job, click **×** on its card in the Crafts tab.
+To cancel a running job, click **×** on its card in the Crafts tab. The
+dialog names what the job is making and how far along it is. If the CPU has
+moved on to another job by the time you confirm, even one making the same
+item, nothing is cancelled and the dialog says so.
 
 ## Multiblock kits
 

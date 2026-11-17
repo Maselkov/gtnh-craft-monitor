@@ -332,6 +332,7 @@ export function setupNetworkTooltipEvents() {
     if (!listEl.contains(e.relatedTarget)) hideTooltip();
   });
   document.getElementById('networkSearch').addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown') flushNetworkSearch();
     if (e.key !== 'ArrowDown' || !networkShownItems.length) return;
     e.preventDefault();
     const tabStop = listEl.querySelector('.network-cell[tabindex="0"]');
@@ -572,6 +573,43 @@ export function compareByChange(a, b) {
   return (b.size || 0) - (a.size || 0);
 }
 
+// Each item's key and plain name, worked out once per item rather than
+// in every comparison of every sort: a big network has tens of thousands
+// of items, and the list is sorted again on each keystroke. Items are
+// new objects on each fetch, so nothing here outlives its data.
+const itemSortFacts = new WeakMap();
+const NAME_COLLATOR = new Intl.Collator();
+
+function sortFacts(it) {
+  let facts = itemSortFacts.get(it);
+  if (!facts) {
+    facts = { key: itemKeyOf(it), name: nameText(it.name || '') };
+    itemSortFacts.set(it, facts);
+  }
+  return facts;
+}
+
+// items in the order the list shows them: pinned ones (keys in
+// pinnedKeys) first as a group, each group by `sort` - 'name', 'size',
+// or 'change' (changeOf(it) gives an item's move over the range).
+export function sortNetworkItems(items, sort, pinnedKeys, changeOf) {
+  const rows = items.map((it) => {
+    const facts = sortFacts(it);
+    return {
+      it,
+      pinned: pinnedKeys.has(facts.key),
+      name: facts.name,
+      size: it.size || 0,
+      fraction: sort === 'change' ? changeFraction(it.size, changeOf(it)) : null,
+    };
+  });
+  const byMode = sort === 'size' ? (a, b) => b.size - a.size
+    : sort === 'change' ? compareByChange
+      : (a, b) => NAME_COLLATOR.compare(a.name, b.name);
+  rows.sort((a, b) => (a.pinned !== b.pinned ? (a.pinned ? -1 : 1) : byMode(a, b)));
+  return rows.map(r => r.it);
+}
+
 function changeTooltipHtml(change, kind) {
   const unit = kind === 'fluid' ? ' mB' : '';
   const range = networkChangeRange === 'week' ? 'a week' : 'a day';
@@ -675,9 +713,29 @@ export function updateNetworkSearchHighlight() {
   overlay.scrollLeft = input.scrollLeft;
 }
 
+// Typing in a search of this many items waits for a pause before the
+// list is filtered and sorted again: each pass takes a noticeable moment
+// there (more on a phone), and doing one per keystroke made typing lag.
+// A smaller list keeps answering every key at once.
+const NETWORK_SEARCH_DEBOUNCE_ITEMS = 5000;
+const NETWORK_SEARCH_DEBOUNCE_MS = 120;
+let searchRenderTimer = null;
+
 function onNetworkSearchInput() {
   updateNetworkSearchHighlight();
-  renderNetworkList();
+  const count = (lastNetworkData && lastNetworkData.items || []).length;
+  if (count < NETWORK_SEARCH_DEBOUNCE_ITEMS) {
+    renderNetworkList();
+    return;
+  }
+  clearTimeout(searchRenderTimer);
+  searchRenderTimer = setTimeout(renderNetworkList, NETWORK_SEARCH_DEBOUNCE_MS);
+}
+
+// A list still waiting for the pause, drawn now: before something reads
+// what it shows.
+function flushNetworkSearch() {
+  if (searchRenderTimer != null) renderNetworkList();
 }
 
 function buildNetworkNoteHtml(query) {
@@ -695,11 +753,10 @@ export function rerenderNetworkList() {
   if (lastNetworkData) renderNetworkList();
 }
 
-function changeSortKey(it) {
-  return { size: it.size, fraction: changeFraction(it.size, changeOf(it)) };
-}
-
 function renderNetworkList() {
+  // Whatever asked, this draws the search as it is now.
+  clearTimeout(searchRenderTimer);
+  searchRenderTimer = null;
   // A re-render replaces the DOM under the cursor without a real
   // mouse-move event firing (e.g. typing in the search box) - hide
   // any currently-shown tooltip so it can't linger showing stale
@@ -735,18 +792,11 @@ function renderNetworkList() {
     filtered = items.filter(it => itemMatchesSearch(it, parsedQuery, needsInfo ? searchInfoOf(it) : {}));
   }
 
-  filtered = filtered.slice().sort((a, b) => {
-    // Pinned items float to the top as a GROUP regardless of sort
-    // mode - but within each group (pinned vs not), the normal sort
-    // criteria still applies, rather than pinned items falling back
-    // to some arbitrary pin-timestamp order.
-    const aPinned = pinnedItemKeys.has(networkItemKey(a.mod, a.internal, a.damage, a.kind, a.variant));
-    const bPinned = pinnedItemKeys.has(networkItemKey(b.mod, b.internal, b.damage, b.kind, b.variant));
-    if (aPinned !== bPinned) return aPinned ? -1 : 1;
-    if (networkSort === 'size') return (b.size || 0) - (a.size || 0);
-    if (networkSort === 'change') return compareByChange(changeSortKey(a), changeSortKey(b));
-    return nameText(a.name || '').localeCompare(nameText(b.name || ''));
-  });
+  // Pinned items float to the top as a GROUP regardless of sort mode -
+  // but within each group (pinned vs not), the normal sort criteria
+  // still applies, rather than pinned items falling back to some
+  // arbitrary pin-timestamp order.
+  filtered = sortNetworkItems(filtered, networkSort, pinnedItemKeys, changeOf);
   networkFilteredSorted = filtered;
 
   // A periodic background refresh (new scan data, same search/sort

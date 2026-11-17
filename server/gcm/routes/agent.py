@@ -4,7 +4,7 @@ commands (gcm/agents.py) and shows how to connect a computer."""
 
 from flask import Blueprint, g, jsonify, request
 
-from gcm import agents, auth, config, health
+from gcm import agents, auth, config, health, request_body
 
 bp = Blueprint("agent", __name__)
 
@@ -33,7 +33,7 @@ def agent_ping():
 @bp.route("/api/agent/commands/<int:cmd_id>/result", methods=["POST"])
 @auth.api_key_required
 def agent_command_result(cmd_id):
-    payload = request.get_json(silent=True) or {}
+    payload = request_body.json_object()
     if not agents.result(cmd_id, payload.get("ok"), payload.get("message"), payload.get("version"),
                          payload.get("rebooting")):
         return jsonify({"error": "unknown command"}), 404
@@ -108,7 +108,7 @@ def admin_health_get():
 def admin_agent_command(address):
     """Body: {"action": "update", "ref": "release" | "main"} or
     {"action": "reboot"}."""
-    payload = request.get_json(silent=True) or {}
+    payload = request_body.json_object()
     cmd_id, error = agents.queue(address, payload.get("action"), payload.get("ref"), g.user["id"])
     if error:
         return jsonify({"error": error}), 400
