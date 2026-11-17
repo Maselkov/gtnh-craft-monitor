@@ -23,7 +23,7 @@ from gcm import commands, icons, mctext, state, store
 # A kit pattern takes up to 512 inputs; the plan and the separate
 # requests take 100 (routes/network.py, routes/craft_requests.py).
 MAX_ROWS = 100
-MAX_AMOUNT = 10**12
+MAX_AMOUNT = commands.MAX_CRAFT_AMOUNT
 MAX_TEXT = 200
 
 

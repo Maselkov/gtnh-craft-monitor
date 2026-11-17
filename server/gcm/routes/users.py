@@ -3,7 +3,7 @@ the page's notices someone dismissed."""
 
 from flask import Blueprint, g, jsonify, request
 
-from gcm import auth, config, icons, notices, store
+from gcm import auth, config, icons, notices, request_body, store
 
 
 bp = Blueprint("users", __name__)
@@ -43,7 +43,7 @@ def _signed_in_response(body, session_token):
 @bp.route("/api/auth/login", methods=["POST"])
 @auth.public
 def auth_login_post():
-    payload = request.get_json(silent=True) or {}
+    payload = request_body.json_object()
     token = payload.get("token")
     if not isinstance(token, str):
         return jsonify({"error": "invalid credentials"}), 401
@@ -60,10 +60,9 @@ def auth_login_post():
 def auth_setup_post():
     # Checked by the setup code (gcm.auth.finish_setup), which only
     # exists while there are no users.
-    payload = request.get_json(silent=True) or {}
+    payload = request_body.json_object()
     code = payload.get("code")
-    display_name = payload.get("display_name")
-    display_name = display_name.strip() if isinstance(display_name, str) else ""
+    display_name = request_body.text(payload, "display_name")
     if auth.setup_code() is None:
         return jsonify({"error": "setup is already done; sign in instead"}), 409
     if not isinstance(code, str) or not display_name:
@@ -124,8 +123,8 @@ def notice_put(name):
 @bp.route("/api/admin/users", methods=["POST"])
 @auth.admin_required
 def admin_user_post():
-    payload = request.get_json(silent=True) or {}
-    display_name = (payload.get("display_name") or "").strip()
+    payload = request_body.json_object()
+    display_name = request_body.text(payload, "display_name")
     role = payload.get("role")
     if not display_name or role not in ("viewer", "operator", "admin"):
         return (

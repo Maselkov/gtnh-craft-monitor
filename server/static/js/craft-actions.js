@@ -1,6 +1,6 @@
 // Craft request and cancel modals, pending craft requests.
 
-import { evaluateAmountExpression } from './amount.js';
+import { evaluateAmountExpression, MAX_CRAFT_AMOUNT, TOO_MANY_TEXT } from './amount.js';
 import { AUTH_USER, closeAdminUsersModal, isOperator, closeBackupsModal, closeSettingsMenu, expireAuthentication } from './auth.js';
 import { closeCraftPlan, openCraftPlan, updateCraftPlanAmount } from './craft-plan.js';
 import { nameText } from './description.js';
@@ -79,6 +79,7 @@ export function showToast(message, isError) {
 // ---------- Cancel craft ----------
 let cancelConfirmTarget = null;  // cpu_name currently targeted by the confirm modal
 let cancelConfirmOutput = null;  // what that CPU's job was making when the modal opened
+let cancelConfirmStartedAt = null;  // and that job's started_at, which tells it from the next one
 export const pendingCancelCpus = new Set();  // cpu_names with an in-flight
                                        // cancel request - drives the
                                        // spinner/disabled state on
@@ -96,7 +97,19 @@ export function openCancelConfirmModal(cpuName) {
         damage: job.final_output_damage ?? null,
       }
     : null;
-  document.getElementById('cancelConfirmSub').textContent = 'CPU ' + cpuName;
+  cancelConfirmStartedAt = job && job.started_at != null ? job.started_at : null;
+  // Which job, so a cancel on the wrong card is caught here: what it's
+  // making, and how far along.
+  const name = job && job.final_output ? nameText(job.final_output) : null;
+  document.getElementById('cancelConfirmTitle').textContent = name ? `Cancel ${name}?` : 'Cancel this craft?';
+  const icon = document.getElementById('cancelConfirmIcon');
+  icon.hidden = !(name && job.final_output_icon);
+  if (!icon.hidden) {
+    icon.src = iconUrl(job.final_output_icon);
+    icon.className = iconClass('modal-icon', job.final_output_icon);
+  }
+  const progress = job && job.progress_percent != null ? ` · ${Math.round(job.progress_percent)}% done` : '';
+  document.getElementById('cancelConfirmSub').textContent = 'CPU ' + cpuName + progress;
   const errorEl = document.getElementById('cancelConfirmError');
   errorEl.style.display = 'none';
   const btn = document.getElementById('cancelConfirmSubmitBtn');
@@ -109,6 +122,7 @@ function closeCancelConfirmModal() {
   document.getElementById('cancelConfirmModal').style.display = 'none';
   cancelConfirmTarget = null;
   cancelConfirmOutput = null;
+  cancelConfirmStartedAt = null;
 }
 
 async function submitCancelConfirm() {
@@ -131,7 +145,9 @@ async function submitCancelConfirm() {
     const res = await fetch('/api/craft/cancel', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cpu_name: cpuName, expected_output: cancelConfirmOutput }),
+      body: JSON.stringify({
+        cpu_name: cpuName, expected_output: cancelConfirmOutput, expected_started_at: cancelConfirmStartedAt,
+      }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -236,10 +252,11 @@ async function submitCraftRequest() {
 
   const evaluated = evaluateAmountExpression(document.getElementById('craftRequestAmount').value);
   const amount = evaluated.ok ? Math.round(evaluated.value) : null;
-  if (!evaluated.ok || !amount || amount <= 0) {
-    errorEl.textContent = evaluated.ok
-      ? 'Enter a quantity of at least 1 (e.g. 500, 10k, or 4+3*2 on desktop).'
-      : 'Invalid expression: ' + evaluated.error;
+  if (!evaluated.ok || !amount || amount <= 0 || amount > MAX_CRAFT_AMOUNT) {
+    errorEl.textContent = !evaluated.ok
+      ? 'Invalid expression: ' + evaluated.error
+      : amount > MAX_CRAFT_AMOUNT ? TOO_MANY_TEXT
+        : 'Enter a quantity of at least 1 (e.g. 500, 10k, or 4+3*2 on desktop).';
     errorEl.style.display = 'block';
     return;
   }
@@ -296,8 +313,8 @@ async function addCraftToBatch() {
   const errorEl = document.getElementById('craftRequestError');
   const evaluated = evaluateAmountExpression(document.getElementById('craftRequestAmount').value);
   const amount = evaluated.ok ? Math.round(evaluated.value) : null;
-  if (!amount || amount <= 0) {
-    errorEl.textContent = 'Enter a quantity of at least 1 to add to the batch.';
+  if (!amount || amount <= 0 || amount > MAX_CRAFT_AMOUNT) {
+    errorEl.textContent = amount > MAX_CRAFT_AMOUNT ? TOO_MANY_TEXT : 'Enter a quantity of at least 1 to add to the batch.';
     errorEl.style.display = 'block';
     return;
   }

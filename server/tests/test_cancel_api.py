@@ -209,6 +209,77 @@ class TestCancelNamesTheJob:
         assert pending["expected_output"] is None
 
 
+def job_started_at(client, cpu_name="W01"):
+    jobs = client.get("/api/crafts").get_json()["jobs"]
+    return next(j for j in jobs if j["name"] == cpu_name)["started_at"]
+
+
+def next_job_same_item(client, api_headers):
+    """The CPU finishes its job and starts another making the same item,
+    as a Level Maintainer does."""
+    post_busy_job(client, api_headers, busy=False)
+    post_job_making(client, api_headers, "gt.metaitem.01")
+
+
+class TestCancelNamesTheJobsStart:
+    def test_refused_when_the_same_item_started_again(self, client, api_headers):
+        post_job_making(client, api_headers, "gt.metaitem.01")
+        login_as(client, "usr_alice", role="operator")
+        shown_start = job_started_at(client)
+        next_job_same_item(client, api_headers)
+        assert job_started_at(client) != shown_start
+
+        res = client.post("/api/craft/cancel", json={
+            "cpu_name": "W01", "expected_output": shown("gt.metaitem.01"), "expected_started_at": shown_start,
+        })
+        assert res.status_code == 409
+        assert client.get("/api/craft/cancel/pending", headers=api_headers).get_json()["requests"] == []
+
+    def test_refused_on_a_cpu_without_a_crafting_monitor(self, client, api_headers):
+        post_busy_job(client, api_headers)
+        login_as(client, "usr_alice", role="operator")
+        shown_start = job_started_at(client)
+        post_busy_job(client, api_headers, busy=False)
+        post_busy_job(client, api_headers)
+
+        res = client.post("/api/craft/cancel", json={"cpu_name": "W01", "expected_started_at": shown_start})
+        assert res.status_code == 409
+
+    def test_the_job_shown_is_cancelled(self, client, api_headers):
+        post_job_making(client, api_headers, "gt.metaitem.01")
+        login_as(client, "usr_alice", role="operator")
+        res = client.post("/api/craft/cancel", json={
+            "cpu_name": "W01", "expected_output": shown("gt.metaitem.01"),
+            "expected_started_at": job_started_at(client),
+        })
+        assert res.status_code == 200
+        assert len(client.get("/api/craft/cancel/pending", headers=api_headers).get_json()["requests"]) == 1
+
+    def test_not_sent_to_the_game_once_another_job_started(self, client, api_headers):
+        # Asked for while the job ran; the CPU moved on before the game
+        # polled for it.
+        post_job_making(client, api_headers, "gt.metaitem.01")
+        login_as(client, "usr_alice", role="operator")
+        req_id = client.post("/api/craft/cancel", json={
+            "cpu_name": "W01", "expected_output": shown("gt.metaitem.01"),
+            "expected_started_at": job_started_at(client),
+        }).get_json()["id"]
+        next_job_same_item(client, api_headers)
+
+        assert client.get("/api/craft/cancel/pending", headers=api_headers).get_json()["requests"] == []
+        answer = client.get(f"/api/craft/cancel/{req_id}").get_json()
+        assert (answer["status"], answer["success"]) == ("resolved", False)
+        assert "different job" in answer["reason"]
+        conn = db.app_db()
+        try:
+            row = conn.execute(
+                "SELECT status, success FROM craft_cancel_history WHERE request_id = ?", (req_id,)
+            ).fetchone()
+        finally:
+            conn.close()
+        assert row == ("resolved", 0)
+
+
 class TestCancelHistoryWrittenFirst:
     def test_cancel_is_not_queued_when_its_history_row_fails(
         self, client, api_headers, monkeypatch

@@ -172,6 +172,14 @@ class TestRestock:
         assert (req["label"], req["amount"], req["user_id"], req["target_key"]) == ("Iron Ingot", 260, "olive", "minecraft|iron_ingot|0|item")
         assert rules(operator)["targets"][0]["status"] == "requested"
 
+    def test_a_fractional_refill_asks_for_a_whole_number(self, operator, api_headers):
+        # Targets take any positive number; the game only crafts whole ones.
+        set_target(operator, keep=100, refill=300.5)
+        cpus(operator, api_headers)
+        scan(operator, api_headers, scanned(IRON, 40), scanned(GOLD, 500))
+        [req] = auto_requests()
+        assert req["amount"] == 261 and isinstance(req["amount"], int)
+
     def test_hidden_from_the_requesters_own_list(self, operator, api_headers):
         set_target(operator)
         cpus(operator, api_headers)

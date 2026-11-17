@@ -1,6 +1,13 @@
 // Craft amount expression evaluator (10k, 4+3*2). Pure functions
 // (tested under server/tests/js/).
 
+// The most one craft request may ask for, as the server takes it
+// (gcm/commands.py, MAX_CRAFT_AMOUNT).
+export const MAX_CRAFT_AMOUNT = 1e12;
+
+// The message for an amount over MAX_CRAFT_AMOUNT.
+export const TOO_MANY_TEXT = `At most ${MAX_CRAFT_AMOUNT.toLocaleString('en-US')} at once.`;
+
 // Simple four-function expression evaluator (+, -, *, /, parens),
 // with metric-prefixed numbers (10k, 1.5m, 2g; b is accepted as an alias for g) as the base number
 // token - not a separate feature bolted on, the OLD plain-number

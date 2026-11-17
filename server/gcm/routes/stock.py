@@ -2,9 +2,9 @@
 and the base's keep-in-stock targets, which only operators change since
 they queue real crafts."""
 
-from flask import Blueprint, g, jsonify, request
+from flask import Blueprint, g, jsonify
 
-from gcm import auth, stock, store
+from gcm import auth, request_body, stock, store
 
 
 bp = Blueprint("stock", __name__)
@@ -21,7 +21,7 @@ def stock_rules_get():
 @bp.route("/api/stock/alert", methods=["POST"])
 @auth.login_required
 def stock_alert_set():
-    payload = request.get_json(silent=True) or {}
+    payload = request_body.json_object()
     item, error = stock.item_from(payload)
     error = error or stock.set_alert(g.user["id"], item, payload.get("below"))
     if error:
@@ -32,7 +32,7 @@ def stock_alert_set():
 @bp.route("/api/stock/alert/delete", methods=["POST"])
 @auth.login_required
 def stock_alert_delete():
-    item, error = stock.item_from(request.get_json(silent=True) or {})
+    item, error = stock.item_from(request_body.json_object())
     if error:
         return jsonify({"error": error}), 400
     store.stock.delete_alert(g.user["id"], stock.rule_key(item))
@@ -43,7 +43,7 @@ def stock_alert_delete():
 @auth.login_required
 @auth.operator_required
 def stock_target_set():
-    payload = request.get_json(silent=True) or {}
+    payload = request_body.json_object()
     item, error = stock.item_from(payload)
     error = error or stock.set_target(
         g.user["id"], item, payload.get("keep_at_least"), payload.get("refill_to"), payload.get("enabled", True)
@@ -57,7 +57,7 @@ def stock_target_set():
 @auth.login_required
 @auth.operator_required
 def stock_target_delete():
-    item, error = stock.item_from(request.get_json(silent=True) or {})
+    item, error = stock.item_from(request_body.json_object())
     if error:
         return jsonify({"error": error}), 400
     store.stock.delete_target(stock.rule_key(item))

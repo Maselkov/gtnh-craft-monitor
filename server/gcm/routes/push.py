@@ -3,7 +3,7 @@ test post to the webhooks (gcm/webhooks.py)."""
 
 from flask import Blueprint, g, jsonify, request
 
-from gcm import auth, config, push, store, webhooks
+from gcm import auth, config, push, request_body, store, webhooks
 
 
 bp = Blueprint("push", __name__)
@@ -22,7 +22,7 @@ def push_key_get():
 @auth.login_required
 def push_subscribe():
     """Body: the browser's PushSubscription.toJSON()."""
-    payload = request.get_json(silent=True) or {}
+    payload = request_body.json_object()
     endpoint = payload.get("endpoint")
     keys = payload.get("keys") if isinstance(payload.get("keys"), dict) else {}
     fields = (endpoint, keys.get("p256dh"), keys.get("auth"))
@@ -39,7 +39,7 @@ def push_subscribe():
 @bp.route("/api/push/unsubscribe", methods=["POST"])
 @auth.login_required
 def push_unsubscribe():
-    payload = request.get_json(silent=True) or {}
+    payload = request_body.json_object()
     endpoint = payload.get("endpoint")
     if not isinstance(endpoint, str) or not endpoint:
         return jsonify({"error": "missing endpoint"}), 400

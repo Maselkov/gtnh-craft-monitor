@@ -9,7 +9,10 @@ import time
 
 from flask import abort, Blueprint, g, jsonify, request, Response, send_file
 
-from gcm import auth, charts, gamedata, icons, inventory, item_info, memory, multiblocks, patterns, planner, state, stock, store
+from gcm import (
+    auth, charts, commands, gamedata, icons, inventory, item_info, memory, multiblocks, patterns, planner, request_body,
+    state, stock, store,
+)
 
 log = logging.getLogger(__name__)
 
@@ -51,9 +54,10 @@ def network_catalog_get():
 @auth.api_key_required
 def network_scan_batch():
     payload = request.get_json(silent=True)
-    if not isinstance(payload, dict):
+    items = payload.get("items", []) if isinstance(payload, dict) else None
+    if not isinstance(items, list) or not all(isinstance(it, dict) for it in items):
         return jsonify({"error": "invalid payload"}), 400
-    accepted = inventory.add_batch(payload.get("scan_token"), payload.get("items", []))
+    accepted = inventory.add_batch(payload.get("scan_token"), items)
     # A 200 status either way, not 409/etc - request_with_timeout on the
     # Lua side never inspects the HTTP status code at all (confirmed
     # directly from its source: it only reads the response body via OC's
@@ -82,7 +86,7 @@ def network_scan_batch():
 @bp.route("/api/network/scan/finish", methods=["POST"])
 @auth.api_key_required
 def network_scan_finish():
-    payload = request.get_json(silent=True) or {}
+    payload = request_body.json_object()
     result = inventory.finish_scan(
         payload.get("scan_token"), payload.get("chunks_sent"), payload.get("total_errors"),
         payload.get("last_error"),
@@ -431,20 +435,29 @@ def network_item_pins_get():
     return jsonify({"pins": store.items.pins(g.user["id"])})
 
 
+def _pinned_item(payload):
+    """(mod, internal, damage, kind, variant) of the item a pin request
+    names, or (None, an error message)."""
+    mod, internal, damage = payload.get("mod"), payload.get("internal"), payload.get("damage")
+    kind = payload.get("kind") or "item"
+    variant = payload.get("variant") or None
+    if not isinstance(internal, str) or not internal:
+        return None, "missing internal"
+    if (not isinstance(mod, (str, type(None))) or not isinstance(kind, str) or not isinstance(variant, (str, type(None)))
+            or isinstance(damage, bool) or not isinstance(damage, (int, float, str, type(None)))):
+        return None, "mod, kind and variant must be text, and damage a number"
+    return (mod, internal, damage, kind, variant), None
+
+
 @bp.route("/api/network/pins", methods=["POST"])
 @auth.login_required
 def network_item_pins_post():
     user_id = g.user["id"]
-    payload = request.get_json(silent=True) or {}
-    mod = payload.get("mod")
-    internal = payload.get("internal")
-    damage = payload.get("damage")
-    kind = payload.get("kind") or "item"
-    variant = payload.get("variant") or None
-    if not internal:
-        return jsonify({"error": "missing internal"}), 400
+    item, error = _pinned_item(request_body.json_object())
+    if error:
+        return jsonify({"error": error}), 400
 
-    store.items.pin(user_id, mod, internal, damage, kind, variant)
+    store.items.pin(user_id, *item)
     return jsonify({"ok": True})
 
 
@@ -452,16 +465,11 @@ def network_item_pins_post():
 @auth.login_required
 def network_item_pins_unpin():
     user_id = g.user["id"]
-    payload = request.get_json(silent=True) or {}
-    mod = payload.get("mod")
-    internal = payload.get("internal")
-    damage = payload.get("damage")
-    kind = payload.get("kind") or "item"
-    variant = payload.get("variant") or None
-    if not internal:
-        return jsonify({"error": "missing internal"}), 400
+    item, error = _pinned_item(request_body.json_object())
+    if error:
+        return jsonify({"error": error}), 400
 
-    store.items.unpin(user_id, mod, internal, damage, kind, variant)
+    store.items.unpin(user_id, *item)
     return jsonify({"ok": True})
 
 
@@ -491,7 +499,7 @@ def network_patterns_batch():
 @bp.route("/api/network/patterns/finish", methods=["POST"])
 @auth.api_key_required
 def network_patterns_finish():
-    payload = request.get_json(silent=True) or {}
+    payload = request_body.json_object()
     result = patterns.finish_scan(
         payload.get("scan_token"), payload.get("chunks_sent"), payload.get("total_errors"),
         payload.get("last_error"),
@@ -517,7 +525,7 @@ def network_patterns_get():
 
 # The most a plan can be asked for: AE2 takes a long, but a plan for
 # more than this is no use to anyone.
-MAX_PLAN_AMOUNT = 10**12
+MAX_PLAN_AMOUNT = commands.MAX_CRAFT_AMOUNT
 # The most items one plan can be for (a multiblock kit's blocks).
 MAX_PLAN_TARGETS = 100
 
