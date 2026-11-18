@@ -68,7 +68,7 @@ os.environ["GCM_VERSION"] = "v1.1.0"
 # doesn't pass for a real server's.
 os.environ["ICON_COLOR"] = "#ff6b6b"
 
-from gcm import bottlenecks, create_app, db, icons, patterns, store  # noqa: E402
+from gcm import bottlenecks, create_app, db, eta, icons, patterns, store  # noqa: E402
 from gcm.routes.crafts import name_cpus  # noqa: E402
 
 API_KEY = "dev-" + secrets.token_hex(24)
@@ -1093,16 +1093,22 @@ def backfill_history(days=7):
         stopped = random.random() < 0.08
         # Seen from its start, or first seen part way through.
         seen_at = ended - took if random.random() >= 0.05 else ended - took / 2
+        # When a finished one seen from its start reached each 10%, for
+        # the time left of the next: front-loaded, as a real job's
+        # progress is (gcm/eta.py).
+        marks = None
+        if not stopped and seen_at == ended - took:
+            marks = eta.marks_text({m: round(took * (m / 100) ** 2.5, 1) for m in eta.MARKS})
         events.append((cpu, name, icons.resolve_icon(it["mod"], it["internal"], it["damage"], name),
                        "incomplete" if stopped else "finished", random.randint(5, 90) if stopped else 100,
                        ended, seen_at if seen_at == ended - took else None,
                        it["mod"], it["internal"], it["damage"],
-                       int(cpu != "M00" and random.random() < 0.25), seen_at))
+                       int(cpu != "M00" and random.random() < 0.25), seen_at, marks))
     with db.transaction(db.app_db) as conn:
         conn.executemany(
             "INSERT INTO craft_events (cpu_name, item_label, item_icon, status, progress_at_end, occurred_at, "
-            "started_at, item_mod, item_internal, item_damage, auto, first_seen_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", events
+            "started_at, item_mod, item_internal, item_damage, auto, first_seen_at, progress_marks) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", events
         )
 
     # Time jobs were held up at some of the dev patterns' machines, for

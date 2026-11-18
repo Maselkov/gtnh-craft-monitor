@@ -281,6 +281,21 @@ can sign in), stop the container, replace the `.db` file in `data/`
 present, and start it again. WAL mode needs `data/` on a local disk,
 not a network share.
 
+## How good the time left is
+
+A craft's time left (see [Crafts tab](using.md#crafts-tab)) comes from the base's
+earlier crafts of the same item. To see how far off it would have been
+over your latest 2000 finished crafts:
+
+```bash
+docker compose exec gtnh-craft-monitor python app.py eta-report
+```
+
+Each line is one way of estimating it. `median` is the typical
+estimate as a multiple of the time the craft really had left (1.00 is
+spot on, 0.25 a quarter of it). `old` is how it was worked out before
+this version. Only crafts that ended after you updated count.
+
 ## Game data
 
 Item icons and the network scanner's item list depend on the GTNH version
