@@ -1254,6 +1254,25 @@ goes idle) is `finished`, anything more is `incomplete`. That covers
 cancellation and interruption without claiming more certainty than the
 data supports.
 
+**Time left comes from the item's past crafts first** (`gcm/eta.py`).
+It used to be the pace since the job's first report carried on to 100%,
+and it came out far too short: the many cheap steps finish first and
+the few slow ones (the multiblocks near the top) last, so a job is 70%
+through its steps a tenth of the way through its time. Now each finished
+job seen from its start keeps, in `craft_events`, how much it made
+(`amount`, the peak of its output's own step) and when it reached each
+10% (`progress_marks`, a few dozen bytes; the log is never pruned). A
+running job's time left is the median, over the item's latest 20
+finished jobs of between half and twice its amount, of how long each
+had left from this job's progress (scaled by amount), less how long
+this job has sat at that progress. With no such jobs, it's the pace
+of the last 10 minutes rather than since the start, so a job that slows
+gets a longer estimate. When both exist the longer wins: underselling
+is the mistake people noticed. `python app.py eta-report` replays both,
+and the old way, over the latest finished jobs, as a ratio to how long
+each really had left, so a change to the method can be checked against
+a real base before it ships.
+
 **The Crafts tab's statistics are counted by SQLite.** craft_stats.py
 used to read every job in the range into Python and count there; a base
 with 160,000 jobs took 50-70 MB per request for "all time", 14 MB for a

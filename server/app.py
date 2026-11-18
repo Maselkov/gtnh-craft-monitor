@@ -23,6 +23,10 @@ to anyone again (also in the page: Manage users):
 Back up every database, consistently, while the server keeps running:
     python app.py backup <directory>
 
+See how far off a craft's time left would have been over the latest
+finished jobs (default 2000; gcm/eta_report.py):
+    python app.py eta-report [jobs]
+
 Build a game data bundle's indexes (gcm/gamedata_index.py, and
 gcm/recipe_index.py if it has recipes) into it - for a host sharing
 bundles between servers (GAMEDATA_SHARED_DIR), so each doesn't build its
@@ -35,7 +39,8 @@ Or via Docker (see Dockerfile / docker-compose.yml in this project).
 import os
 import sys
 
-from gcm import auth, backup, config, create_app, db, gamedata_index, recipe_index, recipes, retention, store
+from gcm import (auth, backup, config, create_app, db, eta_report, gamedata_index, recipe_index, recipes, retention,
+                 store)
 
 
 def _cli_create_admin(display_name):
@@ -91,6 +96,9 @@ if __name__ == "__main__":
         if sys.argv[2:] not in (["private"], ["public"]):
             raise SystemExit("usage: app.py visibility private|public")
         auth.set_private(sys.argv[2] == "private")
+        sys.exit(0)
+    if len(sys.argv) in (2, 3) and sys.argv[1] == "eta-report":
+        print(eta_report.report(int(sys.argv[2]) if len(sys.argv) == 3 else 2000))
         sys.exit(0)
     if len(sys.argv) == 3 and sys.argv[1] == "backup":
         for path in db.backup_all(sys.argv[2]):

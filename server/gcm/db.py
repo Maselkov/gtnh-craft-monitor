@@ -771,6 +771,14 @@ def _app_batches(conn):
     """)
 
 
+def _app_craft_event_timing(conn):
+    # For a running job's time left (gcm/eta.py): how much a job made,
+    # and when it reached each 10% of its progress.
+    conn.execute("ALTER TABLE craft_events ADD COLUMN amount REAL")
+    conn.execute("ALTER TABLE craft_events ADD COLUMN progress_marks TEXT")
+    conn.execute("CREATE INDEX idx_craft_events_item ON craft_events (item_internal, item_mod, item_damage)")
+
+
 APP_MIGRATIONS = [
     _app_baseline,
     _app_drop_orphaned_user_rows,
@@ -789,6 +797,7 @@ APP_MIGRATIONS = [
     _app_craft_event_first_seen,
     _app_kit_preferences,
     _app_batches,
+    _app_craft_event_timing,
 ]
 POWER_MIGRATIONS = [
     _power_baseline, _power_machines, _power_drop_impossible_times, _power_wireless_lsc, _power_machine_names,

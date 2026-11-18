@@ -2,7 +2,7 @@ import time
 
 import pytest
 
-from gcm import commands, config, db, state, tracking
+from gcm import commands, config, db, eta, state, tracking
 from gcm.routes.crafts import name_cpus
 from conftest import login_as
 
@@ -449,6 +449,10 @@ def shift_samples(seconds, cpu_name="W01", last=None):
     entry = state.cpu_last_known[cpu_name]
     for key in ("started_at", "first_sample_at", "last_sample_at"):
         entry[key] -= seconds
+    timing = entry["eta"]
+    timing["pace_samples"] = [(at - seconds, p) for at, p in timing["pace_samples"]]
+    if timing["progress_at"] is not None:
+        timing["progress_at"] -= seconds
     if last is not None:
         entry["last_sample_at"] -= last
 
@@ -464,13 +468,13 @@ class TestCardTiming:
         post_job(client, api_headers, "Gear", pending=[item("Gear", 1), item("Plate", 2), item("Rod", 4), item("Bolt", 4)])
         job = w01(client)
         p = job["progress_percent"]
-        assert p >= tracking.ETA_MIN_PROGRESS
+        assert p >= eta.ETA_MIN_PROGRESS
         assert job["eta_seconds"] == pytest.approx(600 * (100 - p) / p, rel=0.01)
         assert job["running_seconds"] == pytest.approx(600, abs=5)
 
     def test_no_eta_before_the_pace_has_been_watched_long_enough(self, client, api_headers):
         post_job(client, api_headers, "Gear", pending=plates(3))
-        shift_samples(tracking.ETA_MIN_SECONDS - 30)
+        shift_samples(eta.ETA_MIN_SECONDS - 30)
         post_job(client, api_headers, "Gear", pending=[item("Gear", 1), item("Plate", 2), item("Rod", 4), item("Bolt", 4)])
         assert w01(client)["eta_seconds"] is None
 
@@ -479,7 +483,7 @@ class TestCardTiming:
         shift_samples(600)
         post_job(client, api_headers, "Gear", pending=[item("Gear", 1), item("Plate", 3), item("Rod", 4), item("Bolt", 4)])
         job = w01(client)
-        assert job["progress_percent"] < tracking.ETA_MIN_PROGRESS
+        assert job["progress_percent"] < eta.ETA_MIN_PROGRESS
         assert job["eta_seconds"] is None
 
     def test_start_known_only_for_a_job_seen_starting(self, client, api_headers):

@@ -37,7 +37,7 @@ def drop_cpu_pins(cpu_name):
 
 
 def record_job_end(cpu_name, label, icon, status, progress, started_at=None, item=None, auto=False,
-                   first_seen_at=None):
+                   first_seen_at=None, amount=None, progress_marks=None):
     """Logs a craft_events row for a job that just left cpu_name, gives
     every user who had that CPU pinned a completion for it, and clears
     those pins - all in one transaction. Returns the new completions as
@@ -46,17 +46,19 @@ def record_job_end(cpu_name, label, icon, status, progress, started_at=None, ite
     started_at is None when the job's start wasn't seen; item is the
     output's {mod, internal, damage}, or None when it wasn't reported;
     auto, whether a keep-in-stock target started the job; first_seen_at,
-    when the server first saw it (started_at when that's known)."""
+    when the server first saw it (started_at when that's known); amount,
+    how much of the output it made, when known; progress_marks, when it
+    reached each 10% of its progress (gcm/eta.py)."""
     occurred_at = time.time()
     item = item or {}
     with db.transaction(db.app_db) as conn:
         event_id = conn.execute(
             "INSERT INTO craft_events (cpu_name, item_label, item_icon, status, progress_at_end, occurred_at, "
-            "started_at, item_mod, item_internal, item_damage, auto, first_seen_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "started_at, item_mod, item_internal, item_damage, auto, first_seen_at, amount, progress_marks) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (cpu_name, label, icon, status, progress, occurred_at,
              started_at, item.get("mod"), item.get("internal"), item.get("damage"), int(auto),
-             first_seen_at if first_seen_at is not None else started_at),
+             first_seen_at if first_seen_at is not None else started_at, amount, progress_marks),
         ).lastrowid
         conn.execute(
             "INSERT INTO user_completions (user_id, craft_event_id, created_at) "
@@ -68,6 +70,45 @@ def record_job_end(cpu_name, label, icon, status, progress, started_at=None, ite
             "SELECT user_id, id FROM user_completions WHERE craft_event_id = ?",
             (event_id,),
         ).fetchall()
+
+
+def past_runs(item, amount, limit, ratio, before_id=None):
+    """The latest `limit` finished jobs that made `item` ({mod, internal,
+    damage}), seen from their start, with progress marks, and (when
+    `amount` is known) made between amount / ratio and amount * ratio:
+    [(id, seconds, amount, progress_marks)], latest first. before_id
+    limits it to jobs logged before that one."""
+    sql = (
+        "SELECT id, occurred_at - started_at, amount, progress_marks FROM craft_events "
+        "WHERE item_internal = ? AND item_mod IS ? AND item_damage IS ? AND status = 'finished' "
+        "AND started_at IS NOT NULL AND progress_marks IS NOT NULL"
+    )
+    args = [item["internal"], item.get("mod"), item.get("damage")]
+    if amount:
+        sql += " AND amount BETWEEN ? AND ?"
+        args += [amount / ratio, amount * ratio]
+    if before_id is not None:
+        sql += " AND id < ?"
+        args.append(before_id)
+    sql += " ORDER BY id DESC LIMIT ?"
+    args.append(limit)
+    with db.transaction(db.app_db) as conn:
+        return conn.execute(sql, args).fetchall()
+
+
+def timed_jobs(limit):
+    """The latest `limit` finished jobs seen from their start, with
+    progress marks and a reported output, oldest first: [(id, mod,
+    internal, damage, amount, seconds, progress_marks)]."""
+    with db.transaction(db.app_db) as conn:
+        rows = conn.execute(
+            "SELECT id, item_mod, item_internal, item_damage, amount, occurred_at - started_at, progress_marks "
+            "FROM craft_events WHERE status = 'finished' AND started_at IS NOT NULL "
+            "AND progress_marks IS NOT NULL AND COALESCE(item_internal, '') <> '' "
+            "ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return rows[::-1]
 
 
 _EVENT_COLUMNS = (

@@ -25,7 +25,7 @@ The per-CPU memory it compares against lives in gcm/state.py
 
 import time
 
-from gcm import bottlenecks, commands, job_links, progress, push, state, store, webhooks
+from gcm import bottlenecks, commands, eta, job_links, progress, push, state, store, webhooks
 
 
 # How much faster than its observed pace a job may have gone in the gap
@@ -129,8 +129,10 @@ def _new_job_entry(started_at, seen_from_start=True):
         # baseline) and the latest one were taken - the job's pace.
         "first_sample_at": None,
         "last_sample_at": None,
-        # Progress at first_sample_at, for the job's pace (job_eta()).
+        # Progress at first_sample_at, for the job's pace (gcm/eta.py).
         "first_progress": None,
+        # What gcm/eta.py keeps to work out the job's time left.
+        "eta": eta.new_state(),
         # Set for a browser request's job craft_monitor.lua is watching,
         # and its outcome once reported (see report_outcome()).
         "request_id": None,
@@ -190,6 +192,7 @@ def _record_end_locked(name, entry, label, icon, ended_at):
     else:
         status = _classify_status(name, entry, ended_at)
     output = entry.get("output")
+    seen_from_start = entry.get("seen_from_start")
     completions = store.crafts.record_job_end(
         name,
         label,
@@ -200,6 +203,8 @@ def _record_end_locked(name, entry, label, icon, ended_at):
         item=output and {"mod": output[1], "internal": output[2], "damage": output[3]},
         auto=entry.get("auto", False),
         first_seen_at=entry["started_at"],
+        amount=_output_amount(entry),
+        progress_marks=eta.marks_text(entry["eta"]["marks"]) if seen_from_start else None,
     )
     push.notify_completions(completions, label, icon, status)
     if completions:
@@ -309,7 +314,7 @@ def process_jobs(jobs):
                 _update_progress(entry, job, now)
             else:
                 job["progress_percent"] = None
-                job["running_seconds"] = job["eta_seconds"] = job["started_at"] = None
+                job["running_seconds"] = job["eta_seconds"] = job["eta_basis"] = job["started_at"] = None
 
             state.cpu_last_busy[name] = busy
     bottlenecks.account(now)
@@ -355,6 +360,8 @@ def _update_progress(entry, job, sampled_at):
             entry["first_sample_at"] = sampled_at
             entry["first_progress"] = percent
         entry["last_sample_at"] = sampled_at
+        eta.note_progress(entry["eta"], entry["started_at"], sampled_at, percent, entry["seen_from_start"])
+        _load_history(entry)
     job["progress_percent"] = entry["progress"]
     job["steps_done"] = steps_done
     job["steps_total"] = steps_total
@@ -365,7 +372,7 @@ def _update_progress(entry, job, sampled_at):
     # progress bar rather than the old one sliding to its numbers.
     job["started_at"] = entry["started_at"]
     job["started_known"] = entry["seen_from_start"]
-    job["eta_seconds"] = job_eta(entry)
+    job["eta_seconds"], job["eta_basis"] = job_eta(entry)
     if entry.get("auto"):
         job["auto"] = True
 
@@ -391,24 +398,38 @@ def _update_flow(entry, job, sampled_at):
         f["pending"], f["active"] = p, a
 
 
-# The pace has to have been watched this long, over this much progress,
-# before it says anything about the rest of the job.
-ETA_MIN_SECONDS = 120
-ETA_MIN_PROGRESS = 10
+def _output_amount(entry):
+    """How much of its output the job makes: the largest amount seen
+    left of the step that makes it, or None when that isn't known."""
+    output = entry.get("output")
+    if not output:
+        return None
+    _, mod, internal, damage = output
+    amounts = [peak for key, peak in entry["peaks"].items() if key[:3] == (mod, internal, damage)]
+    return max(amounts) if amounts else None
+
+
+def _load_history(entry):
+    """Reads the past runs of the job's item for its time left, once its
+    output and amount are known, and again if either changes."""
+    output = entry.get("output")
+    if not output or not output[2]:
+        return
+    key = (output, _output_amount(entry))
+    state_ = entry["eta"]
+    if state_["history_for"] == key:
+        return
+    item = {"mod": output[1], "internal": output[2], "damage": output[3]}
+    rows = store.crafts.past_runs(item, key[1], eta.HISTORY_JOBS, eta.HISTORY_AMOUNT_RATIO)
+    state_["history"] = [(seconds, amount, eta.parse_marks(marks)) for _, seconds, amount, marks in rows]
+    state_["history_for"] = key
 
 
 def job_eta(entry):
-    """Seconds until the job is done if it keeps the pace it's had since
-    its first sampled report, or None until that's been seen long enough.
-    Rough: progress counts steps, which can take very different times."""
-    first, last = entry["first_sample_at"], entry["last_sample_at"]
-    start, now = entry["first_progress"], entry["progress"]
-    if first is None or start is None or now is None:
-        return None
-    span, gained = last - first, now - start
-    if span < ETA_MIN_SECONDS or gained < ETA_MIN_PROGRESS:
-        return None
-    return span * (100 - now) / gained
+    """(seconds until the job is done, "history" or "pace"), or (None,
+    None) until either can say: see gcm/eta.py."""
+    return eta.estimate(entry["eta"], entry["first_sample_at"], entry["first_progress"],
+                        entry["last_sample_at"], entry["progress"])
 
 
 def started_by(cpu_name):

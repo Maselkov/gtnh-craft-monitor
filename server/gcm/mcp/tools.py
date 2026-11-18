@@ -414,6 +414,7 @@ def current_crafts(user, args):
             "steps_total": job.get("steps_total"),
             "running_seconds": _round(job.get("running_seconds"), 0),
             "eta_seconds": _round(job.get("eta_seconds"), 0),
+            "eta_basis": job.get("eta_basis"),
             "link": _job_link(job.get("name"), job.get("started_at")),
         })
     return {

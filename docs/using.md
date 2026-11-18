@@ -36,9 +36,14 @@ their size added, such as `Main 64k #1`, each with a **?** that says so (see
   as one step, and the bar is the average of how far along each step is.
   It never moves backwards. It counts steps done, not time left.
 - **Run time** — how long the job has been running ("≥" for one that was
-  already running when the server started). After two minutes and 10% of
-  progress, a rough time left follows: what's left at the pace so far.
-  Since steps can take very different times, take it as a guess.
+  already running when the server started), and roughly how long it has
+  left. For an item the base has crafted before, in about the same
+  amount, the time left comes from how long those crafts took from the
+  same progress on, and shows from the start. Otherwise it follows after
+  two minutes and 10% of progress, from the pace of the last 10 minutes.
+  When both are there, the longer one shows. Hover over it to see which
+  it is. Either way it's a guess: machines busy with other jobs make
+  a craft slower than last time.
 - **Ingredients (N)** — opens a grid of everything the job holds, is crafting
   and is waiting on, laid out like AE2's crafting status screen. It stays
   live while open. Click an item to open its stock history over the grid;
@@ -1205,7 +1210,8 @@ assistant does something odd.
   the game.
 - Progress counts steps, not crafting time, since recipe durations aren't
   available. A job with one slow step and 63 quick ones shows as nearly done
-  once the 63 are made, and its time left is as far off.
+  once the 63 are made. Its time left is only as good as earlier crafts of
+  the item: the first time, it comes from the pace, and comes out short.
 - The game doesn't show OpenComputers inside a machine, so "nothing back
   from its machine" can't tell a stopped machine from a long recipe, and
   which interface holds a step's items is a guess when several have its

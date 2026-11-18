@@ -480,7 +480,10 @@ function jobTiming(job) {
   const elapsed = formatDuration(job.running_seconds + age, { pad: true });
   const parts = [`running ${job.started_known ? '' : '&ge;'}${escapeHtml(elapsed)}`];
   if (job.eta_seconds != null) {
-    parts.push(`<span class="job-eta" title="If the rest of the job goes at the pace it has so far. Steps can take very different times, so this is rough.">~${escapeHtml(formatDuration(Math.max(0, job.eta_seconds - age), { pad: true }))} left</span>`);
+    const basis = job.eta_basis === 'history'
+      ? 'From how long earlier crafts of this item took from this far along. Busier machines than then make it longer.'
+      : 'If the rest of the job goes at its pace of the last 10 minutes. Its last steps are often its slowest, so this tends to come out short.';
+    parts.push(`<span class="job-eta" title="${basis}">~${escapeHtml(formatDuration(Math.max(0, job.eta_seconds - age), { pad: true }))} left</span>`);
   }
   return parts;
 }
