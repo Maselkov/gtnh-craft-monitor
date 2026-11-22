@@ -159,7 +159,13 @@ def validate_recipes(data):
             require(isinstance(value, dict) and isinstance(value.get("key"), str)
                     and isinstance(value.get("name"), str), "invalid display stack")
 
-    def layout(scene):
+    def layout(scene, where):
+        try:
+            check_layout(scene)
+        except ValueError as e:
+            raise ValueError(f"{e} in {where}") from None
+
+    def check_layout(scene):
         require(isinstance(scene, dict) and isinstance(scene.get("family"), str), "invalid preview layout")
         require(all(type(scene.get(k)) in (int, float) and 0 < scene[k] <= 4096
                     for k in ("width", "height")), "invalid preview dimensions")
@@ -183,10 +189,10 @@ def validate_recipes(data):
     for name, entry in maps.items():
         require(isinstance(entry, dict) and isinstance(entry.get("recipes"), list), "invalid recipe map")
         if entry.get("preview") is not None:
-            layout(entry["preview"])
+            layout(entry["preview"], name)
         for r in entry["recipes"]:
             if "preview" in r:
-                layout(r["preview"])
+                layout(r["preview"], name)
             require(isinstance(r, dict), "invalid recipe")
             kind = r.get("type")
             allowed = {"shaped", "shapeless"} if name == "crafting" else {"furnace"} if name == "furnace" else {"gt", "assembly_line", "nei"} if data["format"] >= 3 else {"gt"}

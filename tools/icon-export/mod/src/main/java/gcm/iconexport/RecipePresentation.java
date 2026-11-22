@@ -214,7 +214,12 @@ final class RecipePresentation {
         }
     }
 
-    /** CachedDefaultRecipe appends slots beyond the template's declared IO limits. */
+    /** The most slots a preview may have, and the highest slot index + 1; ci/validate.py and the
+     *  server (recipe_viewer.present_layout) hold previews to the same bound. */
+    static final int MAX_SLOTS=256;
+
+    /** CachedDefaultRecipe appends slots beyond the template's declared IO limits. Scrolling frontends
+     *  (the void miner's ore list) can append hundreds; the preview keeps the first ones that fit. */
     @SuppressWarnings("unchecked")
     Map<String,Object> overflow(Object map, Object recipe) throws ReflectiveOperationException {
         Object frontend=map.getClass().getMethod("getFrontend").invoke(map);
@@ -233,6 +238,10 @@ final class RecipePresentation {
             List<?> positions=((IntFunction<List<?>>)Recipes.field(ui,getters[k])).apply(count);
             for(int n=max;n<Math.min(positions.size(),count);n++) {
                 if(java.lang.reflect.Array.get(values,n)==null)continue;
+                if(n>=MAX_SLOTS || ((List<?>)out.get("slots")).size()>=MAX_SLOTS) {
+                    IconExportMod.LOG.warn("Recipe preview in {} cut at {} slots; {} has {}",map,MAX_SLOTS,fields[k],count);
+                    break;
+                }
                 int x=number(positions.get(n),"x"),y=number(positions.get(n),"y");
                 slot(out,roles[k],n,x,y);
                 out.put("width",Math.max(((Number)out.get("width")).intValue(),x+20));

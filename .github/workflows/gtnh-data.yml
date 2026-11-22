@@ -205,4 +205,5 @@ jobs:
             out/logs/
             out/client-stdout*.log
             out/export-report.json
+            out/recipes.json.gz
           if-no-files-found: ignore
