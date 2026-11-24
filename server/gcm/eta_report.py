@@ -36,9 +36,10 @@ def _replayed_pace(marks, at, percent):
 
 
 def replay(limit):
-    """{method: [estimate / actual time left]} over the latest `limit`
-    finished jobs with marks."""
-    ratios = {m: [] for m in METHODS}
+    """One entry per checkpoint replayed over the latest `limit` finished
+    jobs with marks: {"seconds": the job's length, "ratios": {method:
+    estimate / actual time left, or None where it gave none}}."""
+    out = []
     for job_id, mod, internal, damage, amount, total, marks_text in store.crafts.timed_jobs(limit):
         marks = eta.parse_marks(marks_text)
         runs = [
@@ -57,27 +58,45 @@ def replay(limit):
             shown = max((x for x in (pace, history) if x is not None), default=None)
             found = {"old": at * (100 - percent) / percent if at >= eta.ETA_MIN_SECONDS else None,
                      "pace": pace, "history": history, "shown": shown}
-            for method, value in found.items():
-                if value is not None:
-                    ratios[method].append(value / left)
-    return ratios
+            out.append({"seconds": total,
+                        "ratios": {m: None if v is None else v / left for m, v in found.items()}})
+    return out
 
 
-def report(limit):
-    """replay() as a table, one line per method."""
-    ratios = replay(limit)
-    lines = [
-        f"Time left at {', '.join(f'{p}%' for p in CHECKPOINTS)} of the latest {limit} finished jobs,",
-        "as a multiple of what the job really had left (1.00 is spot on):",
-        "",
-        f"{'':9}{'estimates':>10}{'median':>9}{'within 1.5x':>13}{'under half':>12}",
-    ]
+# Job lengths the same-jobs comparison is split by: (label, up to seconds).
+LENGTHS = (("under 5 min", 300), ("5-30 min", 1800), ("over 30 min", None))
+
+
+def _table(entries):
+    lines = [f"{'':9}{'estimates':>10}{'median':>9}{'within 1.5x':>13}{'under half':>12}"]
     for method in METHODS:
-        values = ratios[method]
+        values = [e["ratios"][method] for e in entries if e["ratios"][method] is not None]
         if not values:
             lines.append(f"{method:9}{0:>10}{'-':>9}{'-':>13}{'-':>12}")
             continue
         close = sum(1 / 1.5 <= v <= 1.5 for v in values) / len(values)
         short = sum(v < 0.5 for v in values) / len(values)
         lines.append(f"{method:9}{len(values):>10}{statistics.median(values):>9.2f}{close:>13.0%}{short:>12.0%}")
+    return lines
+
+
+def report(limit):
+    """replay() as tables: every estimate each method gave, then only
+    where all of them gave one, so the methods are judged on the same
+    jobs, by how long those jobs took."""
+    entries = replay(limit)
+    lines = [
+        f"Time left at {', '.join(f'{p}%' for p in CHECKPOINTS)} of the latest {limit} finished jobs,",
+        "as a multiple of what the job really had left (1.00 is spot on).",
+        "",
+        "Every estimate each method gave (each on different jobs):",
+        *_table(entries),
+    ]
+    same = [e for e in entries if all(v is not None for v in e["ratios"].values())]
+    lines += ["", f"Only where every method gave one, on the same {len(same)}:", *_table(same)]
+    shorter = 0
+    for label, up_to in LENGTHS:
+        part = [e for e in same if e["seconds"] > shorter and (up_to is None or e["seconds"] <= up_to)]
+        shorter = up_to
+        lines += ["", f"  ...of jobs that took {label} ({len(part)}):", *(_table(part) if part else ["  none"])]
     return "\n".join(lines)

@@ -127,10 +127,23 @@ class TestReport:
         runner = TestFromPastJobs()
         runner.run_gear_job(client, api_headers)
         runner.run_gear_job(client, api_headers)
-        ratios = eta_report.replay(10)
+        entries = eta_report.replay(10)
         # The second job, read against the first one's identical run, at
         # 30% and 50% (at 70% it had too little left to judge).
-        assert ratios["history"] == [pytest.approx(1, abs=0.05)] * 2
-        assert ratios["old"] and ratios["shown"]
+        history = [e["ratios"]["history"] for e in entries if e["ratios"]["history"] is not None]
+        assert history == [pytest.approx(1, abs=0.05)] * 2
+        assert all(e["seconds"] == pytest.approx(500, abs=5) for e in entries)
+
+    def test_compares_the_methods_on_the_same_jobs_by_length(self, client, api_headers):
+        runner = TestFromPastJobs()
+        runner.run_gear_job(client, api_headers)
+        runner.run_gear_job(client, api_headers)
         text = eta_report.report(10)
-        assert "history" in text and "1.00" in text
+        # The first job has no history, so only the second's checkpoints
+        # where the pace had been watched long enough count.
+        same = [e for e in eta_report.replay(10) if all(v is not None for v in e["ratios"].values())]
+        assert same
+        assert f"Only where every method gave one, on the same {len(same)}:" in text
+        assert "jobs that took under 5 min (0):" in text
+        assert f"jobs that took 5-30 min ({len(same)}):" in text
+        assert "jobs that took over 30 min (0):" in text
