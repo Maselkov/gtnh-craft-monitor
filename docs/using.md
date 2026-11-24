@@ -1052,7 +1052,9 @@ custom connector with the `/mcp` address. The app sends you to this server's
 check which app is asking, and click **Allow**. The server must be reachable
 from the internet over HTTPS for claude.ai (see
 [Exposing it beyond your LAN](server.md#exposing-it-beyond-your-lan)); one
-on your LAN only works with apps running on your own computer.
+on your LAN only works with apps running on your own computer. Apps that show
+a connector's icon get the monitor's own (in `ICON_COLOR`, if set); one added
+before the server sent it may keep a blank one until you remove and re-add it.
 
 **[Claude Code](https://claude.com/claude-code):** add the server, then run
 `/mcp` in Claude Code and pick it to sign in the same way:

@@ -120,6 +120,22 @@ class TestLegacy:
         assert result["serverInfo"]["name"] == "gtnh-craft-monitor"
         assert "search_items" in result["instructions"]
 
+    def test_server_info_names_the_pages_icons(self, client, token, monkeypatch):
+        from gcm import config
+        monkeypatch.setattr(config, "PUBLIC_URL", "https://monitor.example.com")
+        res = post(client, token, {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                                   "params": {"protocolVersion": "2025-11-25", "capabilities": {}}})
+        info = res.get_json()["result"]["serverInfo"]
+        assert info["websiteUrl"] == "https://monitor.example.com"
+        assert [(i["src"], i["mimeType"]) for i in info["icons"]] == [
+            ("https://monitor.example.com/static/icons/favicon.svg", "image/svg+xml"),
+            ("https://monitor.example.com/static/icons/icon-192.png", "image/png"),
+            ("https://monitor.example.com/static/icons/icon-512.png", "image/png"),
+        ]
+        for icon in info["icons"]:
+            path = icon["src"].removeprefix("https://monitor.example.com")
+            assert client.get(path).status_code == 200, path
+
     def test_initialize_offers_the_latest_legacy_version_otherwise(self, client, token):
         res = post(client, token, {"jsonrpc": "2.0", "id": 1, "method": "initialize",
                                    "params": {"protocolVersion": "2024-11-05"}})
