@@ -1271,7 +1271,11 @@ gets a longer estimate. When both exist the longer wins: underselling
 is the mistake people noticed. `python app.py eta-report` replays both,
 and the old way, over the latest finished jobs, as a ratio to how long
 each really had left, so a change to the method can be checked against
-a real base before it ships.
+a real base before it ships. Judge the methods by its tables of jobs
+every method gave an estimate for, not by its first one: the pace only
+starts after two minutes, so on its own it's scored on long jobs and
+history mostly on short ones (on fish, 178 estimates against 1,242),
+and their scores there can't be compared.
 
 **The Crafts tab's statistics are counted by SQLite.** craft_stats.py
 used to read every job in the range into Python and count there; a base

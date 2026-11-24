@@ -296,6 +296,13 @@ estimate as a multiple of the time the craft really had left (1.00 is
 spot on, 0.25 a quarter of it). `old` is how it was worked out before
 this version. Only crafts that ended after you updated count.
 
+The first table counts every estimate each way gave, but they don't
+all give one for the same crafts: the pace needs two minutes and 10%
+of progress, so it misses most short crafts. The tables after it count
+only the crafts every way gave an estimate for, in all and then split
+by how long the craft took, so the ways can be compared with each
+other. Add a number to replay more crafts, such as `eta-report 20000`.
+
 ## Game data
 
 Item icons and the network scanner's item list depend on the GTNH version
