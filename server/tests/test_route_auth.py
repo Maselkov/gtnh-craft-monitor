@@ -31,6 +31,7 @@ VIEWER_ENDPOINTS = {
 }
 # Anyone, always: the page itself, game data icons, and signing in.
 PUBLIC_ENDPOINTS = {
+    "pages.favicon",  # the page's own logo, for clients that look at /favicon.ico
     "pages.icon",
     "pages.index",  # its link preview says nothing on a private server
     "pages.js_module",

@@ -65,3 +65,13 @@ def test_favicon_with_a_dot(client, monkeypatch, color):
     # A dot that isn't one, or on an icon that has none: the plain icon.
     assert client.get("/static/icons/favicon.svg?dot=nope").get_data(as_text=True) == plain
     assert client.get("/static/icons/icon-192.png?dot=alert").data == client.get("/static/icons/icon-192.png").data
+
+
+def test_favicon_ico_is_the_32px_favicon(client, monkeypatch):
+    # No sign-in: a client fetching a site's icon has none.
+    response = client.get("/favicon.ico")
+    assert response.status_code == 200 and response.mimetype == "image/png"
+    assert response.data == client.get("/static/icons/favicon-32.png").data
+    assert response.headers["Cache-Control"] == "no-cache"
+    monkeypatch.setattr(config, "ICON_COLOR", RED)
+    assert RED in colours(client.get("/favicon.ico").data)

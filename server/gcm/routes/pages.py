@@ -34,6 +34,22 @@ def recolored_icon():
     return Response(data, mimetype=mimetype)
 
 
+@bp.route("/favicon.ico")
+@auth.public
+def favicon():
+    """For clients that look for a site's icon at /favicon.ico rather than
+    in the page's <link rel="icon"> (an MCP connector's, for one): the
+    32px favicon, recoloured as the rest of static/icons/ is, and
+    revalidated as they are, so a new logo or colour shows."""
+    if config.ICON_COLOR is not None:
+        data, mimetype = app_icons.recolored("favicon-32.png", config.ICON_COLOR)
+        res = Response(data, mimetype=mimetype)
+    else:
+        res = send_from_directory(os.path.join(STATIC_DIR, "icons"), "favicon-32.png", mimetype="image/png")
+    res.headers["Cache-Control"] = "no-cache"
+    return res
+
+
 @bp.route("/icons")
 @auth.public
 def icon():

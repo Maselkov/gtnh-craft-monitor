@@ -24,7 +24,7 @@ import base64
 import binascii
 import json
 
-from gcm import config
+from gcm import config, oauth
 from gcm.mcp import instructions, prompts, tools
 
 MODERN_VERSIONS = ["2026-07-28"]
@@ -41,8 +41,27 @@ INVALID_PARAMS = -32602
 HEADER_MISMATCH = -32020
 UNSUPPORTED_VERSION = -32022
 
+# The page's own icons (static/icons/), for a client to show beside the
+# connector's name. ICON_COLOR recolours them here as on the page.
+_ICONS = [
+    ("favicon.svg", "image/svg+xml", "any"),
+    ("icon-192.png", "image/png", "192x192"),
+    ("icon-512.png", "image/png", "512x512"),
+]
+
+
 def server_info():
-    return {"name": "gtnh-craft-monitor", "title": "GTNH Craft Monitor", "version": config.SERVER_VERSION or "dev"}
+    base = oauth.base_url()
+    return {
+        "name": "gtnh-craft-monitor",
+        "title": "GTNH Craft Monitor",
+        "version": config.SERVER_VERSION or "dev",
+        "icons": [
+            {"src": f"{base}/static/icons/{name}", "mimeType": mime, "sizes": [sizes]}
+            for name, mime, sizes in _ICONS
+        ],
+        "websiteUrl": base,
+    }
 
 
 def error(msg_id, code, message, data=None):
