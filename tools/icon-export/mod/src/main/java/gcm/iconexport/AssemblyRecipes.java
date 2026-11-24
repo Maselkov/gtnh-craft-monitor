@@ -118,16 +118,24 @@ final class AssemblyRecipes {
             throw new IllegalArgumentException("Missing assembly-line input/output");
         }
         List<Object> groups = new ArrayList<>();
+        List<Integer> filled = new ArrayList<>();
         boolean nbt = output.hasTagCompound();
         for (int i = 0; i < inputs.length; i++) {
             ItemStack[] choices = alternatives != null && i < alternatives.length ? alternatives[i] : null;
             if (choices == null || choices.length == 0) choices = new ItemStack[] { inputs[i] };
+            // A recipe can name an item that doesn't exist (GT 2.9.1's quantum buses ask for GT++
+            // superdense plates by ore name, and there are none): its slot is null and NEI leaves it
+            // empty. Do the same; preview_indices keeps the later inputs in their own slots.
+            if (Arrays.stream(choices).allMatch(stack -> stack == null)) continue;
             List<Object> alts = owner.stacks(choices, null);
             if (alts.size() != choices.length || alts.isEmpty()) throw new IllegalArgumentException("Unresolved assembly-line slot");
             for (ItemStack stack : choices) nbt |= stack.hasTagCompound();
             groups.add(Collections.singletonMap("alts", alts));
+            filled.add(i);
         }
+        if (groups.isEmpty()) throw new IllegalArgumentException("Missing assembly-line input/output");
         body.put("groups", groups);
+        if (filled.size() < inputs.length) body.put("preview_indices", Collections.singletonMap("groups", filled));
         ItemStack stick=new ItemStack((net.minecraft.item.Item)net.minecraft.item.Item.itemRegistry.getObject("gregtech:gt.metaitem.01"),0,32708);
         body.put("aux",owner.stacks(new ItemStack[]{stick},null));
         body.put("o", owner.stacks(new ItemStack[] { output }, null));
